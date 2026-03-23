@@ -98,6 +98,8 @@ class DcamConfig:
     max_nodes: int = 100_000
     episodic_capacity: int = 10_000
     consolidation_interval: int = 100  # perception cycles between consolidations
+    consolidation_stc_threshold: float = 0.5   # importance threshold for STC tagging
+    consolidation_coact_min: int = 3            # min co-activations to strengthen edge
 
 
 @dataclass
