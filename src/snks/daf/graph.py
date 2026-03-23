@@ -72,7 +72,9 @@ class SparseDafGraph:
 
         edge_attr = torch.stack([strength, phase_shift, delay, edge_type], dim=1).to(device)
 
-        return SparseDafGraph(edge_index, edge_attr, num_nodes, device)
+        graph = SparseDafGraph(edge_index, edge_attr, num_nodes, device)
+        graph.sort_by_dst()
+        return graph
 
     @property
     def num_edges(self) -> int:
@@ -102,6 +104,12 @@ class SparseDafGraph:
         keep = ~mask
         self.edge_index = self.edge_index[:, keep].contiguous()
         self.edge_attr = self.edge_attr[keep].contiguous()
+
+    def sort_by_dst(self) -> None:
+        """Sort edges by destination index for better scatter_add cache locality."""
+        order = self.edge_index[1].argsort()
+        self.edge_index = self.edge_index[:, order].contiguous()
+        self.edge_attr = self.edge_attr[order].contiguous()
 
     def to(self, device: torch.device) -> SparseDafGraph:
         """Move graph to another device."""

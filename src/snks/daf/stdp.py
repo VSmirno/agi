@@ -71,8 +71,8 @@ class STDP:
         """
         T, N = fired_history.shape
 
-        # Firing rate per node
-        rates = fired_history.float().sum(dim=0) / T  # (N,)
+        # Firing rate per node (avoid (T,N) float allocation)
+        rates = fired_history.sum(dim=0).float() / T  # (N,)
         baseline = rates.mean() ** 2
 
         src_idx = graph.edge_index[0]
@@ -110,15 +110,15 @@ class STDP:
         T, N = fired_history.shape
         device = fired_history.device
 
-        # --- Compute last spike time per node ---
-        time_idx = torch.arange(T, device=device, dtype=torch.float32).unsqueeze(1)  # (T, 1)
-        fired_float = fired_history.float()  # (T, N)
-        weighted = fired_float * time_idx  # (T, N) — 0 where not fired
-        last_spike = weighted.max(dim=0).values  # (N,)
-
+        # --- Compute last spike time per node (memory-efficient) ---
+        # Use argmax on flipped bool→uint8 to find last True index.
+        # Avoids (T,N) float32 allocation (40MB for 50K nodes).
         any_fired = fired_history.any(dim=0)  # (N,) bool
+        rev_argmax = fired_history.flip(0).to(torch.uint8).argmax(dim=0)  # (N,)
         last_spike = torch.where(
-            any_fired, last_spike, torch.full_like(last_spike, -1e6)
+            any_fired,
+            (T - 1 - rev_argmax).float(),
+            torch.tensor(-1e6, device=device),
         )
 
         # --- Per-edge timing ---

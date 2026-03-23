@@ -45,6 +45,47 @@ def euler_maruyama_step(
     return states
 
 
+def euler_maruyama_step_fhn(
+    states: torch.Tensor,
+    derivative_fn: DerivativeFn,
+    dt: float,
+    noise_sigma: float,
+    noise_v: torch.Tensor | None = None,
+    noise_w: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """FHN-optimized Euler-Maruyama step — only updates channels 0 (v) and 4 (w).
+
+    Saves ~75% bandwidth by skipping 6 unused state channels.
+
+    Args:
+        states: (N, 8) — modified in-place (only cols 0 and 4)
+        derivative_fn: returns drift buffer (only cols 0 and 4 non-zero)
+        dt: time step
+        noise_sigma: noise intensity
+        noise_v: pre-allocated (N,) buffer for v noise
+        noise_w: pre-allocated (N,) buffer for w noise
+
+    Returns:
+        states — same tensor, modified in-place
+    """
+    drift = derivative_fn(states)  # drift_buf: only [:, 0] and [:, 4] non-zero
+    states[:, 0].add_(drift[:, 0], alpha=dt)
+    states[:, 4].add_(drift[:, 4], alpha=dt)
+
+    if noise_sigma > 0.0:
+        sqrt_dt_sigma = (dt ** 0.5) * noise_sigma
+        if noise_v is not None:
+            noise_v.normal_()
+            noise_w.normal_()
+        else:
+            noise_v = torch.randn(states.shape[0], device=states.device)
+            noise_w = torch.randn(states.shape[0], device=states.device)
+        states[:, 0].add_(noise_v, alpha=sqrt_dt_sigma)
+        states[:, 4].add_(noise_w, alpha=sqrt_dt_sigma)
+
+    return states
+
+
 def integrate_n_steps(
     states: torch.Tensor,
     derivative_fn: DerivativeFn,
@@ -54,6 +95,7 @@ def integrate_n_steps(
     spike_threshold_col: int = 0,
     spike_threshold_val: float = 0.5,
     spike_mode: str = "threshold",
+    noise_buf: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Integrate n Euler-Maruyama steps, record spike history.
 
@@ -67,6 +109,8 @@ def integrate_n_steps(
         spike_threshold_val: threshold for spike detection
         spike_mode: "threshold" (FHN: v > val) or "phase_crossing"
             (Kuramoto: sin(θ) crosses zero upward → 1 spike per cycle)
+        noise_buf: pre-allocated (N, 8) buffer for noise (optional).
+            If None and noise_sigma > 0, one is allocated internally.
 
     Returns:
         states: (N, 8) final states
@@ -76,7 +120,8 @@ def integrate_n_steps(
     device = states.device
 
     fired_history = torch.empty(n_steps, N, dtype=torch.bool, device=device)
-    noise_buf = torch.empty_like(states) if noise_sigma > 0.0 else None
+    if noise_buf is None and noise_sigma > 0.0:
+        noise_buf = torch.empty_like(states)
 
     if spike_mode == "phase_crossing":
         prev_sin = torch.sin(states[:, 0])

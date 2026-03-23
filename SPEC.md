@@ -178,6 +178,7 @@ class DcamWorldModel:
 | 3 | Предсказание последовательностей | Mean accuracy | > 70% | **72.9%** (L3:64%, L5:75%, L7:79%) | ✅ PASS |
 | 4 | Устойчивость к шуму | Graceful degradation | Нет обрыва | **0% drop** (NMI=0.77 на всех σ) | ✅ PASS |
 | 5 | Персистентность (DCAM) | Δ accuracy | ≤ 1% | **Δ 0.0%** | ✅ PASS |
+| 6 | MNIST unsupervised | NMI | > 0.6 | **0.609** | ✅ PASS |
 
 ### Критерии MVP
 
@@ -188,8 +189,8 @@ class DcamWorldModel:
 | **Must** | Без backpropagation | ✅ |
 | Should | Предсказание (> 70%) | ✅ |
 | Should | Персистентность (Δ ≤ 1%) | ✅ |
-| Should | GPU perf (≥ 10K steps/sec) | ⏳ |
-| Nice | MNIST unsupervised (NMI > 0.6) | — |
+| Should | GPU perf (≥ 10K steps/sec) | ✅ |
+| Nice | MNIST unsupervised (NMI > 0.6) | ✅ |
 | Nice | Real-time dashboard (≥ 5 FPS) | ✅ |
 
 ---
@@ -246,7 +247,7 @@ src/snks/
 ├── pipeline/                 # Pipeline runner
 └── experiments/              # exp1–exp5
 
-tests/                        # 199 тестов, все проходят
+tests/                        # 248 тестов, все проходят
 configs/                      # small.yaml, default.yaml, full.yaml
 ```
 
@@ -272,6 +273,6 @@ configs/                      # small.yaml, default.yaml, full.yaml
 |------|-------------|--------|-----------|--------|
 | ДАП не сходится | Высокая | Критичный | Kuramoto → FHN | ✅ Решено |
 | STDP не формирует СКС | Средняя | Критичный | Rate-based Hebbian + FHN | ✅ Решено |
-| scatter_add bottleneck | Средняя | Серьёзный | torch.profiler; batched scatter | ⏳ |
+| scatter_add bottleneck | Средняя | Серьёзный | CSR spmv + CUDA Graphs | ✅ Решено |
 | Phase coherence O(N²) | Средняя | Серьёзный | Rate-based O(N) заменяет | ✅ Решено |
 | ROCm несовместимость | Низкая | Серьёзный | Только стандартные torch ops | — |

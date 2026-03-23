@@ -33,7 +33,8 @@ class Homeostasis:
         T = fired_history.shape[0]
 
         # Current firing rate: fraction of steps with spike
-        current_rate = fired_history.float().mean(dim=0)  # (N,)
+        # Use sum on bool (avoids (T,N) float allocation)
+        current_rate = fired_history.sum(dim=0).float() / T  # (N,)
 
         # EMA update: alpha = T * dt / tau (batch of T steps)
         alpha = min(T * self.dt / self.tau, 1.0)

@@ -53,6 +53,34 @@ def fhn_derivatives(
     return dstates
 
 
+def fhn_derivatives_inplace(
+    states: torch.Tensor,
+    config: DafConfig,
+    out: torch.Tensor,
+) -> None:
+    """Zero-allocation FHN derivatives, writing into pre-allocated `out` buffer.
+
+    Uses out[:, 1] as temporary storage for v² (zeroed after use).
+
+    Args:
+        states: (N, 8) — [:, 0]=v, [:, 4]=w_recovery
+        config: DafConfig
+        out: (N, 8) — pre-allocated output buffer, modified in-place
+    """
+    v = states[:, 0]
+    w = states[:, 4]
+
+    # dv = v - v³/3 - w + I_base
+    tmp = out[:, 1]  # borrow unused column as temp
+    torch.mul(v, v, out=tmp)              # tmp = v²
+    torch.mul(v, tmp, out=out[:, 0])      # out[:,0] = v³
+    out[:, 0].mul_(-1.0 / 3.0).add_(v).sub_(w).add_(config.fhn_I_base)
+    tmp.zero_()  # clean up borrowed column
+
+    # dw = (v + a - b*w) / τ
+    out[:, 4].copy_(v).add_(config.fhn_a).sub_(w, alpha=config.fhn_b).mul_(1.0 / config.fhn_tau)
+
+
 def init_states(
     num_nodes: int,
     state_dim: int,
