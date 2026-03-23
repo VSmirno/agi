@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>СНКС Dashboard</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e17; color: #e0e0e0; }
+  header { padding: 12px 24px; background: #111827; border-bottom: 1px solid #1f2937;
+           display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 18px; font-weight: 600; color: #60a5fa; }
+  .controls { display: flex; gap: 8px; }
+  .controls button {
+    padding: 6px 16px; border: 1px solid #374151; border-radius: 6px;
+    background: #1f2937; color: #e0e0e0; cursor: pointer; font-size: 13px;
+  }
+  .controls button:hover { background: #374151; }
+  .controls button.active { background: #2563eb; border-color: #3b82f6; }
+  #status-dot { width: 10px; height: 10px; border-radius: 50%; background: #ef4444; }
+  #status-dot.running { background: #22c55e; }
+
+  .dashboard { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; }
+  .panel {
+    background: #111827; border: 1px solid #1f2937; border-radius: 8px;
+    padding: 16px; min-height: 200px;
+  }
+  .panel h2 { font-size: 14px; color: #9ca3af; margin-bottom: 12px; text-transform: uppercase;
+              letter-spacing: 0.5px; }
+
+  /* Metrics tiles */
+  .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .metric-tile {
+    background: #1f2937; border-radius: 6px; padding: 12px; text-align: center;
+  }
+  .metric-tile .value { font-size: 28px; font-weight: 700; color: #60a5fa; }
+  .metric-tile .label { font-size: 11px; color: #6b7280; margin-top: 4px; }
+
+  /* Graph SVG */
+  #graph-svg { width: 100%; height: 300px; }
+  #graph-svg circle { stroke: #1f2937; stroke-width: 1; }
+
+  /* SKS clusters */
+  .cluster-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cluster-badge {
+    padding: 6px 12px; border-radius: 4px; font-size: 13px; font-weight: 600;
+  }
+
+  /* Log */
+  #log { max-height: 260px; overflow-y: auto; font-family: monospace; font-size: 12px;
+         color: #9ca3af; line-height: 1.6; }
+  #log div { border-bottom: 1px solid #1f2937; padding: 2px 0; }
+
+  .full-width { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div id="status-dot"></div>
+  <h1>СНКС — Real-time Dashboard</h1>
+  <div class="controls">
+    <button id="btn-start" onclick="doStart()">Start</button>
+    <button id="btn-pause" onclick="doPause()">Pause</button>
+    <button id="btn-step" onclick="doStep()">Step</button>
+  </div>
+  <span id="cycle-counter" style="margin-left:auto; font-size:13px; color:#6b7280;">Cycle: 0</span>
+</header>
+
+<div class="dashboard">
+  <!-- Metrics -->
+  <div class="panel">
+    <h2>Метрики</h2>
+    <div class="metrics-grid">
+      <div class="metric-tile"><div class="value" id="m-fps">0</div><div class="label">FPS</div></div>
+      <div class="metric-tile"><div class="value" id="m-sks">0</div><div class="label">СКС</div></div>
+      <div class="metric-tile"><div class="value" id="m-spikes">0</div><div class="label">Спайки</div></div>
+      <div class="metric-tile"><div class="value" id="m-pe">0</div><div class="label">PE</div></div>
+      <div class="metric-tile"><div class="value" id="m-cycle">0</div><div class="label">Cycle ms</div></div>
+      <div class="metric-tile"><div class="value" id="m-dcam">0</div><div class="label">DCAM эп.</div></div>
+    </div>
+  </div>
+
+  <!-- SKS Clusters -->
+  <div class="panel">
+    <h2>СКС Кластеры</h2>
+    <div id="sks-clusters" class="cluster-list">
+      <span style="color:#6b7280">Ожидание данных...</span>
+    </div>
+  </div>
+
+  <!-- Node Graph -->
+  <div class="panel">
+    <h2>Граф активных узлов</h2>
+    <svg id="graph-svg"></svg>
+  </div>
+
+  <!-- Log -->
+  <div class="panel">
+    <h2>Лог</h2>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+const WS_URL = `ws://${location.host}/ws`;
+let ws = null;
+
+const colors = d3.scaleOrdinal(d3.schemeTableau10);
+
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'cycle') updateDashboard(d);
+  };
+  ws.onclose = () => setTimeout(connect, 2000);
+  ws.onerror = () => ws.close();
+}
+
+function updateDashboard(d) {
+  const m = d.metrics;
+  document.getElementById('m-fps').textContent = m.fps;
+  document.getElementById('m-sks').textContent = m.n_sks;
+  document.getElementById('m-spikes').textContent = m.n_spikes;
+  document.getElementById('m-pe').textContent = m.mean_pe;
+  document.getElementById('m-cycle').textContent = m.cycle_time_ms;
+  document.getElementById('m-dcam').textContent = m.dcam_episodes;
+  document.getElementById('cycle-counter').textContent = `Cycle: ${d.cycle}`;
+
+  // SKS clusters
+  const container = document.getElementById('sks-clusters');
+  const clusters = d.sks_clusters || {};
+  const keys = Object.keys(clusters);
+  if (keys.length === 0) {
+    container.innerHTML = '<span style="color:#6b7280">Нет активных СКС</span>';
+  } else {
+    container.innerHTML = keys.map(k =>
+      `<div class="cluster-badge" style="background:${colors(k)}20;color:${colors(k)};border:1px solid ${colors(k)}">
+        #${k}: ${clusters[k].length} узлов
+      </div>`
+    ).join('');
+  }
+
+  // Node graph
+  updateGraph(d.top_nodes || []);
+
+  // Log
+  const log = document.getElementById('log');
+  const line = document.createElement('div');
+  line.textContent = `[${d.cycle}] sks=${m.n_sks} pe=${m.mean_pe} spikes=${m.n_spikes} ${m.cycle_time_ms}ms`;
+  log.prepend(line);
+  while (log.children.length > 100) log.lastChild.remove();
+}
+
+// Force-directed graph
+const svg = d3.select('#graph-svg');
+const width = 500, height = 300;
+svg.attr('viewBox', `0 0 ${width} ${height}`);
+
+let simulation = d3.forceSimulation()
+  .force('charge', d3.forceManyBody().strength(-15))
+  .force('center', d3.forceCenter(width/2, height/2))
+  .force('collide', d3.forceCollide(6));
+
+function updateGraph(nodes) {
+  const data = nodes.map((n, i) => ({
+    id: n.id, cluster: n.cluster,
+    x: (n.id * 7 + 50) % width,
+    y: (n.id * 13 + 30) % height,
+  }));
+
+  simulation.nodes(data);
+  simulation.alpha(0.3).restart();
+
+  const circles = svg.selectAll('circle').data(data, d => d.id);
+  circles.exit().transition().duration(200).attr('r', 0).remove();
+  circles.enter().append('circle')
+    .attr('r', 0)
+    .attr('fill', d => colors(d.cluster))
+    .attr('opacity', 0.8)
+    .transition().duration(200).attr('r', 5);
+  circles.attr('fill', d => colors(d.cluster));
+
+  simulation.on('tick', () => {
+    svg.selectAll('circle')
+      .attr('cx', d => Math.max(5, Math.min(width-5, d.x)))
+      .attr('cy', d => Math.max(5, Math.min(height-5, d.y)));
+  });
+}
+
+// Controls
+async function doStart() {
+  await fetch('/start', {method:'POST'});
+  document.getElementById('status-dot').classList.add('running');
+  document.getElementById('btn-start').classList.add('active');
+  document.getElementById('btn-pause').classList.remove('active');
+}
+
+async function doPause() {
+  await fetch('/pause', {method:'POST'});
+  document.getElementById('status-dot').classList.remove('running');
+  document.getElementById('btn-pause').classList.add('active');
+  document.getElementById('btn-start').classList.remove('active');
+}
+
+async function doStep() {
+  const r = await fetch('/step', {method:'POST'});
+  const d = await r.json();
+  if (d.type === 'cycle') updateDashboard(d);
+}
+
+connect();
+</script>
+</body>
+</html>

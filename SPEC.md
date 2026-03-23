@@ -2,7 +2,7 @@
 
 **Версия:** 0.2.0
 **Дата:** 2026-03-23
-**Статус:** Этапы 0–3 завершены, Этап 4 следующий
+**Статус:** Все этапы (0–5) завершены — MVP готов
 
 > Детальные спецификации этапов: [`specs/`](specs/)
 
@@ -177,7 +177,7 @@ class DcamWorldModel:
 | 2 | Непрерывное обучение | Retention | > 85% | **103.3%** | ✅ PASS |
 | 3 | Предсказание последовательностей | Mean accuracy | > 70% | **72.9%** (L3:64%, L5:75%, L7:79%) | ✅ PASS |
 | 4 | Устойчивость к шуму | Graceful degradation | Нет обрыва | **0% drop** (NMI=0.77 на всех σ) | ✅ PASS |
-| 5 | Персистентность (DCAM) | Δ accuracy | ≤ 1% | — | ⏳ Этап 4 |
+| 5 | Персистентность (DCAM) | Δ accuracy | ≤ 1% | **Δ 0.0%** | ✅ PASS |
 
 ### Критерии MVP
 
@@ -187,10 +187,10 @@ class DcamWorldModel:
 | **Must** | Нет catastrophic forgetting (> 80%) | ✅ |
 | **Must** | Без backpropagation | ✅ |
 | Should | Предсказание (> 70%) | ✅ |
-| Should | Персистентность (Δ ≤ 1%) | ⏳ |
+| Should | Персистентность (Δ ≤ 1%) | ✅ |
 | Should | GPU perf (≥ 10K steps/sec) | ⏳ |
 | Nice | MNIST unsupervised (NMI > 0.6) | — |
-| Nice | Real-time dashboard (≥ 5 FPS) | — |
+| Nice | Real-time dashboard (≥ 5 FPS) | ✅ |
 
 ---
 
@@ -202,8 +202,8 @@ class DcamWorldModel:
 | 1 | ДАП-Движок | ✅ | [specs/stage1.md](specs/stage1.md) |
 | 2 | Визуальный кодировщик | ✅ | [specs/stage2.md](specs/stage2.md) |
 | 3 | СКС + Эксперименты 1–4 | ✅ | [specs/stage3.md](specs/stage3.md) |
-| 4 | DCAM Хранилище | ⏳ | [specs/stage4.md](specs/stage4.md) |
-| 5 | Визуализация + Интеграция | — | [specs/stage5.md](specs/stage5.md) |
+| 4 | DCAM Хранилище | ✅ | [specs/stage4.md](specs/stage4.md) |
+| 5 | Визуализация + Интеграция | ✅ | [specs/stage5.md](specs/stage5.md) |
 
 ### Граф зависимостей
 
@@ -212,7 +212,7 @@ class DcamWorldModel:
                    │                       │
                    │  Этап 2 ✅ (Encoder) ─┘
                    │                  │
-                   └─→ Этап 4 ⏳ (DCAM)─┴──→ Этап 5 (Integration)
+                   └─→ Этап 4 ✅ (DCAM)─┴──→ Этап 5 ✅ (Integration)
 ```
 
 ---
