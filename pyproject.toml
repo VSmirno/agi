@@ -1,0 +1,39 @@
+[project]
+name = "snks"
+version = "0.1.0"
+description = "SNKS - Sistema Nepreryvnogo Kognitivnogo Sinteza (Continuous Cognitive Synthesis System)"
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.0",
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "scikit-learn>=1.4",
+    "scikit-image>=0.22",
+    "safetensors>=0.4",
+    "pyyaml>=6.0",
+    "fastapi>=0.109",
+    "uvicorn[standard]>=0.27",
+    "websockets>=12.0",
+    "matplotlib>=3.8",
+    "umap-learn>=0.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+mnist = [
+    "torchvision>=0.17",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
