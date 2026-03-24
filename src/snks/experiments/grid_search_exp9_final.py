@@ -242,7 +242,15 @@ def main(device: str = "cpu") -> None:
 
 
 if __name__ == "__main__":
-    # Auto-detect device (NVIDIA CUDA, AMD ROCm, or CPU)
-    device_obj = get_device(prefer="auto")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"], help="Device: auto, cuda, or cpu")
+    args = parser.parse_args()
+
+    if args.device == "auto":
+        device_obj = get_device(prefer="auto")
+    else:
+        device_obj = get_device(prefer=args.device)
+
     device_str = str(device_obj)
     main(device=device_str)
