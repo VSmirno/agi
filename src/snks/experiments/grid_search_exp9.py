@@ -168,18 +168,34 @@ def grid_search(
     device: str = "cpu",
     n_trials: int = 2,
     n_steps: int = 500,
+    fast_mode: bool = False,
 ) -> list[GridSearchResult]:
-    """Run grid search over hyperparameter combinations."""
+    """Run grid search over hyperparameter combinations.
+
+    Args:
+        fast_mode: If True, test only promising subset (3-4 hours vs 16+ hours)
+    """
 
     # Grid parameters
-    denominators = [3.0, 5.0, 10.0, 15.0]
-    epsilons = [0.1, 0.15, 0.2]
-    weight_pairs = [
-        (0.8, 0.2),
-        (0.85, 0.15),
-        (0.9, 0.1),
-        (0.95, 0.05),
-    ]
+    if fast_mode:
+        # Promising subset: focus on denominator 3-10, epsilon 0.15-0.2, weights 0.85+
+        denominators = [3.0, 5.0, 7.0, 10.0]
+        epsilons = [0.15, 0.2]
+        weight_pairs = [
+            (0.85, 0.15),
+            (0.9, 0.1),
+            (0.95, 0.05),
+        ]
+    else:
+        # Full grid
+        denominators = [3.0, 5.0, 7.0, 10.0, 15.0]
+        epsilons = [0.1, 0.15, 0.2]
+        weight_pairs = [
+            (0.8, 0.2),
+            (0.85, 0.15),
+            (0.9, 0.1),
+            (0.95, 0.05),
+        ]
 
     results: list[GridSearchResult] = []
     total_runs = len(denominators) * len(epsilons) * len(weight_pairs) * n_trials
@@ -231,14 +247,20 @@ def grid_search(
     return results
 
 
-def main(device: str = "cpu") -> None:
-    """Run grid search and save results."""
+def main(device: str = "cpu", fast_mode: bool = False) -> None:
+    """Run grid search and save results.
+
+    Args:
+        device: "cuda" or "cpu"
+        fast_mode: If True, test only promising subset (faster)
+    """
     print("=" * 80)
-    print("Exp 9 Grid Search: Curiosity Hyperparameter Tuning")
+    mode_str = "FAST MODE (3-4 hours)" if fast_mode else "FULL MODE (16+ hours)"
+    print(f"Exp 9 Grid Search: Curiosity Hyperparameter Tuning — {mode_str}")
     print("=" * 80)
     print()
 
-    results = grid_search(device=device, n_trials=2, n_steps=500)
+    results = grid_search(device=device, n_trials=2, n_steps=500, fast_mode=fast_mode)
 
     # Sort by coverage_ratio
     results.sort(key=lambda r: r.coverage_ratio, reverse=True)
@@ -293,5 +315,10 @@ def main(device: str = "cpu") -> None:
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fast", action="store_true", help="Fast mode (3-4 hours instead of 16+)")
+    args = parser.parse_args()
+
     device = "cuda" if __import__("torch").cuda.is_available() else "cpu"
-    main(device=device)
+    main(device=device, fast_mode=args.fast)
