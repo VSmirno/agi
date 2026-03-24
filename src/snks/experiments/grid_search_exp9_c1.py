@@ -32,7 +32,7 @@ N_TRIALS = 3
 EPSILON_STARTS = [0.20, 0.25, 0.30, 0.40]
 EPSILON_HORIZONS = [1000, 2000, 3000]
 
-RESULTS_PATH = Path("results/grid_search_exp9_c1.csv")
+RESULTS_PATH = Path("/opt/agi/grid_search_exp9_c1.csv") if Path("/opt/agi").exists() else Path("grid_search_exp9_c1.csv")
 
 
 def make_config(device: str, eps_start: float, eps_horizon: int) -> CausalAgentConfig:
@@ -74,7 +74,6 @@ def main() -> None:
     print(f"Device: {DEVICE}, num_nodes: {NUM_NODES}, n_steps: {N_STEPS}")
     print("-" * 60)
 
-    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     results = []
 
