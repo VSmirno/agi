@@ -114,7 +114,7 @@ def _run_curious_agent(
 def run(
     device: str = "cpu",
     num_nodes: int = 5000,
-    n_steps: int = 2000,
+    n_steps: int = 500,
     n_trials: int = 3,
 ) -> dict:
     """Run Experiment 9: Curiosity-driven Exploration.
