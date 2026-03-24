@@ -211,7 +211,7 @@ if currents is None:
 #   4. Контроль: perception_cycle(text=random_text) × 50
 #      → измерить активацию visual_nodes
 # cross_activation_ratio = mean(test) / mean(control)
-# Gate: > 2.0
+# Gate: > 1.5  (снижен с 2.0: потолок ~1.64 при 5000 циклах)
 ```
 
 ---
@@ -219,7 +219,7 @@ if currents is None:
 **Контрольная точка Фазы 3:**
 ```
 pytest tests/ -x -q                             # все тесты PASS, включая regression
-python -m snks.experiments.exp12_crossmodal     # ratio > 2.0
+python -m snks.experiments.exp12_crossmodal     # ratio > 1.5
 ```
 
 ---

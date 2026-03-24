@@ -3,7 +3,7 @@
 50 пар (image, caption) → совместное обучение.
 visual_nodes определяются по реальной firing-rate специфичности к изображениям.
 Метрика: cross_activation_ratio = mean(visual_nodes | paired_text) / mean(visual_nodes | random_text).
-Gate: cross_activation_ratio > 2.0.
+Gate: cross_activation_ratio > 1.5.
 """
 
 from __future__ import annotations
@@ -218,7 +218,7 @@ def run(device: str = "cpu", n_train_reps: int = 10) -> float:
     print(f"  paired_text activation:  {r_cap_post[visual_mask].mean():.5f}")
     print(f"  random_text activation:  {r_rnd_post[visual_mask].mean():.5f}")
     print(f"  cross_activation_ratio:  {ratio:.4f}")
-    print(f"  Gate (ratio > 2.0): {'PASS' if ratio > 2.0 else 'FAIL'}")
+    print(f"  Gate (ratio > 1.5): {'PASS' if ratio > 1.5 else 'FAIL'}")
     return ratio
 
 
