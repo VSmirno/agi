@@ -18,6 +18,8 @@ dependencies = [
     "umap-learn>=0.5",
     "gymnasium>=0.28",
     "minigrid>=3.0",
+    "sentence-transformers>=2.2",
+    "datasets>=2.0",
 ]
 
 [project.optional-dependencies]
