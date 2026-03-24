@@ -39,14 +39,8 @@ class IntrinsicMotivation:
 
     def __init__(self, config: CausalAgentConfig):
         self.epsilon = config.curiosity_epsilon
-        self.decay = config.curiosity_decay
-        self._n_bins = config.causal_context_bins
         # (context_hash, action) → visit count
         self._visit_counts: dict[tuple[int, int], int] = defaultdict(int)
-        # (context_hash, action) → current prediction error
-        self._prediction_errors: dict[tuple[int, int], float] = {}
-        # (context_hash, action) → smoothed learning progress (EMA of delta error)
-        self._learning_progress: dict[tuple[int, int], float] = {}
         # state_hash → visit count (for state-level novelty)
         self._state_visits: dict[int, int] = defaultdict(int)
 
@@ -58,8 +52,8 @@ class IntrinsicMotivation:
     ) -> int:
         """Select action that maximizes expected exploration value.
 
-        Count-based: prefer actions leading to least-visited states.
-        Learning progress suppresses actions with no learning gain (noisy-TV).
+        Pure count-based: prefer actions leading to least-visited states.
+        Ignore learning progress (suppress noisy-TV by relying on visit counts).
         Epsilon-greedy: with probability epsilon choose random action.
         """
         if random.random() < self.epsilon:
@@ -71,23 +65,19 @@ class IntrinsicMotivation:
         best_interest = -1.0
 
         for a in range(n_actions):
-            key = (full_ctx, a)
-
-            # Count-based: predict next state, prefer least-visited
+            # Count-based: prefer actions leading to least-visited states
             predicted_effect, confidence = causal_model.predict_effect(current_sks, a)
             predicted_next = current_sks | predicted_effect
             next_hash = _stable_context(predicted_next)
             state_novelty = 1.0 / (1.0 + self._state_visits.get(next_hash, 0))
 
-            # Action novelty (also on full hash)
+            # Action novelty: prefer untested actions
+            key = (full_ctx, a)
             visit_count = self._visit_counts[key]
             action_novelty = 1.0 / (1.0 + visit_count)
 
-            # Learning progress: suppress actions with no learning gain
-            lp = self._learning_progress.get(key, 1.0)  # unknown = high
-
-            # Count-based interest with LP suppression
-            interest = (0.6 * state_novelty + 0.4 * action_novelty) * (0.3 + 0.7 * lp)
+            # Pure count-based interest (no learning progress suppression)
+            interest = 0.6 * state_novelty + 0.4 * action_novelty
 
             if interest > best_interest:
                 best_interest = interest
@@ -101,23 +91,10 @@ class IntrinsicMotivation:
         action: int,
         prediction_error: float,
     ) -> None:
-        """Update visit counts and novelty estimates."""
+        """Update visit counts."""
         full_hash = _stable_context(context_sks)
         key = (full_hash, action)
         self._visit_counts[key] += 1
-
-        # Learning progress: delta of prediction error (positive = still learning)
-        prev_error = self._prediction_errors.get(key, 1.0)  # first time = max
-        learning_progress = max(0.0, prev_error - prediction_error)
-
-        # EMA smoothing of learning progress
-        self._learning_progress[key] = (
-            self._learning_progress.get(key, 1.0) * self.decay
-            + learning_progress * (1.0 - self.decay)
-        )
-
-        # Update current error
-        self._prediction_errors[key] = prediction_error
 
         # Track state visits
         self._state_visits[full_hash] += 1
