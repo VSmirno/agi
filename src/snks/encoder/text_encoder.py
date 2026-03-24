@@ -19,7 +19,11 @@ class TextEncoder:
         from sentence_transformers import SentenceTransformer
 
         self.config = config
-        self.device = device or "cpu"
+        # Resolve device: sentence-transformers accepts only torch device strings
+        _device = device or "cpu"
+        if _device in ("auto", ""):
+            _device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = _device
 
         # Frozen sentence-transformer
         self._st_model = SentenceTransformer("all-MiniLM-L6-v2", device=self.device)
