@@ -17,6 +17,7 @@ dependencies = [
     "matplotlib>=3.8",
     "umap-learn>=0.5",
     "gymnasium>=0.28",
+    "minigrid>=3.2",
 ]
 
 [project.optional-dependencies]
