@@ -26,7 +26,7 @@ from snks.experiments.exp9_curiosity import _run_curious_agent, _run_random_agen
 
 DEVICE = "hip"
 NUM_NODES = 5000
-N_STEPS = 2000
+N_STEPS = 500
 N_TRIALS = 3
 
 EPSILON_STARTS = [0.20, 0.25, 0.30, 0.40]

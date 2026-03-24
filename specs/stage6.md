@@ -360,7 +360,7 @@ class CausalAgentConfig:
 **Среда:** L6 (MultiRoom) — 12×12, 2 комнаты, дверь, коробки
 
 **Протокол:**
-1. Запускаем CausalAgent с IntrinsicMotivation на 2000 шагов
+1. Запускаем CausalAgent с IntrinsicMotivation на 500 шагов (12×12 MultiRoom насыщается за ~2000, преимущество curiosity измеряется в ранней фазе)
 2. Параллельно запускаем random agent (uniform random actions)
 3. Сравниваем:
    - Покрытие среды (% посещённых клеток)
