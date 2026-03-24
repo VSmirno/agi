@@ -18,7 +18,7 @@ import json
 import os
 
 
-def run(eval_path: str = "/opt/agi/corpus/eval_set.jsonl",
+def run(eval_path: str = "/app/results/corpus/eval_set.jsonl",
         n_eval: int = 1000) -> float:
     """Run Exp 13: precision@5 on DCAM retrieval.
 
@@ -77,7 +77,7 @@ def run(eval_path: str = "/opt/agi/corpus/eval_set.jsonl",
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--eval-path", default="/opt/agi/corpus/eval_set.jsonl")
+    parser.add_argument("--eval-path", default="/app/results/corpus/eval_set.jsonl")
     parser.add_argument("--n-eval", type=int, default=1000)
     args = parser.parse_args()
     run(args.eval_path, args.n_eval)
