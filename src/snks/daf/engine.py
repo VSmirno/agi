@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import torch
 
+from snks.daf.compiled_step import integrate_fhn_compiled, make_compiled_integrate
 from snks.daf.coupling import (
     build_coupling_csr,
     compute_fhn_coupling,
@@ -72,11 +73,21 @@ class DafEngine:
         # CSR sparse matrix for fast spmv coupling (cuSPARSE)
         self._coupling_csr, self._coupling_degree = build_coupling_csr(self.graph)
         self._spmv_out = torch.empty(N, device=self.device)
+        self._spmv_failed: bool = False  # fallback to scatter_add if hipSPARSE unsupported
 
-        # CUDA Graph state
+        # CUDA Graph state — disabled on HIP/ROCm (capture corrupts GPU context)
+        is_hip = hasattr(torch.version, "hip") and torch.version.hip is not None
         self._cuda_graph: torch.cuda.CUDAGraph | None = None
+        self._cuda_graph_failed: bool = is_hip
         self._graph_n_steps: int = 0
         self._graph_fired_history: torch.Tensor | None = None
+
+        # Compiled step (fuses FHN + coupling + noise into fewer kernels)
+        self._compiled_step_fn = None
+        if config.oscillator_model == "fhn" and self.device.type == "cuda":
+            self._compiled_step_fn = make_compiled_integrate()
+        # Pre-computed edge weights for compiled path: sign * strength
+        self._edge_weight = (self._edge_sign * self.graph.edge_attr[:, 0]).contiguous()
 
         # Learning components
         self.enable_learning = enable_learning
@@ -96,15 +107,45 @@ class DafEngine:
 
         Returns StepResult with cloned states (safe to hold reference).
         """
+        use_compiled = (
+            self._compiled_step_fn is not None
+            and self.config.oscillator_model == "fhn"
+        )
         use_graph = (
             self.device.type == "cuda"
             and self.config.oscillator_model == "fhn"
             and n_steps >= 10
+            and not self._cuda_graph_failed
+            and not use_compiled  # prefer compiled over CUDA Graphs
         )
 
-        if use_graph:
-            fired_history = self._step_cuda_graph(n_steps)
-        else:
+        if use_compiled:
+            self.states, fired_history = integrate_fhn_compiled(
+                self.states,
+                self._external_currents,
+                self.graph.edge_index[0],
+                self.graph.edge_index[1],
+                self._edge_weight,
+                n_steps=n_steps,
+                K=self.config.coupling_strength,
+                I_base=self.config.fhn_I_base,
+                a=self.config.fhn_a,
+                b=self.config.fhn_b,
+                tau=self.config.fhn_tau,
+                dt=self.config.dt,
+                noise_sigma=self.config.noise_sigma,
+                step_fn=self._compiled_step_fn,
+            )
+        elif use_graph:
+            try:
+                fired_history = self._step_cuda_graph(n_steps)
+            except RuntimeError:
+                # CUDA Graphs not supported (e.g. some AMD/HIP GPUs)
+                self._cuda_graph_failed = True
+                self._cuda_graph = None
+                use_graph = False
+
+        if not use_compiled and not use_graph:
             derivative_fn = self._make_derivative_fn()
             spike_mode = "phase_crossing" if self.config.oscillator_model == "kuramoto" else "threshold"
             self.states, fired_history = integrate_n_steps(
@@ -126,11 +167,12 @@ class DafEngine:
             stdp_result = self.stdp.apply(self.graph, fired_history)
             self.homeostasis.update(fired_history, self.states)
 
-            # Update CSR values after STDP weight changes
+            # Update CSR values and edge weights after STDP weight changes
             if self.config.oscillator_model == "fhn":
                 update_coupling_csr_values(
                     self._coupling_csr, self._coupling_degree, self.graph
                 )
+                self._edge_weight = (self._edge_sign * self.graph.edge_attr[:, 0]).contiguous()
 
             # Structural plasticity: prune weak edges periodically
             if self.step_count % self.config.structural_interval == 0:
@@ -225,14 +267,28 @@ class DafEngine:
             degree = self._coupling_degree
             K = config.coupling_strength
             tmp_buf = self._spmv_out  # (N,) temp for v*degree
+            # scatter_add buffers for fallback path
+            contrib_buf = self._contrib_buf
+            src_v_buf = self._src_v_buf
+            dst_v_buf = self._dst_v_buf
+            edge_sign = self._edge_sign
+            engine = self  # capture for _spmv_failed flag
 
             def derivative_fn(states: torch.Tensor) -> torch.Tensor:
                 fhn_derivatives_inplace(states, config, drift_buf)
-                # coupling[i] = K * (A @ v - v * degree)
-                v = states[:, 0]
-                torch.mv(A_csr, v, out=coupling_buf)
-                torch.mul(v, degree, out=tmp_buf)
-                coupling_buf.sub_(tmp_buf).mul_(K)
+                if not engine._spmv_failed:
+                    try:
+                        v = states[:, 0]
+                        torch.mv(A_csr, v, out=coupling_buf)
+                        torch.mul(v, degree, out=tmp_buf)
+                        coupling_buf.sub_(tmp_buf).mul_(K)
+                    except RuntimeError:
+                        engine._spmv_failed = True
+                if engine._spmv_failed:
+                    compute_fhn_coupling_inplace(
+                        states, graph, K, coupling_buf,
+                        contrib_buf, src_v_buf, dst_v_buf, edge_sign,
+                    )
                 drift_buf[:, 0].add_(coupling_buf).add_(ext[:, 0])
                 return drift_buf
 
@@ -257,5 +313,6 @@ class DafEngine:
         self._src_v_buf = torch.empty(E, device=self.device)
         self._dst_v_buf = torch.empty(E, device=self.device)
         self._edge_sign = (1.0 - 2.0 * self.graph.edge_attr[:, 3]).contiguous()
+        self._edge_weight = (self._edge_sign * self.graph.edge_attr[:, 0]).contiguous()
         # Rebuild CSR (structure changed)
         self._coupling_csr, self._coupling_degree = build_coupling_csr(self.graph)
