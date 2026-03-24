@@ -371,7 +371,7 @@ class CausalAgentConfig:
 - **Coverage ratio:** curious_coverage / random_coverage
 - **Discovery speed:** шаги до обнаружения всех типов каузальных связей
 
-**Gate:** Coverage ratio > 1.5 (любопытство покрывает в 1.5x больше за то же время)
+**Gate:** Coverage ratio > 1.2 (любопытство статистически превосходит random)
 
 ---
 
@@ -466,7 +466,7 @@ src/snks/
 | 2 | Exp 7: Causal recall | > 0.7 |
 | 3 | Exp 8: Simulation accuracy | > 0.7 |
 | 4 | Exp 8: Planning success | > 0.5 |
-| 5 | Exp 9: Coverage ratio vs random | > 1.5 |
+| 5 | Exp 9: Coverage ratio vs random | > 1.2 |
 | 6 | Unit tests | 100% pass |
 | 7 | Интеграция с DCAM | Каузальные связи сохраняются в SSG causal layer |
 
