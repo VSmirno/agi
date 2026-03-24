@@ -46,6 +46,15 @@ class Pipeline:
         self.tracker = SKSTracker()
         self.prediction = PredictionEngine(config.prediction)
         self._sks_config = config.sks
+        self._motor_currents: torch.Tensor | None = None
+
+    def inject_motor_currents(self, currents: torch.Tensor) -> None:
+        """Set motor currents for dual injection (sensory + motor).
+
+        Args:
+            currents: (N,) motor current vector from MotorEncoder.
+        """
+        self._motor_currents = currents.to(self.engine.device)
 
     def perception_cycle(self, image: torch.Tensor) -> CycleResult:
         """Process one image through the full pipeline.
@@ -70,6 +79,17 @@ class Pipeline:
         # 1. Encode image → SDR → currents
         sdr = self.encoder.encode(image)
         currents = self.encoder.sdr_to_currents(sdr, self.engine.config.num_nodes)
+
+        # 1b. Dual injection: add motor currents if present
+        if self._motor_currents is not None:
+            motor = self._motor_currents
+            if currents.dim() == 2 and motor.dim() == 1:
+                # Add motor currents to channel 0 (voltage)
+                currents[:, 0] = currents[:, 0] + motor
+            elif currents.dim() == 1 and motor.dim() == 1:
+                currents = currents + motor
+            self._motor_currents = None  # consumed
+
         self.engine.set_input(currents)
 
         # 2. Step DAF

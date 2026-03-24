@@ -112,3 +112,32 @@ class PipelineConfig:
     prediction: PredictionConfig = field(default_factory=PredictionConfig)
     steps_per_cycle: int = 100      # integration steps per perception cycle
     device: str = "auto"
+
+
+@dataclass
+class CausalAgentConfig:
+    """Configuration for causal agent (Stage 6)."""
+    # Pipeline (reuse from stage 3-5)
+    pipeline: PipelineConfig = field(default_factory=PipelineConfig)
+
+    # Environment
+    grid_size: int = 8
+    max_steps_per_episode: int = 200
+
+    # Motor encoder
+    motor_sdr_size: int = 512           # SDR bits per action
+    motor_current_strength: float = 1.0
+
+    # Causal model
+    causal_min_observations: int = 3    # min obs before confident
+    causal_confidence_threshold: float = 0.5
+    causal_decay: float = 0.99
+    causal_context_hash_bits: int = 64  # для быстрого поиска по контексту
+
+    # Motivation
+    curiosity_epsilon: float = 0.2      # random exploration rate
+    curiosity_decay: float = 0.995      # novelty decay per visit
+
+    # Mental simulation
+    simulation_max_depth: int = 10
+    simulation_min_confidence: float = 0.3

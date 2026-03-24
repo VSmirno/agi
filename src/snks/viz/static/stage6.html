@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>СНКС — Этап 6</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e17; color: #e0e0e0; min-height: 100vh; }
+
+/* ── Header ── */
+header {
+  padding: 12px 24px; background: #111827; border-bottom: 1px solid #1f2937;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+header h1 { font-size: 18px; font-weight: 600; color: #60a5fa; flex: 1 1 auto; }
+.controls { display: flex; gap: 8px; }
+.controls button {
+  padding: 6px 16px; border: 1px solid #374151; border-radius: 6px;
+  background: #1f2937; color: #e0e0e0; cursor: pointer; font-size: 13px;
+  transition: background 0.15s;
+}
+.controls button:hover { background: #374151; }
+.controls button.primary { background: #1d4ed8; border-color: #3b82f6; }
+.controls button.primary:hover { background: #2563eb; }
+#load-status { font-size: 12px; color: #6b7280; }
+
+/* ── Tabs ── */
+.tab-bar {
+  display: flex; gap: 0; background: #111827;
+  border-bottom: 1px solid #1f2937; padding: 0 24px;
+}
+.tab-btn {
+  padding: 10px 20px; font-size: 14px; color: #9ca3af; background: transparent;
+  border: none; border-bottom: 2px solid transparent; cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab-btn:hover { color: #e0e0e0; }
+.tab-btn.active { color: #60a5fa; border-bottom-color: #60a5fa; }
+
+/* ── Tab panes ── */
+.tab-pane { display: none; padding: 20px 24px; }
+.tab-pane.active { display: block; }
+
+/* ── Panels ── */
+.panel {
+  background: #111827; border: 1px solid #1f2937; border-radius: 8px;
+  padding: 16px; margin-bottom: 16px;
+}
+.panel h2 {
+  font-size: 13px; color: #9ca3af; margin-bottom: 14px;
+  text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500;
+}
+.panel-row { display: grid; gap: 16px; }
+.panel-row.cols-2 { grid-template-columns: 1fr 1fr; }
+.panel-row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.panel-row.cols-auto { grid-template-columns: auto 1fr; }
+
+/* ── Loading / empty state ── */
+.empty-state {
+  text-align: center; padding: 60px 20px; color: #4b5563; font-size: 14px;
+}
+.spinner {
+  display: inline-block; width: 28px; height: 28px;
+  border: 3px solid #1f2937; border-top-color: #60a5fa;
+  border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Gauge ── */
+.gauge-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.gauge-label { font-size: 13px; color: #9ca3af; }
+.gauge-value { font-size: 22px; font-weight: 700; }
+.gauge-sub { font-size: 11px; color: #6b7280; }
+
+/* ── Metric tiles ── */
+.metric-tiles { display: flex; gap: 12px; flex-wrap: wrap; }
+.metric-tile {
+  background: #1f2937; border-radius: 6px; padding: 14px 20px;
+  text-align: center; flex: 1 1 140px;
+}
+.metric-tile .val { font-size: 28px; font-weight: 700; color: #60a5fa; line-height: 1; }
+.metric-tile .lbl { font-size: 11px; color: #6b7280; margin-top: 5px; }
+.metric-tile .gate-badge {
+  display: inline-block; font-size: 10px; padding: 2px 7px;
+  border-radius: 10px; margin-top: 6px; font-weight: 600;
+}
+.gate-pass { background: #14532d; color: #4ade80; }
+.gate-fail { background: #7c2d12; color: #fb923c; }
+
+/* ── Tooltip ── */
+#tooltip {
+  position: fixed; background: #1f2937; border: 1px solid #374151;
+  border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #e0e0e0;
+  pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 9999;
+  max-width: 220px; line-height: 1.6;
+}
+
+/* ── Causal graph ── */
+#causal-graph-svg { width: 100%; height: 420px; border-radius: 6px; }
+.node-circle { cursor: grab; stroke: #0a0e17; stroke-width: 1.5; }
+.node-label { font-size: 10px; fill: #e0e0e0; pointer-events: none; text-anchor: middle; dominant-baseline: central; }
+.edge-line { fill: none; opacity: 0.7; }
+.graph-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9ca3af; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+/* ── Summary stats ── */
+.stat-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.stat-chip {
+  background: #1f2937; border-radius: 5px; padding: 8px 14px;
+  font-size: 13px; display: flex; flex-direction: column; align-items: center;
+}
+.stat-chip .sc-val { font-size: 20px; font-weight: 700; color: #60a5fa; }
+.stat-chip .sc-lbl { font-size: 11px; color: #6b7280; margin-top: 2px; }
+
+/* ── Trajectory viewer ── */
+.trajectory-container { overflow-x: auto; }
+.trajectory-lane {
+  display: flex; align-items: center; gap: 0;
+  padding: 10px 8px; border-bottom: 1px solid #1f2937; position: relative;
+  min-height: 60px;
+}
+.trajectory-lane:last-child { border-bottom: none; }
+.traj-step {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  cursor: pointer; position: relative; z-index: 1;
+}
+.traj-circle {
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 600; color: #e0e0e0; flex-shrink: 0;
+  transition: transform 0.15s; border: 1.5px solid #374151;
+}
+.traj-circle:hover { transform: scale(1.2); }
+.traj-conf { font-size: 9px; color: #6b7280; white-space: nowrap; }
+.traj-connector {
+  display: flex; align-items: center; gap: 2px;
+  padding: 0 4px; color: #4b5563; font-size: 10px; white-space: nowrap;
+}
+.action-pill {
+  background: #1f2937; border: 1px solid #374151; border-radius: 10px;
+  padding: 2px 7px; font-size: 10px; color: #9ca3af;
+}
+.traj-index { font-size: 10px; color: #4b5563; min-width: 28px; }
+.traj-empty { color: #4b5563; font-size: 13px; padding: 20px; }
+
+/* ── Heatmaps ── */
+.heatmap-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.heatmap-title { font-size: 13px; color: #9ca3af; text-align: center; }
+.heatmap-sub { font-size: 11px; color: #6b7280; }
+.heatmap-svg { display: block; }
+
+/* ── Coverage chart & bar chart ── */
+.chart-svg { width: 100%; overflow: visible; }
+.axis path, .axis line { stroke: #374151; }
+.axis text { fill: #9ca3af; font-size: 11px; }
+.grid line { stroke: #1f2937; stroke-dasharray: 3,3; }
+
+/* ── Big coverage ratio ── */
+.big-ratio {
+  text-align: center; padding: 20px 0;
+}
+.big-ratio .ratio-value { font-size: 64px; font-weight: 800; line-height: 1; }
+.big-ratio .ratio-label { font-size: 14px; color: #9ca3af; margin-top: 6px; }
+.big-ratio .ratio-gate { font-size: 12px; color: #6b7280; margin-top: 4px; }
+
+/* ── SKS popup ── */
+#sks-popup {
+  position: fixed; background: #1f2937; border: 1px solid #374151; border-radius: 8px;
+  padding: 12px 16px; font-size: 12px; color: #e0e0e0; z-index: 9999;
+  opacity: 0; pointer-events: none; transition: opacity 0.15s; max-width: 260px;
+}
+#sks-popup.visible { opacity: 1; pointer-events: auto; }
+#sks-popup .popup-close {
+  float: right; cursor: pointer; color: #6b7280; font-size: 14px; line-height: 1;
+}
+#sks-popup .popup-title { font-weight: 600; color: #60a5fa; margin-bottom: 6px; }
+#sks-popup .sks-ids {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;
+}
+#sks-popup .sks-id-chip {
+  background: #111827; border: 1px solid #374151; border-radius: 4px;
+  padding: 2px 8px; font-size: 11px; color: #93c5fd;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>СНКС — Этап 6: Каузальный Агент</h1>
+  <span id="load-status"></span>
+  <div class="controls">
+    <button class="primary" onclick="loadData()">Загрузить данные</button>
+    <button onclick="generateDemo()">Генерировать демо</button>
+  </div>
+</header>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('exp7', this)">Exp 7: Каузальность</button>
+  <button class="tab-btn" onclick="switchTab('exp8', this)">Exp 8: Симуляция</button>
+  <button class="tab-btn" onclick="switchTab('exp9', this)">Exp 9: Curiosity</button>
+</div>
+
+<!-- ══════════════════════════════════════════
+     Tab 1 — Exp 7: Каузальное обучение
+     ══════════════════════════════════════════ -->
+<div id="tab-exp7" class="tab-pane active">
+  <div class="panel-row cols-2">
+
+    <div class="panel">
+      <h2>Метрики качества</h2>
+      <div id="exp7-gauges" style="display:flex; gap:32px; justify-content:center; padding: 8px 0;">
+        <div class="empty-state" style="padding:20px">
+          <div class="spinner"></div><br>Ожидание данных
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Сводная статистика</h2>
+      <div id="exp7-stats" class="stat-row">
+        <div class="empty-state" style="padding:20px; width:100%">Нет данных</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="panel">
+    <h2>Граф каузальных связей (force-directed)</h2>
+    <div id="exp7-graph-wrap">
+      <div class="empty-state"><div class="spinner"></div><br>Граф будет построен после загрузки</div>
+    </div>
+    <div class="graph-legend" id="exp7-legend"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     Tab 2 — Exp 8: Ментальная симуляция
+     ══════════════════════════════════════════ -->
+<div id="tab-exp8" class="tab-pane">
+  <div class="panel">
+    <h2>Метрики симуляции</h2>
+    <div id="exp8-tiles" class="metric-tiles">
+      <div class="empty-state" style="padding:20px; width:100%">Нет данных</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Визуализатор траекторий</h2>
+    <div id="exp8-trajectories" class="trajectory-container">
+      <div class="traj-empty">Нет траекторий</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     Tab 3 — Exp 9: Curiosity-driven Exploration
+     ══════════════════════════════════════════ -->
+<div id="tab-exp9" class="tab-pane">
+
+  <div class="panel-row cols-3">
+    <div class="panel" style="grid-column: 1">
+      <h2>Коэффициент покрытия</h2>
+      <div id="exp9-ratio" class="big-ratio">
+        <div class="ratio-value" style="color:#4b5563">—</div>
+        <div class="ratio-label">Coverage Ratio</div>
+        <div class="ratio-gate">Порог: 1.5</div>
+      </div>
+    </div>
+    <div class="panel" style="grid-column: 2 / -1">
+      <h2>Сравнение покрытий</h2>
+      <svg id="exp9-bar-svg" class="chart-svg" height="120"></svg>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Тепловые карты исследования (12×12)</h2>
+    <div class="panel-row cols-2" id="exp9-heatmaps">
+      <div class="heatmap-wrap">
+        <div class="heatmap-title">Curious Agent</div>
+        <svg id="heatmap-curious" class="heatmap-svg"></svg>
+        <div class="heatmap-sub" id="hm-curious-sub">—</div>
+      </div>
+      <div class="heatmap-wrap">
+        <div class="heatmap-title">Random Agent</div>
+        <svg id="heatmap-random" class="heatmap-svg"></svg>
+        <div class="heatmap-sub" id="hm-random-sub">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Динамика покрытия</h2>
+    <svg id="exp9-line-svg" class="chart-svg" height="240"></svg>
+    <div class="graph-legend" style="margin-top:8px">
+      <div class="legend-item"><div class="legend-dot" style="background:#60a5fa"></div>Curious Agent</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#9ca3af"></div>Random Agent</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f59e0b; border-radius:2px"></div>Каузальные связи (Curious)</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Tooltip -->
+<div id="tooltip"></div>
+<!-- SKS popup -->
+<div id="sks-popup">
+  <span class="popup-close" onclick="closeSksPopup()">✕</span>
+  <div class="popup-title">СКС состояние</div>
+  <div id="popup-conf"></div>
+  <div class="sks-ids" id="popup-ids"></div>
+</div>
+
+<script>
+// ════════════════════════════════════════════
+// Globals
+// ════════════════════════════════════════════
+let DATA = null;
+
+const ACTION_COLORS = {
+  'turn_left':  '#f59e0b',
+  'turn_right': '#8b5cf6',
+  'forward':    '#10b981',
+  'interact':   '#ef4444',
+  'noop':       '#6b7280',
+};
+const ACTION_LABELS = {
+  'turn_left':  'Повернуть влево',
+  'turn_right': 'Повернуть вправо',
+  'forward':    'Вперёд',
+  'interact':   'Взаимодействие',
+  'noop':       'Без действия',
+};
+
+const tooltip = document.getElementById('tooltip');
+const sksPopup = document.getElementById('sks-popup');
+
+// ════════════════════════════════════════════
+// Tooltip helpers
+// ════════════════════════════════════════════
+function showTooltip(html, event) {
+  tooltip.innerHTML = html;
+  tooltip.style.opacity = '1';
+  moveTooltip(event);
+}
+function moveTooltip(event) {
+  const x = event.clientX + 14;
+  const y = event.clientY - 10;
+  tooltip.style.left = Math.min(x, window.innerWidth - 240) + 'px';
+  tooltip.style.top  = Math.max(y, 4) + 'px';
+}
+function hideTooltip() { tooltip.style.opacity = '0'; }
+
+// ════════════════════════════════════════════
+// Tab switching
+// ════════════════════════════════════════════
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ════════════════════════════════════════════
+// Data loading
+// ════════════════════════════════════════════
+function setStatus(msg, color) {
+  const el = document.getElementById('load-status');
+  el.textContent = msg;
+  el.style.color = color || '#9ca3af';
+}
+
+async function loadData() {
+  setStatus('Загрузка...', '#60a5fa');
+  try {
+    const r = await fetch('/api/stage6');
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    DATA = await r.json();
+    setStatus('Данные загружены', '#4ade80');
+    renderAll();
+  } catch(e) {
+    setStatus('Ошибка: ' + e.message, '#ef4444');
+  }
+}
+
+async function generateDemo() {
+  setStatus('Генерация...', '#f59e0b');
+  try {
+    await fetch('/api/stage6/generate', { method: 'POST' });
+    await loadData();
+  } catch(e) {
+    setStatus('Ошибка генерации: ' + e.message, '#ef4444');
+    useFallbackDemo();
+  }
+}
+
+// ════════════════════════════════════════════
+// Fallback demo data (used when API unavailable)
+// ════════════════════════════════════════════
+function useFallbackDemo() {
+  DATA = buildFallbackData();
+  setStatus('Демо-данные', '#f59e0b');
+  renderAll();
+}
+
+function buildFallbackData() {
+  const actionNames = ['turn_left','turn_right','forward','interact','noop'];
+  // Exp7: causal graph
+  const nodes7 = Array.from({length: 10}, (_, i) => ({ id: i, type: 'sks' }));
+  const edges7 = [
+    {source:0, target:3, action:3, action_name:'interact', strength:0.9, count:12},
+    {source:0, target:5, action:2, action_name:'forward',  strength:0.7, count:8},
+    {source:1, target:4, action:0, action_name:'turn_left',strength:0.8, count:10},
+    {source:2, target:6, action:1, action_name:'turn_right',strength:0.6,count:5},
+    {source:3, target:7, action:2, action_name:'forward',  strength:0.85,count:9},
+    {source:4, target:8, action:3, action_name:'interact', strength:0.75,count:7},
+    {source:5, target:9, action:4, action_name:'noop',     strength:0.5, count:3},
+    {source:6, target:0, action:2, action_name:'forward',  strength:0.65,count:6},
+    {source:7, target:1, action:1, action_name:'turn_right',strength:0.55,count:4},
+    {source:8, target:2, action:0, action_name:'turn_left',strength:0.9, count:11},
+    {source:9, target:3, action:3, action_name:'interact', strength:0.8, count:8},
+    {source:1, target:6, action:2, action_name:'forward',  strength:0.7, count:7},
+    {source:2, target:7, action:1, action_name:'turn_right',strength:0.6,count:5},
+    {source:4, target:9, action:3, action_name:'interact', strength:0.85,count:10},
+    {source:5, target:8, action:0, action_name:'turn_left',strength:0.75,count:8},
+    {source:6, target:2, action:4, action_name:'noop',     strength:0.45,count:2},
+    {source:7, target:4, action:3, action_name:'interact', strength:0.9, count:13},
+    {source:9, target:5, action:2, action_name:'forward',  strength:0.65,count:6},
+  ];
+  // Exp8: trajectories
+  const trajs = [
+    {steps:[{sks:[1,2,3],confidence:0.9},{sks:[1,2,3,5],confidence:0.7},{sks:[2,3,5,7],confidence:0.6},{sks:[3,5,7,8,9],confidence:0.5}], action_sequence:[3,2,3]},
+    {steps:[{sks:[0,4],confidence:0.85},{sks:[0,4,6],confidence:0.75},{sks:[4,6,8],confidence:0.55}], action_sequence:[0,2]},
+    {steps:[{sks:[1,3,5,7,9],confidence:0.8},{sks:[3,5,7],confidence:0.65},{sks:[5,7,9],confidence:0.45},{sks:[7,9],confidence:0.35}], action_sequence:[1,4,0]},
+  ];
+  // Exp9: timeseries
+  const steps = [0,100,200,300,400,500,600,700,800,900,1000];
+  const cCov  = [0,0.05,0.12,0.22,0.33,0.44,0.54,0.62,0.68,0.71,0.72];
+  const rCov  = [0,0.03,0.07,0.11,0.16,0.20,0.25,0.29,0.34,0.37,0.40];
+  const nLinks= [0,2,4,7,10,13,14,15,15,15,15];
+  const curious_ts = steps.map((s,i)=>({step:s,coverage:cCov[i],n_links:nLinks[i]}));
+  const random_ts  = steps.map((s,i)=>({step:s,coverage:rCov[i]}));
+  // Heatmaps
+  function gridCells(n) {
+    const cells = [];
+    for (let r=1; r<11; r++) for (let c=1; c<11; c++) {
+      if (Math.random() < 0.5) cells.push([c,r]);
+    }
+    return cells;
+  }
+  return {
+    exp7: {
+      metrics: {precision:0.85, recall:0.75, n_causal_links:18, n_interact_links:6},
+      causal_graph: {nodes: nodes7, edges: edges7},
+      gate: {precision_threshold:0.8, recall_threshold:0.7}
+    },
+    exp8: {
+      metrics: {simulation_accuracy:0.80, planning_success_rate:0.60, n_causal_links:25},
+      simulation_trajectories: trajs,
+      gate: {sim_accuracy_threshold:0.7, planning_threshold:0.5}
+    },
+    exp9: {
+      metrics: {coverage_ratio:1.8, curious_coverage:0.72, random_coverage:0.40, avg_causal_links:15},
+      coverage_timeseries: {curious: curious_ts, random: random_ts},
+      heatmaps: {
+        curious: {grid_size:12, cells: gridCells(60)},
+        random:  {grid_size:12, cells: gridCells(32)},
+      },
+      gate: {coverage_ratio_threshold:1.5}
+    }
+  };
+}
+
+// ════════════════════════════════════════════
+// Master render
+// ════════════════════════════════════════════
+function renderAll() {
+  if (!DATA) return;
+  if (DATA.exp7) renderExp7(DATA.exp7);
+  if (DATA.exp8) renderExp8(DATA.exp8);
+  if (DATA.exp9) renderExp9(DATA.exp9);
+}
+
+// ════════════════════════════════════════════
+// Exp 7 — Gauges + Graph + Stats
+// ════════════════════════════════════════════
+function renderExp7(d) {
+  renderGauges(d);
+  renderCausalGraph(d);
+  renderExp7Stats(d);
+}
+
+/* -- Arc Gauge -- */
+function makeGauge(container, value, threshold, label, id) {
+  const W = 160, H = 130, R = 56, sw = 14;
+  const wrap = d3.select(container).append('div').attr('class','gauge-wrap');
+  const svg = wrap.append('svg')
+    .attr('width', W).attr('height', H)
+    .attr('viewBox', `0 0 ${W} ${H}`);
+
+  const cx = W/2, cy = H/2 + 14;
+  const startAngle = -Math.PI * 0.85;
+  const endAngle   =  Math.PI * 0.85;
+  const totalArc = endAngle - startAngle;
+
+  const arc = d3.arc().innerRadius(R - sw).outerRadius(R).cornerRadius(4);
+  const g = svg.append('g').attr('transform',`translate(${cx},${cy})`);
+
+  // Background track
+  g.append('path')
+    .datum({startAngle, endAngle})
+    .attr('d', arc)
+    .attr('fill','#1f2937');
+
+  // Threshold marker
+  const tAngle = startAngle + totalArc * threshold;
+  const tR = R + 4;
+  g.append('line')
+    .attr('x1', Math.sin(tAngle) * (R - sw - 4))
+    .attr('y1', -Math.cos(tAngle) * (R - sw - 4))
+    .attr('x2', Math.sin(tAngle) * tR)
+    .attr('y2', -Math.cos(tAngle) * tR)
+    .attr('stroke', '#f59e0b')
+    .attr('stroke-width', 2.5)
+    .attr('stroke-dasharray','4,2');
+
+  // Fill arc
+  const fillColor = value >= threshold ? '#22c55e' : '#f97316';
+  const fillEnd = startAngle + totalArc * Math.min(value, 1);
+  const fillArc = d3.arc().innerRadius(R - sw).outerRadius(R).cornerRadius(4);
+  const path = g.append('path')
+    .datum({startAngle, endAngle: startAngle})
+    .attr('d', fillArc)
+    .attr('fill', fillColor);
+  path.transition().duration(900).ease(d3.easeCubicOut)
+    .attrTween('d', function(dd) {
+      const interp = d3.interpolate(startAngle, fillEnd);
+      return t => {
+        dd.endAngle = interp(t);
+        return fillArc(dd);
+      };
+    });
+
+  // Center text
+  const valText = g.append('text')
+    .attr('text-anchor','middle')
+    .attr('dy','0.1em')
+    .attr('font-size','22px')
+    .attr('font-weight','700')
+    .attr('fill', fillColor)
+    .text('0%');
+
+  // Animate text
+  const counter = d3.transition().duration(900).ease(d3.easeCubicOut);
+  const interp = d3.interpolate(0, value);
+  valText.transition(counter).tween('text', function() {
+    return t => { this.textContent = Math.round(interp(t)*100) + '%'; };
+  });
+
+  // Gate label
+  g.append('text')
+    .attr('text-anchor','middle')
+    .attr('y', 28)
+    .attr('font-size','10px')
+    .attr('fill','#6b7280')
+    .text('порог: ' + Math.round(threshold*100) + '%');
+
+  // Label
+  wrap.append('div').attr('class','gauge-label').text(label);
+}
+
+function renderGauges(d) {
+  const container = document.getElementById('exp7-gauges');
+  container.innerHTML = '';
+  makeGauge(container, d.metrics.precision, d.gate.precision_threshold, 'Precision', 'prec');
+  makeGauge(container, d.metrics.recall,    d.gate.recall_threshold,    'Recall',    'rec');
+}
+
+/* -- Stats -- */
+function renderExp7Stats(d) {
+  const m = d.metrics;
+  const el = document.getElementById('exp7-stats');
+  el.innerHTML = `
+    <div class="stat-chip"><div class="sc-val">${m.n_causal_links ?? '—'}</div><div class="sc-lbl">Каузальных связей</div></div>
+    <div class="stat-chip"><div class="sc-val">${m.n_interact_links ?? '—'}</div><div class="sc-lbl">Interact-связей</div></div>
+    <div class="stat-chip"><div class="sc-val">${((d.causal_graph?.edges||[]).filter(e=>e.strength>=0.7).length)}</div><div class="sc-lbl">Сильных связей (≥0.7)</div></div>
+    <div class="stat-chip"><div class="sc-val">${(d.causal_graph?.nodes||[]).length}</div><div class="sc-lbl">Узлов (СКС)</div></div>
+  `;
+}
+
+/* -- Force-directed causal graph -- */
+function renderCausalGraph(d) {
+  const wrap = document.getElementById('exp7-graph-wrap');
+  wrap.innerHTML = '';
+
+  const graph = d.causal_graph;
+  if (!graph || !graph.nodes || graph.nodes.length === 0) {
+    wrap.innerHTML = '<div class="empty-state">Нет данных графа</div>';
+    return;
+  }
+
+  const W = wrap.clientWidth || 800;
+  const H = 420;
+
+  const svg = d3.select(wrap).append('svg')
+    .attr('id','causal-graph-svg')
+    .attr('width','100%').attr('height', H)
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .style('background','#0d1117')
+    .style('border-radius','6px');
+
+  // Arrow markers per action color
+  const defs = svg.append('defs');
+  Object.entries(ACTION_COLORS).forEach(([name, color]) => {
+    defs.append('marker')
+      .attr('id','arrow-'+name)
+      .attr('viewBox','0 -4 8 8')
+      .attr('refX',18).attr('refY',0)
+      .attr('markerWidth',6).attr('markerHeight',6)
+      .attr('orient','auto')
+      .append('path').attr('d','M0,-4L8,0L0,4').attr('fill',color).attr('opacity',0.8);
+  });
+
+  const nodes = graph.nodes.map(n => ({...n}));
+  const nodeById = {};
+  nodes.forEach(n => nodeById[n.id] = n);
+
+  const edges = graph.edges.map(e => ({
+    ...e,
+    sourceNode: nodeById[e.source],
+    targetNode: nodeById[e.target],
+  })).filter(e => e.sourceNode && e.targetNode);
+
+  // Edge lines
+  const edgeG = svg.append('g').attr('class','edges');
+  const edgeLines = edgeG.selectAll('line')
+    .data(edges)
+    .join('line')
+    .attr('class','edge-line')
+    .attr('stroke', e => ACTION_COLORS[e.action_name] || '#60a5fa')
+    .attr('stroke-width', e => 1 + e.strength * 3.5)
+    .attr('marker-end', e => `url(#arrow-${e.action_name || 'noop'})`)
+    .on('mouseover', (event, e) => {
+      showTooltip(
+        `<b>${e.action_name || 'действие ' + e.action}</b><br>` +
+        `Сила: <b>${e.strength?.toFixed(2)}</b><br>` +
+        `Кол-во: <b>${e.count}</b><br>` +
+        `${e.source} → ${e.target}`,
+        event
+      );
+    })
+    .on('mousemove', moveTooltip)
+    .on('mouseout', hideTooltip);
+
+  // Node circles
+  const nodeG = svg.append('g').attr('class','nodes');
+  const nodeCircles = nodeG.selectAll('g')
+    .data(nodes)
+    .join('g')
+    .attr('class','node-g')
+    .call(d3.drag()
+      .on('start', dragStart)
+      .on('drag',  dragged)
+      .on('end',   dragEnd)
+    )
+    .on('mouseover', (event, n) => {
+      const outEdges = edges.filter(e => e.source === n.id);
+      const inEdges  = edges.filter(e => e.target === n.id);
+      showTooltip(
+        `<b>СКС #${n.id}</b><br>` +
+        `Исходящих: ${outEdges.length} | Входящих: ${inEdges.length}`,
+        event
+      );
+    })
+    .on('mousemove', moveTooltip)
+    .on('mouseout', hideTooltip);
+
+  nodeCircles.append('circle')
+    .attr('class','node-circle')
+    .attr('r', 14)
+    .attr('fill', '#1e3a5f')
+    .attr('stroke', '#60a5fa')
+    .attr('stroke-width', 1.5);
+
+  nodeCircles.append('text')
+    .attr('class','node-label')
+    .text(n => n.id);
+
+  // Simulation
+  const sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(edges).id(n => n.id).distance(80).strength(0.4))
+    .force('charge', d3.forceManyBody().strength(-220))
+    .force('center', d3.forceCenter(W/2, H/2))
+    .force('collide', d3.forceCollide(22))
+    .force('x', d3.forceX(W/2).strength(0.04))
+    .force('y', d3.forceY(H/2).strength(0.04));
+
+  sim.on('tick', () => {
+    edgeLines
+      .attr('x1', e => Math.max(18, Math.min(W-18, e.sourceNode?.x ?? e.source.x ?? 0)))
+      .attr('y1', e => Math.max(18, Math.min(H-18, e.sourceNode?.y ?? e.source.y ?? 0)))
+      .attr('x2', e => Math.max(18, Math.min(W-18, e.targetNode?.x ?? e.target.x ?? 0)))
+      .attr('y2', e => Math.max(18, Math.min(H-18, e.targetNode?.y ?? e.target.y ?? 0)));
+
+    nodeCircles
+      .attr('transform', n => `translate(${Math.max(18,Math.min(W-18,n.x))},${Math.max(18,Math.min(H-18,n.y))})`);
+  });
+
+  function dragStart(event, n) {
+    if (!event.active) sim.alphaTarget(0.3).restart();
+    n.fx = n.x; n.fy = n.y;
+  }
+  function dragged(event, n) {
+    n.fx = event.x; n.fy = event.y;
+  }
+  function dragEnd(event, n) {
+    if (!event.active) sim.alphaTarget(0);
+    n.fx = null; n.fy = null;
+  }
+
+  // Legend
+  const legend = document.getElementById('exp7-legend');
+  legend.innerHTML = Object.entries(ACTION_COLORS).map(([name, color]) =>
+    `<div class="legend-item">
+      <div class="legend-dot" style="background:${color}"></div>
+      ${ACTION_LABELS[name] || name}
+    </div>`
+  ).join('');
+}
+
+// ════════════════════════════════════════════
+// Exp 8 — Metric tiles + Trajectories
+// ════════════════════════════════════════════
+function renderExp8(d) {
+  // Metric tiles
+  const m = d.metrics;
+  const g = d.gate;
+  const simPass     = m.simulation_accuracy  >= g.sim_accuracy_threshold;
+  const planPass    = m.planning_success_rate >= g.planning_threshold;
+
+  document.getElementById('exp8-tiles').innerHTML = `
+    <div class="metric-tile">
+      <div class="val" style="color:${simPass?'#4ade80':'#fb923c'}">${(m.simulation_accuracy*100).toFixed(0)}%</div>
+      <div class="lbl">Точность симуляции</div>
+      <div class="gate-badge ${simPass?'gate-pass':'gate-fail'}">
+        ${simPass?'PASS':'FAIL'} (порог ${(g.sim_accuracy_threshold*100).toFixed(0)}%)
+      </div>
+    </div>
+    <div class="metric-tile">
+      <div class="val" style="color:${planPass?'#4ade80':'#fb923c'}">${(m.planning_success_rate*100).toFixed(0)}%</div>
+      <div class="lbl">Успешность планирования</div>
+      <div class="gate-badge ${planPass?'gate-pass':'gate-fail'}">
+        ${planPass?'PASS':'FAIL'} (порог ${(g.planning_threshold*100).toFixed(0)}%)
+      </div>
+    </div>
+    <div class="metric-tile">
+      <div class="val">${m.n_causal_links ?? '—'}</div>
+      <div class="lbl">Каузальных связей в плане</div>
+    </div>
+  `;
+
+  // Trajectories
+  renderTrajectories(d.simulation_trajectories || []);
+}
+
+function renderTrajectories(trajs) {
+  const container = document.getElementById('exp8-trajectories');
+  if (!trajs || trajs.length === 0) {
+    container.innerHTML = '<div class="traj-empty">Нет траекторий</div>';
+    return;
+  }
+
+  const actionNames = ['turn_left','turn_right','forward','interact','noop'];
+
+  container.innerHTML = trajs.map((traj, ti) => {
+    const steps   = traj.steps        || [];
+    const actions = traj.action_sequence || [];
+
+    const stepHTML = steps.map((step, si) => {
+      const n    = (step.sks || []).length;
+      const conf = step.confidence ?? 0.5;
+      const size = Math.max(28, Math.min(52, 18 + n * 5));
+      // Color by confidence: dark blue → bright blue
+      const blue  = Math.round(30  + conf * 170);
+      const bg    = `rgb(${Math.round(10+conf*40)},${Math.round(20+conf*60)},${blue})`;
+      const action = si < actions.length ? actions[si] : null;
+      const aName  = typeof action === 'string' ? action : (action != null ? (actionNames[action] || 'action_'+action) : null);
+      const aColor = aName ? (ACTION_COLORS[aName] || '#6b7280') : '';
+
+      const connector = si < steps.length - 1 && action != null
+        ? `<div class="traj-connector">
+            <svg width="20" height="10"><line x1="0" y1="5" x2="20" y2="5" stroke="${aColor}" stroke-width="1.5" stroke-dasharray="4,2"/></svg>
+            <span class="action-pill" style="color:${aColor};border-color:${aColor}40">${aName}</span>
+            <svg width="20" height="10"><line x1="0" y1="5" x2="20" y2="5" stroke="${aColor}" stroke-width="1.5" stroke-dasharray="4,2"/></svg>
+          </div>`
+        : (si < steps.length - 1 ? `<div class="traj-connector"><svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="#374151" stroke-width="1"/></svg></div>` : '');
+
+      return `
+        <div class="traj-step" onclick="showSksPopup(event,${ti},${si},'${JSON.stringify(step.sks||[]).replace(/'/g,"\\'")}',${conf.toFixed(2)})">
+          <div class="traj-circle" style="width:${size}px;height:${size}px;background:${bg}" data-sks='${JSON.stringify(step.sks||[])}'>
+            <span>${n}</span>
+          </div>
+          <div class="traj-conf">${(conf*100).toFixed(0)}%</div>
+        </div>${connector}`;
+    }).join('');
+
+    return `
+      <div class="trajectory-lane">
+        <div class="traj-index">#${ti+1}</div>
+        ${stepHTML}
+      </div>`;
+  }).join('');
+}
+
+function showSksPopup(event, ti, si, sksJson, conf) {
+  event.stopPropagation();
+  let ids;
+  try { ids = JSON.parse(sksJson); } catch { ids = []; }
+  document.getElementById('popup-conf').innerHTML = `Шаг ${si+1}, траектория ${ti+1} | Уверенность: <b>${(conf*100).toFixed(0)}%</b>`;
+  document.getElementById('popup-ids').innerHTML = ids.map(id =>
+    `<span class="sks-id-chip">СКС #${id}</span>`
+  ).join('');
+  const x = Math.min(event.clientX + 14, window.innerWidth - 280);
+  const y = Math.max(event.clientY - 10, 4);
+  sksPopup.style.left = x + 'px';
+  sksPopup.style.top  = y + 'px';
+  sksPopup.classList.add('visible');
+}
+function closeSksPopup() { sksPopup.classList.remove('visible'); }
+document.addEventListener('click', () => sksPopup.classList.remove('visible'));
+
+// ════════════════════════════════════════════
+// Exp 9 — Coverage ratio, heatmaps, timeline, bar
+// ════════════════════════════════════════════
+function renderExp9(d) {
+  const m = d.metrics;
+  const g = d.gate;
+
+  // Big ratio
+  const pass  = m.coverage_ratio >= g.coverage_ratio_threshold;
+  const color = pass ? '#4ade80' : '#fb923c';
+  document.getElementById('exp9-ratio').innerHTML = `
+    <div class="ratio-value" style="color:${color}">${m.coverage_ratio?.toFixed(2) ?? '—'}</div>
+    <div class="ratio-label">Coverage Ratio (Curious / Random)</div>
+    <div class="ratio-gate">
+      <span class="gate-badge ${pass?'gate-pass':'gate-fail'}" style="font-size:12px;padding:3px 10px">
+        ${pass?'PASS':'FAIL'}
+      </span>
+      &nbsp;порог: ${g.coverage_ratio_threshold}
+    </div>
+  `;
+
+  // Heatmaps
+  renderHeatmap('heatmap-curious', d.heatmaps?.curious, 'hm-curious-sub', m.curious_coverage);
+  renderHeatmap('heatmap-random',  d.heatmaps?.random,  'hm-random-sub',  m.random_coverage);
+
+  // Timeline
+  renderCoverageTimeline(d.coverage_timeseries);
+
+  // Bar chart
+  renderCoverageBar(m.curious_coverage, m.random_coverage);
+}
+
+/* -- Heatmap -- */
+function renderHeatmap(svgId, data, subId, coverage) {
+  const svgEl = document.getElementById(svgId);
+  const sub   = document.getElementById(subId);
+  if (!data) {
+    d3.select(svgEl).selectAll('*').remove();
+    if (sub) sub.textContent = '—';
+    return;
+  }
+
+  const GS   = data.grid_size || 12;
+  const cell = 28;
+  const W    = GS * cell;
+  const H    = GS * cell;
+
+  svgEl.setAttribute('width',  W);
+  svgEl.setAttribute('height', H);
+  svgEl.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  const visited = new Set((data.cells || []).map(([c, r]) => `${c},${r}`));
+  const rows = [];
+  for (let r = 0; r < GS; r++) {
+    for (let c = 0; c < GS; c++) {
+      const wall = r === 0 || r === GS-1 || c === 0 || c === GS-1;
+      const vis  = visited.has(`${c},${r}`);
+      rows.push({ r, c, wall, vis });
+    }
+  }
+
+  const svg = d3.select(svgEl);
+  svg.selectAll('*').remove();
+
+  // Color scale for visited cells
+  const colorScale = d3.scaleLinear()
+    .domain([0, 1])
+    .range(['#1e3a8a', '#93c5fd']);
+
+  svg.selectAll('rect').data(rows).join('rect')
+    .attr('x', d => d.c * cell)
+    .attr('y', d => d.r * cell)
+    .attr('width',  cell - 1)
+    .attr('height', cell - 1)
+    .attr('rx', 1)
+    .attr('fill', d => {
+      if (d.wall) return '#374151';
+      if (d.vis)  return colorScale(Math.random() * 0.4 + 0.6);
+      return '#1f2937';
+    })
+    .on('mouseover', (event, d) => {
+      if (!d.wall) showTooltip(
+        `Ячейка [${d.c}, ${d.r}]<br>${d.vis ? 'Посещена' : 'Не посещена'}`,
+        event
+      );
+    })
+    .on('mousemove', moveTooltip)
+    .on('mouseout', hideTooltip);
+
+  if (sub && coverage != null) {
+    sub.textContent = `Покрытие: ${(coverage * 100).toFixed(1)}%`;
+  }
+}
+
+/* -- Coverage Timeline -- */
+function renderCoverageTimeline(ts) {
+  if (!ts) return;
+  const curiousData = ts.curious || [];
+  const randomData  = ts.random  || [];
+  if (curiousData.length === 0 && randomData.length === 0) return;
+
+  const container = document.getElementById('exp9-line-svg').parentElement;
+  const W = container.clientWidth || 800;
+  const H = 240;
+  const margin = {top: 20, right: 60, bottom: 40, left: 54};
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top  - margin.bottom;
+
+  const svg = d3.select('#exp9-line-svg')
+    .attr('width', W).attr('height', H)
+    .attr('viewBox', `0 0 ${W} ${H}`);
+  svg.selectAll('*').remove();
+
+  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const allSteps    = [...curiousData, ...randomData].map(d => d.step);
+  const allCoverage = [...curiousData, ...randomData].map(d => d.coverage);
+  const allLinks    = curiousData.filter(d => d.n_links != null).map(d => d.n_links);
+
+  const xScale = d3.scaleLinear().domain(d3.extent(allSteps)).range([0, iW]);
+  const yScale = d3.scaleLinear().domain([0, Math.max(1, d3.max(allCoverage) * 1.1)]).range([iH, 0]);
+  const y2Scale = allLinks.length
+    ? d3.scaleLinear().domain([0, d3.max(allLinks) * 1.2]).range([iH, 0])
+    : null;
+
+  // Grid
+  const gridG = g.append('g').attr('class','grid');
+  gridG.selectAll('line').data(yScale.ticks(5)).join('line')
+    .attr('x1',0).attr('x2',iW)
+    .attr('y1',d=>yScale(d)).attr('y2',d=>yScale(d))
+    .attr('stroke','#1f2937').attr('stroke-dasharray','3,3');
+
+  // Areas
+  const areaC = d3.area()
+    .x(d => xScale(d.step)).y0(iH).y1(d => yScale(d.coverage))
+    .curve(d3.curveMonotoneX);
+  const areaR = d3.area()
+    .x(d => xScale(d.step)).y0(iH).y1(d => yScale(d.coverage))
+    .curve(d3.curveMonotoneX);
+  const lineC = d3.line().x(d=>xScale(d.step)).y(d=>yScale(d.coverage)).curve(d3.curveMonotoneX);
+  const lineR = d3.line().x(d=>xScale(d.step)).y(d=>yScale(d.coverage)).curve(d3.curveMonotoneX);
+
+  if (randomData.length) {
+    g.append('path').datum(randomData).attr('d',areaR)
+      .attr('fill','#9ca3af').attr('opacity',0.08);
+    g.append('path').datum(randomData).attr('d',lineR)
+      .attr('fill','none').attr('stroke','#9ca3af').attr('stroke-width',1.8);
+  }
+  if (curiousData.length) {
+    g.append('path').datum(curiousData).attr('d',areaC)
+      .attr('fill','#60a5fa').attr('opacity',0.1);
+    g.append('path').datum(curiousData).attr('d',lineC)
+      .attr('fill','none').attr('stroke','#60a5fa').attr('stroke-width',2.2);
+  }
+
+  // n_links bars (curious)
+  if (y2Scale && curiousData.length) {
+    const barW = Math.max(2, iW / curiousData.length - 2);
+    g.selectAll('.link-bar').data(curiousData.filter(d=>d.n_links!=null)).join('rect')
+      .attr('class','link-bar')
+      .attr('x', d => xScale(d.step) - barW/2)
+      .attr('y', d => y2Scale(d.n_links))
+      .attr('width', barW)
+      .attr('height', d => iH - y2Scale(d.n_links))
+      .attr('fill','#f59e0b').attr('opacity',0.3);
+
+    svg.append('g')
+      .attr('class','axis')
+      .attr('transform',`translate(${margin.left + iW + 4},${margin.top})`)
+      .call(d3.axisRight(y2Scale).ticks(4).tickSize(3))
+      .select('.domain').remove();
+    svg.append('text')
+      .attr('x', margin.left + iW + 44).attr('y', margin.top + iH/2)
+      .attr('transform', `rotate(90,${margin.left+iW+44},${margin.top+iH/2})`)
+      .attr('text-anchor','middle').attr('font-size','10px').attr('fill','#f59e0b')
+      .text('n_links');
+  }
+
+  // Axes
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${iH})`)
+    .call(d3.axisBottom(xScale).ticks(6).tickSize(3))
+    .select('.domain').attr('stroke','#374151');
+  g.append('g').attr('class','axis')
+    .call(d3.axisLeft(yScale).ticks(5).tickFormat(d3.format('.0%')).tickSize(3))
+    .select('.domain').attr('stroke','#374151');
+
+  g.append('text').attr('x',iW/2).attr('y',iH+32)
+    .attr('text-anchor','middle').attr('font-size','11px').attr('fill','#6b7280')
+    .text('Шаг');
+  g.append('text')
+    .attr('transform','rotate(-90)').attr('x',-iH/2).attr('y',-40)
+    .attr('text-anchor','middle').attr('font-size','11px').attr('fill','#6b7280')
+    .text('Покрытие');
+
+  // Hover line
+  const bisect = d3.bisector(d=>d.step).left;
+  const hoverG = g.append('g').style('display','none');
+  hoverG.append('line').attr('class','hover-line').attr('y1',0).attr('y2',iH)
+    .attr('stroke','#4b5563').attr('stroke-dasharray','4,2');
+
+  g.append('rect')
+    .attr('width',iW).attr('height',iH).attr('fill','none').attr('pointer-events','all')
+    .on('mousemove', function(event) {
+      const [mx] = d3.pointer(event, this);
+      const step = xScale.invert(mx);
+      hoverG.style('display',null);
+      hoverG.select('.hover-line').attr('x1',mx).attr('x2',mx);
+      const ci = bisect(curiousData, step);
+      const ri = bisect(randomData, step);
+      const cp = curiousData[Math.min(ci, curiousData.length-1)];
+      const rp = randomData[Math.min(ri, randomData.length-1)];
+      let html = `<b>Шаг ${Math.round(step)}</b><br>`;
+      if (cp) html += `Curious: <b>${(cp.coverage*100).toFixed(1)}%</b>`;
+      if (cp?.n_links != null) html += ` | links: ${cp.n_links}`;
+      if (rp) html += `<br>Random: <b>${(rp.coverage*100).toFixed(1)}%</b>`;
+      showTooltip(html, event);
+    })
+    .on('mouseleave', () => { hoverG.style('display','none'); hideTooltip(); });
+}
+
+/* -- Bar chart: curious vs random -- */
+function renderCoverageBar(curiousCov, randomCov) {
+  if (curiousCov == null || randomCov == null) return;
+  const svgEl = document.getElementById('exp9-bar-svg');
+  const container = svgEl.parentElement;
+  const W = container.clientWidth || 400;
+  const H = 120;
+  const margin = {top: 14, right: 20, bottom: 30, left: 54};
+  const iW = W - margin.left - margin.right;
+  const iH = H - margin.top  - margin.bottom;
+
+  const svg = d3.select(svgEl).attr('width',W).attr('height',H).attr('viewBox',`0 0 ${W} ${H}`);
+  svg.selectAll('*').remove();
+
+  const g = svg.append('g').attr('transform',`translate(${margin.left},${margin.top})`);
+
+  const barData = [
+    {label: 'Curious Agent', value: curiousCov,  color: '#60a5fa'},
+    {label: 'Random Agent',  value: randomCov,   color: '#9ca3af'},
+  ];
+
+  const x = d3.scaleBand().domain(barData.map(d=>d.label)).range([0,iW]).padding(0.3);
+  const y = d3.scaleLinear().domain([0, 1]).range([iH, 0]);
+
+  // Grid
+  g.append('g').attr('class','grid')
+    .selectAll('line').data(y.ticks(4)).join('line')
+    .attr('x1',0).attr('x2',iW)
+    .attr('y1',d=>y(d)).attr('y2',d=>y(d))
+    .attr('stroke','#1f2937').attr('stroke-dasharray','3,3');
+
+  // Bars
+  g.selectAll('rect').data(barData).join('rect')
+    .attr('x', d => x(d.label))
+    .attr('width', x.bandwidth())
+    .attr('y', iH)
+    .attr('height', 0)
+    .attr('rx', 3)
+    .attr('fill', d => d.color)
+    .attr('opacity', 0.85)
+    .transition().duration(700).ease(d3.easeCubicOut)
+    .attr('y', d => y(d.value))
+    .attr('height', d => iH - y(d.value));
+
+  // Value labels
+  g.selectAll('.bar-val').data(barData).join('text')
+    .attr('class','bar-val')
+    .attr('x', d => x(d.label) + x.bandwidth()/2)
+    .attr('y', d => y(d.value) - 4)
+    .attr('text-anchor','middle')
+    .attr('font-size','12px').attr('font-weight','600')
+    .attr('fill', d => d.color)
+    .text(d => (d.value*100).toFixed(1)+'%');
+
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${iH})`)
+    .call(d3.axisBottom(x).tickSize(0));
+  g.append('g').attr('class','axis')
+    .call(d3.axisLeft(y).ticks(4).tickFormat(d3.format('.0%')).tickSize(3))
+    .select('.domain').attr('stroke','#374151');
+}
+
+// ════════════════════════════════════════════
+// Init
+// ════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  // Attempt to load live data; fall back to demo
+  loadData().catch(() => useFallbackDemo());
+});
+window.addEventListener('resize', () => {
+  if (DATA) renderAll();
+});
+</script>
+</body>
+</html>
