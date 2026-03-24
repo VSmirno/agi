@@ -158,7 +158,7 @@ def _run_curious_agent(
 
     coverage = env.unwrapped.coverage if hasattr(env, "unwrapped") else 0.0
     visited = len(env.unwrapped._visited_cells) if hasattr(env, "unwrapped") else 0
-    n_causal_links = len(agent.causal_model.edges)
+    n_causal_links = agent.causal_model.n_links
     env.close()
 
     return coverage, visited, n_causal_links
