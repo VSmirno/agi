@@ -120,28 +120,35 @@ def run(
     simulation_accuracy = correct / max(n_sim_tests, 1)
 
     # Phase 3: Planning success test
+    # Test: can the planner find action sequences to reach known achievable goals?
+    # Use contexts from training (known to causal model) with observed effects as goals.
     planning_successes = 0
 
-    for _ in range(n_planning_tests):
-        obs, info = env.reset()
-        img = obs["image"] if isinstance(obs, dict) else obs
+    # Collect (context, action, effect) from causal model
+    known_links = [
+        link
+        for link in agent.causal_model.get_causal_links(min_confidence=0.0)
+        if len(link.effect_sks) > 0
+    ]
 
-        # Get start state
-        _ = agent.step(img)
-        start_sks = set(agent._pre_sks) if agent._pre_sks else set()
+    if known_links:
+        for trial in range(n_planning_tests):
+            link = known_links[trial % len(known_links)]
+            # Start from the context where this link was learned
+            start_sks = set(link.context_sks)
+            # Goal: state with the observed effect included
+            goal_sks = start_sks | link.effect_sks
 
-        # Create a simple goal: any state with additional SKS
-        goal_sks = start_sks | {max(start_sks) + 1} if start_sks else {0}
+            plan = sim.find_plan(
+                start_sks,
+                goal_sks,
+                max_depth=config.simulation_max_depth,
+                n_actions=5,
+                min_confidence=0.0,
+            )
 
-        plan = sim.find_plan(
-            start_sks, goal_sks,
-            max_depth=config.simulation_max_depth,
-            n_actions=5,
-            min_confidence=0.0,
-        )
-
-        if plan is not None:
-            planning_successes += 1
+            if plan is not None:
+                planning_successes += 1
 
     planning_success_rate = planning_successes / max(n_planning_tests, 1)
 

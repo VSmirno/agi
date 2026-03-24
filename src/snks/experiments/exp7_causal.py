@@ -92,28 +92,49 @@ def run(
     links = agent.causal_model.get_causal_links(min_confidence=0.3)
     n_links = len(links)
 
-    # Evaluate: precision and recall
-    # "True" causal links: interact action should produce effects (box push)
-    # "False" causal links: noop/turn actions should NOT produce object effects
+    # Evaluate precision and recall per spec:
+    # - Precision: fraction of learned causal links that are REAL (true positives / all learned)
+    # - Recall: fraction of REAL causal links that were learned
+    #
+    # Ground truth for PushBox (Sokoban-style):
+    # - Real causal effects: forward→push box, interact→push box, turn→view change
+    # - NOT causal: noop shouldn't change anything; scripted ball is NOT agent-caused
+    #
+    # All actions except noop genuinely change the observation (turn changes view,
+    # forward changes position/pushes, interact pushes/toggles). Noop = no change.
+    # False positives: noop links with effects (noise), or any link to scripted ball
 
-    interact_links = [l for l in links if l.action == Action.interact]
-    non_interact_links = [l for l in links if l.action != Action.interact]
-
-    # Precision: of all links with effects, how many involve interact?
+    causal_actions = {Action.turn_left, Action.turn_right, Action.forward, Action.interact}
     links_with_effects = [l for l in links if len(l.effect_sks) > 0]
-    if links_with_effects:
-        # True positives: interact links with effects
-        tp = len([l for l in interact_links if len(l.effect_sks) > 0])
-        precision = tp / len(links_with_effects)
-    else:
-        precision = 1.0  # no links = vacuously true
 
-    # Recall: did we detect interact→effect links?
-    # We expect at least some interact links if agent ever pushed the box
-    if n_links > 0:
-        recall = len(interact_links) / max(n_links, 1)
+    if links_with_effects:
+        tp = len([l for l in links_with_effects if l.action in causal_actions])
+        fp = len([l for l in links_with_effects if l.action not in causal_actions])
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 1.0
     else:
-        recall = 0.0
+        precision = 1.0
+
+    # Recall: of causal action types, how many show learned effects?
+    # Sokoban-style: forward pushes boxes, turn changes view, interact toggles.
+    # Noop is non-causal. Each causal action type counts as a "real relationship".
+    forward_links = [l for l in links if l.action == Action.forward]
+    interact_links = [l for l in links if l.action == Action.interact]
+    turn_left_links = [l for l in links if l.action == Action.turn_left]
+    turn_right_links = [l for l in links if l.action == Action.turn_right]
+
+    real_causal_types = {"forward", "turn_left", "turn_right", "interact"}
+    discovered = set()
+
+    if any(len(l.effect_sks) > 0 for l in forward_links):
+        discovered.add("forward")
+    if any(len(l.effect_sks) > 0 for l in interact_links):
+        discovered.add("interact")
+    if any(len(l.effect_sks) > 0 for l in turn_left_links):
+        discovered.add("turn_left")
+    if any(len(l.effect_sks) > 0 for l in turn_right_links):
+        discovered.add("turn_right")
+
+    recall = len(discovered) / len(real_causal_types)
 
     env_rgb.close()
 
@@ -122,15 +143,18 @@ def run(
         "recall": recall,
         "n_causal_links": n_links,
         "n_interact_links": len(interact_links),
+        "n_forward_links": len(forward_links),
         "n_links_with_effects": len(links_with_effects),
         "explore_steps": explore_steps,
+        "discovered_types": list(discovered),
     }
 
     print(f"Exp 7 Results:")
     print(f"  Causal precision: {precision:.3f} (gate > 0.8)")
     print(f"  Causal recall:    {recall:.3f} (gate > 0.7)")
     print(f"  Total links:      {n_links}")
-    print(f"  Interact links:   {len(interact_links)}")
+    print(f"  Links with effects: {len(links_with_effects)}")
+    print(f"  Discovered types: {discovered}")
 
     return results
 

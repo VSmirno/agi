@@ -51,13 +51,19 @@ class TestCausalWorldModel:
         assert all(isinstance(l, CausalLink) for l in links)
         assert any(l.action == 3 for l in links)
 
-    def test_effect_is_new_sks_only(self):
+    def test_effect_is_symmetric_difference(self):
         model = make_model(causal_min_observations=1)
         pre = {1, 2}
-        post = {1, 2, 5}  # only 5 is new
+        post = {1, 2, 5}  # 5 appeared → sym_diff = {5}
         model.observe_transition(pre, action=2, post_sks=post)
         predicted, _ = model.predict_effect(pre, action=2)
         assert predicted == {5}
+        # Also test disappearing SKS
+        pre2 = {10, 20}
+        post2 = {10, 30}  # 20 gone, 30 new → sym_diff = {20, 30}
+        model.observe_transition(pre2, action=3, post_sks=post2)
+        predicted2, _ = model.predict_effect(pre2, action=3)
+        assert predicted2 == {20, 30}
 
     def test_n_links(self):
         model = make_model(causal_min_observations=1)

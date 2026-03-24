@@ -14,6 +14,29 @@ from snks.env.obs_adapter import ObsAdapter
 from snks.pipeline.runner import Pipeline
 
 
+def _perceptual_hash(image: torch.Tensor, n_bins: int = 8) -> set[int]:
+    """Compute perceptual hash from image, returning pseudo-SKS IDs.
+
+    Divides image into n_bins×n_bins grid, computes mean intensity per cell,
+    and generates binary hash. This supplements noisy SKS detection with
+    a stable observation-derived signal, ensuring different visual scenes
+    produce different context even when DAF clustering is too coarse.
+
+    Returns SKS IDs in range [10000, 10000 + n_bins*n_bins) to avoid
+    collision with real SKS cluster IDs.
+    """
+    h, w = image.shape[-2:]
+    cell_h, cell_w = h // n_bins, w // n_bins
+    ids: set[int] = set()
+    offset = 10000  # avoid collision with real SKS IDs
+    for i in range(n_bins):
+        for j in range(n_bins):
+            cell = image[..., i * cell_h:(i + 1) * cell_h, j * cell_w:(j + 1) * cell_w]
+            if cell.mean() > 0.5:
+                ids.add(offset + i * n_bins + j)
+    return ids
+
+
 class CausalAgent:
     """Top-level agent: perceive → decide → act → learn.
 
@@ -52,9 +75,10 @@ class CausalAgent:
         # 1. Convert observation
         image = self.obs_adapter.convert(obs)
 
-        # 2. Perception cycle
+        # 2. Perception cycle + perceptual hash for robust context
         result = self.pipeline.perception_cycle(image)
         current_sks = set(result.sks_clusters.keys())
+        current_sks |= _perceptual_hash(image)
 
         # 3. Select action via intrinsic motivation
         action = self.motivation.select_action(
@@ -86,10 +110,11 @@ class CausalAgent:
         if self._pre_sks is None or self._last_action is None:
             return 0.0
 
-        # 1. Perceive new state
+        # 1. Perceive new state + perceptual hash
         image = self.obs_adapter.convert(obs)
         result = self.pipeline.perception_cycle(image)
         post_sks = set(result.sks_clusters.keys())
+        post_sks |= _perceptual_hash(image)
 
         # 2. Record causal transition
         self.causal_model.observe_transition(
@@ -101,8 +126,8 @@ class CausalAgent:
             self._pre_sks, self._last_action
         )
         if predicted_effect:
-            actual_effect = post_sks - self._pre_sks
-            # Symmetric difference as error
+            actual_effect = post_sks.symmetric_difference(self._pre_sks)
+            # Symmetric difference between predicted and actual as error
             diff = predicted_effect.symmetric_difference(actual_effect)
             prediction_error = len(diff) / max(len(predicted_effect | actual_effect), 1)
         else:

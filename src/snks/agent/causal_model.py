@@ -23,6 +23,18 @@ def _context_hash(sks: frozenset[int]) -> int:
     return hash(sks)
 
 
+def _coarsen_sks(sks: set[int], n_bins: int) -> frozenset[int]:
+    """Coarsen SKS IDs into n_bins buckets for context generalization.
+
+    Without coarsening, exact frozenset hashing makes contexts too specific
+    (noisy SKS detection produces different IDs for similar inputs).
+    Binning allows similar contexts to accumulate observations.
+    """
+    if not sks:
+        return frozenset()
+    return frozenset(s % n_bins for s in sks)
+
+
 class CausalWorldModel:
     """Learns causal relationships: (context, action) → effect.
 
@@ -38,6 +50,7 @@ class CausalWorldModel:
 
     def __init__(self, config: CausalAgentConfig):
         self.config = config
+        self._n_bins = config.causal_context_bins
         # (context_hash, action) → {effect_hash: TransitionRecord}
         self._transitions: dict[tuple[int, int], dict[int, _TransitionRecord]] = defaultdict(dict)
         # Track baseline rates: how often each SKS set appears without any specific action
@@ -57,8 +70,11 @@ class CausalWorldModel:
         """
         self._total_observations += 1
 
-        ctx = frozenset(pre_sks)
-        effect = frozenset(post_sks - pre_sks)  # new activations only
+        ctx = _coarsen_sks(pre_sks, self._n_bins)
+        # Effect = symmetric difference: captures both new and disappeared SKS
+        # This is more robust than just post-pre, since minor visual changes
+        # may shift existing clusters rather than create entirely new ones
+        effect = frozenset(post_sks.symmetric_difference(pre_sks))
         ctx_hash = _context_hash(ctx)
         eff_hash = _context_hash(effect)
 
@@ -96,7 +112,8 @@ class CausalWorldModel:
         Returns:
             (predicted_sks, confidence)
         """
-        ctx_hash = _context_hash(frozenset(context_sks))
+        ctx = _coarsen_sks(context_sks, self._n_bins)
+        ctx_hash = _context_hash(ctx)
         key = (ctx_hash, action)
 
         records = self._transitions.get(key, {})
@@ -138,7 +155,8 @@ class CausalWorldModel:
         self, context_sks: set[int], action: int
     ) -> list[tuple[set[int], float]]:
         """Get all possible effects with their confidences for an action in context."""
-        ctx_hash = _context_hash(frozenset(context_sks))
+        ctx = _coarsen_sks(context_sks, self._n_bins)
+        ctx_hash = _context_hash(ctx)
         key = (ctx_hash, action)
         records = self._transitions.get(key, {})
         if not records:

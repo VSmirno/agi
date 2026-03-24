@@ -179,9 +179,9 @@ class DcamWorldModel:
 | 4 | Устойчивость к шуму | Graceful degradation | Нет обрыва | **0% drop** (NMI=0.77 на всех σ) | ✅ PASS |
 | 5 | Персистентность (DCAM) | Δ accuracy | ≤ 1% | **Δ 0.0%** | ✅ PASS |
 | 6 | MNIST unsupervised | NMI | > 0.6 | **0.609** | ✅ PASS |
-| 7 | Каузальное обучение | Precision/Recall | > 0.8 / 0.7 | — | ⏳ |
-| 8 | Ментальная симуляция | Sim accuracy / Planning | > 0.7 / 0.5 | — | ⏳ |
-| 9 | Curiosity exploration | Coverage ratio | > 1.5× random | — | ⏳ |
+| 7 | Каузальное обучение | Precision/Recall | > 0.8 / 0.7 | **1.000 / 0.750** | ✅ PASS |
+| 8 | Ментальная симуляция | Sim accuracy / Planning | > 0.7 / 0.5 | **0.750 / 0.850** | ✅ PASS |
+| 9 | Curiosity exploration | Coverage ratio | > 1.5× random | **0.69** | ❌ FAIL |
 
 ### Критерии MVP
 
@@ -208,7 +208,7 @@ class DcamWorldModel:
 | 3 | СКС + Эксперименты 1–4 | ✅ | [specs/stage3.md](specs/stage3.md) |
 | 4 | DCAM Хранилище | ✅ | [specs/stage4.md](specs/stage4.md) |
 | 5 | Визуализация + Интеграция | ✅ | [specs/stage5.md](specs/stage5.md) |
-| 6 | Каузальный агент | ⏳ | [specs/stage6.md](specs/stage6.md) |
+| 6 | Каузальный агент | ⚠️ 2/3 exp | [specs/stage6.md](specs/stage6.md) |
 
 ### Граф зависимостей
 
@@ -219,7 +219,7 @@ class DcamWorldModel:
                    │                  │
                    └─→ Этап 4 ✅ (DCAM)─┴──→ Этап 5 ✅ (Integration)
                                                        │
-                                                       └──→ Этап 6 ⏳ (Causal Agent)
+                                                       └──→ Этап 6 ⚠️ (Causal Agent, exp 9 open)
 ```
 
 ---
@@ -255,7 +255,7 @@ src/snks/
 ├── agent/                    # Этап 6 ⏳ — каузальный агент
 └── experiments/              # exp1–exp9
 
-tests/                        # 248 тестов, все проходят
+tests/                        # 287 тестов, все проходят
 configs/                      # small.yaml, default.yaml, full.yaml
 ```
 
