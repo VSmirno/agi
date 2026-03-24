@@ -1,0 +1,47 @@
+# SNKS Medium Configuration
+# For scaling tests on RTX 3070 Ti (8 GB)
+# Intermediate between small (10K) and default (50K)
+
+device: auto
+
+daf:
+  num_nodes: 30000
+  state_dim: 8
+  avg_degree: 40
+  dt: 0.01
+  noise_sigma: 0.005
+  oscillator_model: fhn
+  coupling_strength: 0.05
+  fhn_I_base: 0.0
+  omega_std: 0.1
+  stdp_mode: timing
+  stdp_a_plus: 0.01
+  stdp_a_minus: 0.012
+  stdp_tau_plus: 0.020
+  stdp_tau_minus: 0.020
+  stdp_w_max: 1.0
+  stdp_w_min: 0.0
+  homeostasis_target: 0.05
+  homeostasis_tau: 1.0
+  homeostasis_lambda: 0.001
+  structural_interval: 1000
+
+encoder:
+  image_size: 64
+  n_orientations: 8
+  n_scales: 4
+  n_phases: 4
+  sdr_size: 4096
+  sdr_sparsity: 0.04
+  sdr_current_strength: 1.0
+
+dcam:
+  hac_dim: 2048
+  lsh_n_tables: 24
+  lsh_n_bits: 14
+  max_nodes: 30000
+  episodic_capacity: 3000
+  consolidation_interval: 75
+
+pipeline:
+  steps_per_cycle: 200
