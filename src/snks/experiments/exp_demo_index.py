@@ -297,6 +297,34 @@ body {{
     <span class="btn">Открыть отчёт →</span>
   </a>
 
+  <!-- Sequence -->
+  <a class="demo-card" href="sequence_report.html">
+    <div class="icon">→</div>
+    <h2>Предсказание последовательностей
+      <span class="badge {seq_badge}">{seq_status}</span>
+    </h2>
+    <div class="desc">
+      Последовательность 0→1→2→…→6→0→… · 40 повторений обучения.
+      Система предсказывает следующий стимул через матрицу переходов.
+      Gate: accuracy &gt; 70%.
+    </div>
+    <div class="metrics">
+      <div class="metric {seq_acc_cls}">
+        <div class="val">{seq_acc}</div>
+        <div class="lbl">Accuracy</div>
+      </div>
+      <div class="metric">
+        <div class="val">15K</div>
+        <div class="lbl">Осцилляторов</div>
+      </div>
+      <div class="metric">
+        <div class="val">280</div>
+        <div class="lbl">Train шагов</div>
+      </div>
+    </div>
+    <span class="btn">Открыть отчёт →</span>
+  </a>
+
   <!-- Continual -->
   <a class="demo-card" href="continual_report.html">
     <div class="icon">♻</div>
@@ -423,6 +451,21 @@ def run(output_dir: str = "demo_output") -> None:
         cont_ret_cls = ""
         cont_nmi = "—"
 
+    # Sequence
+    sqm = out / "sequence_metrics.json"
+    seq_acc_val = _read_metric(sqm, "accuracy", None)
+    if seq_acc_val is not None:
+        seq_acc = f"{seq_acc_val:.0%}"
+        seq_ok = seq_acc_val >= 0.7
+        seq_badge = "badge-pass" if seq_ok else "badge-fail"
+        seq_status = "PASS ✓" if seq_ok else "FAIL"
+        seq_acc_cls = "pass" if seq_ok else "warn"
+    else:
+        seq_acc = "—"
+        seq_badge = "badge-pend"
+        seq_status = "В процессе..."
+        seq_acc_cls = ""
+
     html = _INDEX_HTML.format(
         timestamp=time.strftime("%Y-%m-%d %H:%M"),
         shapes_nmi=shapes_nmi,
@@ -433,6 +476,10 @@ def run(output_dir: str = "demo_output") -> None:
         mnist_badge=mnist_badge,
         mnist_status=mnist_status,
         mnist_nmi_cls=mnist_nmi_cls,
+        seq_acc=seq_acc,
+        seq_badge=seq_badge,
+        seq_status=seq_status,
+        seq_acc_cls=seq_acc_cls,
         cont_retention=cont_retention,
         cont_badge=cont_badge,
         cont_status=cont_status,
