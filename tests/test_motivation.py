@@ -58,34 +58,18 @@ class TestIntrinsicMotivation:
         motivation.update({1}, action=2, prediction_error=0.5)
         assert motivation.get_visit_count({1}, action=2) == 1
 
-    def test_learning_progress_decays_for_repeated_actions(self):
-        """Learning progress → 0 when prediction error stabilises."""
-        _, motivation = make_components(curiosity_epsilon=0.0, curiosity_decay=0.9)
-        # Use perceptual hash IDs (>= 10000) so _stable_context works
+    def test_prefers_unvisited_states_over_visited(self):
+        """Count-based: prefer actions leading to unvisited states."""
+        model, motivation = make_components(curiosity_epsilon=0.0)
         ctx = {10001, 10002}
-        # Simulate constant prediction error (already learned)
+
+        # Simulate: action 0 repeatedly → its next state gets visited
         for _ in range(20):
             motivation.update(ctx, action=0, prediction_error=0.1)
 
-        from snks.agent.motivation import _stable_context
-        key = (_stable_context(ctx), 0)
-        lp = motivation._learning_progress[key]
-        # After many updates with same error, LP should be near 0
-        assert lp < 0.15, f"Expected LP < 0.15 after stable error, got {lp}"
-
-    def test_forward_preferred_over_turn_after_learning(self):
-        """After turns are learned, forward into new state should win."""
-        model, motivation = make_components(curiosity_epsilon=0.0, curiosity_decay=0.9)
-        ctx = {10001, 10002}
-        # Simulate: turns (actions 0,1) learned — constant low error
-        for _ in range(30):
-            motivation.update(ctx, action=0, prediction_error=0.1)
-            motivation.update(ctx, action=1, prediction_error=0.1)
-        # Forward (action 2) — never tried → LP defaults to 1.0
+        # Now actions 2,3,4 should be preferred (lead to unvisited states)
         action = motivation.select_action(ctx, model, n_actions=5)
-        assert action != 0 and action != 1, (
-            f"Expected non-turn action, got {action}"
-        )
+        assert action != 0, f"Expected action != 0 (visited), got {action}"
 
 
 class TestPerceptualHash:
