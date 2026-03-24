@@ -90,6 +90,24 @@ class PredictionConfig:
 
 
 @dataclass
+class GWSConfig:
+    enabled: bool = True
+    w_size: float = 1.0
+    w_coherence: float = 0.0    # зарезервировано
+    w_pred: float = 0.0         # зарезервировано
+
+
+@dataclass
+class MetacogConfig:
+    enabled: bool = True
+    alpha: float = 1/3          # вес dominance
+    beta: float = 1/3           # вес stability
+    gamma: float = 1/3          # вес (1 - pred_error_norm)
+    policy: str = "null"        # "null" | "noise" | "stdp"
+    policy_strength: float = 1.0
+
+
+@dataclass
 class DcamConfig:
     """Configuration for DCAM storage."""
     hac_dim: int = 2048
@@ -110,6 +128,8 @@ class PipelineConfig:
     dcam: DcamConfig = field(default_factory=DcamConfig)
     sks: SKSConfig = field(default_factory=SKSConfig)
     prediction: PredictionConfig = field(default_factory=PredictionConfig)
+    gws: GWSConfig = field(default_factory=GWSConfig)
+    metacog: MetacogConfig = field(default_factory=MetacogConfig)
     steps_per_cycle: int = 100      # integration steps per perception cycle
     device: str = "auto"
 

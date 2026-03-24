@@ -13,9 +13,17 @@ from snks.daf.prediction import PredictionEngine
 from snks.daf.types import PipelineConfig
 from snks.encoder.encoder import VisualEncoder
 from snks.encoder.text_encoder import TextEncoder
+from snks.gws.workspace import GlobalWorkspace, GWSState
+from snks.metacog.monitor import MetacogMonitor, MetacogState
 from snks.sks.detection import phase_coherence_matrix, cofiring_coherence_matrix, detect_sks
 from snks.sks.metrics import compute_nmi
 from snks.sks.tracking import SKSTracker
+
+
+@dataclass
+class _CycleResultProxy:
+    """Minimal proxy for MetacogMonitor.update before full CycleResult is built."""
+    mean_prediction_error: float
 
 
 @dataclass
@@ -26,6 +34,8 @@ class CycleResult:
     mean_prediction_error: float
     n_spikes: int
     cycle_time_ms: float
+    gws: GWSState | None = None
+    metacog: MetacogState | None = None
 
 
 @dataclass
@@ -47,6 +57,8 @@ class Pipeline:
         self.engine = DafEngine(config.daf, enable_learning=True)
         self.tracker = SKSTracker()
         self.prediction = PredictionEngine(config.prediction)
+        self.gws = GlobalWorkspace(config.gws)
+        self.metacog = MetacogMonitor(config.metacog)
         self._sks_config = config.sks
         self._motor_currents: torch.Tensor | None = None
 
@@ -180,6 +192,13 @@ class Pipeline:
         # Store for potential use in next step
         self._lr_modulation = lr_mod
 
+        # 7. GWS: select dominant SKS winner
+        gws_state = self.gws.select_winner(tracked, fired_history=step_result.fired_history)
+
+        # 8. Metacognition: compute confidence, apply policy
+        metacog_state = self.metacog.update(gws_state, _CycleResultProxy(mean_pe))
+        self.metacog.apply_policy(metacog_state, self.engine.config)
+
         elapsed = (time.perf_counter() - t0) * 1000
 
         return CycleResult(
@@ -188,6 +207,8 @@ class Pipeline:
             mean_prediction_error=mean_pe,
             n_spikes=step_result.n_spikes,
             cycle_time_ms=elapsed,
+            gws=gws_state,
+            metacog=metacog_state,
         )
 
     def train_on_dataset(

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from snks.daf.types import DafConfig, DcamConfig, EncoderConfig, PipelineConfig
+from snks.daf.types import DafConfig, DcamConfig, EncoderConfig, PipelineConfig, GWSConfig, MetacogConfig
 
 
 def load_config(path: str | Path) -> PipelineConfig:
@@ -17,6 +17,8 @@ def load_config(path: str | Path) -> PipelineConfig:
     encoder_raw = raw.get("encoder", {})
     dcam_raw = raw.get("dcam", {})
     pipeline_raw = raw.get("pipeline", {})
+    gws_raw = raw.get("gws", {})
+    metacog_raw = raw.get("metacog", {})
 
     config = PipelineConfig(
         daf=DafConfig(**{k: v for k, v in daf_raw.items() if k in DafConfig.__dataclass_fields__}),
@@ -24,5 +26,7 @@ def load_config(path: str | Path) -> PipelineConfig:
         dcam=DcamConfig(**{k: v for k, v in dcam_raw.items() if k in DcamConfig.__dataclass_fields__}),
         steps_per_cycle=pipeline_raw.get("steps_per_cycle", 100),
         device=raw.get("device", "auto"),
+        gws=GWSConfig(**{k: v for k, v in gws_raw.items() if k in GWSConfig.__dataclass_fields__}),
+        metacog=MetacogConfig(**{k: v for k, v in metacog_raw.items() if k in MetacogConfig.__dataclass_fields__}),
     )
     return config
