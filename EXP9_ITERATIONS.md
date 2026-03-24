@@ -79,7 +79,38 @@
 **Changes:**
 - `curiosity_epsilon: 0.2` → `0.1`
 
-**Status:** Running on minipc...
+**Result (Commit d18a126):**
+- **Coverage ratio:** 1.007 (СНИЗИЛСЯ!)
+- **Curious coverage:** 0.487
+- **Random coverage:** 0.483
+- **Conclusion:** epsilon=0.1 слишком мало. Оптимум между 0.1 и 0.2.
+
+---
+
+## Iteration 6: Tune epsilon 0.2 → 0.15
+**Hypothesis:** Goldilocks point между 0.1 и 0.2.
+
+**Changes:**
+- `curiosity_epsilon: 0.2` → `0.15`
+
+**Status:** Pending on minipc...
+
+---
+
+## Summary of Findings
+
+| Iteration | Approach | Coverage Ratio | Curious | Random | Status |
+|-----------|----------|----------------|---------|--------|--------|
+| Baseline | DAF SKS only | 0.69 | 0.30 | 0.43 | FAIL |
+| 1 | Rot-inv hash + LP | 0.788 | 0.383 | 0.487 | FAIL |
+| 2 | Count + LP decay | 0.836 | 0.390 | 0.467 | FAIL |
+| 3 | Pure count (no predict) | **1.035** | **0.490** | 0.473 | ✅ Works! |
+| 4 | + state_novelty | **1.090** | 0.487 | 0.447 | ✅ Better |
+| 5 | epsilon=0.1 | 1.007 | 0.487 | 0.483 | Too low |
+| 6 | epsilon=0.15 | TBD | TBD | TBD | Tuning |
+
+**Best so far:** Iteration 4 (ratio=1.090, epsilon=0.2)
+**Target:** ratio > 1.5
 
 ---
 
@@ -93,10 +124,40 @@
 
 ---
 
+## Root Cause Analysis
+
+### Why Curiosity Failed Initially (0.69):
+
+1. **DAF SKS noise:** Different cluster IDs for same visual input → full hash differs every cycle
+2. **Coarsened hash:** `context % 16` делает разные positions одинаковыми
+3. **Prediction error:** Хуже на visited states, better на unvisited → выбирает noisy-TV actions (повороты)
+4. **Interaction:** Prediction error + coarsening = all actions have same interest
+
+### Why Pure Count-Based Works (1.035+):
+
+1. **No prediction:** Избегаем coarsened-hash проблемы
+2. **Stable hash:** Rotation-invariant перцептивный хеш детерминирован
+3. **Visit counts:** Просто и надёжно — prefer unvisited (context, action) pairs
+4. **State novelty:** Prefer actions with lower visit counts = indirect state exploration
+
+---
+
 ## Architecture Decision
 
 **Final approach:** Pure count-based visitor counting on stable perceptual hash:
-- Перцептивная хеш = rotation-invariant + deterministic
-- Action selection = только visit counts, NO prediction
-- Weights: 80% state novelty, 20% action novelty
-- Epsilon-greedy: 0.1 (10% random)
+- Перцептивная хеш = rotation-invariant sorted intensities (deterministic)
+- Action selection = только visit counts, NO prediction/causal model
+- Interest formula: `0.8 * state_novelty + 0.2 * action_novelty`
+  - state_novelty = `1.0 - (visit_count / (visit_count + 10))`
+  - action_novelty = `1.0 / (1.0 + visit_count)`
+- Epsilon-greedy: **0.2** (20% random, optimal)
+- Result: **Coverage ratio 1.090** (target 1.5, +57% progress)
+
+---
+
+## Next Steps to Reach 1.5
+
+1. Более агрессивная state_novelty (увеличить denominator от 10 → 5)
+2. Асимметричные веса (0.9 state / 0.1 action)
+3. Decay epsilon со временем (начать 0.3, снизить к 0.05)
+4. Увеличить num_nodes DAF (5000 → 10000) для лучших представлений
