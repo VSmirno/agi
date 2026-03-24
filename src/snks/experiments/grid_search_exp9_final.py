@@ -27,6 +27,7 @@ from snks.daf.types import (
     PipelineConfig,
     SKSConfig,
 )
+from snks.device import get_device
 from snks.env.causal_grid import CausalGridWorld, make_level
 
 
@@ -241,10 +242,7 @@ def main(device: str = "cpu") -> None:
 
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cuda", help="cuda or cpu")
-    args = parser.parse_args()
-
-    device = "cuda" if __import__("torch").cuda.is_available() else args.device
-    main(device=device)
+    # Auto-detect device (NVIDIA CUDA, AMD ROCm, or CPU)
+    device_obj = get_device(prefer="auto")
+    device_str = str(device_obj)
+    main(device=device_str)
