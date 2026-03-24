@@ -10,7 +10,11 @@ RUN pip install --no-cache-dir \
     pyyaml \
     fastapi \
     uvicorn \
-    websockets
+    websockets \
+    sentence-transformers \
+    datasets \
+    tqdm \
+    nltk
 
 # Copy project
 COPY src/ src/
