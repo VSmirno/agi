@@ -54,7 +54,9 @@ def make_config(device: str = "cpu", num_nodes: int = 5000) -> CausalAgentConfig
         ),
         motor_sdr_size=256,
         causal_min_observations=2,
-        curiosity_epsilon=0.15,
+        curiosity_epsilon=0.30,        # C1: start high for chaotic exploration
+        curiosity_epsilon_min=0.05,     # C1: decay to this floor
+        curiosity_epsilon_horizon=2000, # C1: decay horizon in steps
     )
 
 

@@ -136,7 +136,9 @@ class CausalAgentConfig:
     causal_context_bins: int = 16       # coarsen SKS IDs into N bins for generalization
 
     # Motivation
-    curiosity_epsilon: float = 0.2      # random exploration rate
+    curiosity_epsilon: float = 0.2      # random exploration rate (or initial rate if decay used)
+    curiosity_epsilon_min: float = 0.05  # minimum epsilon after decay
+    curiosity_epsilon_horizon: int = 0   # decay horizon in steps (0 = no decay)
     curiosity_decay: float = 0.995      # novelty decay per visit
 
     # Mental simulation
