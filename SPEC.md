@@ -209,7 +209,7 @@ class DcamWorldModel:
 | 4 | DCAM Хранилище | ✅ | [specs/stage4.md](specs/stage4.md) |
 | 5 | Визуализация + Интеграция | ✅ | [specs/stage5.md](specs/stage5.md) |
 | 6 | Каузальный агент | ✅ | [specs/stage6.md](specs/stage6.md) |
-| **7** | **Текстовая модальность** | 📋 Planned | specs/stage7.md (не написан) |
+| **7** | **Текстовая модальность** | 🔄 In Progress (Exp 10-12 ✅, Exp 13-14 pending ingest) | [specs/2026-03-24-stage7-text-modality-design.md](superpowers/specs/2026-03-24-stage7-text-modality-design.md) |
 | **8** | **Вертикальное углубление** (ГРП + Метакогниция) | 📋 Planned | specs/stage8.md (не написан) |
 
 ### Приоритеты (зафиксировано 2026-03-24)
@@ -230,7 +230,7 @@ class DcamWorldModel:
                                                        │
                                                        └──→ Этап 6 ✅ (Causal Agent)
                                                                    │
-                                                                   └──→ Этап 7 📋 (Text Modality)
+                                                                   └──→ Этап 7 🔄 (Text Modality)
                                                                                    │
                                                                                    └──→ Этап 8 📋 (GWS + Metacognition)
 ```
