@@ -133,6 +133,7 @@ class CausalAgentConfig:
     causal_confidence_threshold: float = 0.5
     causal_decay: float = 0.99
     causal_context_hash_bits: int = 64  # для быстрого поиска по контексту
+    causal_context_bins: int = 16       # coarsen SKS IDs into N bins for generalization
 
     # Motivation
     curiosity_epsilon: float = 0.2      # random exploration rate

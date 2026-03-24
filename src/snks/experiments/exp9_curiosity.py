@@ -81,7 +81,6 @@ def _run_curious_agent(
 ) -> tuple[float, int, int]:
     """Run curious agent, return (coverage, visited_cells, n_causal_links)."""
     agent = CausalAgent(config)
-    env_inner = CausalGridWorld(level="MultiRoom", size=12, max_steps=n_steps + 100)
     env = make_level("MultiRoom", max_steps=n_steps + 100)
     obs, info = env.reset()
     img = obs["image"] if isinstance(obs, dict) else obs
