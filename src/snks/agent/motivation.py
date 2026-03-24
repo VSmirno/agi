@@ -70,8 +70,12 @@ class IntrinsicMotivation:
             visit_count = self._visit_counts[key]
             action_novelty = 1.0 / (1.0 + visit_count)
 
-            # Pure count-based interest
-            interest = action_novelty
+            # State novelty: prefer actions leading to less-visited states
+            # (heuristic: most actions lead to different perceptual states)
+            state_novelty = 1.0 - (visit_count / (visit_count + 10.0))
+
+            # Combined: emphasize state_novelty for exploration
+            interest = 0.8 * state_novelty + 0.2 * action_novelty
 
             if interest > best_interest:
                 best_interest = interest
