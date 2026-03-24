@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 from collections import defaultdict
 
-from snks.agent.causal_model import CausalWorldModel, _context_hash, _coarsen_sks
+from snks.agent.causal_model import _context_hash
 from snks.daf.types import CausalAgentConfig
 
 # Perceptual hash IDs live in [10000, ...), real DAF SKS IDs below 10000.
@@ -47,13 +47,13 @@ class IntrinsicMotivation:
     def select_action(
         self,
         current_sks: set[int],
-        causal_model: CausalWorldModel,
+        causal_model,  # unused, kept for compatibility
         n_actions: int,
     ) -> int:
         """Select action that maximizes expected exploration value.
 
-        Pure count-based: prefer actions leading to least-visited states.
-        Ignore learning progress (suppress noisy-TV by relying on visit counts).
+        Pure count-based visitor counting: prefer untested actions.
+        No prediction (causal_model.predict_effect uses coarsened hash, useless).
         Epsilon-greedy: with probability epsilon choose random action.
         """
         if random.random() < self.epsilon:
@@ -65,19 +65,13 @@ class IntrinsicMotivation:
         best_interest = -1.0
 
         for a in range(n_actions):
-            # Count-based: prefer actions leading to least-visited states
-            predicted_effect, confidence = causal_model.predict_effect(current_sks, a)
-            predicted_next = current_sks | predicted_effect
-            next_hash = _stable_context(predicted_next)
-            state_novelty = 1.0 / (1.0 + self._state_visits.get(next_hash, 0))
-
-            # Action novelty: prefer untested actions
+            # Action novelty: prefer untested (context, action) pairs
             key = (full_ctx, a)
             visit_count = self._visit_counts[key]
             action_novelty = 1.0 / (1.0 + visit_count)
 
-            # Pure count-based interest (no learning progress suppression)
-            interest = 0.6 * state_novelty + 0.4 * action_novelty
+            # Pure count-based interest
+            interest = action_novelty
 
             if interest > best_interest:
                 best_interest = interest
