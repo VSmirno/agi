@@ -29,7 +29,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--n-train", type=int, default=90000)
     parser.add_argument("--n-eval", type=int, default=10000)
-    parser.add_argument("--output-dir", type=str, default="/app/results/corpus/")
+    parser.add_argument("--output-dir", type=str, default="/opt/agi/corpus/")
     parser.add_argument("--num-nodes", type=int, default=10000)
     parser.add_argument("--smoke-test", action="store_true",
                         help="Quick smoke test: n-train=100, n-eval=20")
