@@ -15,25 +15,33 @@ from snks.pipeline.runner import Pipeline
 
 
 def _perceptual_hash(image: torch.Tensor, n_bins: int = 8) -> set[int]:
-    """Compute perceptual hash from image, returning pseudo-SKS IDs.
+    """Compute rotation-invariant perceptual hash from image.
 
-    Divides image into n_bins×n_bins grid, computes mean intensity per cell,
-    and generates binary hash. This supplements noisy SKS detection with
-    a stable observation-derived signal, ensuring different visual scenes
-    produce different context even when DAF clustering is too coarse.
+    Divides image into n_bins×n_bins grid, collects mean intensity per cell,
+    then sorts intensities so that rotations of the same scene produce the
+    same hash.  Each sorted intensity is quantised into 8 brightness levels
+    and mapped to a pseudo-SKS ID in [10000, 10000 + n_bins*n_bins*8).
 
-    Returns SKS IDs in range [10000, 10000 + n_bins*n_bins) to avoid
-    collision with real SKS cluster IDs.
+    Returns set of pseudo-SKS IDs (no collision with real SKS cluster IDs).
     """
     h, w = image.shape[-2:]
     cell_h, cell_w = h // n_bins, w // n_bins
-    ids: set[int] = set()
-    offset = 10000  # avoid collision with real SKS IDs
+
+    intensities: list[float] = []
     for i in range(n_bins):
         for j in range(n_bins):
             cell = image[..., i * cell_h:(i + 1) * cell_h, j * cell_w:(j + 1) * cell_w]
-            if cell.mean() > 0.5:
-                ids.add(offset + i * n_bins + j)
+            intensities.append(cell.mean().item())
+
+    # Sort → rotation-invariant
+    intensities.sort()
+
+    # Quantise into bins and create pseudo-SKS IDs
+    ids: set[int] = set()
+    offset = 10000
+    for idx, val in enumerate(intensities):
+        bin_id = min(int(val * 8), 7)  # 8 brightness levels, clamp to [0,7]
+        ids.add(offset + idx * 8 + bin_id)
     return ids
 
 
