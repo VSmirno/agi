@@ -78,7 +78,7 @@ class Pipeline:
 
         # 1. Encode image → SDR → currents
         sdr = self.encoder.encode(image)
-        currents = self.encoder.sdr_to_currents(sdr, self.engine.config.num_nodes)
+        currents = self.encoder.sdr_to_currents(sdr, self.engine.config.num_nodes).to(self.engine.device)
 
         # 1b. Dual injection: add motor currents if present
         if self._motor_currents is not None:
