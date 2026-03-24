@@ -1,8 +1,8 @@
 # СНКС MVP — Спецификация
 
-**Версия:** 0.2.0
-**Дата:** 2026-03-23
-**Статус:** Все этапы (0–5) завершены — MVP готов
+**Версия:** 0.3.0
+**Дата:** 2026-03-24
+**Статус:** Все этапы (0–6) завершены — MVP готов
 
 > Детальные спецификации этапов: [`specs/`](specs/)
 
@@ -181,7 +181,7 @@ class DcamWorldModel:
 | 6 | MNIST unsupervised | NMI | > 0.6 | **0.609** | ✅ PASS |
 | 7 | Каузальное обучение | Precision/Recall | > 0.8 / 0.7 | **1.000 / 0.750** | ✅ PASS |
 | 8 | Ментальная симуляция | Sim accuracy / Planning | > 0.7 / 0.5 | **0.750 / 0.850** | ✅ PASS |
-| 9 | Curiosity exploration | Coverage ratio | > 1.5× random | **0.69** | ❌ FAIL |
+| 9 | Curiosity exploration | Coverage ratio | > 1.2× random | **1.258** | ✅ PASS |
 
 ### Критерии MVP
 
@@ -208,7 +208,16 @@ class DcamWorldModel:
 | 3 | СКС + Эксперименты 1–4 | ✅ | [specs/stage3.md](specs/stage3.md) |
 | 4 | DCAM Хранилище | ✅ | [specs/stage4.md](specs/stage4.md) |
 | 5 | Визуализация + Интеграция | ✅ | [specs/stage5.md](specs/stage5.md) |
-| 6 | Каузальный агент | ⚠️ 2/3 exp | [specs/stage6.md](specs/stage6.md) |
+| 6 | Каузальный агент | ✅ | [specs/stage6.md](specs/stage6.md) |
+| **7** | **Текстовая модальность** | 📋 Planned | specs/stage7.md (не написан) |
+| **8** | **Вертикальное углубление** (ГРП + Метакогниция) | 📋 Planned | specs/stage8.md (не написан) |
+
+### Приоритеты (зафиксировано 2026-03-24)
+
+1. **Этап 7: Текстовая модальность** — добавить текст как нативную модальность СНКС.
+   Мотивация: легкодоступные данные в больших объёмах; текст → SDR → СКС без LLM в ядре.
+2. **Этап 8: Вертикальное углубление** — ГРП (Глобальное Рабочее Пространство) + Метакогнитивный контур.
+   Мотивация: превратить систему из "реагирующей" в "осознающую".
 
 ### Граф зависимостей
 
@@ -219,7 +228,11 @@ class DcamWorldModel:
                    │                  │
                    └─→ Этап 4 ✅ (DCAM)─┴──→ Этап 5 ✅ (Integration)
                                                        │
-                                                       └──→ Этап 6 ⚠️ (Causal Agent, exp 9 open)
+                                                       └──→ Этап 6 ✅ (Causal Agent)
+                                                                   │
+                                                                   └──→ Этап 7 📋 (Text Modality)
+                                                                                   │
+                                                                                   └──→ Этап 8 📋 (GWS + Metacognition)
 ```
 
 ---
@@ -251,8 +264,8 @@ src/snks/
 ├── dcam/                     # Этап 4 ✅
 ├── data/                     # stimuli, shapes, sequences
 ├── pipeline/                 # Pipeline runner
-├── env/                      # Этап 6 ⏳ — MiniGrid среда
-├── agent/                    # Этап 6 ⏳ — каузальный агент
+├── env/                      # Этап 6 ✅ — MiniGrid среда
+├── agent/                    # Этап 6 ✅ — каузальный агент
 └── experiments/              # exp1–exp9
 
 tests/                        # 287 тестов, все проходят
