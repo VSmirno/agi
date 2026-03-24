@@ -12,6 +12,7 @@ from snks.daf.engine import DafEngine
 from snks.daf.prediction import PredictionEngine
 from snks.daf.types import PipelineConfig
 from snks.encoder.encoder import VisualEncoder
+from snks.encoder.text_encoder import TextEncoder
 from snks.sks.detection import phase_coherence_matrix, cofiring_coherence_matrix, detect_sks
 from snks.sks.metrics import compute_nmi
 from snks.sks.tracking import SKSTracker
@@ -42,6 +43,7 @@ class Pipeline:
     def __init__(self, config: PipelineConfig) -> None:
         self.config = config
         self.encoder = VisualEncoder(config.encoder)
+        self.text_encoder = TextEncoder(config.encoder, device=config.device)
         self.engine = DafEngine(config.daf, enable_learning=True)
         self.tracker = SKSTracker()
         self.prediction = PredictionEngine(config.prediction)
@@ -56,15 +58,24 @@ class Pipeline:
         """
         self._motor_currents = currents.to(self.engine.device)
 
-    def perception_cycle(self, image: torch.Tensor) -> CycleResult:
-        """Process one image through the full pipeline.
+    def perception_cycle(
+        self,
+        image: torch.Tensor | None = None,
+        text: str | None = None,
+    ) -> CycleResult:
+        """Process one image and/or text through the full pipeline.
 
         Args:
-            image: (H, W) float32 grayscale image.
+            image: (H, W) float32 grayscale image. Optional.
+            text: input string. Optional.
+            At least one of image or text must be provided.
 
         Returns:
             CycleResult with detected SKS and metrics.
         """
+        if image is None and text is None:
+            raise ValueError("perception_cycle: укажите image или text")
+
         t0 = time.perf_counter()
 
         # 0. Reset dynamic state to resting (prevents carryover between stimuli)
@@ -76,9 +87,21 @@ class Pipeline:
             self.engine.states[:, 0] = torch.randn(cfg.num_nodes, device=self.engine.device) * 0.1
             self.engine.states[:, 4] = 0.0  # w_recovery
 
-        # 1. Encode image → SDR → currents
-        sdr = self.encoder.encode(image)
-        currents = self.encoder.sdr_to_currents(sdr, self.engine.config.num_nodes).to(self.engine.device)
+        # 1. Encode inputs → currents (average when both modalities present)
+        n_nodes = self.engine.config.num_nodes
+        currents = None
+
+        if image is not None:
+            sdr = self.encoder.encode(image)
+            currents = self.encoder.sdr_to_currents(sdr, n_nodes).to(self.engine.device)
+
+        if text is not None:
+            text_sdr = self.text_encoder.encode(text)
+            text_currents = self.text_encoder.sdr_to_currents(text_sdr, n_nodes).to(self.engine.device)
+            if currents is None:
+                currents = text_currents
+            else:
+                currents = (currents + text_currents) / 2.0  # усреднение, не сумма
 
         # 1b. Dual injection: add motor currents if present
         if self._motor_currents is not None:
