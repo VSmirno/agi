@@ -224,7 +224,7 @@ def grid_search(
 
                 # Get random baseline (only once per epsilon, shared)
                 # For speed, sample once per epsilon
-                random_cov, _, _ = _run_random_agent(n_steps)
+                random_cov, _ = _run_random_agent(n_steps)
 
                 mean_curious = np.mean(curious_coverages)
                 mean_causal = np.mean(causal_links_list)
