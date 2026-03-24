@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 from collections import defaultdict
 
@@ -10,6 +11,11 @@ from snks.daf.types import CausalAgentConfig
 
 # Perceptual hash IDs live in [10000, ...), real DAF SKS IDs below 10000.
 _PHASH_OFFSET = 10000
+
+# Best params from grid search (Hypothesis A+B exhausted): denom=5.5, w=(0.92, 0.08)
+_STATE_NOVELTY_DENOM = 5.5
+_STATE_NOVELTY_WEIGHT = 0.92
+_ACTION_NOVELTY_WEIGHT = 0.08
 
 
 def _stable_context(sks: set[int]) -> int:
@@ -35,14 +41,28 @@ class IntrinsicMotivation:
         uncertainty = 1 - confidence(context, a)
 
     Epsilon-greedy: with probability epsilon choose random action.
+    If curiosity_epsilon_horizon > 0, epsilon decays exponentially:
+        epsilon(t) = epsilon_min + (epsilon_start - epsilon_min) * exp(-t / T)
+    This allows chaotic initial exploration that becomes more systematic over time.
     """
 
     def __init__(self, config: CausalAgentConfig):
-        self.epsilon = config.curiosity_epsilon
+        self._epsilon_start = config.curiosity_epsilon
+        self._epsilon_min = config.curiosity_epsilon_min
+        self._epsilon_horizon = config.curiosity_epsilon_horizon
         # (context_hash, action) → visit count
         self._visit_counts: dict[tuple[int, int], int] = defaultdict(int)
         # state_hash → visit count (for state-level novelty)
         self._state_visits: dict[int, int] = defaultdict(int)
+        self._total_steps: int = 0
+
+    def _current_epsilon(self) -> float:
+        """Compute current epsilon (fixed or decayed)."""
+        if self._epsilon_horizon <= 0:
+            return self._epsilon_start
+        return self._epsilon_min + (self._epsilon_start - self._epsilon_min) * math.exp(
+            -self._total_steps / self._epsilon_horizon
+        )
 
     def select_action(
         self,
@@ -56,7 +76,7 @@ class IntrinsicMotivation:
         No prediction (causal_model.predict_effect uses coarsened hash, useless).
         Epsilon-greedy: with probability epsilon choose random action.
         """
-        if random.random() < self.epsilon:
+        if random.random() < self._current_epsilon():
             return random.randint(0, n_actions - 1)
 
         # Use only stable perceptual hash IDs, ignoring noisy DAF clusters
@@ -71,11 +91,11 @@ class IntrinsicMotivation:
             action_novelty = 1.0 / (1.0 + visit_count)
 
             # State novelty: prefer actions leading to less-visited states
-            # (heuristic: most actions lead to different perceptual states)
-            state_novelty = 1.0 - (visit_count / (visit_count + 10.0))
+            # denom=5.5: best param from grid search (Hypothesis A)
+            state_novelty = 1.0 - (visit_count / (visit_count + _STATE_NOVELTY_DENOM))
 
-            # Combined: emphasize state_novelty for exploration
-            interest = 0.8 * state_novelty + 0.2 * action_novelty
+            # Combined: w=(0.92, 0.08) — best from grid search (Hypothesis B)
+            interest = _STATE_NOVELTY_WEIGHT * state_novelty + _ACTION_NOVELTY_WEIGHT * action_novelty
 
             if interest > best_interest:
                 best_interest = interest
@@ -96,6 +116,7 @@ class IntrinsicMotivation:
 
         # Track state visits
         self._state_visits[full_hash] += 1
+        self._total_steps += 1
 
     def get_visit_count(self, context_sks: set[int], action: int) -> int:
         """Get visit count for (context, action) pair."""
