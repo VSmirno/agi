@@ -223,4 +223,10 @@ def run(device: str = "cpu", n_train_reps: int = 10) -> float:
 
 
 if __name__ == "__main__":
-    run()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--n-reps", type=int, default=10,
+                        help="Training repetitions over 50 pairs (default: 10 = 500 cycles)")
+    parser.add_argument("--device", type=str, default="cpu")
+    args = parser.parse_args()
+    run(device=args.device, n_train_reps=args.n_reps)

@@ -91,7 +91,8 @@ def main() -> None:
         log.warning("Pipeline has no DCAM — будет только text encoding (Exp 13 потребует DCAM).")
 
     log.info("Загружаем Simple English Wikipedia...")
-    dataset = load_dataset("wikipedia", "20220301.simple", split="train", trust_remote_code=False)
+    # wikimedia/wikipedia — script-free Parquet версия, совместима с datasets>=2.14
+    dataset = load_dataset("wikimedia/wikipedia", "20231101.simple", split="train")
 
     # Collect all sentences
     log.info("Разбиваем на предложения...")
