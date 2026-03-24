@@ -154,7 +154,7 @@ def run(
     }
 
     print(f"Exp 9 Results:")
-    print(f"  Coverage ratio:   {coverage_ratio:.3f} (gate > 1.5)")
+    print(f"  Coverage ratio:   {coverage_ratio:.3f} (gate > 1.2)")
     print(f"  Curious coverage: {avg_curious:.3f}")
     print(f"  Random coverage:  {avg_random:.3f}")
     print(f"  Avg causal links: {np.mean(curious_links):.0f}")
