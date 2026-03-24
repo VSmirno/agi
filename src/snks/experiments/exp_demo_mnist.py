@@ -197,9 +197,9 @@ def plot_tsne(
     var = pca.explained_variance_ratio_.sum()
     print(f"[VIZ] PCA объясняет {var:.1%} дисперсии")
 
-    print("[VIZ] t-SNE (n_iter=1000)...")
+    print("[VIZ] t-SNE (max_iter=1000)...")
     perp = min(30, len(firing_rates) // 5)
-    tsne = TSNE(n_components=2, perplexity=perp, n_iter=1000,
+    tsne = TSNE(n_components=2, perplexity=perp, max_iter=1000,
                 random_state=42, verbose=0)
     X_2d = tsne.fit_transform(X_pca)
     print("[VIZ] t-SNE готово")

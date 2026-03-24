@@ -107,7 +107,7 @@ def plot_continual_tsne(
     pca = PCA(n_components=n_comp, random_state=42)
     X_pca = pca.fit_transform(rates_all)
     perp = min(30, len(rates_all) // 5)
-    tsne = TSNE(n_components=2, perplexity=perp, n_iter=1000, random_state=42)
+    tsne = TSNE(n_components=2, perplexity=perp, max_iter=1000, random_state=42)
     X_2d = tsne.fit_transform(X_pca)
 
     fig, ax = plt.subplots(figsize=(11, 9), facecolor="#0d0d1a")
