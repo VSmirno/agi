@@ -93,7 +93,7 @@ def make_config(device: str = "cpu") -> PipelineConfig:
             dbscan_eps=0.3,
             dbscan_min_samples=5,
             min_cluster_size=5,
-            coherence_mode="rate",
+            coherence_mode="cofiring",  # multi-cluster detection for meaningful dominance
         ),
         prediction=PredictionConfig(),
         gws=GWSConfig(enabled=True, w_size=1.0),
