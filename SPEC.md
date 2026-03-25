@@ -1,8 +1,8 @@
 # СНКС MVP — Спецификация
 
-**Версия:** 0.4.0
+**Версия:** 0.5.0
 **Дата:** 2026-03-25
-**Статус:** Этапы 0–8 завершены
+**Статус:** Этапы 0–13 реализованы (код + unit тесты)
 
 > Детальные спецификации этапов: [`specs/`](specs/)
 
@@ -216,16 +216,17 @@ class DcamWorldModel:
 | **7** | **Текстовая модальность** | ✅ | [specs/2026-03-24-stage7-text-modality-design.md](superpowers/specs/2026-03-24-stage7-text-modality-design.md) |
 | **8** | **ГРП + Метакогниция** | ✅ | [specs/2026-03-24-stage8-gws-metacog-design.md](superpowers/specs/2026-03-24-stage8-gws-metacog-design.md) |
 | **9** | **SKS-Space Prediction** | ✅ | [specs/2026-03-25-stage9-sks-space-prediction-design.md](superpowers/specs/2026-03-25-stage9-sks-space-prediction-design.md) |
-| **10** | **Hierarchical Prediction** | ⏳ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
-| **11** | **Multi-Future Simulation** | ⏳ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
-| **12** | **Intrinsic Cost Module** | ⏳ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
-| **13** | **Configurator / Meta-Control** | ⏳ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
+| **10** | **Hierarchical Prediction** | ✅ код | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
+| **11** | **Multi-Future Simulation** | ✅ код | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
+| **12** | **Intrinsic Cost Module** | ✅ код | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
+| **13** | **Configurator / Meta-Control** | ✅ код | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
 
 ### Приоритеты (зафиксировано 2026-03-25)
 
 - Этапы 0–9 завершены: 21 эксперимент PASS.
 - Stage 9 (2026-03-25): SKSEmbedder + HACPredictionEngine + BroadcastPolicy + per-winner PE.
   Exp 16b ratio=1.993 ✅, Exp 18 ratio=2.846 ✅, Exp 19 NMI=1.000 ✅, Exp 20 HAC=66.7% ✅.
+- Stages 10–13 (2026-03-25): код реализован, 38 unit tests PASS (RTX + AMD ROCm). Эксперименты 21–28 — следующий шаг.
 
 ### Граф зависимостей
 
