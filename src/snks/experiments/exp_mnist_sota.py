@@ -62,23 +62,18 @@ SOTA_REFERENCE = {
 OUT_DIR = Path("results/mnist_sota")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-LOG_FILE = OUT_DIR / "run.log"
-
 _t_start_global = time.perf_counter()
 
 
 def _log(*args, **kwargs) -> None:
-    """Print to stdout and log file with timestamp."""
+    """Print to stdout with timestamp (stdout is redirected to log file by shell)."""
     elapsed = time.perf_counter() - _t_start_global
     h = int(elapsed // 3600)
     m = int((elapsed % 3600) // 60)
     s = int(elapsed % 60)
     prefix = f"[{h:02d}:{m:02d}:{s:02d}]"
     msg = " ".join(str(a) for a in args)
-    line = f"{prefix} {msg}"
-    print(line, flush=True)
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(line + "\n")
+    print(f"{prefix} {msg}", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -246,8 +241,18 @@ def run_snks_experiment(
     PROBE_CYCLES = 20
     probe_done = False
 
-    # Store firing patterns AND label order from last epoch
-    last_epoch_patterns = torch.zeros(n_images, num_nodes)
+    # Memory-efficient firing pattern storage:
+    # For large networks, use random projection to keep memory bounded.
+    # Johnson-Lindenstrauss: 512 dims preserves distances well for NMI.
+    PATTERN_DIM = min(num_nodes, 512)
+    proj_matrix: Optional[torch.Tensor] = None
+    if num_nodes > PATTERN_DIM:
+        torch.manual_seed(42)
+        proj_matrix = (torch.randn(num_nodes, PATTERN_DIM) / np.sqrt(PATTERN_DIM)).cpu()
+        _log(f"  [MEM] Using random projection {num_nodes:,} → {PATTERN_DIM} dims "
+             f"(saves {num_nodes * n_images * 4 / 1e9:.1f}GB RAM)")
+
+    last_epoch_patterns = torch.zeros(n_images, PATTERN_DIM)
     last_epoch_labels = torch.zeros(n_images, dtype=torch.long)
 
     for epoch in range(epochs):
@@ -275,16 +280,16 @@ def run_snks_experiment(
                 remaining = total_cycles - len(cycle_times)
                 eta_sec = remaining * mean_cycle
                 eta_h = eta_sec / 3600
-                _log(f"  [PROBE] {mean_cycle*1000:.1f} ms/cycle  "
-                     f"ETA: {eta_h:.1f}h  budget: {time_budget_sec/3600:.1f}h")
-                if eta_sec > time_budget_sec * 1.5:
-                    _log("  [WARNING] ETA significantly exceeds budget. Continuing anyway.")
+                _log(f"  [PROBE] {mean_cycle*1000:.1f} ms/cycle  ETA: {eta_h:.1f}h")
 
             # Record firing patterns and labels on last epoch (correct label order)
             if is_last:
                 fired = pipeline.engine.get_fired_history()
                 if fired is not None:
-                    last_epoch_patterns[step_i] = fired.float().mean(dim=0).cpu()
+                    fr = fired.float().mean(dim=0).cpu()  # (num_nodes,)
+                    if proj_matrix is not None:
+                        fr = fr @ proj_matrix  # random projection → (PATTERN_DIM,)
+                    last_epoch_patterns[step_i] = fr
                 last_epoch_labels[step_i] = labels[idx]
 
             # Progress print every 500 cycles
@@ -409,12 +414,10 @@ def main() -> None:
     # СНКС experiments use larger sets (64x64)
     imgs_500_raw, lbl_500 = loader_raw.load("train", n_per_class=500)
     imgs_1000_ctr, lbl_1000 = loader_contour.load("train", n_per_class=1000)
-    imgs_2000_ctr, lbl_2000 = loader_contour.load("train", n_per_class=2000)
     imgs_6000_ctr, lbl_6000 = loader_contour.load("train", n_per_class=6000)
 
     _log(f"Loaded: 500/class={imgs_500_raw.shape[0]}, "
          f"1000/class={imgs_1000_ctr.shape[0]}, "
-         f"2000/class={imgs_2000_ctr.shape[0]}, "
          f"6000/class={imgs_6000_ctr.shape[0]}")
 
     # -----------------------------------------------------------------------
@@ -486,62 +489,56 @@ def main() -> None:
     print_comparison_table(all_results)
 
     # -----------------------------------------------------------------------
-    # Phase D: 200K nodes, contour, 2000/class, 5 epochs  (large)
+    # Phase D: 100K nodes, contour, 1000/class, 3 epochs  (~6h estimate)
+    # Large enough to show scaling benefit, fits in ~1 day on minipc.
     # -----------------------------------------------------------------------
-    _log("\n[Phase D: СНКС 200K contour — 2000/class, 5ep  (LARGE)]")
-    # Estimate available VRAM
-    can_run_d = True
+    _log("\n[Phase D: СНКС 100K contour — 1000/class, 3ep]")
     if device != "cpu":
         vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-        # 200K nodes needs ~25GB estimated
-        can_run_d = vram_gb > 20
-        if not can_run_d:
-            _log(f"  [SKIP] Phase D requires ~25GB VRAM, only {vram_gb:.1f}GB available")
-
-    if can_run_d:
-        res_d = run_snks_experiment(
-            name="D-200K-contour",
-            images=imgs_2000_ctr,
-            labels=lbl_2000,
-            device=device,
-            num_nodes=200_000,
-            epochs=5,
-            coupling_strength=0.08,
-            avg_degree=50,
-            sdr_size=8192,
-            steps_per_cycle=200,
-        )
-        all_results.append(res_d)
-        save_results(all_results, "D")
-        print_comparison_table(all_results)
+        if vram_gb < 12:
+            _log(f"  [SKIP] Phase D requires ~12GB VRAM, only {vram_gb:.1f}GB available")
+        else:
+            res_d = run_snks_experiment(
+                name="D-100K-contour",
+                images=imgs_1000_ctr,
+                labels=lbl_1000,
+                device=device,
+                num_nodes=100_000,
+                epochs=3,
+                coupling_strength=0.08,
+                avg_degree=50,
+                sdr_size=8192,
+                steps_per_cycle=200,
+            )
+            all_results.append(res_d)
+            save_results(all_results, "D")
+            print_comparison_table(all_results)
 
     # -----------------------------------------------------------------------
-    # Phase E: 500K nodes, full MNIST, 5 epochs  (if VRAM allows)
+    # Phase E: 500K nodes, full MNIST, 3 epochs  (flagship — ~2-3 days)
+    # Only on minipc with 90+ GB VRAM.
     # -----------------------------------------------------------------------
-    can_run_e = False
     if device != "cpu":
         vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-        can_run_e = vram_gb > 55  # 500K needs ~60GB
-        if not can_run_e:
+        if vram_gb < 60:
             _log(f"  [SKIP] Phase E (500K) requires ~60GB VRAM, only {vram_gb:.1f}GB available")
-
-    if can_run_e:
-        _log("\n[Phase E: СНКС 500K contour — full MNIST 6000/class, 5ep  (FULL SCALE)]")
-        res_e = run_snks_experiment(
-            name="E-500K-full",
-            images=imgs_6000_ctr,
-            labels=lbl_6000,
-            device=device,
-            num_nodes=500_000,
-            epochs=5,
-            coupling_strength=0.1,
-            avg_degree=50,
-            sdr_size=8192,
-            steps_per_cycle=200,
-        )
-        all_results.append(res_e)
-        save_results(all_results, "E")
-        print_comparison_table(all_results)
+        else:
+            _log("\n[Phase E: СНКС 500K contour — full MNIST 6000/class, 3ep  (FLAGSHIP)]")
+            res_e = run_snks_experiment(
+                name="E-500K-full",
+                images=imgs_6000_ctr,
+                labels=lbl_6000,
+                device=device,
+                num_nodes=500_000,
+                epochs=3,
+                coupling_strength=0.1,
+                avg_degree=50,
+                sdr_size=8192,
+                steps_per_cycle=200,
+            )
+            all_results.append(res_e)
+            save_results(all_results, "E")
+            print_comparison_table(all_results)
 
     # -----------------------------------------------------------------------
     # Final summary
