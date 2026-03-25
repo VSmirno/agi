@@ -31,12 +31,12 @@ from snks.env.causal_grid import make_level
 
 def _build_config(device: str) -> EmbodiedAgentConfig:
     daf = DafConfig(
-        num_nodes=2000,
+        num_nodes=500,
         avg_degree=10,
         oscillator_model="fhn",
-        dt=0.01,
-        noise_sigma=0.005,
-        fhn_I_base=0.0,
+        dt=0.0001,
+        noise_sigma=0.01,
+        fhn_I_base=0.5,
         device=device,
     )
     encoder = EncoderConfig(sdr_size=512, sdr_sparsity=0.04)
@@ -45,14 +45,14 @@ def _build_config(device: str) -> EmbodiedAgentConfig:
         daf=daf,
         encoder=encoder,
         sks=sks,
-        steps_per_cycle=20,
+        steps_per_cycle=100,
         device=device,
         hierarchical=HierarchicalConfig(enabled=True),
         hac_prediction=HACPredictionConfig(enabled=True),
         cost_module=CostModuleConfig(enabled=True),
-        configurator=ConfiguratorConfig(enabled=True),
+        configurator=ConfiguratorConfig(enabled=True, explore_epistemic_threshold=0.0),
     )
-    causal = CausalAgentConfig(pipeline=pipeline, motor_sdr_size=200)
+    causal = CausalAgentConfig(pipeline=pipeline, motor_sdr_size=80)
     return EmbodiedAgentConfig(
         causal=causal,
         use_stochastic_planner=True,
