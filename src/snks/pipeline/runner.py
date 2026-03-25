@@ -8,14 +8,20 @@ from dataclasses import dataclass, field
 import torch
 import numpy as np
 
+import torch as _torch
+
 from snks.daf.engine import DafEngine
+from snks.daf.hac_prediction import HACPredictionEngine
 from snks.daf.prediction import PredictionEngine
 from snks.daf.types import PipelineConfig
+from snks.dcam.hac import HACEngine
+from snks.device import get_device
 from snks.encoder.encoder import VisualEncoder
 from snks.encoder.text_encoder import TextEncoder
 from snks.gws.workspace import GlobalWorkspace, GWSState
 from snks.metacog.monitor import MetacogMonitor, MetacogState
 from snks.sks.detection import phase_coherence_matrix, cofiring_coherence_matrix, detect_sks
+from snks.sks.embedder import SKSEmbedder
 from snks.sks.metrics import compute_nmi
 from snks.sks.tracking import SKSTracker
 
@@ -24,6 +30,7 @@ from snks.sks.tracking import SKSTracker
 class _CycleResultProxy:
     """Minimal proxy for MetacogMonitor.update before full CycleResult is built."""
     mean_prediction_error: float
+    winner_pe: float = 0.0
 
 
 @dataclass
@@ -36,6 +43,10 @@ class CycleResult:
     cycle_time_ms: float
     gws: GWSState | None = None
     metacog: MetacogState | None = None
+    # Stage 9: HAC prediction fields
+    winner_pe: float = 0.0
+    winner_embedding: "_torch.Tensor | None" = None
+    hac_predicted: "_torch.Tensor | None" = None
 
 
 @dataclass
@@ -61,6 +72,16 @@ class Pipeline:
         self.metacog = MetacogMonitor(config.metacog)
         self._sks_config = config.sks
         self._motor_currents: torch.Tensor | None = None
+        # Stage 9: HAC embedding + prediction
+        _dev = get_device(config.device)
+        self._hac = HACEngine(dim=config.sks_embed.hac_dim, device=_dev)
+        self.embedder = SKSEmbedder(
+            n_nodes=config.daf.num_nodes,
+            hac_dim=config.sks_embed.hac_dim,
+            device=config.device,
+        )
+        self.hac_prediction = HACPredictionEngine(self._hac, config.hac_prediction)
+        self._broadcast_currents: torch.Tensor | None = None
 
     def inject_motor_currents(self, currents: torch.Tensor) -> None:
         """Set motor currents for dual injection (sensory + motor).
@@ -125,6 +146,15 @@ class Pipeline:
                 currents = currents + motor
             self._motor_currents = None  # consumed
 
+        # 1c. [Stage 9] Inject broadcast currents from previous cycle
+        if self._broadcast_currents is not None:
+            broadcast = self._broadcast_currents.to(self.engine.device)
+            if currents.dim() == 1:
+                currents = currents + broadcast
+            else:
+                currents[:, 0] = currents[:, 0] + broadcast
+            self._broadcast_currents = None
+
         self.engine.set_input(currents)
 
         # 2. Step DAF
@@ -175,7 +205,10 @@ class Pipeline:
         # 4. Track
         tracked = self.tracker.update(global_clusters)
 
-        # 5. Predict
+        # 4b. [Stage 9] Compute SKS embeddings in HAC space
+        embeddings = self.embedder.embed(tracked)
+
+        # 5. Predict (discrete, kept for backward compatibility / Exp 20 comparison)
         predicted = self.prediction.predict()
         active_sks_ids = set(tracked.keys())
         self.prediction.observe(active_sks_ids)
@@ -187,6 +220,11 @@ class Pipeline:
         )
         mean_pe = float(pe.mean())
 
+        # 5b. [Stage 9] HAC prediction — predict_next before observe, then observe
+        hac_predicted = self.hac_prediction.predict_next(embeddings)
+        self.hac_prediction.observe(embeddings)
+        # winner_pe is computed in step 7b after GWS selects winner
+
         # 6. Modulate STDP learning rate (for next cycle)
         lr_mod = self.prediction.get_lr_modulation(pe, self.config.prediction.pe_alpha)
         # Store for potential use in next step
@@ -195,9 +233,23 @@ class Pipeline:
         # 7. GWS: select dominant SKS winner
         gws_state = self.gws.select_winner(tracked, fired_history=step_result.fired_history)
 
+        # 7b. [Stage 9] Compute per-winner PE in HAC space (after winner is known)
+        winner_pe = 0.0
+        winner_embedding = None
+        if hac_predicted is not None and gws_state is not None:
+            winner_id = gws_state.winner_id
+            if winner_id in embeddings:
+                winner_embedding = embeddings[winner_id]
+                winner_pe = self.hac_prediction.compute_winner_pe(hac_predicted, winner_embedding)
+
         # 8. Metacognition: compute confidence, apply policy
-        metacog_state = self.metacog.update(gws_state, _CycleResultProxy(mean_pe))
+        metacog_state = self.metacog.update(gws_state, _CycleResultProxy(mean_pe, winner_pe))
         self.metacog.apply_policy(metacog_state, self.engine.config)
+
+        # 8b. [Stage 9] Collect broadcast currents for next cycle
+        broadcast = self.metacog.get_broadcast_currents(self.engine.config.num_nodes)
+        if broadcast is not None:
+            self._broadcast_currents = broadcast.to(self.engine.device)
 
         elapsed = (time.perf_counter() - t0) * 1000
 
@@ -209,6 +261,9 @@ class Pipeline:
             cycle_time_ms=elapsed,
             gws=gws_state,
             metacog=metacog_state,
+            winner_pe=winner_pe,
+            winner_embedding=winner_embedding,
+            hac_predicted=hac_predicted,
         )
 
     def train_on_dataset(
