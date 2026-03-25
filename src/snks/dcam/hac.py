@@ -27,20 +27,20 @@ class HACEngine:
 
     def bind(self, a: Tensor, b: Tensor) -> Tensor:
         """Circular convolution via FFT: encodes a role-filler pair."""
-        fa = torch.fft.rfft(a.float())
-        fb = torch.fft.rfft(b.float())
+        fa = torch.fft.rfft(a.to(self.device).float())
+        fb = torch.fft.rfft(b.to(self.device).float())
         return torch.fft.irfft(fa * fb, n=self.dim)
 
     def unbind(self, a: Tensor, bound: Tensor) -> Tensor:
         """Circular correlation with power-spectrum normalization."""
-        fa = torch.fft.rfft(a.float())
-        fb = torch.fft.rfft(bound.float())
+        fa = torch.fft.rfft(a.to(self.device).float())
+        fb = torch.fft.rfft(bound.to(self.device).float())
         power = (fa * fa.conj()).real.clamp(min=1e-10)
         return torch.fft.irfft(fa.conj() * fb / power, n=self.dim)
 
     def bundle(self, vectors: list[Tensor]) -> Tensor:
         """Superposition: sum + normalize."""
-        s = torch.stack(vectors).sum(dim=0)
+        s = torch.stack([v.to(self.device) for v in vectors]).sum(dim=0)
         norm = s.norm().clamp(min=1e-8)
         return s / norm
 
@@ -53,7 +53,7 @@ class HACEngine:
 
         sim(encode(x), encode(y)) decreases monotonically with |x - y|.
         """
-        base_fft = torch.fft.rfft(self._scalar_base.float())
+        base_fft = torch.fft.rfft(self._scalar_base.to(self.device).float())
         angles = torch.angle(base_fft)
         magnitudes = torch.abs(base_fft)
         result_fft = magnitudes * torch.exp(1j * angles * value)
@@ -69,8 +69,8 @@ class HACEngine:
 
     def batch_bind(self, A: Tensor, B: Tensor) -> Tensor:
         """Batch circular convolution: (batch, D) × (batch, D) → (batch, D)."""
-        fA = torch.fft.rfft(A.float(), n=self.dim)
-        fB = torch.fft.rfft(B.float(), n=self.dim)
+        fA = torch.fft.rfft(A.to(self.device).float(), n=self.dim)
+        fB = torch.fft.rfft(B.to(self.device).float(), n=self.dim)
         return torch.fft.irfft(fA * fB, n=self.dim)
 
     def batch_similarity(self, query: Tensor, keys: Tensor) -> Tensor:

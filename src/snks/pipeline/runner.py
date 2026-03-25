@@ -73,8 +73,9 @@ class Pipeline:
         self._sks_config = config.sks
         self._motor_currents: torch.Tensor | None = None
         # Stage 9: HAC embedding + prediction
-        _dev = get_device(config.device)
-        self._hac = HACEngine(dim=config.sks_embed.hac_dim, device=_dev)
+        # HAC runs on CPU: torch.fft.rfft on AMD ROCm gfx1151 causes segfault.
+        # 2048-dim FFT on CPU is negligible (<1ms). DAF/encoder stay on GPU.
+        self._hac = HACEngine(dim=config.sks_embed.hac_dim, device=_torch.device("cpu"))
         self.embedder = SKSEmbedder(
             n_nodes=config.daf.num_nodes,
             hac_dim=config.sks_embed.hac_dim,
