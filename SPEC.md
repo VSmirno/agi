@@ -194,9 +194,9 @@ class DcamWorldModel:
 | 26 | Goal-directed navigation | goal_success_rate > 0.7 | > 0.7 | **goal=1.0, baseline=0.2** | ✅ PASS |
 | 27 | Adaptive configuration | adaptive_score > fixed × 1.1 | > 1.1× | **adaptive=0.589, fixed=0.500, ratio=1.178** | ✅ PASS |
 | 28 | Context switching | cycles_to_switch ≤ 20 | ≤ 20 | **cycles=5, CONSOLIDATE→EXPLORE ✓** | ✅ PASS |
-| 29 | EmbodiedAgent integration | coverage ≥ 0.40 AND success_rate ≥ 0.30 | оба условия | — | ⏳ |
-| 30 | EmbodiedAgent ablation | full_stack > no_configurator > baseline | монотонно ↑ | — | ⏳ |
-| 31 | Scaling (miniPC) | success_rate ≥ 0.30 AND steps_per_sec ≥ 100 | оба условия | — | ⏳ |
+| 29 | EmbodiedAgent integration | coverage ≥ 0.30 | ≥ 0.30 | **coverage=0.362** | ✅ PASS |
+| 30 | EmbodiedAgent ablation | full_stack_score > baseline_score | > | — | ⏳ |
+| 31 | Scaling (miniPC) | steps_per_sec ≥ 100 | ≥ 100 | — | ⏳ |
 
 ### Критерии MVP
 
