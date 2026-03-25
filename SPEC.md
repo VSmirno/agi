@@ -215,7 +215,7 @@ class DcamWorldModel:
 | 6 | Каузальный агент | ✅ | [specs/stage6.md](specs/stage6.md) |
 | **7** | **Текстовая модальность** | ✅ | [specs/2026-03-24-stage7-text-modality-design.md](superpowers/specs/2026-03-24-stage7-text-modality-design.md) |
 | **8** | **ГРП + Метакогниция** | ✅ | [specs/2026-03-24-stage8-gws-metacog-design.md](superpowers/specs/2026-03-24-stage8-gws-metacog-design.md) |
-| **9** | **SKS-Space Prediction** | 🔜 | specs/stage9.md (планируется) |
+| **9** | **SKS-Space Prediction** | ✅ | [specs/2026-03-25-stage9-sks-space-prediction-design.md](superpowers/specs/2026-03-25-stage9-sks-space-prediction-design.md) |
 | **10** | **Hierarchical Prediction** | ⏳ | — |
 | **11** | **Multi-Future Simulation** | ⏳ | — |
 | **12** | **Intrinsic Cost Module** | ⏳ | — |
@@ -223,9 +223,9 @@ class DcamWorldModel:
 
 ### Приоритеты (зафиксировано 2026-03-25)
 
-- Этапы 0–8 завершены: 17 экспериментов PASS.
-- **Debt Stage 9+:** ratio gate Exp 16 (confidence(focused)/confidence(noise) > 1.5) требует per-winner PE — отложено.
-- **Exp 18 (BroadcastPolicy):** отложен в Stage 9+.
+- Этапы 0–9 завершены: 21 эксперимент PASS.
+- Stage 9 (2026-03-25): SKSEmbedder + HACPredictionEngine + BroadcastPolicy + per-winner PE.
+  Exp 16b ratio=1.993 ✅, Exp 18 ratio=2.846 ✅, Exp 19 NMI=1.000 ✅, Exp 20 HAC=66.7% ✅.
 
 ### Граф зависимостей
 
@@ -242,7 +242,7 @@ class DcamWorldModel:
                                                                                    │
                                                                                    └──→ Этап 8 ✅ (GWS + Metacognition)
                                                                                                    │
-                                                                                                   └──→ Этап 9 🔜 (SKS-Space Prediction)
+                                                                                                   └──→ Этап 9 ✅ (SKS-Space Prediction)
                                                                                                                    │
                                                                                                      ┌─────────────┘
                                                                                                      ↓
