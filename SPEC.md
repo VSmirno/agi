@@ -216,10 +216,10 @@ class DcamWorldModel:
 | **7** | **Текстовая модальность** | ✅ | [specs/2026-03-24-stage7-text-modality-design.md](superpowers/specs/2026-03-24-stage7-text-modality-design.md) |
 | **8** | **ГРП + Метакогниция** | ✅ | [specs/2026-03-24-stage8-gws-metacog-design.md](superpowers/specs/2026-03-24-stage8-gws-metacog-design.md) |
 | **9** | **SKS-Space Prediction** | ✅ | [specs/2026-03-25-stage9-sks-space-prediction-design.md](superpowers/specs/2026-03-25-stage9-sks-space-prediction-design.md) |
-| **10** | **Hierarchical Prediction** | ⏳ | — |
-| **11** | **Multi-Future Simulation** | ⏳ | — |
-| **12** | **Intrinsic Cost Module** | ⏳ | — |
-| **13** | **Configurator / Meta-Control** | ⏳ | — |
+| **10** | **Hierarchical Prediction** | ⏳ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
+| **11** | **Multi-Future Simulation** | ⏳ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
+| **12** | **Intrinsic Cost Module** | ⏳ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
+| **13** | **Configurator / Meta-Control** | ⏳ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
 
 ### Приоритеты (зафиксировано 2026-03-25)
 
