@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from snks.agent.agent import CausalAgent
+from snks.agent.agent import CausalAgent, _perceptual_hash
 from snks.agent.stochastic_simulator import StochasticSimulator
 from snks.daf.types import CausalAgentConfig
 
@@ -90,11 +90,17 @@ class EmbodiedAgent:
             return action
 
         sks = set(result.sks_clusters.keys())
+        # Augment with perceptual hash for stable goal matching (mirrors CausalAgent)
+        image = self.causal_agent.obs_adapter.convert(obs)
+        sks |= _perceptual_hash(image)
         conf_action = result.configurator_action
         mode = conf_action.mode if conf_action is not None else "neutral"
 
-        # 2. Update goal cost for next ICM cycle
-        if mode == "goal_seeking":
+        # 2. Update goal cost for next ICM cycle.
+        # Set based on whether _goal_sks is known (not on current mode) to break
+        # the circular dependency: GOAL_SEEKING requires cost.goal > threshold,
+        # but goal_cost would only be set positive if already in GOAL_SEEKING.
+        if self._goal_sks is not None:
             self.causal_agent.pipeline.cost_module.set_goal_cost(
                 self.config.goal_cost_value
             )

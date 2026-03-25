@@ -61,7 +61,7 @@ def _build_agent(device: str) -> EmbodiedAgent:
         hac_prediction=HACPredictionConfig(),
         hierarchical=HierarchicalConfig(),
         cost_module=CostModuleConfig(),
-        configurator=ConfiguratorConfig(),
+        configurator=ConfiguratorConfig(explore_epistemic_threshold=0.0),
         device=device,
         steps_per_cycle=100,
     )
