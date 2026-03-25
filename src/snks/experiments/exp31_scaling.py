@@ -74,7 +74,7 @@ def _build_agent(device: str) -> EmbodiedAgent:
 # Run loop
 # ---------------------------------------------------------------------------
 
-def run(device: str = "hip", n_episodes: int = 500) -> dict:
+def run(device: str = "cuda", n_episodes: int = 500) -> dict:
     """Run Experiment 31: scaling benchmark on 16×16 KeyDoor.
 
     Args:
@@ -94,9 +94,8 @@ def run(device: str = "hip", n_episodes: int = 500) -> dict:
             n_episodes (int): Actual number of episodes run.
             total_elapsed_seconds (float): Wall-clock time for all episodes.
     """
-    # ROCm GFX override must be set before importing torch / creating tensors
-    if device == "hip":
-        os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "11.0.0")
+    # ROCm GFX override for AMD gfx1151 (harmless on NVIDIA)
+    os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "11.0.0")
 
     max_steps = 200
     size = 16
@@ -159,7 +158,7 @@ def run(device: str = "hip", n_episodes: int = 500) -> dict:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    _device = sys.argv[1] if len(sys.argv) > 1 else "hip"
+    _device = sys.argv[1] if len(sys.argv) > 1 else "cuda"
     _n_episodes = int(sys.argv[2]) if len(sys.argv) > 2 else 500
     _result = run(device=_device, n_episodes=_n_episodes)
     print(_result)
