@@ -90,6 +90,19 @@ class PredictionConfig:
 
 
 @dataclass
+class SKSEmbedConfig:
+    """Configuration for SKS embedding (Stage 9)."""
+    hac_dim: int = 2048  # совпадает с DcamConfig.hac_dim
+
+
+@dataclass
+class HACPredictionConfig:
+    """Configuration for HAC associative memory predictor (Stage 9)."""
+    memory_decay: float = 0.95  # затухание памяти (вытеснение старых пар)
+    enabled: bool = True
+
+
+@dataclass
 class GWSConfig:
     enabled: bool = True
     w_size: float = 1.0
@@ -103,8 +116,9 @@ class MetacogConfig:
     alpha: float = 1/3          # вес dominance
     beta: float = 1/3           # вес stability
     gamma: float = 1/3          # вес (1 - pred_error_norm)
-    policy: str = "null"        # "null" | "noise" | "stdp"
+    policy: str = "null"        # "null" | "noise" | "stdp" | "broadcast"
     policy_strength: float = 1.0
+    broadcast_threshold: float = 0.6  # confidence threshold for BroadcastPolicy
 
 
 @dataclass
@@ -130,6 +144,8 @@ class PipelineConfig:
     prediction: PredictionConfig = field(default_factory=PredictionConfig)
     gws: GWSConfig = field(default_factory=GWSConfig)
     metacog: MetacogConfig = field(default_factory=MetacogConfig)
+    sks_embed: SKSEmbedConfig = field(default_factory=SKSEmbedConfig)
+    hac_prediction: HACPredictionConfig = field(default_factory=HACPredictionConfig)
     steps_per_cycle: int = 100      # integration steps per perception cycle
     device: str = "auto"
 
