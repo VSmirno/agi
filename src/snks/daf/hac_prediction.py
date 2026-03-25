@@ -71,6 +71,11 @@ class HACPredictionEngine:
         norm = predicted.norm().clamp(min=1e-8)
         return predicted / norm
 
+    def reset(self) -> None:
+        """Reset memory and previous embeddings (e.g. at episode boundary)."""
+        self._memory = None
+        self._prev_embeddings = None
+
     def compute_winner_pe(self, predicted: Tensor, actual_winner_embed: Tensor) -> float:
         """Compute prediction error as cosine distance in HAC space.
 

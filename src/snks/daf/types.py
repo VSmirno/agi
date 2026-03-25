@@ -1,5 +1,7 @@
 """Core types and configuration for the DAF engine."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 
@@ -116,6 +118,7 @@ class MetacogConfig:
     alpha: float = 1/3          # вес dominance
     beta: float = 1/3           # вес stability
     gamma: float = 1/3          # вес (1 - pred_error_norm)
+    delta: float = 0.0          # вес (1 - meta_pe), Stage 10. 0 = backward compatible
     policy: str = "null"        # "null" | "noise" | "stdp" | "broadcast"
     policy_strength: float = 1.0
     broadcast_threshold: float = 0.6  # confidence threshold for BroadcastPolicy
@@ -135,6 +138,63 @@ class DcamConfig:
 
 
 @dataclass
+class HierarchicalConfig:
+    """Configuration for Stage 10: Hierarchical Prediction (L2 meta-embedding)."""
+    enabled: bool = True
+    meta_decay: float = 0.8      # EWA decay ≈ 5-cycle effective window
+    memory_decay: float = 0.95   # L2 predictor memory decay
+
+
+@dataclass
+class CostState:
+    """Intrinsic cost breakdown (Stage 12)."""
+    total: float           # итоговая стоимость ∈ [0, 1]. Высокая = плохо.
+    homeostatic: float     # отклонение от target firing rate ∈ [0, 1]
+    epistemic_value: float # информационная ценность (PE) ∈ [0, 1]. Высокая = любопытно.
+    goal: float            # задачная стоимость ∈ [0, 1].
+
+
+@dataclass
+class CostModuleConfig:
+    """Configuration for Stage 12: Intrinsic Cost Module."""
+    enabled: bool = True
+    w_homeostatic: float = 0.3
+    w_epistemic: float = 0.4
+    w_goal: float = 0.3
+    # None → взять из DafConfig.homeostasis_target при инициализации Pipeline
+    firing_rate_target: float | None = None
+
+
+@dataclass
+class ConfiguratorConfig:
+    """Configuration for Stage 13: Configurator FSM."""
+    enabled: bool = True
+    hysteresis_cycles: int = 8           # минимум циклов в режиме для смены
+    max_explore_cycles: int = 32         # принудительный выход из EXPLORE (divergence guard)
+    explore_cost_threshold: float = 0.65
+    explore_epistemic_threshold: float = 0.45
+    consolidate_cost_threshold: float = 0.35
+    consolidate_stability_threshold: float = 0.70
+    goal_cost_threshold: float = 0.10
+
+
+@dataclass
+class ConfiguratorAction:
+    """Result of one Configurator.update() call."""
+    mode: str                                    # текущий режим
+    changed: dict[str, tuple[float, float]]      # param → (old, new)
+    cycles_in_mode: int                          # сколько циклов в режиме
+
+
+@dataclass
+class StochasticPlanConfig:
+    """Configuration for Stage 11: StochasticSimulator."""
+    enabled: bool = False
+    n_samples: int = 8
+    temperature: float = 1.0
+
+
+@dataclass
 class PipelineConfig:
     """Top-level configuration."""
     daf: DafConfig = field(default_factory=DafConfig)
@@ -148,6 +208,12 @@ class PipelineConfig:
     hac_prediction: HACPredictionConfig = field(default_factory=HACPredictionConfig)
     steps_per_cycle: int = 100      # integration steps per perception cycle
     device: str = "auto"
+    # --- Stage 10 ---
+    hierarchical: HierarchicalConfig = field(default_factory=HierarchicalConfig)
+    # --- Stage 12 ---
+    cost_module: CostModuleConfig = field(default_factory=CostModuleConfig)
+    # --- Stage 13 ---
+    configurator: ConfiguratorConfig = field(default_factory=ConfiguratorConfig)
 
 
 @dataclass
@@ -180,3 +246,6 @@ class CausalAgentConfig:
     # Mental simulation
     simulation_max_depth: int = 10
     simulation_min_confidence: float = 0.3
+
+    # Stage 11: Stochastic planning
+    stochastic_plan: StochasticPlanConfig = field(default_factory=StochasticPlanConfig)
