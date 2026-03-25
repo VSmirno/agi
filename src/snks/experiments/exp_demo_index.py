@@ -353,6 +353,33 @@ body {{
     <span class="btn">Открыть отчёт →</span>
   </a>
 
+  <!-- Stage 9 -->
+  <a class="demo-card" href="stage9_report.html">
+    <div class="icon">⟳</div>
+    <h2>Stage 9: SKS-Space Prediction
+      <span class="badge {s9_badge}">{s9_status}</span>
+    </h2>
+    <div class="desc">
+      HAC-предсказание в непрерывном пространстве СКС-embeddings.
+      Exp 19 (NMI), Exp 20 (HAC accuracy), Exp 16b (confidence gate), Exp 18 (broadcast).
+    </div>
+    <div class="metrics">
+      <div class="metric {s9_nmi_cls}">
+        <div class="val">{s9_nmi}</div>
+        <div class="lbl">Emb NMI</div>
+      </div>
+      <div class="metric {s9_hac_cls}">
+        <div class="val">{s9_hac}</div>
+        <div class="lbl">HAC acc</div>
+      </div>
+      <div class="metric {s9_bc_cls}">
+        <div class="val">{s9_bc}</div>
+        <div class="lbl">Broadcast</div>
+      </div>
+    </div>
+    <span class="btn">Открыть отчёт →</span>
+  </a>
+
 </div>
 
 <div class="info-section">
@@ -391,11 +418,14 @@ body {{
 </html>"""
 
 
-def _read_metric(path: Path, key: str, default="—"):
+def _read_metric(path: Path, key, default="—"):
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        val = data.get(key, default)
-        return val
+        if isinstance(key, list):
+            for k in key:
+                data = data[k]
+            return data
+        return data.get(key, default)
     except Exception:
         return default
 
@@ -451,6 +481,29 @@ def run(output_dir: str = "demo_output") -> None:
         cont_ret_cls = ""
         cont_nmi = "—"
 
+    # Stage 9
+    s9m = out / "stage9_metrics.json"
+    s9_nmi_val = _read_metric(s9m, ["embedding", "nmi"], None)
+    s9_hac_val = _read_metric(s9m, ["hac_prediction", "accuracy"], None)
+    s9_bc_val  = _read_metric(s9m, ["broadcast", "ratio"], None)
+    if s9_nmi_val is not None:
+        s9_nmi = f"{s9_nmi_val:.3f}"
+        s9_hac = f"{s9_hac_val:.1%}" if s9_hac_val is not None else "—"
+        s9_bc  = f"{s9_bc_val:.2f}×" if s9_bc_val is not None else "—"
+        s9_ok  = (s9_nmi_val >= 0.7
+                  and (s9_hac_val or 0) >= 0.64
+                  and (s9_bc_val or 0) >= 1.2)
+        s9_badge    = "badge-pass" if s9_ok else "badge-fail"
+        s9_status   = "PASS ✓" if s9_ok else "FAIL"
+        s9_nmi_cls  = "pass" if s9_nmi_val >= 0.7 else "warn"
+        s9_hac_cls  = "pass" if (s9_hac_val or 0) >= 0.64 else "warn"
+        s9_bc_cls   = "pass" if (s9_bc_val or 0) >= 1.2 else "warn"
+    else:
+        s9_nmi = s9_hac = s9_bc = "—"
+        s9_badge = "badge-pend"
+        s9_status = "В процессе..."
+        s9_nmi_cls = s9_hac_cls = s9_bc_cls = ""
+
     # Sequence
     sqm = out / "sequence_metrics.json"
     seq_acc_val = _read_metric(sqm, "accuracy", None)
@@ -485,11 +538,19 @@ def run(output_dir: str = "demo_output") -> None:
         cont_status=cont_status,
         cont_ret_cls=cont_ret_cls,
         cont_nmi=cont_nmi,
+        s9_nmi=s9_nmi,
+        s9_hac=s9_hac,
+        s9_bc=s9_bc,
+        s9_badge=s9_badge,
+        s9_status=s9_status,
+        s9_nmi_cls=s9_nmi_cls,
+        s9_hac_cls=s9_hac_cls,
+        s9_bc_cls=s9_bc_cls,
     )
 
     index_path = out / "index.html"
     index_path.write_text(html, encoding="utf-8")
-    print(f"[INDEX] Сохранён: {index_path}")
+    print(f"[INDEX] Saved: {index_path}")
 
 
 if __name__ == "__main__":
