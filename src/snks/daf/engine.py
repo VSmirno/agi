@@ -174,9 +174,10 @@ class DafEngine:
 
             # Update CSR values and edge weights after STDP weight changes
             if self.config.oscillator_model == "fhn":
-                update_coupling_csr_values(
-                    self._coupling_csr, self._coupling_degree, self.graph
-                )
+                if not self.config.disable_csr:
+                    update_coupling_csr_values(
+                        self._coupling_csr, self._coupling_degree, self.graph
+                    )
                 self._edge_weight = (self._edge_sign * self.graph.edge_attr[:, 0]).contiguous()
 
             # Structural plasticity: prune weak edges periodically
