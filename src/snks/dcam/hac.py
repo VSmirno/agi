@@ -61,8 +61,8 @@ class HACEngine:
 
     def similarity(self, a: Tensor, b: Tensor) -> float:
         """Cosine similarity between two vectors."""
-        a_f = a.float()
-        b_f = b.float()
+        a_f = a.to(self.device).float()
+        b_f = b.to(self.device).float()
         return torch.nn.functional.cosine_similarity(
             a_f.unsqueeze(0), b_f.unsqueeze(0)
         ).item()
@@ -75,6 +75,6 @@ class HACEngine:
 
     def batch_similarity(self, query: Tensor, keys: Tensor) -> Tensor:
         """Cosine similarity of query (D,) against keys (M, D) → (M,)."""
-        q = query.float().unsqueeze(0)  # (1, D)
-        k = keys.float()                # (M, D)
+        q = query.to(self.device).float().unsqueeze(0)  # (1, D)
+        k = keys.to(self.device).float()                # (M, D)
         return torch.nn.functional.cosine_similarity(q, k, dim=1)
