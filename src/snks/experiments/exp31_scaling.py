@@ -58,6 +58,7 @@ def _build_agent(device: str) -> EmbodiedAgent:
         noise_sigma=0.01,
         fhn_I_base=0.5,
         device=device,
+        disable_csr=True,  # skip torch.sparse_csr_tensor: slow HIP compilation on AMD ROCm
     )
     pipeline_cfg = PipelineConfig(
         daf=daf_cfg,

@@ -56,6 +56,9 @@ class DafConfig:
     # Device
     device: str = "auto"
 
+    # Performance
+    disable_csr: bool = False  # skip torch.sparse_csr_tensor (slow on AMD ROCm for large N)
+
 
 @dataclass
 class EncoderConfig:
