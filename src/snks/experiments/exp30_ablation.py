@@ -61,7 +61,7 @@ def _build_config(
         cost_module=CostModuleConfig(enabled=cost_enabled),
         configurator=ConfiguratorConfig(enabled=configurator_enabled),
     )
-    causal = CausalAgentConfig(pipeline=pipeline)
+    causal = CausalAgentConfig(pipeline=pipeline, motor_sdr_size=200)
     return EmbodiedAgentConfig(
         causal=causal,
         use_stochastic_planner=use_stochastic_planner,
