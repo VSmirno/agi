@@ -215,6 +215,11 @@ class DcamWorldModel:
 | 6 | Каузальный агент | ✅ | [specs/stage6.md](specs/stage6.md) |
 | **7** | **Текстовая модальность** | ✅ | [specs/2026-03-24-stage7-text-modality-design.md](superpowers/specs/2026-03-24-stage7-text-modality-design.md) |
 | **8** | **ГРП + Метакогниция** | ✅ | [specs/2026-03-24-stage8-gws-metacog-design.md](superpowers/specs/2026-03-24-stage8-gws-metacog-design.md) |
+| **9** | **SKS-Space Prediction** | 🔜 | specs/stage9.md (планируется) |
+| **10** | **Hierarchical Prediction** | ⏳ | — |
+| **11** | **Multi-Future Simulation** | ⏳ | — |
+| **12** | **Intrinsic Cost Module** | ⏳ | — |
+| **13** | **Configurator / Meta-Control** | ⏳ | — |
 
 ### Приоритеты (зафиксировано 2026-03-25)
 
@@ -236,7 +241,36 @@ class DcamWorldModel:
                                                                    └──→ Этап 7 ✅ (Text Modality)
                                                                                    │
                                                                                    └──→ Этап 8 ✅ (GWS + Metacognition)
+                                                                                                   │
+                                                                                                   └──→ Этап 9 🔜 (SKS-Space Prediction)
+                                                                                                                   │
+                                                                                                     ┌─────────────┘
+                                                                                                     ↓
+                                                                                               Этап 10 ⏳ (Hierarchical Prediction)
+                                                                                                     │
+                                                                                                     ↓
+                                                                                               Этап 11 ⏳ (Multi-Future Simulation)
+                                                                                                     │
+                                                                                                     ↓
+                                                                                               Этап 12 ⏳ (Intrinsic Cost Module)
+                                                                                                     │
+                                                                                                     ↓
+                                                                                               Этап 13 ⏳ (Configurator)
 ```
+
+### Роадмап 9–13: JEPA-inspired extensions (зафиксировано 2026-03-25)
+
+> Основан на анализе работ Яна ЛеКуна (JEPA). Подробности: [`research/lecun_jepa_research.md`](research/lecun_jepa_research.md)
+
+**Принцип переноса:** архитектурные идеи JEPA переносятся, механизмы обучения — нет (backprop запрещён).
+
+| Этап | Идея из JEPA | Реализация в СНКС |
+|------|-------------|-------------------|
+| 9 | Предсказание в continuous latent space | SKS embedding (векторы), continuous predictor |
+| 10 | H-JEPA: иерархия временных масштабов | Мета-СКС, L1/L2 предикторы |
+| 11 | Латентная переменная z, множество будущих | N стохастических траекторий, planning через cost |
+| 12 | Unified Cost Module (LeCun) | homeostatic + epistemic + goal cost, energy landscape |
+| 13 | Configurator (мета-модуль) | Расширение MetacogMonitor до dynamic reconfiguration |
 
 ---
 
