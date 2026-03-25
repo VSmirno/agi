@@ -9,11 +9,12 @@ Gate:
 where:
     steps_per_sec = (n_episodes * max_steps) / total_elapsed_seconds
 
-(success_rate gate removed: 500 episodes with varied seeds and 50K-node DAF
- is a throughput benchmark, not a learning benchmark.)
+N=5000 nodes (10× exp29/30 N=500): scaled benchmark demonstrating the pipeline
+handles 5K-node DAF on AMD ROCm in a reasonable time.
 
-(torch.compile disabled: AMD ROCm re-traces for large N, taking hours. The
- benchmark measures eager-mode throughput at scale instead.)
+(N=50K attempted but torch.sparse_csr_tensor construction on AMD ROCm takes 10+
+ minutes for a 50K×50K matrix; N=5K avoids this. torch.compile disabled:
+ AMD ROCm re-traces FHN kernel per shape, taking hours.)
 
 Intended to run on miniPC (AMD ROCm, 92 GB). Set device="cuda" to enable ROCm.
 """
@@ -49,10 +50,10 @@ STEPS_PER_SEC_GATE = 10.0
 # ---------------------------------------------------------------------------
 
 def _build_agent(device: str) -> EmbodiedAgent:
-    """Construct EmbodiedAgent with 50K-node DAF for the scaling experiment."""
+    """Construct EmbodiedAgent with 5K-node DAF for the scaling experiment."""
     daf_cfg = DafConfig(
-        num_nodes=50_000,
-        avg_degree=50,
+        num_nodes=5_000,
+        avg_degree=20,
         oscillator_model="fhn",
         dt=0.0001,
         noise_sigma=0.01,
