@@ -1,8 +1,8 @@
 # СНКС MVP — Спецификация
 
-**Версия:** 0.5.0
+**Версия:** 0.6.0
 **Дата:** 2026-03-25
-**Статус:** Этапы 0–13 реализованы (код + unit тесты)
+**Статус:** Этапы 0–14 реализованы (код + unit тесты)
 
 > Детальные спецификации этапов: [`specs/`](specs/)
 
@@ -194,6 +194,9 @@ class DcamWorldModel:
 | 26 | Goal-directed navigation | goal_success_rate > 0.7 | > 0.7 | **goal=1.0, baseline=0.2** | ✅ PASS |
 | 27 | Adaptive configuration | adaptive_score > fixed × 1.1 | > 1.1× | **adaptive=0.589, fixed=0.500, ratio=1.178** | ✅ PASS |
 | 28 | Context switching | cycles_to_switch ≤ 20 | ≤ 20 | **cycles=5, CONSOLIDATE→EXPLORE ✓** | ✅ PASS |
+| 29 | EmbodiedAgent integration | coverage ≥ 0.40 AND success_rate ≥ 0.30 | оба условия | — | ⏳ |
+| 30 | EmbodiedAgent ablation | full_stack > no_configurator > baseline | монотонно ↑ | — | ⏳ |
+| 31 | Scaling (miniPC) | success_rate ≥ 0.30 AND steps_per_sec ≥ 100 | оба условия | — | ⏳ |
 
 ### Критерии MVP
 
@@ -228,6 +231,7 @@ class DcamWorldModel:
 | **11** | **Multi-Future Simulation** | ✅ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
 | **12** | **Intrinsic Cost Module** | ✅ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
 | **13** | **Configurator / Meta-Control** | ✅ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
+| **14** | **EmbodiedAgent** | ✅ | [specs/2026-03-25-stage14-embodied-agent.md](specs/2026-03-25-stage14-embodied-agent.md) |
 
 ### Приоритеты (зафиксировано 2026-03-25)
 
@@ -237,6 +241,9 @@ class DcamWorldModel:
 - Stages 10–13 (2026-03-25): код реализован, 38 unit tests PASS (RTX + AMD ROCm). Эксперименты 21–28 PASS (2026-03-25).
   Exp 21 margin=0.839 ✅, Exp 22 L2=1.0 ✅, Exp 23 ratio=11.1 ✅, Exp 24 N=16→100% ✅,
   Exp 25 ratio=1.0 ✅, Exp 26 goal=1.0 ✅, Exp 27 ratio=1.178 ✅, Exp 28 cycles=5 ✅.
+- Stage 14 (2026-03-25): EmbodiedAgent реализован — тонкий оркестровый слой: CausalAgent +
+  StochasticSimulator + Configurator FSM → полный агентный цикл в MiniGrid KeyDoor.
+  Эксперименты 29–31: интеграция, ablation, scaling (miniPC) — ожидают запуска.
 
 ### Граф зависимостей
 
@@ -257,16 +264,19 @@ class DcamWorldModel:
                                                                                                                    │
                                                                                                      ┌─────────────┘
                                                                                                      ↓
-                                                                                               Этап 10 ⏳ (Hierarchical Prediction)
+                                                                                               Этап 10 ✅ (Hierarchical Prediction)
                                                                                                      │
                                                                                                      ↓
-                                                                                               Этап 11 ⏳ (Multi-Future Simulation)
+                                                                                               Этап 11 ✅ (Multi-Future Simulation)
                                                                                                      │
                                                                                                      ↓
-                                                                                               Этап 12 ⏳ (Intrinsic Cost Module)
+                                                                                               Этап 12 ✅ (Intrinsic Cost Module)
                                                                                                      │
                                                                                                      ↓
-                                                                                               Этап 13 ⏳ (Configurator)
+                                                                                               Этап 13 ✅ (Configurator)
+                                                                                                     │
+                                                                                                     ↓
+                                                                                               Этап 14 ✅ (EmbodiedAgent)
 ```
 
 ### Роадмап 9–13: JEPA-inspired extensions (зафиксировано 2026-03-25)

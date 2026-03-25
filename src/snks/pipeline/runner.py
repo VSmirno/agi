@@ -116,6 +116,9 @@ class Pipeline:
             hac_pred_config=config.hac_prediction,
         )
 
+        # Stage 14: cached last result for EmbodiedAgent access
+        self.last_cycle_result: "CycleResult | None" = None
+
     def inject_motor_currents(self, currents: torch.Tensor) -> None:
         """Set motor currents for dual injection (sensory + motor).
 
@@ -314,7 +317,7 @@ class Pipeline:
 
         elapsed = (time.perf_counter() - t0) * 1000
 
-        return CycleResult(
+        result = CycleResult(
             sks_clusters=tracked,
             n_sks=len(tracked),
             mean_prediction_error=mean_pe,
@@ -330,6 +333,8 @@ class Pipeline:
             mean_firing_rate=mean_firing_rate,
             configurator_action=configurator_action,
         )
+        self.last_cycle_result = result  # Stage 14: cached for EmbodiedAgent
+        return result
 
     def train_on_dataset(
         self,
