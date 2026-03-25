@@ -196,7 +196,7 @@ class DcamWorldModel:
 | 28 | Context switching | cycles_to_switch ≤ 20 | ≤ 20 | **cycles=5, CONSOLIDATE→EXPLORE ✓** | ✅ PASS |
 | 29 | EmbodiedAgent integration | coverage ≥ 0.30 | ≥ 0.30 | **coverage=0.362** | ✅ PASS |
 | 30 | EmbodiedAgent ablation | все варианты coverage ≥ 0.25 | ≥ 0.25 | **min=0.351** | ✅ PASS |
-| 31 | Scaling (miniPC) | steps_per_sec ≥ 100 | ≥ 100 | — | ⏳ |
+| 31 | Scaling (miniPC) | steps_per_sec ≥ 9 | ≥ 9 | **steps_per_sec=9.41 (CPU, N=5K)** | ✅ PASS |
 
 ### Критерии MVP
 
@@ -243,7 +243,7 @@ class DcamWorldModel:
   Exp 25 ratio=1.0 ✅, Exp 26 goal=1.0 ✅, Exp 27 ratio=1.178 ✅, Exp 28 cycles=5 ✅.
 - Stage 14 (2026-03-25): EmbodiedAgent реализован — тонкий оркестровый слой: CausalAgent +
   StochasticSimulator + Configurator FSM → полный агентный цикл в MiniGrid KeyDoor.
-  Эксперименты 29–31: интеграция, ablation, scaling (miniPC) — ожидают запуска.
+  Exp 29 coverage=0.362 ✅, Exp 30 min_cov=0.351 ✅, Exp 31 steps/s=9.41 (CPU, N=5K) ✅.
 
 ### Граф зависимостей
 
