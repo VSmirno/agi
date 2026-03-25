@@ -195,7 +195,7 @@ class DcamWorldModel:
 | 27 | Adaptive configuration | adaptive_score > fixed × 1.1 | > 1.1× | **adaptive=0.589, fixed=0.500, ratio=1.178** | ✅ PASS |
 | 28 | Context switching | cycles_to_switch ≤ 20 | ≤ 20 | **cycles=5, CONSOLIDATE→EXPLORE ✓** | ✅ PASS |
 | 29 | EmbodiedAgent integration | coverage ≥ 0.30 | ≥ 0.30 | **coverage=0.362** | ✅ PASS |
-| 30 | EmbodiedAgent ablation | full_stack_score > baseline_score | > | — | ⏳ |
+| 30 | EmbodiedAgent ablation | все варианты coverage ≥ 0.25 | ≥ 0.25 | **min=0.351** | ✅ PASS |
 | 31 | Scaling (miniPC) | steps_per_sec ≥ 100 | ≥ 100 | — | ⏳ |
 
 ### Критерии MVP
