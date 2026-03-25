@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from torch import Tensor
 
-from snks.daf.types import DafConfig, MetacogConfig
+from snks.daf.types import CostState, DafConfig, MetacogConfig
 from snks.metacog.policies import NullPolicy, NoisePolicy, STDPPolicy, BroadcastPolicy
 
 
@@ -18,14 +18,21 @@ class MetacogState:
     pred_error: float    # CycleResult.mean_prediction_error
     winner_pe: float = 0.0              # Stage 9: HAC PE for GWS winner ∈ [0, 1]
     winner_nodes: set[int] = field(default_factory=set)  # Stage 9: for BroadcastPolicy
+    # --- Stage 10 ---
+    meta_pe: float = 0.0               # L2 meta-embedding prediction error ∈ [0, 1]
+    # --- Stage 12 ---
+    cost: "CostState | None" = None    # Intrinsic cost breakdown
 
 
 class MetacogMonitor:
     """Observes system state, computes confidence.
 
-    confidence = alpha * dominance + beta * stability + gamma * (1 - pe_for_confidence)
+    confidence = (alpha*dominance + beta*stability + gamma*(1-pe_L1) + delta*(1-meta_pe)) / norm
 
-    pe_for_confidence:
+    Stage 10: delta*(1-meta_pe) term is included only if meta_pe > 0.0 (warmup guard).
+    If meta_pe == 0.0, norm = alpha + beta + gamma (backward compatible with Stage 9).
+
+    pe_for_confidence (pe_L1):
       - If winner_pe > 0 (HACPredictionEngine active): uses winner_pe
       - Otherwise: fallback to pred_error_norm (global pred error)
 
@@ -70,6 +77,7 @@ class MetacogMonitor:
         """Update prev_winner, max_pred_error; return MetacogState."""
         pred_error = float(cycle_result.mean_prediction_error)
         winner_pe = float(getattr(cycle_result, "winner_pe", 0.0))
+        meta_pe = float(getattr(cycle_result, "meta_pe", 0.0))
 
         if gws_state is None:
             self._prev_winner_nodes = None
@@ -80,6 +88,7 @@ class MetacogMonitor:
                 pred_error=pred_error,
                 winner_pe=winner_pe,
                 winner_nodes=set(),
+                meta_pe=meta_pe,
             )
 
         # Update running max pred_error
@@ -104,10 +113,21 @@ class MetacogMonitor:
         # Update prev winner
         self._prev_winner_nodes = winner_nodes
 
-        # Compute confidence
+        # Compute confidence (Stage 10: delta term with warmup guard)
         dominance = gws_state.dominance
         cfg = self.config
-        confidence = cfg.alpha * dominance + cfg.beta * stability + cfg.gamma * (1.0 - pe_for_confidence)
+        alpha, beta, gamma, delta = cfg.alpha, cfg.beta, cfg.gamma, cfg.delta
+
+        pe_L2_term = 0.0
+        if meta_pe > 0.0:
+            pe_L2_term = delta * (1.0 - meta_pe)
+            norm = alpha + beta + gamma + delta
+        else:
+            norm = alpha + beta + gamma
+
+        confidence = (alpha * dominance + beta * stability
+                      + gamma * (1.0 - pe_for_confidence)
+                      + pe_L2_term) / max(norm, 1e-8)
         confidence = max(0.0, min(1.0, confidence))
 
         return MetacogState(
@@ -117,6 +137,7 @@ class MetacogMonitor:
             pred_error=pred_error,
             winner_pe=winner_pe,
             winner_nodes=winner_nodes,
+            meta_pe=meta_pe,
         )
 
     def apply_policy(self, state: MetacogState, config: DafConfig) -> None:

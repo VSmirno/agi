@@ -13,15 +13,18 @@ import torch as _torch
 from snks.daf.engine import DafEngine
 from snks.daf.hac_prediction import HACPredictionEngine
 from snks.daf.prediction import PredictionEngine
-from snks.daf.types import PipelineConfig
+from snks.daf.types import ConfiguratorAction, PipelineConfig
 from snks.dcam.hac import HACEngine
 from snks.device import get_device
 from snks.encoder.encoder import VisualEncoder
 from snks.encoder.text_encoder import TextEncoder
 from snks.gws.workspace import GlobalWorkspace, GWSState
+from snks.metacog.configurator import Configurator
+from snks.metacog.cost_module import IntrinsicCostModule
 from snks.metacog.monitor import MetacogMonitor, MetacogState
 from snks.sks.detection import phase_coherence_matrix, cofiring_coherence_matrix, detect_sks
 from snks.sks.embedder import SKSEmbedder
+from snks.sks.meta_embedder import MetaEmbedder
 from snks.sks.metrics import compute_nmi
 from snks.sks.tracking import SKSTracker
 
@@ -31,6 +34,7 @@ class _CycleResultProxy:
     """Minimal proxy for MetacogMonitor.update before full CycleResult is built."""
     mean_prediction_error: float
     winner_pe: float = 0.0
+    meta_pe: float = 0.0
 
 
 @dataclass
@@ -47,6 +51,13 @@ class CycleResult:
     winner_pe: float = 0.0
     winner_embedding: "_torch.Tensor | None" = None
     hac_predicted: "_torch.Tensor | None" = None
+    # Stage 10: Hierarchical Prediction
+    meta_embedding: "_torch.Tensor | None" = None
+    meta_pe: float = 0.0
+    # Stage 12: Intrinsic Cost Module
+    mean_firing_rate: float = 0.0
+    # Stage 13: Configurator
+    configurator_action: "ConfiguratorAction | None" = None
 
 
 @dataclass
@@ -83,6 +94,27 @@ class Pipeline:
         )
         self.hac_prediction = HACPredictionEngine(self._hac, config.hac_prediction)
         self._broadcast_currents: torch.Tensor | None = None
+
+        # Stage 10: Hierarchical Prediction (L2 meta-embedding + L2 predictor)
+        from snks.daf.types import HACPredictionConfig as _HPC
+        _l2_pred_cfg = _HPC(memory_decay=config.hierarchical.memory_decay, enabled=True)
+        self.meta_embedder = MetaEmbedder(self._hac, config.hierarchical)
+        self.l2_predictor = HACPredictionEngine(self._hac, _l2_pred_cfg)
+        self._prev_l2_predicted: "_torch.Tensor | None" = None
+
+        # Stage 12: Intrinsic Cost Module
+        cost_cfg = config.cost_module
+        if cost_cfg.firing_rate_target is None:
+            cost_cfg.firing_rate_target = config.daf.homeostasis_target
+        self.cost_module = IntrinsicCostModule(cost_cfg)
+
+        # Stage 13: Configurator
+        self.configurator = Configurator(
+            config=config.configurator,
+            daf_config=config.daf,
+            metacog_config=config.metacog,
+            hac_pred_config=config.hac_prediction,
+        )
 
     def inject_motor_currents(self, currents: torch.Tensor) -> None:
         """Set motor currents for dual injection (sensory + motor).
@@ -243,14 +275,42 @@ class Pipeline:
                 winner_embedding = embeddings[winner_id]
                 winner_pe = self.hac_prediction.compute_winner_pe(hac_predicted, winner_embedding)
 
+        # 7c–7g. [Stage 10] Hierarchical Prediction (L2 meta-embedding)
+        meta_embed = None
+        meta_pe = 0.0
+        if self.config.hierarchical.enabled:
+            meta_embed = self.meta_embedder.update(embeddings)
+            if meta_embed is not None:
+                l2_input = {"meta": meta_embed}
+                l2_predicted = self.l2_predictor.predict_next(l2_input)
+                if l2_predicted is not None and self._prev_l2_predicted is not None:
+                    meta_pe = self.l2_predictor.compute_winner_pe(
+                        self._prev_l2_predicted, meta_embed
+                    )
+                self.l2_predictor.observe(l2_input)
+                self._prev_l2_predicted = l2_predicted
+
         # 8. Metacognition: compute confidence, apply policy
-        metacog_state = self.metacog.update(gws_state, _CycleResultProxy(mean_pe, winner_pe))
+        metacog_state = self.metacog.update(
+            gws_state, _CycleResultProxy(mean_pe, winner_pe, meta_pe)
+        )
         self.metacog.apply_policy(metacog_state, self.engine.config)
 
         # 8b. [Stage 9] Collect broadcast currents for next cycle
         broadcast = self.metacog.get_broadcast_currents(self.engine.config.num_nodes)
         if broadcast is not None:
             self._broadcast_currents = broadcast.to(self.engine.device)
+
+        # 8c. [Stage 12] Intrinsic Cost Module
+        mean_firing_rate = float(self.engine.states[:, 0].mean().item())
+        if self.config.cost_module.enabled:
+            cost_state = self.cost_module.compute(metacog_state, mean_firing_rate)
+            metacog_state.cost = cost_state
+
+        # 8d. [Stage 13] Configurator FSM
+        configurator_action = None
+        if self.config.configurator.enabled:
+            configurator_action = self.configurator.update(metacog_state)
 
         elapsed = (time.perf_counter() - t0) * 1000
 
@@ -265,6 +325,10 @@ class Pipeline:
             winner_pe=winner_pe,
             winner_embedding=winner_embedding,
             hac_predicted=hac_predicted,
+            meta_embedding=meta_embed,
+            meta_pe=meta_pe,
+            mean_firing_rate=mean_firing_rate,
+            configurator_action=configurator_action,
         )
 
     def train_on_dataset(
