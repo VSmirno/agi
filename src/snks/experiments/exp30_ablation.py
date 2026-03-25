@@ -82,14 +82,19 @@ def _run_variant(
     coverages: list[float] = []
     successes: list[bool] = []
 
+    def _img(o):
+        return o["image"] if isinstance(o, dict) else o
+
     for ep in range(n_episodes):
-        obs, _info = env.reset(seed=seed_offset + ep)
+        _obs, _info = env.reset(seed=seed_offset + ep)
+        obs = _img(_obs)
         done = False
         terminated = False
 
         while not done:
             action = agent.step(obs)
-            obs_next, _reward, terminated, truncated, _ = env.step(action)
+            _obs_next, _reward, terminated, truncated, _ = env.step(action)
+            obs_next = _img(_obs_next)
             done = terminated or truncated
 
             if terminated and agent._goal_sks is None:

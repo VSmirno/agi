@@ -107,16 +107,21 @@ def run(device: str = "cuda", n_episodes: int = 500) -> dict:
     successes = 0
     coverage_sum = 0.0
 
+    def _img(o):
+        return o["image"] if isinstance(o, dict) else o
+
     t_start = time.perf_counter()
 
     for ep in range(n_episodes):
-        obs, _ = env.reset(seed=ep)
+        _obs, _ = env.reset(seed=ep)
+        obs = _img(_obs)
         done = False
         episode_success = False
 
         while not done:
             action = agent.step(obs)
-            obs_next, _reward, terminated, truncated, _ = env.step(action)
+            _obs_next, _reward, terminated, truncated, _ = env.step(action)
+            obs_next = _img(_obs_next)
             done = terminated or truncated
 
             if terminated and agent._goal_sks is None:

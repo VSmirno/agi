@@ -81,8 +81,12 @@ def run(device: str = "cpu", n_episodes: int = 100) -> dict:
     steps_to_goal: list[int] = []
     mode_history: list[list[str]] = []
 
+    def _img(o):
+        return o["image"] if isinstance(o, dict) else o
+
     for ep in range(n_episodes):
-        obs, _info = env.reset(seed=ep)
+        _obs, _info = env.reset(seed=ep)
+        obs = _img(_obs)
         done = False
         steps = 0
         episode_modes: list[str] = []
@@ -93,7 +97,8 @@ def run(device: str = "cpu", n_episodes: int = 100) -> dict:
             if result is not None and result.configurator_action is not None:
                 episode_modes.append(result.configurator_action.mode)
 
-            obs_next, _reward, terminated, truncated, _ = env.step(action)
+            _obs_next, _reward, terminated, truncated, _ = env.step(action)
+            obs_next = _img(_obs_next)
             done = terminated or truncated
             steps += 1
 
