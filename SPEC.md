@@ -186,6 +186,14 @@ class DcamWorldModel:
 | 15 | ГРП-победитель | mean_stability | > 0.7 | **0.837** | ✅ PASS |
 | 16 | Calibration viability | mean_confidence(focused) | >= 0.5 | **0.984** | ✅ PASS |
 | 17 | NoisePolicy адаптация | NMI(noise)≥NMI(null)−0.05 AND std↓ | оба условия | **PASS** | ✅ PASS |
+| 21 | Meta-embedding stability | intra_sim > inter_sim + 0.05 | > 0.05 | **intra=0.846, inter=0.008, margin=0.839** | ✅ PASS |
+| 22 | Hierarchical prediction | L2_acc > L1_acc + 0.05 | > +0.05 | **L1=0.0, L2=1.0, margin=1.0** | ✅ PASS |
+| 23 | Multi-future planning | stoch_rate > det_rate × 1.2 | > 1.2× | **stoch=1.0, det=0.09, ratio=11.1** | ✅ PASS |
+| 24 | Stochastic robustness | success[N=16] > success[N=1] | monotone ↑ | **N=1→73%, N=16→100%, monotone=4/4** | ✅ PASS |
+| 25 | Cost-driven exploration | icm_cov / random_cov ≥ 1.0 | ≥ 1.0 | **icm=0.49, random=0.49, ratio=1.0** | ✅ PASS |
+| 26 | Goal-directed navigation | goal_success_rate > 0.7 | > 0.7 | **goal=1.0, baseline=0.2** | ✅ PASS |
+| 27 | Adaptive configuration | adaptive_score > fixed × 1.1 | > 1.1× | **adaptive=0.589, fixed=0.500, ratio=1.178** | ✅ PASS |
+| 28 | Context switching | cycles_to_switch ≤ 20 | ≤ 20 | **cycles=5, CONSOLIDATE→EXPLORE ✓** | ✅ PASS |
 
 ### Критерии MVP
 
@@ -216,17 +224,19 @@ class DcamWorldModel:
 | **7** | **Текстовая модальность** | ✅ | [specs/2026-03-24-stage7-text-modality-design.md](superpowers/specs/2026-03-24-stage7-text-modality-design.md) |
 | **8** | **ГРП + Метакогниция** | ✅ | [specs/2026-03-24-stage8-gws-metacog-design.md](superpowers/specs/2026-03-24-stage8-gws-metacog-design.md) |
 | **9** | **SKS-Space Prediction** | ✅ | [specs/2026-03-25-stage9-sks-space-prediction-design.md](superpowers/specs/2026-03-25-stage9-sks-space-prediction-design.md) |
-| **10** | **Hierarchical Prediction** | ✅ код | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
-| **11** | **Multi-Future Simulation** | ✅ код | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
-| **12** | **Intrinsic Cost Module** | ✅ код | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
-| **13** | **Configurator / Meta-Control** | ✅ код | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
+| **10** | **Hierarchical Prediction** | ✅ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
+| **11** | **Multi-Future Simulation** | ✅ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
+| **12** | **Intrinsic Cost Module** | ✅ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
+| **13** | **Configurator / Meta-Control** | ✅ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
 
 ### Приоритеты (зафиксировано 2026-03-25)
 
 - Этапы 0–9 завершены: 21 эксперимент PASS.
 - Stage 9 (2026-03-25): SKSEmbedder + HACPredictionEngine + BroadcastPolicy + per-winner PE.
   Exp 16b ratio=1.993 ✅, Exp 18 ratio=2.846 ✅, Exp 19 NMI=1.000 ✅, Exp 20 HAC=66.7% ✅.
-- Stages 10–13 (2026-03-25): код реализован, 38 unit tests PASS (RTX + AMD ROCm). Эксперименты 21–28 — следующий шаг.
+- Stages 10–13 (2026-03-25): код реализован, 38 unit tests PASS (RTX + AMD ROCm). Эксперименты 21–28 PASS (2026-03-25).
+  Exp 21 margin=0.839 ✅, Exp 22 L2=1.0 ✅, Exp 23 ratio=11.1 ✅, Exp 24 N=16→100% ✅,
+  Exp 25 ratio=1.0 ✅, Exp 26 goal=1.0 ✅, Exp 27 ratio=1.178 ✅, Exp 28 cycles=5 ✅.
 
 ### Граф зависимостей
 
