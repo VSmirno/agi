@@ -71,9 +71,14 @@ class DafEngine:
         self._edge_sign = (1.0 - 2.0 * self.graph.edge_attr[:, 3]).contiguous()
 
         # CSR sparse matrix for fast spmv coupling (cuSPARSE)
-        self._coupling_csr, self._coupling_degree = build_coupling_csr(self.graph)
+        # Skip on AMD ROCm for large N: torch.sparse_csr_tensor triggers slow HIP compilation
+        if not config.disable_csr:
+            self._coupling_csr, self._coupling_degree = build_coupling_csr(self.graph)
+        else:
+            self._coupling_csr = None
+            self._coupling_degree = None
         self._spmv_out = torch.empty(N, device=self.device)
-        self._spmv_failed: bool = False  # fallback to scatter_add if hipSPARSE unsupported
+        self._spmv_failed: bool = config.disable_csr  # fallback to scatter_add if hipSPARSE unsupported
 
         # CUDA Graph state — disabled on HIP/ROCm (capture corrupts GPU context)
         is_hip = hasattr(torch.version, "hip") and torch.version.hip is not None
