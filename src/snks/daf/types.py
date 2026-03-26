@@ -229,6 +229,25 @@ class PipelineConfig:
 
 
 @dataclass
+class ConsolidationConfig:
+    """Configuration for Stage 16: ConsolidationScheduler."""
+    enabled: bool = False
+    every_n: int = 10
+    top_k: int = 50
+    cold_threshold: float = 0.3
+    node_threshold: float = 0.7
+    save_path: str | None = None  # None = no save
+
+
+@dataclass
+class ReplayConfig:
+    """Configuration for Stage 16: ReplayEngine."""
+    enabled: bool = False
+    top_k: int = 10
+    n_steps: int = 50
+
+
+@dataclass
 class CausalAgentConfig:
     """Configuration for causal agent (Stage 6)."""
     # Pipeline (reuse from stage 3-5)

@@ -23,7 +23,7 @@ import numpy as np
 
 from snks.agent.agent import CausalAgent, _perceptual_hash
 from snks.agent.stochastic_simulator import StochasticSimulator
-from snks.daf.types import CausalAgentConfig
+from snks.daf.types import CausalAgentConfig, ConsolidationConfig, ReplayConfig
 
 
 @dataclass
@@ -39,7 +39,11 @@ class EmbodiedAgentConfig:
     use_stochastic_planner: bool = True
     n_plan_samples: int = 8
     max_plan_depth: int = 5
-    goal_cost_value: float = 1.0  # passed to icm.set_goal_cost() when GOAL_SEEKING
+    goal_cost_value: float = 1.0      # passed to icm.set_goal_cost() when GOAL_SEEKING
+    plan_min_confidence: float = 0.1  # min confidence for stochastic planner steps
+    # Stage 16: tiered memory consolidation
+    consolidation: ConsolidationConfig = field(default_factory=ConsolidationConfig)
+    replay: ReplayConfig = field(default_factory=ReplayConfig)
 
 
 class EmbodiedAgent:
@@ -64,6 +68,51 @@ class EmbodiedAgent:
         self.n_actions: int = CausalAgent.N_ACTIONS
         # Goal SKS for stochastic planning. Set externally via set_goal_sks().
         self._goal_sks: set[int] | None = None
+        self._episode_idx: int = 0
+        self._last_plan_source: str = "random"
+
+        # Stage 16: Tiered memory consolidation (optional)
+        self.dcam = None
+        self.consolidation_scheduler = None
+        self.tiered_planner = None
+        self.replay_engine = None
+
+        if config.consolidation.enabled:
+            from snks.agent.tiered_planner import TieredPlanner
+            from snks.dcam.consolidation_sched import ConsolidationScheduler
+            from snks.dcam.world_model import DcamWorldModel
+
+            device = self.causal_agent.pipeline.engine.device
+            self.dcam = DcamWorldModel(config.causal.dcam, device=device)
+            self.consolidation_scheduler = ConsolidationScheduler(
+                agent_buffer=self.causal_agent.transition_buffer,
+                dcam=self.dcam,
+                every_n=config.consolidation.every_n,
+                top_k=config.consolidation.top_k,
+                node_threshold=config.consolidation.node_threshold,
+                save_path=config.consolidation.save_path,
+            )
+            self.tiered_planner = TieredPlanner(
+                causal_model=self.causal_agent.causal_model,
+                scheduler=self.consolidation_scheduler,
+                cold_threshold=config.consolidation.cold_threshold,
+                n_actions=self.n_actions,
+            )
+
+            if config.replay.enabled:
+                from snks.dcam.replay import ReplayEngine
+
+                self.replay_engine = ReplayEngine(
+                    daf_engine=self.causal_agent.pipeline.engine,
+                    stdp=self.causal_agent.pipeline.engine.stdp,
+                    top_k=config.replay.top_k,
+                    n_steps=config.replay.n_steps,
+                )
+
+    @property
+    def transition_buffer(self):
+        """Forward to CausalAgent.transition_buffer (AgentTransitionBuffer)."""
+        return self.causal_agent.transition_buffer
 
     def set_goal_sks(self, sks: set[int] | None) -> None:
         """Set goal state SKS for stochastic planning.
@@ -115,12 +164,18 @@ class EmbodiedAgent:
                 n_actions=self.n_actions,
                 n_samples=self.config.n_plan_samples,
                 max_depth=self.config.max_plan_depth,
+                min_confidence=self.config.plan_min_confidence,
             )
             if plan:
                 return plan[0]
 
         if mode == "explore":
             return random.randint(0, self.n_actions - 1)
+
+        # Stage 16: TieredPlanner (cold SSG override when more confident than hot)
+        if self.tiered_planner is not None:
+            action, self._last_plan_source = self.tiered_planner.plan(sks)
+            return action
 
         # consolidate / neutral / goal_seeking fallback: CausalAgent default
         return action
@@ -135,3 +190,14 @@ class EmbodiedAgent:
             prediction_error (float).
         """
         return self.causal_agent.observe_result(obs)
+
+    def end_episode(self) -> None:
+        """Signal end of episode. Triggers consolidation and optional replay.
+
+        Call this at the end of each episode loop.
+        """
+        self._episode_idx += 1
+        if self.consolidation_scheduler is not None:
+            report = self.consolidation_scheduler.maybe_consolidate(self._episode_idx)
+            if report is not None and self.replay_engine is not None:
+                self.replay_engine.replay(self.causal_agent.transition_buffer)

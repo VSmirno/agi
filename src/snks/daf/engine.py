@@ -99,6 +99,22 @@ class DafEngine:
         self.stdp = STDP(config)
         self.homeostasis = Homeostasis(config, N, self.device)
 
+    @property
+    def num_nodes(self) -> int:
+        """Number of oscillator nodes in the network."""
+        return self.config.num_nodes
+
+    def inject_external_currents(self, node_ids: list[int], value: float = 1.0) -> None:
+        """Inject external current to specified nodes before next step.
+
+        Writes to _external_currents[:, 0] (I_ext channel), NOT to states (voltage).
+        Effect is transient — _external_currents is reset after each step() call.
+        Used by ReplayEngine for approximate SKS re-activation.
+        """
+        valid = [nid for nid in node_ids if 0 <= nid < self.config.num_nodes]
+        if valid:
+            self._external_currents[valid, 0] += value
+
     def set_input(self, currents: torch.Tensor) -> None:
         """Set external currents. currents: (N, 8) or (N,) for channel 0 only."""
         if currents.dim() == 1:
@@ -183,6 +199,9 @@ class DafEngine:
             # Structural plasticity: prune weak edges periodically
             if self.step_count % self.config.structural_interval == 0:
                 self._structural_prune()
+
+        # Reset external currents: transient per step
+        self._external_currents.zero_()
 
         return StepResult(
             states=self.states.clone(),
