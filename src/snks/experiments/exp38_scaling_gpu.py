@@ -1,0 +1,165 @@
+"""Experiment 38: GPU Scaling N=50K on AMD ROCm — Stage 17.
+
+Validates that N=50K runs on AMD ROCm GPU (gfx1151, 92 GB) without the
+torch.sparse_csr_tensor bottleneck (fixed in Stage 16: disable_csr=True).
+
+Previous result (exp31): N=5K on CPU → 9.41 steps/sec.
+Expected (exp38): N=50K on AMD ROCm GPU → steps_per_sec >= 10.
+
+Gate:
+    init_elapsed_seconds < 300          # initialization < 5 min
+    steps_per_sec >= 10                 # N=50K GPU not slower than N=5K CPU
+"""
+from __future__ import annotations
+
+import os
+import sys
+import time
+
+from snks.agent.embodied_agent import EmbodiedAgent, EmbodiedAgentConfig
+from snks.daf.types import (
+    CausalAgentConfig,
+    ConfiguratorConfig,
+    CostModuleConfig,
+    DafConfig,
+    EncoderConfig,
+    HierarchicalConfig,
+    PipelineConfig,
+    SKSConfig,
+)
+from snks.env.causal_grid import make_level
+
+# ---------------------------------------------------------------------------
+# Gate constants
+# ---------------------------------------------------------------------------
+INIT_ELAPSED_GATE = 300.0   # seconds
+STEPS_PER_SEC_GATE = 10.0
+
+# ---------------------------------------------------------------------------
+# Build helpers
+# ---------------------------------------------------------------------------
+
+def _build_agent(device: str) -> EmbodiedAgent:
+    daf_cfg = DafConfig(
+        num_nodes=50_000,
+        avg_degree=30,
+        oscillator_model="fhn",
+        dt=0.0001,
+        noise_sigma=0.01,
+        fhn_I_base=0.5,
+        device=device,
+        disable_csr=True,   # avoids torch.sparse_csr_tensor: slow on AMD ROCm
+    )
+    pipeline_cfg = PipelineConfig(
+        daf=daf_cfg,
+        encoder=EncoderConfig(),
+        sks=SKSConfig(),
+        hierarchical=HierarchicalConfig(enabled=True),
+        cost_module=CostModuleConfig(enabled=True),
+        configurator=ConfiguratorConfig(
+            enabled=True,
+            explore_epistemic_threshold=-0.01,
+            explore_cost_threshold=0.40,
+        ),
+        device=device,
+        steps_per_cycle=100,
+    )
+    causal_cfg = CausalAgentConfig(pipeline=pipeline_cfg)
+    return EmbodiedAgent(EmbodiedAgentConfig(causal=causal_cfg))
+
+
+# ---------------------------------------------------------------------------
+# Run loop
+# ---------------------------------------------------------------------------
+
+def run(device: str = "cuda", n_episodes: int = 20) -> dict:
+    """Run Experiment 38: GPU Scaling N=50K.
+
+    Args:
+        device: PyTorch device. Use "cuda" for AMD ROCm (miniPC) or NVIDIA.
+        n_episodes: Number of episodes. Default 20 (quick benchmark).
+
+    Returns:
+        Dict with keys: passed, steps_per_sec, init_elapsed_seconds,
+        total_elapsed_seconds, n_episodes, gate_details.
+    """
+    os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "11.0.0")
+
+    # Disable torch.compile: AMD ROCm re-traces FHN kernel per shape
+    from snks.daf.compiled_step import _compiled_cache, _fhn_step_inner as _fhn_raw  # noqa: PLC0415
+    _compiled_cache.clear()
+    _compiled_cache["fn"] = _fhn_raw
+
+    max_steps = 100
+
+    t_init_start = time.perf_counter()
+    agent = _build_agent(device)
+    t_init_end = time.perf_counter()
+    init_elapsed = t_init_end - t_init_start
+
+    env = make_level("DoorKey", size=16, max_steps=max_steps)
+
+    def _img(o):
+        return o["image"] if isinstance(o, dict) else o
+
+    t_start = time.perf_counter()
+
+    for ep in range(n_episodes):
+        _obs, _ = env.reset(seed=ep)
+        obs = _img(_obs)
+        done = False
+
+        while not done:
+            action = agent.step(obs)
+            _obs_next, _, terminated, truncated, _ = env.step(action)
+            obs_next = _img(_obs_next)
+            done = terminated or truncated
+            agent.observe_result(obs_next)
+            obs = obs_next
+
+    t_end = time.perf_counter()
+    total_elapsed = t_end - t_start
+    steps_per_sec = (n_episodes * max_steps) / total_elapsed
+
+    gate_init = init_elapsed < INIT_ELAPSED_GATE
+    gate_speed = steps_per_sec >= STEPS_PER_SEC_GATE
+    passed = gate_init and gate_speed
+
+    return {
+        "passed": passed,
+        "steps_per_sec": round(steps_per_sec, 2),
+        "init_elapsed_seconds": round(init_elapsed, 1),
+        "total_elapsed_seconds": round(total_elapsed, 1),
+        "n_episodes": n_episodes,
+        "num_nodes": 50_000,
+        "device": device,
+        "gate_details": {
+            f"init_elapsed({init_elapsed:.0f}s) < {INIT_ELAPSED_GATE:.0f}s": gate_init,
+            f"steps_per_sec({steps_per_sec:.1f}) >= {STEPS_PER_SEC_GATE}": gate_speed,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    _device = sys.argv[1] if len(sys.argv) > 1 else "cuda"
+    _n_episodes = int(sys.argv[2]) if len(sys.argv) > 2 else 20
+    _result = run(device=_device, n_episodes=_n_episodes)
+
+    print(f"\n{'='*60}")
+    print("Exp 38: GPU Scaling N=50K")
+    print(f"{'='*60}")
+    print(f"device:           {_result['device']}")
+    print(f"num_nodes:        {_result['num_nodes']:,}")
+    print(f"n_episodes:       {_result['n_episodes']}")
+    print(f"init_elapsed:     {_result['init_elapsed_seconds']:.1f}s")
+    print(f"total_elapsed:    {_result['total_elapsed_seconds']:.1f}s")
+    print(f"steps_per_sec:    {_result['steps_per_sec']:.2f}")
+    print("\nGate details:")
+    for k, v in _result["gate_details"].items():
+        print(f"  [{'PASS' if v else 'FAIL'}] {k}")
+    print(f"\n{'PASS' if _result['passed'] else 'FAIL'}")
+    sys.exit(0 if _result["passed"] else 1)
