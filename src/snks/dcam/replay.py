@@ -43,8 +43,8 @@ class ReplayEngine:
         episodes = agent_buffer.get_top_k(k=self.top_k, by="importance")
         stdp_updates = 0
         for ep in episodes:
-            node_ids = [s for s in ep.pre_sks
-                        if s < self.daf_engine.num_nodes]
+            node_ids = [n for n in ep.pre_nodes
+                        if n < self.daf_engine.num_nodes]
             if not node_ids:
                 continue
             self.daf_engine.inject_external_currents(node_ids, value=1.0)
