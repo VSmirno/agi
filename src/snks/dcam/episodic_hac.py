@@ -76,11 +76,11 @@ class EpisodicHACPredictor:
         Called once per perception cycle with the current SKS embeddings.
         On the first call there is no previous state, so nothing is stored.
         """
-        if self._prev_embeddings is not None and embeddings:
+        if self._prev_embeddings and embeddings:
             prev_agg = self._aggregate(self._prev_embeddings)
             curr_agg = self._aggregate(embeddings)
             self._pairs.append((prev_agg, curr_agg))
-        self._prev_embeddings = dict(embeddings)
+        self._prev_embeddings = dict(embeddings) if embeddings else None
 
     def predict_next(self, embeddings: dict[int, Tensor]) -> Tensor | None:
         """Predict next aggregate via nearest-neighbour lookup in the buffer.
