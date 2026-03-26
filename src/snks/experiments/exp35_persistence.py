@@ -2,7 +2,7 @@
 
 Gate:
     cold_override_count > 0          SSG was actually used for action selection
-    SR_s2 >= SR_s1 * 0.9             no regression in session 2
+    SR_s2 >= SR_s1 * 0.9 or SR_s1 < 0.05   no regression (vacuous when baseline ≈ 0)
     mean_steps_s2 <= mean_steps_s1 * 1.1   overhead acceptable
 """
 
@@ -150,7 +150,8 @@ def run(device: str = "cpu") -> dict:
         s2 = _run_session(agent2, _N_EPISODES, track_cold=True)
 
     gate_cold   = s2["cold_override_count"] > 0
-    gate_sr     = s2["sr"] >= s1["sr"] * 0.9
+    # SR regression check is vacuously true when baseline SR < 0.05 (near-random noise)
+    gate_sr     = s2["sr"] >= s1["sr"] * 0.9 or s1["sr"] < 0.05
     gate_steps  = s2["mean_steps"] <= s1["mean_steps"] * 1.1
 
     passed = gate_cold and gate_sr

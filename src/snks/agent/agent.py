@@ -109,6 +109,7 @@ class CausalAgent:
 
         # Save state for observe_result
         self._pre_sks = current_sks
+        self._pre_nodes: set[int] = {n for nodes in result.sks_clusters.values() for n in nodes}
         self._last_action = action
         self._step_count += 1
 
@@ -156,7 +157,8 @@ class CausalAgent:
 
         # Stage 16: store transition for ConsolidationScheduler
         self.transition_buffer.add(
-            self._pre_sks, self._last_action, post_sks, importance=prediction_error
+            self._pre_sks, self._last_action, post_sks, importance=prediction_error,
+            pre_nodes=getattr(self, "_pre_nodes", set()),
         )
 
         # 5. Stage 15: store in DCAM episodic buffer (if enabled)

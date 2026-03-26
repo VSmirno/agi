@@ -6,7 +6,7 @@ Used by ConsolidationScheduler and ReplayEngine (Stage 16).
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -16,6 +16,7 @@ class AgentTransition:
     action: int
     post_sks: set[int]
     importance: float
+    pre_nodes: set[int] = field(default_factory=set)  # actual DAF node indices
 
 
 class AgentTransitionBuffer:
@@ -30,9 +31,13 @@ class AgentTransitionBuffer:
         action: int,
         post_sks: set[int],
         importance: float,
+        pre_nodes: set[int] | None = None,
     ) -> None:
         """Append a transition. Oldest entry is evicted when at capacity."""
-        self._buf.append(AgentTransition(pre_sks, action, post_sks, importance))
+        self._buf.append(AgentTransition(
+            pre_sks, action, post_sks, importance,
+            pre_nodes=pre_nodes or set(),
+        ))
 
     def get_top_k(self, k: int, by: str = "importance") -> list[AgentTransition]:
         """Return top-k transitions sorted by the given field (descending)."""
