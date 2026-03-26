@@ -24,6 +24,8 @@ VENV="${REPO_DIR}/venv"
 # ---------------------------------------------------------------------------
 export HSA_OVERRIDE_GFX_VERSION=11.0.0
 export PYTHONPATH="${REPO_DIR}/src"
+export HF_HUB_OFFLINE=1          # use cached HF models without network check
+export TRANSFORMERS_OFFLINE=1
 
 source "${VENV}/bin/activate"
 
