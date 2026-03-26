@@ -156,9 +156,11 @@ class CausalAgent:
         self.motivation.update(self._pre_sks, self._last_action, prediction_error)
 
         # Stage 16: store transition for ConsolidationScheduler
+        post_nodes = {n for nodes in result.sks_clusters.values() for n in nodes}
         self.transition_buffer.add(
             self._pre_sks, self._last_action, post_sks, importance=prediction_error,
             pre_nodes=getattr(self, "_pre_nodes", set()),
+            post_nodes=post_nodes,
         )
 
         # 5. Stage 15: store in DCAM episodic buffer (if enabled)

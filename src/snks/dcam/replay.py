@@ -41,22 +41,17 @@ class ReplayEngine:
             ReplayReport with counts of replayed episodes and STDP updates.
         """
         episodes = agent_buffer.get_top_k(k=self.top_k, by="importance")
-        print(f"[REPLAY_DBG] buf_len={len(agent_buffer)} episodes_top_k={len(episodes)}")
-        if episodes:
-            sample = episodes[0]
-            print(f"[REPLAY_DBG] sample ep: pre_nodes={len(sample.pre_nodes)} pre_sks={len(sample.pre_sks)} importance={sample.importance:.3f}")
         stdp_updates = 0
-        for i, ep in enumerate(episodes):
-            node_ids = [n for n in ep.pre_nodes
-                        if n < self.daf_engine.num_nodes]
-            print(f"[REPLAY_DBG] ep[{i}]: pre_nodes={len(ep.pre_nodes)} node_ids={len(node_ids)} num_nodes={self.daf_engine.num_nodes}")
+        for ep in episodes:
+            # post_nodes: from observe_result() where oscillator is warmed up
+            # pre_nodes: from step() where oscillator may be cold — fallback only
+            nodes = ep.post_nodes if ep.post_nodes else ep.pre_nodes
+            node_ids = [n for n in nodes if n < self.daf_engine.num_nodes]
             if not node_ids:
                 continue
             self.daf_engine.inject_external_currents(node_ids, value=1.0)
             result = self.daf_engine.step(n_steps=self.n_steps)
-            fh = result.fired_history
-            print(f"[REPLAY_DBG] ep[{i}]: fired_history={fh is not None} shape={fh.shape if fh is not None else 'None'} any_spikes={fh.any().item() if fh is not None else 'N/A'}")
-            if fh is not None:
-                self.stdp.apply(self.daf_engine.graph, fh)
+            if result.fired_history is not None:
+                self.stdp.apply(self.daf_engine.graph, result.fired_history)
                 stdp_updates += 1
         return ReplayReport(n_replayed=len(episodes), stdp_updates=stdp_updates)
