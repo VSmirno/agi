@@ -6,6 +6,7 @@ import numpy as np
 import torch
 
 from snks.agent.causal_model import CausalWorldModel
+from snks.agent.transition_buffer import AgentTransitionBuffer
 from snks.agent.motor import MotorEncoder
 from snks.agent.motivation import IntrinsicMotivation
 from snks.agent.simulation import MentalSimulator
@@ -76,6 +77,9 @@ class CausalAgent:
         self.episodic_buffer: EpisodicBuffer | None = (
             EpisodicBuffer(config.dcam) if config.use_dcam_episodic else None
         )
+
+        # Stage 16: transition buffer for ConsolidationScheduler
+        self.transition_buffer = AgentTransitionBuffer(capacity=200)
 
     def step(self, obs: np.ndarray) -> int:
         """Full agent cycle:
@@ -149,6 +153,11 @@ class CausalAgent:
 
         # 4. Update motivation
         self.motivation.update(self._pre_sks, self._last_action, prediction_error)
+
+        # Stage 16: store transition for ConsolidationScheduler
+        self.transition_buffer.add(
+            self._pre_sks, self._last_action, post_sks, importance=prediction_error
+        )
 
         # 5. Stage 15: store in DCAM episodic buffer (if enabled)
         if self.episodic_buffer is not None:

@@ -194,6 +194,25 @@ class CausalWorldModel:
             results.append((set(record.effect_sks), confidence))
         return results
 
+    def best_action(
+        self,
+        context_sks: set[int],
+        n_actions: int = 7,
+    ) -> tuple[int | None, float]:
+        """Return (best_action, confidence) for context_sks.
+
+        Iterates over all actions, returns the one with highest predict_effect
+        confidence.  Returns (None, 0.0) if no action has any data.
+        """
+        best_action_id: int | None = None
+        best_conf: float = 0.0
+        for a in range(n_actions):
+            _, conf = self.predict_effect(context_sks, a)
+            if conf > best_conf:
+                best_conf = conf
+                best_action_id = a
+        return best_action_id, best_conf
+
     @property
     def n_links(self) -> int:
         """Total number of transition records."""
