@@ -16,7 +16,8 @@ class AgentTransition:
     action: int
     post_sks: set[int]
     importance: float
-    pre_nodes: set[int] = field(default_factory=set)  # actual DAF node indices
+    pre_nodes: set[int] = field(default_factory=set)   # DAF node indices at pre-state (step())
+    post_nodes: set[int] = field(default_factory=set)  # DAF node indices at post-state (observe_result())
 
 
 class AgentTransitionBuffer:
@@ -32,11 +33,13 @@ class AgentTransitionBuffer:
         post_sks: set[int],
         importance: float,
         pre_nodes: set[int] | None = None,
+        post_nodes: set[int] | None = None,
     ) -> None:
         """Append a transition. Oldest entry is evicted when at capacity."""
         self._buf.append(AgentTransition(
             pre_sks, action, post_sks, importance,
             pre_nodes=pre_nodes or set(),
+            post_nodes=post_nodes or set(),
         ))
 
     def get_top_k(self, k: int, by: str = "importance") -> list[AgentTransition]:
