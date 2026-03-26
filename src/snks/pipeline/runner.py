@@ -12,6 +12,7 @@ import torch as _torch
 
 from snks.daf.engine import DafEngine
 from snks.daf.hac_prediction import HACPredictionEngine
+from snks.dcam.episodic_hac import EpisodicHACPredictor
 from snks.daf.prediction import PredictionEngine
 from snks.daf.types import ConfiguratorAction, PipelineConfig
 from snks.dcam.hac import HACEngine
@@ -92,7 +93,12 @@ class Pipeline:
             hac_dim=config.sks_embed.hac_dim,
             device=config.device,
         )
-        self.hac_prediction = HACPredictionEngine(self._hac, config.hac_prediction)
+        if config.hac_prediction.use_episodic_buffer:
+            self.hac_prediction: HACPredictionEngine | EpisodicHACPredictor = (
+                EpisodicHACPredictor(self._hac, config.hac_prediction.episodic_capacity)
+            )
+        else:
+            self.hac_prediction = HACPredictionEngine(self._hac, config.hac_prediction)
         self._broadcast_currents: torch.Tensor | None = None
 
         # Stage 10: Hierarchical Prediction (L2 meta-embedding + L2 predictor)
