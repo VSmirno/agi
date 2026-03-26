@@ -1,8 +1,8 @@
 # СНКС MVP — Спецификация
 
-**Версия:** 0.7.0
+**Версия:** 0.8.0
 **Дата:** 2026-03-26
-**Статус:** Этапы 0–16 реализованы (код + unit тесты)
+**Статус:** Этапы 0–16 реализованы (код + unit тесты). Stage 17 в работе.
 
 > Детальные спецификации этапов: [`specs/`](specs/)
 
@@ -233,8 +233,10 @@ class DcamWorldModel:
 | **13** | **Configurator / Meta-Control** | ✅ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
 | **14** | **EmbodiedAgent** | ✅ | [specs/2026-03-25-stage14-embodied-agent.md](specs/2026-03-25-stage14-embodied-agent.md) |
 | **15** | **Закрытие долгов** | ✅ | [specs/stage15-debt-closure.md](specs/stage15-debt-closure.md) |
+| **16** | **DCAM Tiered Consolidation** | ✅ | [docs/superpowers/specs/2026-03-26-stage16-dcam-consolidation-design.md](docs/superpowers/specs/2026-03-26-stage16-dcam-consolidation-design.md) |
+| **17** | **Full-Scale Validation** | 🔄 | [specs/stage17.md](specs/stage17.md) |
 
-### Приоритеты (зафиксировано 2026-03-25)
+### Приоритеты (зафиксировано 2026-03-26)
 
 - Этапы 0–9 завершены: 21 эксперимент PASS.
 - Stage 9 (2026-03-25): SKSEmbedder + HACPredictionEngine + BroadcastPolicy + per-winner PE.
@@ -253,6 +255,9 @@ class DcamWorldModel:
 - Stage 16 (2026-03-26): COMPLETE. DCAM Tiered Memory Consolidation.
   AgentTransitionBuffer, ConsolidationScheduler, TieredPlanner, ReplayEngine.
   Exp 35 cold_overrides=4000 ✅, Exp 36 sim=1.0 edges=4 ✅, Exp 37 stdp_updates=1 ✅.
+- Stage 17 (2026-03-26): IN PROGRESS. Full-Scale Validation.
+  Exp 38 N=50K AMD ROCm GPU benchmark, Exp 39 replay→coverage impact, Exp 40 DoorKey-8x8.
+  Запущено автономно на minipc.
 
 ### Граф зависимостей
 
