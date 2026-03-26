@@ -250,6 +250,9 @@ class DcamWorldModel:
   causal_context_bins=64, plan_min_confidence configurable, DCAM minimal integration.
   Exp 32 GOAL_SEEKING=4980 steps ✅, Exp 33 episodic_pe=0.488<bundle_pe=0.500 ✅,
   Exp 34 NMI retention=100% (N=5K) ✅. Спецификация: specs/stage15-debt-closure.md.
+- Stage 16 (2026-03-26): COMPLETE. DCAM Tiered Memory Consolidation.
+  AgentTransitionBuffer, ConsolidationScheduler, TieredPlanner, ReplayEngine.
+  Exp 35 cold_overrides=4000 ✅, Exp 36 sim=1.0 edges=4 ✅, Exp 37 stdp_updates=1 ✅.
 
 ### Граф зависимостей
 
