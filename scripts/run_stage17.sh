@@ -52,8 +52,11 @@ run_exp() {
     echo "" | tee -a "${LOG_FILE}"
     echo "--- ${name} start: $(date) ---" | tee -a "${LOG_FILE}"
 
-    python - <<EOF 2>&1 | tee -a "${LOG_FILE}"
-import json, sys, importlib
+    python - <<PYEOF 2>&1 | tee -a "${LOG_FILE}"; local ec=${PIPESTATUS[0]}
+import os, json, sys, importlib
+# Must be set before any HF/transformers import to use cached models offline
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
 sys.path.insert(0, "${REPO_DIR}/src")
 
 # Disable torch.compile before import
@@ -72,10 +75,9 @@ print(json.dumps(result, indent=2))
 status = "PASS" if result.get("passed") else "FAIL"
 print(f"\\n{status}")
 sys.exit(0 if result.get("passed") else 1)
-EOF
-    local ec=$?
+PYEOF
     echo "--- ${name} end: $(date) exit=${ec} ---" | tee -a "${LOG_FILE}"
-    return $ec
+    return ${ec}
 }
 
 # ---------------------------------------------------------------------------
