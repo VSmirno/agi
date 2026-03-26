@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "no_replay": {
+    "mean_coverage": 0.1544,
+    "n_episodes": 100
+  },
+  "with_replay": {
+    "mean_coverage": 0.3033,
+    "n_episodes": 100
+  },
+  "gate_details": {
+    "coverage_replay(0.3033) >= coverage_no_replay(0.1544)": true,
+    "coverage_replay(0.3033) >= 0.25": true
+  }
+}
