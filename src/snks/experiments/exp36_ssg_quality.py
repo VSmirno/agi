@@ -65,6 +65,7 @@ def _build_config(device: str, save_path: str) -> EmbodiedAgentConfig:
 
 
 def _make_env(max_steps: int = _MAX_STEPS):
+    import minigrid  # registers MiniGrid envs into gymnasium
     import gymnasium
     try:
         return gymnasium.make("MiniGrid-FourRooms-v0", max_episode_steps=max_steps)

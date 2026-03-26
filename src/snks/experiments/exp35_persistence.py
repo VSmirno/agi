@@ -52,7 +52,7 @@ def _build_config(device: str, save_path: str | None = None) -> EmbodiedAgentCon
     sks = SKSConfig(coherence_mode="rate", min_cluster_size=5, dbscan_min_samples=5)
     pipeline = PipelineConfig(
         daf=daf, encoder=encoder, sks=sks,
-        steps_per_cycle=50, device=device,
+        steps_per_cycle=100, device=device,
         hierarchical=HierarchicalConfig(enabled=True),
         cost_module=CostModuleConfig(enabled=True),
         configurator=ConfiguratorConfig(enabled=True),
@@ -72,6 +72,7 @@ def _build_config(device: str, save_path: str | None = None) -> EmbodiedAgentCon
 
 
 def _make_env(max_steps: int = _MAX_STEPS):
+    import minigrid  # registers MiniGrid envs into gymnasium
     import gymnasium
     try:
         return gymnasium.make("MiniGrid-FourRooms-v0", max_episode_steps=max_steps)
