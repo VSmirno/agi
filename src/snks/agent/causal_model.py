@@ -23,12 +23,37 @@ def _context_hash(sks: frozenset[int]) -> int:
     return hash(sks)
 
 
-def _coarsen_sks(sks: set[int], n_bins: int) -> frozenset[int]:
-    """Coarsen SKS IDs into n_bins buckets for context generalization.
+# IDs >= this offset are perceptual hashes (stable across episodes).
+# See agent.py: _perceptual_hash() uses offset=10_000.
+_PERCEPTUAL_HASH_OFFSET = 10_000
 
-    Without coarsening, exact frozenset hashing makes contexts too specific
-    (noisy SKS detection produces different IDs for similar inputs).
-    Binning allows similar contexts to accumulate observations.
+
+def _split_context(sks: set[int], n_bins: int) -> frozenset[int]:
+    """Build a context key from SKS IDs, separating stable from unstable IDs.
+
+    Stable IDs (>= _PERCEPTUAL_HASH_OFFSET): perceptual hash pseudo-SKS.
+    These are deterministic functions of the image → used as-is.
+
+    Unstable IDs (< _PERCEPTUAL_HASH_OFFSET): DAF cluster IDs that vary
+    across runs and episodes → coarsen to n_bins buckets.
+
+    Rationale: different visual scenes (key visible, door open, empty room)
+    produce different perceptual hash IDs, giving the causal model enough
+    discrimination without relying on noisy DAF cluster IDs.
+    """
+    if not sks:
+        return frozenset()
+    stable   = frozenset(s for s in sks if s >= _PERCEPTUAL_HASH_OFFSET)
+    unstable = frozenset(s % n_bins for s in sks if s < _PERCEPTUAL_HASH_OFFSET)
+    return stable | unstable
+
+
+def _coarsen_sks(sks: set[int], n_bins: int) -> frozenset[int]:
+    """Coarsen all SKS IDs into n_bins buckets.
+
+    Deprecated: use _split_context() instead, which preserves stable
+    perceptual-hash IDs and only coarsens noisy DAF cluster IDs.
+    Kept for backward compatibility with existing tests.
     """
     if not sks:
         return frozenset()
@@ -70,7 +95,7 @@ class CausalWorldModel:
         """
         self._total_observations += 1
 
-        ctx = _coarsen_sks(pre_sks, self._n_bins)
+        ctx = _split_context(pre_sks, self._n_bins)
         # Effect = symmetric difference: captures both new and disappeared SKS
         # This is more robust than just post-pre, since minor visual changes
         # may shift existing clusters rather than create entirely new ones
@@ -112,7 +137,7 @@ class CausalWorldModel:
         Returns:
             (predicted_sks, confidence)
         """
-        ctx = _coarsen_sks(context_sks, self._n_bins)
+        ctx = _split_context(context_sks, self._n_bins)
         ctx_hash = _context_hash(ctx)
         key = (ctx_hash, action)
 
@@ -155,7 +180,7 @@ class CausalWorldModel:
         self, context_sks: set[int], action: int
     ) -> list[tuple[set[int], float]]:
         """Get all possible effects with their confidences for an action in context."""
-        ctx = _coarsen_sks(context_sks, self._n_bins)
+        ctx = _split_context(context_sks, self._n_bins)
         ctx_hash = _context_hash(ctx)
         key = (ctx_hash, action)
         records = self._transitions.get(key, {})

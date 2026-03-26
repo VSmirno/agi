@@ -10,6 +10,7 @@ from snks.agent.motor import MotorEncoder
 from snks.agent.motivation import IntrinsicMotivation
 from snks.agent.simulation import MentalSimulator
 from snks.daf.types import CausalAgentConfig
+from snks.dcam.episodic import EpisodicBuffer
 from snks.env.obs_adapter import ObsAdapter
 from snks.pipeline.runner import Pipeline
 
@@ -70,6 +71,11 @@ class CausalAgent:
         self._pre_sks: set[int] | None = None
         self._last_action: int | None = None
         self._step_count: int = 0
+
+        # Stage 15: optional DCAM episodic buffer (minimal integration)
+        self.episodic_buffer: EpisodicBuffer | None = (
+            EpisodicBuffer(config.dcam) if config.use_dcam_episodic else None
+        )
 
     def step(self, obs: np.ndarray) -> int:
         """Full agent cycle:
@@ -143,6 +149,19 @@ class CausalAgent:
 
         # 4. Update motivation
         self.motivation.update(self._pre_sks, self._last_action, prediction_error)
+
+        # 5. Stage 15: store in DCAM episodic buffer (if enabled)
+        if self.episodic_buffer is not None:
+            # context_hac: use winner embedding if available, else zero vector
+            winner_embed = result.winner_embedding
+            if winner_embed is None:
+                import torch as _torch
+                winner_embed = _torch.zeros(self.pipeline._hac.dim)
+            self.episodic_buffer.store(
+                active_nodes={s: 1.0 for s in post_sks},
+                context_hac=winner_embed,
+                importance=prediction_error,
+            )
 
         return prediction_error
 

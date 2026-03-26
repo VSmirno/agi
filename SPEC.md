@@ -232,6 +232,7 @@ class DcamWorldModel:
 | **12** | **Intrinsic Cost Module** | ✅ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
 | **13** | **Configurator / Meta-Control** | ✅ | [docs/superpowers/specs/2026-03-25-stages10-13-architecture.md](docs/superpowers/specs/2026-03-25-stages10-13-architecture.md) |
 | **14** | **EmbodiedAgent** | ✅ | [specs/2026-03-25-stage14-embodied-agent.md](specs/2026-03-25-stage14-embodied-agent.md) |
+| **15** | **Закрытие долгов** | 🔄 | [specs/stage15-debt-closure.md](specs/stage15-debt-closure.md) |
 
 ### Приоритеты (зафиксировано 2026-03-25)
 
@@ -244,6 +245,10 @@ class DcamWorldModel:
 - Stage 14 (2026-03-25): EmbodiedAgent реализован — тонкий оркестровый слой: CausalAgent +
   StochasticSimulator + Configurator FSM → полный агентный цикл в MiniGrid KeyDoor.
   Exp 29 coverage=0.362 ✅, Exp 30 min_cov=0.351 ✅, Exp 31 steps/s=9.41 (CPU, N=5K) ✅.
+- Stage 15 (2026-03-26, в работе): закрытие долгов — 5 критических пробелов выявлены в
+  архитектурном ревью. Exp 32 (Goal Bootstrapping), Exp 33 (HAC Episodic Buffer),
+  Exp 34 (Catastrophic Forgetting). Исправления: _split_context, EpisodicHACPredictor,
+  causal_context_bins=64. Спецификация: specs/stage15-debt-closure.md.
 
 ### Граф зависимостей
 

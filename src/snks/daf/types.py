@@ -102,9 +102,18 @@ class SKSEmbedConfig:
 
 @dataclass
 class HACPredictionConfig:
-    """Configuration for HAC associative memory predictor (Stage 9)."""
-    memory_decay: float = 0.95  # затухание памяти (вытеснение старых пар)
+    """Configuration for HAC associative memory predictor (Stage 9).
+
+    Two backends:
+        use_episodic_buffer=False (default): HACPredictionEngine — single bundle
+            with exponential decay. Simple, O(1) memory. Degrades after ~20 steps.
+        use_episodic_buffer=True: EpisodicHACPredictor — K-pair deque. Stable
+            prediction quality over long episodes. O(K) lookup, K ≤ episodic_capacity.
+    """
+    memory_decay: float = 0.95          # bundle backend: exponential decay factor
     enabled: bool = True
+    use_episodic_buffer: bool = False   # Stage 15: use EpisodicHACPredictor
+    episodic_capacity: int = 32         # Stage 15: max pairs in episodic buffer
 
 
 @dataclass
@@ -238,7 +247,7 @@ class CausalAgentConfig:
     causal_confidence_threshold: float = 0.5
     causal_decay: float = 0.99
     causal_context_hash_bits: int = 64  # для быстрого поиска по контексту
-    causal_context_bins: int = 16       # coarsen SKS IDs into N bins for generalization
+    causal_context_bins: int = 64       # coarsen unstable DAF SKS IDs into N bins (stable perceptual-hash IDs kept as-is)
 
     # Motivation
     curiosity_epsilon: float = 0.2      # random exploration rate (or initial rate if decay used)
@@ -252,3 +261,7 @@ class CausalAgentConfig:
 
     # Stage 11: Stochastic planning
     stochastic_plan: StochasticPlanConfig = field(default_factory=StochasticPlanConfig)
+
+    # Stage 15: DCAM episodic buffer (minimal integration)
+    use_dcam_episodic: bool = False     # store transitions in EpisodicBuffer
+    dcam: DcamConfig = field(default_factory=DcamConfig)
