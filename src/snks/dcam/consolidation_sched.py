@@ -28,7 +28,7 @@ class SKSIDEmbedder:
     def embed_id(self, sks_id: int) -> Tensor:
         """Return deterministic unit vector for integer SKS ID."""
         if sks_id not in self._cache:
-            g = torch.Generator()
+            g = torch.Generator(device=self._device)
             g.manual_seed(int(sks_id) % (2 ** 32))
             vec = torch.randn(self._dim, generator=g, device=self._device)
             self._cache[sks_id] = vec / vec.norm().clamp(min=1e-8)
