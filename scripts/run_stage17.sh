@@ -59,12 +59,6 @@ os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 sys.path.insert(0, "${REPO_DIR}/src")
 
-# Disable torch.compile before import
-import snks.daf.compiled_step as cs
-from snks.daf.compiled_step import _fhn_step_inner as _raw
-cs._compiled_cache.clear()
-cs._compiled_cache["fn"] = _raw
-
 mod = importlib.import_module("${module}")
 result = mod.run(device="${DEVICE}")
 
