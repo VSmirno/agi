@@ -73,10 +73,11 @@ def make_compiled_integrate(backend: str = "inductor"):
 
     try:
         is_hip = hasattr(torch.version, "hip") and torch.version.hip is not None
-        compile_opts = {"backend": backend}
+        # dynamic=True: compile once for symbolic shapes — no re-tracing when N/E changes
+        compile_opts: dict = {"backend": backend, "dynamic": True}
         if is_hip:
-            # HIP doesn't support CUDA Graphs reliably; use default mode
-            compile_opts["mode"] = "default"
+            # PyTorch 2.6+: mode and options are mutually exclusive — use options only.
+            # triton.cudagraphs=False: HIP doesn't support CUDA Graphs reliably.
             compile_opts["options"] = {"triton.cudagraphs": False}
         else:
             compile_opts["mode"] = "max-autotune"

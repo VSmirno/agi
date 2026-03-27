@@ -111,13 +111,6 @@ def run(device: str = "cuda", n_episodes: int = 500) -> dict:
     # ROCm GFX override for AMD gfx1151 (harmless on NVIDIA)
     os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "11.0.0")
 
-    # Disable torch.compile: AMD ROCm re-traces FHN kernel for N=50000,
-    # taking hours. Pre-fill the module-level cache with the raw function
-    # so make_compiled_integrate() returns it immediately without compiling.
-    from snks.daf.compiled_step import _compiled_cache, _fhn_step_inner as _fhn_raw  # noqa: PLC0415
-    _compiled_cache.clear()
-    _compiled_cache["fn"] = _fhn_raw
-
     max_steps = 200
     size = 16
 

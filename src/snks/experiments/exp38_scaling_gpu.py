@@ -85,11 +85,6 @@ def run(device: str = "cuda", n_episodes: int = 20) -> dict:
     """
     os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "11.0.0")
 
-    # Disable torch.compile: AMD ROCm re-traces FHN kernel per shape
-    from snks.daf.compiled_step import _compiled_cache, _fhn_step_inner as _fhn_raw  # noqa: PLC0415
-    _compiled_cache.clear()
-    _compiled_cache["fn"] = _fhn_raw
-
     max_steps = 100
 
     t_init_start = time.perf_counter()
