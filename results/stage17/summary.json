@@ -4,15 +4,50 @@
   "experiments": {
     "exp38": {
       "passed": false,
-      "error": "file not found"
+      "steps_per_sec": 2.74,
+      "init_elapsed_seconds": 2.3,
+      "total_elapsed_seconds": 731.1,
+      "n_episodes": 20,
+      "num_nodes": 50000,
+      "device": "cuda",
+      "gate_details": {
+        "init_elapsed(2s) < 300s": true,
+        "steps_per_sec(2.7) >= 10.0": false
+      }
     },
     "exp39": {
       "passed": false,
-      "error": "file not found"
+      "no_replay": {
+        "mean_coverage": 0.1278,
+        "n_episodes": 100
+      },
+      "with_replay": {
+        "mean_coverage": 0.1278,
+        "n_episodes": 100
+      },
+      "gate_details": {
+        "coverage_replay(0.1278) >= coverage_no_replay(0.1278)": true,
+        "coverage_replay(0.1278) >= 0.25": false
+      }
     },
     "exp40": {
       "passed": false,
-      "error": "file not found"
+      "phase1": {
+        "episodes": 50,
+        "n_successes": 12,
+        "goal_sks_set_ep": 8
+      },
+      "phase2": {
+        "episodes": 200,
+        "n_successes": 0,
+        "success_rate": 0.0,
+        "mean_steps": 200.0
+      },
+      "goal_seeking_steps": 43318,
+      "gate_details": {
+        "goal_seeking_steps > 0 [PRIMARY]": true,
+        "success_rate_phase2(0.0000) >= 0.05": false
+      }
     }
   }
 }
