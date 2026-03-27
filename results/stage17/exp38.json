@@ -1,13 +1,13 @@
 {
   "passed": false,
-  "steps_per_sec": 2.79,
-  "init_elapsed_seconds": 2.6,
-  "total_elapsed_seconds": 716.7,
+  "steps_per_sec": 2.74,
+  "init_elapsed_seconds": 2.3,
+  "total_elapsed_seconds": 731.1,
   "n_episodes": 20,
   "num_nodes": 50000,
   "device": "cuda",
   "gate_details": {
-    "init_elapsed(3s) < 300s": true,
-    "steps_per_sec(2.8) >= 10.0": false
+    "init_elapsed(2s) < 300s": true,
+    "steps_per_sec(2.7) >= 10.0": false
   }
 }
