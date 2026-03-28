@@ -2,8 +2,8 @@
   "passed": false,
   "phase1": {
     "episodes": 50,
-    "n_successes": 12,
-    "goal_sks_set_ep": 8
+    "n_successes": 20,
+    "goal_sks_set_ep": 7
   },
   "phase2": {
     "episodes": 200,
@@ -11,7 +11,7 @@
     "success_rate": 0.0,
     "mean_steps": 200.0
   },
-  "goal_seeking_steps": 43318,
+  "goal_seeking_steps": 42994,
   "gate_details": {
     "goal_seeking_steps > 0 [PRIMARY]": true,
     "success_rate_phase2(0.0000) >= 0.05": false

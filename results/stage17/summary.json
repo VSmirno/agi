@@ -3,39 +3,60 @@
   "all_passed": false,
   "experiments": {
     "exp38": {
-      "passed": false,
-      "steps_per_sec": 2.74,
-      "init_elapsed_seconds": 2.3,
-      "total_elapsed_seconds": 731.1,
+      "passed": true,
+      "steps_per_sec": 16.53,
+      "init_elapsed_seconds": 3.1,
+      "total_elapsed_seconds": 121.0,
       "n_episodes": 20,
       "num_nodes": 50000,
       "device": "cuda",
+      "timing_breakdown": {
+        "n_cycles_measured": 4149,
+        "engine_step_ms_mean": 26.3,
+        "cycle_total_ms_mean": 27.8,
+        "engine_step_fraction": 0.946,
+        "other_pipeline_ms_mean": 1.5,
+        "first5_engine_ms": [
+          810.6,
+          26.5,
+          26.2,
+          26.3,
+          26.4
+        ],
+        "first5_cycle_ms": [
+          813.7,
+          27.6,
+          27.7,
+          27.8,
+          27.8
+        ]
+      },
       "gate_details": {
-        "init_elapsed(2s) < 300s": true,
-        "steps_per_sec(2.7) >= 10.0": false
+        "init_elapsed(3s) < 300s": true,
+        "steps_per_sec(16.5) >= 10.0": true
       }
     },
     "exp39": {
       "passed": false,
       "no_replay": {
-        "mean_coverage": 0.1278,
+        "mean_coverage": 0.1744,
         "n_episodes": 100
       },
       "with_replay": {
-        "mean_coverage": 0.1278,
+        "mean_coverage": 0.1333,
         "n_episodes": 100
       },
       "gate_details": {
-        "coverage_replay(0.1278) >= coverage_no_replay(0.1278)": true,
-        "coverage_replay(0.1278) >= 0.25": false
+        "coverage_replay(0.1333) >= coverage_no_replay(0.1744)": false,
+        "coverage_replay(0.1333) >= 0.25": false
       }
     },
     "exp40": {
       "passed": false,
       "phase1": {
         "episodes": 50,
-        "n_successes": 12,
-        "goal_sks_set_ep": 8
+        "n_successes": 20,
+        "goal_sks_set_ep": 7
       },
       "phase2": {
         "episodes": 200,
@@ -43,7 +64,7 @@
         "success_rate": 0.0,
         "mean_steps": 200.0
       },
-      "goal_seeking_steps": 43318,
+      "goal_seeking_steps": 42994,
       "gate_details": {
         "goal_seeking_steps > 0 [PRIMARY]": true,
         "success_rate_phase2(0.0000) >= 0.05": false
