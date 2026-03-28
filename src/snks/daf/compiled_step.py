@@ -112,7 +112,12 @@ def _make_fhn_chunk(chunk_size: int):
 _compiled_cache: dict[str, object] = {}
 
 
-def make_compiled_integrate(backend: str = "inductor", chunk_size: int = _COMPILE_CHUNK):
+def make_compiled_integrate(
+    backend: str = "inductor",
+    chunk_size: int = _COMPILE_CHUNK,
+    hint_N: int = 0,
+    hint_E: int = 0,
+):
     """Create a compiled chunk-step FHN integration function.
 
     Compiles a function that runs chunk_size steps per call.
@@ -121,12 +126,16 @@ def make_compiled_integrate(backend: str = "inductor", chunk_size: int = _COMPIL
     Args:
         backend: torch.compile backend ("inductor", "aot_eager", etc.)
         chunk_size: steps per compiled call (default 10 — fast to compile)
+        hint_N: expected number of nodes for warmup (0 = use small default).
+            Pass the actual N to pre-compile for that size and avoid retrace
+            on the first real call (important for AMD ROCm where retrace is slow).
+        hint_E: expected number of edges for warmup (0 = use small default).
 
     Returns:
         compiled fn(v,w,ext,src,dst,ew,K,I,a,b,inv_tau,dt,sig,thresh) → (v,w,fired_chunk)
         or None if compilation failed.
     """
-    cache_key = f"fn_chunk{chunk_size}"
+    cache_key = f"fn_chunk{chunk_size}_N{hint_N}_E{hint_E}"
     if cache_key in _compiled_cache:
         return _compiled_cache[cache_key]
 
@@ -144,9 +153,12 @@ def make_compiled_integrate(backend: str = "inductor", chunk_size: int = _COMPIL
         chunk_fn = _make_fhn_chunk(chunk_size)
         compiled = torch.compile(chunk_fn, **compile_opts)
 
-        # Warmup with small tensors to trigger compilation and catch errors early
+        # Warmup: trigger compilation for the expected shapes so no retrace on first real call.
+        # Using hint_N/hint_E (actual graph size) avoids the slow N=50K→large re-trace
+        # on AMD ROCm where inductor retrace for new shapes takes 3+ minutes.
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        N, E = 64, 128
+        N = hint_N if hint_N > 0 else 64
+        E = hint_E if hint_E > 0 else 128
         _v = torch.randn(N, device=device)
         _w = torch.randn(N, device=device)
         _ext = torch.zeros(N, device=device)
