@@ -88,9 +88,9 @@ class DafEngine:
         self._graph_fired_history: torch.Tensor | None = None
 
         # Compiled step (fuses FHN + coupling + noise into fewer kernels)
+        # Lazily compiled on first step() call once n_steps is known.
         self._compiled_step_fn = None
-        if config.oscillator_model == "fhn" and self.device.type == "cuda":
-            self._compiled_step_fn = make_compiled_integrate()
+        self._compiled_n_steps: int = 0  # n_steps the current fn was compiled for
         # Pre-computed edge weights for compiled path: sign * strength
         self._edge_weight = (self._edge_sign * self.graph.edge_attr[:, 0]).contiguous()
 
@@ -128,6 +128,15 @@ class DafEngine:
 
         Returns StepResult with cloned states (safe to hold reference).
         """
+        # Lazy compile: build the fused n_steps loop on first call (or when n_steps changes)
+        if (
+            self.config.oscillator_model == "fhn"
+            and self.device.type == "cuda"
+            and self._compiled_n_steps != n_steps
+        ):
+            self._compiled_step_fn = make_compiled_integrate(n_steps=n_steps)
+            self._compiled_n_steps = n_steps
+
         use_compiled = (
             self._compiled_step_fn is not None
             and self.config.oscillator_model == "fhn"
