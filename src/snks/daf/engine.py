@@ -87,10 +87,15 @@ class DafEngine:
         self._graph_n_steps: int = 0
         self._graph_fired_history: torch.Tensor | None = None
 
-        # Compiled step (fuses FHN + coupling + noise into fewer kernels)
-        # Lazily compiled on first step() call once n_steps is known.
+        # Compiled step: chunk-based FHN kernel reduces HIP dispatch overhead.
+        # make_compiled_integrate() compiles a CHUNK_SIZE-step function; engine
+        # calls it n_steps // chunk_size times per cycle.
         self._compiled_step_fn = None
-        self._compiled_n_steps: int = 0  # n_steps the current fn was compiled for
+        self._compiled_chunk_size: int = 0
+        if config.oscillator_model == "fhn" and self.device.type == "cuda":
+            from snks.daf.compiled_step import _COMPILE_CHUNK
+            self._compiled_step_fn = make_compiled_integrate()
+            self._compiled_chunk_size = _COMPILE_CHUNK if self._compiled_step_fn is not None else 0
         # Pre-computed edge weights for compiled path: sign * strength
         self._edge_weight = (self._edge_sign * self.graph.edge_attr[:, 0]).contiguous()
 
@@ -128,15 +133,6 @@ class DafEngine:
 
         Returns StepResult with cloned states (safe to hold reference).
         """
-        # Lazy compile: build the fused n_steps loop on first call (or when n_steps changes)
-        if (
-            self.config.oscillator_model == "fhn"
-            and self.device.type == "cuda"
-            and self._compiled_n_steps != n_steps
-        ):
-            self._compiled_step_fn = make_compiled_integrate(n_steps=n_steps)
-            self._compiled_n_steps = n_steps
-
         use_compiled = (
             self._compiled_step_fn is not None
             and self.config.oscillator_model == "fhn"
@@ -165,6 +161,7 @@ class DafEngine:
                 dt=self.config.dt,
                 noise_sigma=self.config.noise_sigma,
                 step_fn=self._compiled_step_fn,
+                chunk_size=self._compiled_chunk_size,
             )
         elif use_graph:
             try:

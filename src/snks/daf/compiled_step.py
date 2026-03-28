@@ -1,13 +1,23 @@
 """Torch-compilable FHN integration step.
 
 Fuses FHN dynamics + scatter_add coupling + noise + spike detection
-into a single compiled kernel, reducing HIP/CUDA launch overhead
-from ~10 kernels/step to ~1-2.
+into a compiled kernel, reducing HIP/CUDA launch overhead.
+
+Strategy: compile a CHUNK_SIZE-step kernel (default 10), then call it
+n_steps // CHUNK_SIZE times per perception cycle. This gives:
+  - Fast compile: 10-step graph << 100-step graph (~10x less complex)
+  - Low dispatch overhead: 10 HIP launches vs 100 (10x reduction)
+  - Predictable performance: each 10-step call = 1 HIP dispatch + GPU compute
 """
 
 from __future__ import annotations
 
 import torch
+
+# Number of FHN steps to compile into a single kernel.
+# Trade-off: larger chunk = fewer dispatches, but slower to compile.
+# 10 steps compiles in ~1-2s; 100 steps takes 10+ minutes on AMD ROCm inductor.
+_COMPILE_CHUNK: int = 10
 
 
 def _fhn_step_inner(
@@ -54,13 +64,15 @@ def _fhn_step_inner(
     return v_new, w_new, fired
 
 
-def _make_fhn_loop(n_steps: int):
-    """Return a function that runs exactly n_steps FHN iterations.
+def _make_fhn_chunk(chunk_size: int):
+    """Return a function that runs exactly chunk_size FHN steps.
 
-    The loop is inlined so torch.compile sees the full unrolled computation
-    graph — eliminating 100× HIP kernel dispatch overhead on AMD ROCm.
+    The loop is inlined so torch.compile generates one GPU kernel per
+    chunk call, reducing HIP dispatch overhead from chunk_size to 1.
+    chunk_size=10 compiles quickly (~1-2s) while still giving 10x
+    dispatch reduction vs single-step compilation.
     """
-    def _fhn_loop(
+    def _fhn_chunk(
         v: torch.Tensor,
         w: torch.Tensor,
         ext_v: torch.Tensor,
@@ -76,10 +88,10 @@ def _make_fhn_loop(n_steps: int):
         sqrt_dt_sigma: float,
         spike_thresh: float,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Run n_steps FHN steps fused into one compiled kernel."""
+        """Run chunk_size FHN steps as one compiled kernel. Returns (v, w, fired_chunk)."""
         N = v.shape[0]
-        fired_history = torch.zeros(n_steps, N, dtype=torch.bool, device=v.device)
-        for t in range(n_steps):
+        fired_chunk = torch.zeros(chunk_size, N, dtype=torch.bool, device=v.device)
+        for t in range(chunk_size):
             dv = v - v * v * v / 3.0 - w + I_base
             v_src = v[src_idx]
             v_dst = v[dst_idx]
@@ -91,36 +103,36 @@ def _make_fhn_loop(n_steps: int):
             dw = (v + a - b * w) * inv_tau
             v = v + dt * dv + sqrt_dt_sigma * torch.randn_like(v)
             w = w + dt * dw + sqrt_dt_sigma * torch.randn_like(w)
-            fired_history[t] = v > spike_thresh
-        return v, w, fired_history
+            fired_chunk[t] = v > spike_thresh
+        return v, w, fired_chunk
 
-    return _fhn_loop
+    return _fhn_chunk
 
 
 _compiled_cache: dict[str, object] = {}
 
 
-def make_compiled_integrate(backend: str = "inductor", n_steps: int = 100):
-    """Create a compiled multi-step FHN integration function.
+def make_compiled_integrate(backend: str = "inductor", chunk_size: int = _COMPILE_CHUNK):
+    """Create a compiled chunk-step FHN integration function.
 
-    Compiles a function that runs n_steps iterations internally, so
-    torch.compile sees the full loop as one graph — reducing HIP kernel
-    dispatch overhead from n_steps launches to 1-2 on AMD ROCm.
+    Compiles a function that runs chunk_size steps per call.
+    Call it n_steps // chunk_size times to cover a full perception cycle.
 
     Args:
         backend: torch.compile backend ("inductor", "aot_eager", etc.)
-        n_steps: number of integration steps per call (baked into the graph)
+        chunk_size: steps per compiled call (default 10 — fast to compile)
 
     Returns:
-        compiled (v,w,ext,src,dst,ew,K,I,a,b,inv_tau,dt,sig,thresh) → (v,w,fired_history)
+        compiled fn(v,w,ext,src,dst,ew,K,I,a,b,inv_tau,dt,sig,thresh) → (v,w,fired_chunk)
+        or None if compilation failed.
     """
-    cache_key = f"fn_{n_steps}"
+    cache_key = f"fn_chunk{chunk_size}"
     if cache_key in _compiled_cache:
         return _compiled_cache[cache_key]
 
     try:
         is_hip = hasattr(torch.version, "hip") and torch.version.hip is not None
-        # dynamic=True: symbolic N/E shapes — no re-tracing on node/edge count change
+        # dynamic=True: symbolic N/E shapes — no re-tracing when node/edge count changes
         compile_opts: dict = {"backend": backend, "dynamic": True}
         if is_hip:
             # PyTorch 2.6+: mode and options are mutually exclusive — use options only.
@@ -129,10 +141,10 @@ def make_compiled_integrate(backend: str = "inductor", n_steps: int = 100):
         else:
             compile_opts["mode"] = "max-autotune"
 
-        loop_fn = _make_fhn_loop(n_steps)
-        compiled = torch.compile(loop_fn, **compile_opts)
+        chunk_fn = _make_fhn_chunk(chunk_size)
+        compiled = torch.compile(chunk_fn, **compile_opts)
 
-        # Warmup: trigger compilation now to catch errors early
+        # Warmup with small tensors to trigger compilation and catch errors early
         device = "cuda" if torch.cuda.is_available() else "cpu"
         N, E = 64, 128
         _v = torch.randn(N, device=device)
@@ -165,22 +177,25 @@ def integrate_fhn_compiled(
     noise_sigma: float,
     spike_thresh: float = 0.5,
     step_fn=None,
+    chunk_size: int = _COMPILE_CHUNK,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Run n FHN integration steps using a compiled multi-step function.
+    """Run n FHN integration steps, using compiled chunk calls when available.
 
-    When step_fn is provided (compiled loop), runs all n_steps as one GPU call.
-    Falls back to Python loop with per-step step_fn when step_fn is None.
+    When step_fn is provided, calls it in chunks of chunk_size (e.g. 10 steps each).
+    This reduces HIP dispatch overhead from n_steps launches to n_steps/chunk_size.
+    Falls back to Python single-step loop when step_fn is None.
 
     Args:
         states: (N, 8) — modified in-place
         ext_currents: (N, 8) — external input
         src_idx, dst_idx: edge indices
         edge_weight: (E,) = sign * strength for each edge
-        n_steps: integration steps
+        n_steps: total integration steps
         K, I_base, a, b, tau: FHN params
         dt, noise_sigma: integration params
         spike_thresh: spike detection threshold
-        step_fn: compiled loop function (v,w,ext,...) → (v,w,fired_history), or None
+        step_fn: compiled chunk function → (v, w, fired_chunk), or None
+        chunk_size: steps per compiled call (must match what step_fn was compiled for)
 
     Returns:
         (states, fired_history) where fired_history is (n_steps, N) bool
@@ -194,11 +209,30 @@ def integrate_fhn_compiled(
     sqrt_dt_sigma = (dt ** 0.5) * noise_sigma
 
     if step_fn is not None:
-        # Compiled path: entire loop runs as one GPU call — no Python overhead
-        v, w, fired_history = step_fn(
-            v, w, ext_v, src_idx, dst_idx, edge_weight,
-            K, I_base, a, b, inv_tau, dt, sqrt_dt_sigma, spike_thresh,
-        )
+        # Compiled chunk path: n_steps/chunk_size dispatches instead of n_steps
+        n_chunks = n_steps // chunk_size
+        remainder = n_steps % chunk_size
+
+        chunks: list[torch.Tensor] = []
+        for _ in range(n_chunks):
+            v, w, fired_chunk = step_fn(
+                v, w, ext_v, src_idx, dst_idx, edge_weight,
+                K, I_base, a, b, inv_tau, dt, sqrt_dt_sigma, spike_thresh,
+            )
+            chunks.append(fired_chunk)
+
+        # Handle remainder steps with Python fallback
+        if remainder > 0:
+            rem_history = torch.empty(remainder, N, dtype=torch.bool, device=states.device)
+            for t in range(remainder):
+                v, w, fired = _fhn_step_inner(
+                    v, w, ext_v, src_idx, dst_idx, edge_weight,
+                    K, I_base, a, b, inv_tau, dt, sqrt_dt_sigma, spike_thresh,
+                )
+                rem_history[t] = fired
+            chunks.append(rem_history)
+
+        fired_history = torch.cat(chunks, dim=0) if len(chunks) > 1 else chunks[0]
     else:
         # Fallback: Python for loop (slow on AMD ROCm due to HIP dispatch overhead)
         fired_history = torch.empty(n_steps, N, dtype=torch.bool, device=states.device)
