@@ -201,5 +201,16 @@ if __name__ == "__main__":
     print("\nGate details:")
     for k, v in _result["gate_details"].items():
         print(f"  [{'PASS' if v else 'FAIL'}] {k}")
+    tb = _result.get("timing_breakdown", {})
+    if tb:
+        print("\nTiming breakdown (steady-state, skip first 5 cycles):")
+        print(f"  engine_step_ms_mean:    {tb.get('engine_step_ms_mean', '?')} ms")
+        print(f"  cycle_total_ms_mean:    {tb.get('cycle_total_ms_mean', '?')} ms")
+        print(f"  other_pipeline_ms_mean: {tb.get('other_pipeline_ms_mean', '?')} ms")
+        print(f"  engine_step_fraction:   {tb.get('engine_step_fraction', '?')}")
+        print(f"  n_cycles_measured:      {tb.get('n_cycles_measured', '?')}")
+        print(f"  first5_engine_ms:       {tb.get('first5_engine_ms', '?')}")
+        print(f"  first5_cycle_ms:        {tb.get('first5_cycle_ms', '?')}")
+
     print(f"\n{'PASS' if _result['passed'] else 'FAIL'}")
     sys.exit(0 if _result["passed"] else 1)
