@@ -94,7 +94,11 @@ class DafEngine:
         self._compiled_chunk_size: int = 0
         if config.oscillator_model == "fhn" and self.device.type == "cuda":
             from snks.daf.compiled_step import _COMPILE_CHUNK
-            self._compiled_step_fn = make_compiled_integrate()
+            # Pass actual N/E as hints so warmup compiles for the real graph size,
+            # avoiding a slow re-trace on the first real call (critical on AMD ROCm).
+            self._compiled_step_fn = make_compiled_integrate(
+                hint_N=N, hint_E=self.graph.num_edges
+            )
             self._compiled_chunk_size = _COMPILE_CHUNK if self._compiled_step_fn is not None else 0
         # Pre-computed edge weights for compiled path: sign * strength
         self._edge_weight = (self._edge_sign * self.graph.edge_attr[:, 0]).contiguous()
