@@ -133,7 +133,14 @@ def run(device: str = "cpu") -> dict:
         step = 0
 
         while not done and step < _MAX_STEPS:
+            # Phase 1 bootstrap: configurator stuck in "neutral" on a fresh network
+            # (CausalAgent default = turn-left/pick-up, rarely moves forward).
+            # Force random exploration until goal_sks is established so the agent
+            # reaches the goal. Pipeline still runs for learning; observe_result()
+            # still called → causal model learns from real experience.
             action = agent.step(obs)
+            if agent._goal_sks is None:
+                action = random.randint(0, agent.n_actions - 1)
 
             result = agent.causal_agent.pipeline.last_cycle_result
             if result is not None and result.configurator_action is not None:
