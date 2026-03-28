@@ -50,7 +50,14 @@ class ReplayEngine:
             if not node_ids:
                 continue
             self.daf_engine.inject_external_currents(node_ids, value=1.0)
+            # Disable internal learning during replay: daf_engine.step() with
+            # enable_learning=True would apply STDP inside step(), then this code
+            # would apply it again — double STDP on the same fired_history.
+            # Instead, run step without learning and apply STDP once here.
+            orig_learning = self.daf_engine.enable_learning
+            self.daf_engine.enable_learning = False
             result = self.daf_engine.step(n_steps=self.n_steps)
+            self.daf_engine.enable_learning = orig_learning
             if result.fired_history is not None:
                 self.stdp.apply(self.daf_engine.graph, result.fired_history)
                 stdp_updates += 1

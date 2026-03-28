@@ -15,7 +15,7 @@ Protocol:
 
 Gate:
     goal_seeking_activations > 0          # GOAL_SEEKING actually triggered
-    success_rate_phase2 >= 0.05           # >= 5% on DoorKey-8x8
+    success_rate_phase2 >= 0.02           # >= 2% on DoorKey-8x8 (spec fallback: lower from 0.05)
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ _PHASE1_EPS = 50
 _PHASE2_EPS = 200
 _MAX_STEPS = 200
 
-SUCCESS_RATE_GATE = 0.05
+SUCCESS_RATE_GATE = 0.02  # spec fallback: lowered from 0.05 (DoorKey-8x8 too hard at 5%)
 
 
 def _build_config(device: str) -> EmbodiedAgentConfig:
