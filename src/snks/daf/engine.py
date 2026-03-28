@@ -345,5 +345,7 @@ class DafEngine:
         self._dst_v_buf = torch.empty(E, device=self.device)
         self._edge_sign = (1.0 - 2.0 * self.graph.edge_attr[:, 3]).contiguous()
         self._edge_weight = (self._edge_sign * self.graph.edge_attr[:, 0]).contiguous()
-        # Rebuild CSR (structure changed)
-        self._coupling_csr, self._coupling_degree = build_coupling_csr(self.graph)
+        # Rebuild CSR only if CSR is enabled (disable_csr=True skips — avoids slow
+        # HIP compilation of torch.sparse_csr_tensor on AMD ROCm for large N)
+        if not self.config.disable_csr:
+            self._coupling_csr, self._coupling_degree = build_coupling_csr(self.graph)
