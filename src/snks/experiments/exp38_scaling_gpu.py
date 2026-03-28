@@ -81,7 +81,7 @@ def run(device: str = "cuda", n_episodes: int = 20) -> dict:
 
     Returns:
         Dict with keys: passed, steps_per_sec, init_elapsed_seconds,
-        total_elapsed_seconds, n_episodes, gate_details.
+        total_elapsed_seconds, n_episodes, gate_details, timing_breakdown.
     """
     os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "11.0.0")
 
@@ -97,7 +97,22 @@ def run(device: str = "cuda", n_episodes: int = 20) -> dict:
     def _img(o):
         return o["image"] if isinstance(o, dict) else o
 
+    # --- Timing instrumentation: wrap engine.step to measure its fraction ---
+    pipeline = agent.causal_agent.pipeline
+    _orig_engine_step = pipeline.engine.step
+    _engine_step_times_ms: list[float] = []
+
+    def _timed_engine_step(n_steps: int):
+        _t = time.perf_counter()
+        result = _orig_engine_step(n_steps)
+        _engine_step_times_ms.append((time.perf_counter() - _t) * 1000.0)
+        return result
+
+    pipeline.engine.step = _timed_engine_step
+    # -----------------------------------------------------------------------
+
     t_start = time.perf_counter()
+    _cycle_times_ms: list[float] = []
 
     for ep in range(n_episodes):
         _obs, _ = env.reset(seed=ep)
@@ -106,6 +121,9 @@ def run(device: str = "cuda", n_episodes: int = 20) -> dict:
 
         while not done:
             action = agent.step(obs)
+            last = agent.causal_agent.pipeline.last_cycle_result
+            if last is not None:
+                _cycle_times_ms.append(last.cycle_time_ms)
             _obs_next, _, terminated, truncated, _ = env.step(action)
             obs_next = _img(_obs_next)
             done = terminated or truncated
@@ -115,6 +133,32 @@ def run(device: str = "cuda", n_episodes: int = 20) -> dict:
     t_end = time.perf_counter()
     total_elapsed = t_end - t_start
     steps_per_sec = (n_episodes * max_steps) / total_elapsed
+
+    # Restore original engine.step
+    pipeline.engine.step = _orig_engine_step
+
+    # Summarise timing: skip first 5 cycles (JIT/compile warmup)
+    WARMUP = 5
+    eng = _engine_step_times_ms[WARMUP:]
+    cyc = _cycle_times_ms[WARMUP:]
+    if eng and cyc:
+        eng_mean = sum(eng) / len(eng)
+        cyc_mean = sum(cyc) / len(cyc)
+        eng_frac = eng_mean / cyc_mean if cyc_mean > 0 else 0.0
+        other_mean = cyc_mean - eng_mean
+    else:
+        eng_mean = cyc_mean = eng_frac = other_mean = 0.0
+
+    timing_breakdown = {
+        "n_cycles_measured": len(eng),
+        "engine_step_ms_mean": round(eng_mean, 1),
+        "cycle_total_ms_mean": round(cyc_mean, 1),
+        "engine_step_fraction": round(eng_frac, 3),
+        "other_pipeline_ms_mean": round(other_mean, 1),
+        # First 5 cycles to see JIT/compile time
+        "first5_engine_ms": [round(x, 1) for x in _engine_step_times_ms[:5]],
+        "first5_cycle_ms":  [round(x, 1) for x in _cycle_times_ms[:5]],
+    }
 
     gate_init = init_elapsed < INIT_ELAPSED_GATE
     gate_speed = steps_per_sec >= STEPS_PER_SEC_GATE
@@ -128,6 +172,7 @@ def run(device: str = "cuda", n_episodes: int = 20) -> dict:
         "n_episodes": n_episodes,
         "num_nodes": 50_000,
         "device": device,
+        "timing_breakdown": timing_breakdown,
         "gate_details": {
             f"init_elapsed({init_elapsed:.0f}s) < {INIT_ELAPSED_GATE:.0f}s": gate_init,
             f"steps_per_sec({steps_per_sec:.1f}) >= {STEPS_PER_SEC_GATE}": gate_speed,
