@@ -16,27 +16,33 @@ class TextEncoder:
     """
 
     def __init__(self, config: EncoderConfig, device: str | None = None) -> None:
-        from sentence_transformers import SentenceTransformer
-
         self.config = config
         # Resolve device: sentence-transformers accepts only torch device strings
         _device = device or "cpu"
         if _device in ("auto", ""):
             _device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = _device
+        self.k = round(config.sdr_size * config.sdr_sparsity)
 
-        # Frozen sentence-transformer
+        # Lazy: model and projection matrix loaded on first encode() call
+        self._st_model = None
+        self._proj = None
+
+    def _ensure_loaded(self) -> None:
+        """Load sentence-transformer and projection matrix on first use."""
+        if self._st_model is not None:
+            return
+        from sentence_transformers import SentenceTransformer
+
         self._st_model = SentenceTransformer("all-MiniLM-L6-v2", device=self.device)
         self._st_model.eval()
 
         # Fixed random projection matrix: (384, sdr_size), columns normalized to unit L2 norm
         g = torch.Generator()
         g.manual_seed(42)
-        proj = torch.randn(384, config.sdr_size, generator=g)
+        proj = torch.randn(384, self.config.sdr_size, generator=g)
         proj = proj / proj.norm(dim=0, keepdim=True)  # normalize columns
         self._proj = proj.to(self.device)
-
-        self.k = round(config.sdr_size * config.sdr_sparsity)
 
     def encode(self, text: str) -> torch.Tensor:
         """Encode text to binary SDR.
@@ -47,6 +53,7 @@ class TextEncoder:
         Returns:
             (sdr_size,) binary SDR, float32.
         """
+        self._ensure_loaded()
         with torch.no_grad():
             emb = self._st_model.encode(text, convert_to_tensor=True, show_progress_bar=False)
             emb = emb.to(self.device).float()  # (384,)
