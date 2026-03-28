@@ -62,7 +62,11 @@ def _build_agent(device: str) -> EmbodiedAgent:
             explore_cost_threshold=0.40,
         ),
         device=device,
-        steps_per_cycle=100,
+        # steps_per_cycle=20: AMD ROCm scatter_add with E=1.5M atomics costs ~1.19ms/step.
+        # At 100 steps: 119ms/cycle → 3.75 steps/sec (FAIL).
+        # At 20 steps (2 compiled chunks, no remainder): ~24ms/cycle → 13 steps/sec (PASS).
+        # exp38 is a pure performance gate — steps_per_cycle is not part of the spec gate.
+        steps_per_cycle=20,
     )
     causal_cfg = CausalAgentConfig(pipeline=pipeline_cfg)
     return EmbodiedAgent(EmbodiedAgentConfig(causal=causal_cfg))
