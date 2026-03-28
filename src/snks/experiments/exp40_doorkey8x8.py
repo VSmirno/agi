@@ -19,9 +19,11 @@ Gate:
 """
 from __future__ import annotations
 
+import random
 import sys
 
 import numpy as np
+import torch
 
 from snks.agent.agent import _perceptual_hash
 from snks.agent.embodied_agent import EmbodiedAgent, EmbodiedAgentConfig
@@ -41,7 +43,7 @@ from snks.daf.types import (
 )
 from snks.env.causal_grid import make_level
 
-_PHASE1_EPS = 50
+_PHASE1_EPS = 100   # increased 50→100: Phase 1 non-deterministic without fixed seed
 _PHASE2_EPS = 200
 _MAX_STEPS = 200
 
@@ -108,6 +110,12 @@ def _img(obs) -> np.ndarray:
 
 
 def run(device: str = "cpu") -> dict:
+    # Fix non-determinism: agent init (DAF weights, encoder, SKS) is random.
+    # Without fixed seed Phase 1 success rate varies 0–20/50 across runs.
+    torch.manual_seed(42)
+    random.seed(42)
+    np.random.seed(42)
+
     config = _build_config(device)
     agent  = EmbodiedAgent(config)
 
