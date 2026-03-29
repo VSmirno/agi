@@ -107,6 +107,7 @@ class EmbodiedAgent:
                     stdp=self.causal_agent.pipeline.engine.stdp,
                     top_k=config.replay.top_k,
                     n_steps=config.replay.n_steps,
+                    mode=config.replay.mode,
                 )
 
     @property

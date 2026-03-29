@@ -245,6 +245,7 @@ class ReplayConfig:
     enabled: bool = False
     top_k: int = 10
     n_steps: int = 50
+    mode: str = "importance"  # "importance" | "recency" | "uniform"
 
 
 @dataclass
