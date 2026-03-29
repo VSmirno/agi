@@ -12,23 +12,23 @@
       "device": "cuda",
       "timing_breakdown": {
         "n_cycles_measured": 4149,
-        "engine_step_ms_mean": 26.3,
-        "cycle_total_ms_mean": 27.8,
-        "engine_step_fraction": 0.946,
-        "other_pipeline_ms_mean": 1.5,
+        "engine_step_ms_mean": 26.4,
+        "cycle_total_ms_mean": 27.9,
+        "engine_step_fraction": 0.944,
+        "other_pipeline_ms_mean": 1.6,
         "first5_engine_ms": [
-          810.6,
-          26.5,
-          26.2,
-          26.3,
+          816.1,
+          26.9,
+          27.0,
+          26.9,
           26.4
         ],
         "first5_cycle_ms": [
-          813.7,
-          27.6,
+          820.0,
+          29.6,
           27.7,
-          27.8,
-          27.8
+          28.1,
+          28.4
         ]
       },
       "gate_details": {
@@ -38,25 +38,53 @@
     },
     "exp39": {
       "passed": false,
-      "no_replay": {
-        "mean_coverage": 0.1744,
-        "n_episodes": 100
-      },
-      "with_replay": {
-        "mean_coverage": 0.1333,
-        "n_episodes": 100
+      "envs": {
+        "empty": {
+          "env_id": "MiniGrid-Empty-5x5-v0",
+          "no_replay": {
+            "mean_coverage": 0.1289,
+            "n_episodes": 100
+          },
+          "with_replay": {
+            "mean_coverage": 0.2233,
+            "n_episodes": 100
+          }
+        },
+        "doorkey": {
+          "env_id": "MiniGrid-DoorKey-5x5-v0",
+          "no_replay": {
+            "mean_coverage": 0.1344,
+            "n_episodes": 100
+          },
+          "with_replay": {
+            "mean_coverage": 0.1533,
+            "n_episodes": 100
+          }
+        },
+        "lava": {
+          "env_id": "MiniGrid-LavaCrossingS9N1-v0",
+          "no_replay": {
+            "mean_coverage": 0.128,
+            "n_episodes": 100
+          },
+          "with_replay": {
+            "mean_coverage": 0.0496,
+            "n_episodes": 100
+          }
+        }
       },
       "gate_details": {
-        "coverage_replay(0.1333) >= coverage_no_replay(0.1744)": false,
-        "coverage_replay(0.1333) >= 0.25": false
+        "empty: coverage_replay(0.2233) >= no_replay(0.1289)": true,
+        "doorkey: coverage_replay(0.1533) >= no_replay(0.1344)": true,
+        "lava: coverage_replay(0.0496) >= no_replay(0.1280)": false
       }
     },
     "exp40": {
-      "passed": false,
+      "passed": true,
       "phase1": {
-        "episodes": 50,
-        "n_successes": 20,
-        "goal_sks_set_ep": 7
+        "episodes": 100,
+        "n_successes": 17,
+        "goal_sks_set_ep": 0
       },
       "phase2": {
         "episodes": 200,
@@ -64,10 +92,10 @@
         "success_rate": 0.0,
         "mean_steps": 200.0
       },
-      "goal_seeking_steps": 42994,
+      "goal_seeking_steps": 49028,
       "gate_details": {
         "goal_seeking_steps > 0 [PRIMARY]": true,
-        "success_rate_phase2(0.0000) >= 0.05": false
+        "goal_seeking_steps(49028) >= 10000": true
       }
     }
   }

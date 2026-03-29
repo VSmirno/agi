@@ -8,23 +8,23 @@
   "device": "cuda",
   "timing_breakdown": {
     "n_cycles_measured": 4149,
-    "engine_step_ms_mean": 26.3,
-    "cycle_total_ms_mean": 27.8,
-    "engine_step_fraction": 0.946,
-    "other_pipeline_ms_mean": 1.5,
+    "engine_step_ms_mean": 26.4,
+    "cycle_total_ms_mean": 27.9,
+    "engine_step_fraction": 0.944,
+    "other_pipeline_ms_mean": 1.6,
     "first5_engine_ms": [
-      810.6,
-      26.5,
-      26.2,
-      26.3,
+      816.1,
+      26.9,
+      27.0,
+      26.9,
       26.4
     ],
     "first5_cycle_ms": [
-      813.7,
-      27.6,
+      820.0,
+      29.6,
       27.7,
-      27.8,
-      27.8
+      28.1,
+      28.4
     ]
   },
   "gate_details": {
