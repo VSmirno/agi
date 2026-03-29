@@ -92,6 +92,14 @@ def _img(obs) -> np.ndarray:
 
 
 def _run_variant(device: str, env_id: str, replay_enabled: bool) -> dict:
+    # Fixed seed: both variants (no_replay / with_replay) must start from identical
+    # network initialization so delta reflects only the effect of replay, not noise.
+    import random
+    import torch
+    torch.manual_seed(42)
+    random.seed(42)
+    np.random.seed(42)
+
     cfg = _build_config(device, replay_enabled)
     agent = EmbodiedAgent(cfg)
     env = _make_env(env_id)
