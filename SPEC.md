@@ -2,7 +2,7 @@
 
 **Версия:** 0.8.0
 **Дата:** 2026-03-26
-**Статус:** Этапы 0–16 реализованы (код + unit тесты). Stage 17 в работе.
+**Статус:** Этапы 0–17 реализованы (код + unit тесты). MVP COMPLETE.
 
 > Детальные спецификации этапов: [`specs/`](specs/)
 
@@ -255,9 +255,9 @@ class DcamWorldModel:
 - Stage 16 (2026-03-26): COMPLETE. DCAM Tiered Memory Consolidation.
   AgentTransitionBuffer, ConsolidationScheduler, TieredPlanner, ReplayEngine.
   Exp 35 cold_overrides=4000 ✅, Exp 36 sim=1.0 edges=4 ✅, Exp 37 stdp_updates=1 ✅.
-- Stage 17 (2026-03-26): IN PROGRESS. Full-Scale Validation.
-  Exp 38 N=50K AMD ROCm GPU benchmark, Exp 39 replay→coverage impact, Exp 40 DoorKey-8x8.
-  Запущено автономно на minipc.
+- Stage 17 (2026-03-29): COMPLETE. Full-Scale Validation.
+  Exp 38 N=50K 16.47 steps/sec ✅, Exp 39 replay+coverage (N=5000, uniform) ✅, Exp 40 goal_seeking=49028 ✅.
+  Key findings: replay requires N≥5000 + uniform sampling (importance toxic for dangerous envs).
 
 ### Граф зависимостей
 
