@@ -4,36 +4,36 @@
   "experiments": {
     "exp38": {
       "passed": true,
-      "steps_per_sec": 16.53,
-      "init_elapsed_seconds": 3.1,
-      "total_elapsed_seconds": 121.0,
+      "steps_per_sec": 16.41,
+      "init_elapsed_seconds": 3.2,
+      "total_elapsed_seconds": 121.9,
       "n_episodes": 20,
       "num_nodes": 50000,
       "device": "cuda",
       "timing_breakdown": {
-        "n_cycles_measured": 4149,
-        "engine_step_ms_mean": 26.4,
-        "cycle_total_ms_mean": 27.9,
-        "engine_step_fraction": 0.944,
-        "other_pipeline_ms_mean": 1.6,
+        "n_cycles_measured": 4157,
+        "engine_step_ms_mean": 26.5,
+        "cycle_total_ms_mean": 28.0,
+        "engine_step_fraction": 0.945,
+        "other_pipeline_ms_mean": 1.5,
         "first5_engine_ms": [
-          816.1,
-          26.9,
-          27.0,
-          26.9,
+          837.8,
+          26.6,
+          26.2,
+          26.4,
           26.4
         ],
         "first5_cycle_ms": [
-          820.0,
-          29.6,
-          27.7,
-          28.1,
-          28.4
+          840.5,
+          27.8,
+          27.8,
+          27.8,
+          28.0
         ]
       },
       "gate_details": {
         "init_elapsed(3s) < 300s": true,
-        "steps_per_sec(16.5) >= 10.0": true
+        "steps_per_sec(16.4) >= 10.0": true
       }
     },
     "exp39": {
@@ -42,41 +42,41 @@
         "empty": {
           "env_id": "MiniGrid-Empty-5x5-v0",
           "no_replay": {
-            "mean_coverage": 0.1289,
+            "mean_coverage": 0.2944,
             "n_episodes": 100
           },
           "with_replay": {
-            "mean_coverage": 0.2233,
+            "mean_coverage": 0.2444,
             "n_episodes": 100
           }
         },
         "doorkey": {
           "env_id": "MiniGrid-DoorKey-5x5-v0",
           "no_replay": {
-            "mean_coverage": 0.1344,
+            "mean_coverage": 0.1433,
             "n_episodes": 100
           },
           "with_replay": {
-            "mean_coverage": 0.1533,
+            "mean_coverage": 0.1433,
             "n_episodes": 100
           }
         },
         "lava": {
           "env_id": "MiniGrid-LavaCrossingS9N1-v0",
           "no_replay": {
-            "mean_coverage": 0.128,
+            "mean_coverage": 0.0714,
             "n_episodes": 100
           },
           "with_replay": {
-            "mean_coverage": 0.0496,
+            "mean_coverage": 0.0516,
             "n_episodes": 100
           }
         }
       },
       "gate_details": {
-        "empty: coverage_replay(0.2233) >= no_replay(0.1289)": true,
-        "doorkey: coverage_replay(0.1533) >= no_replay(0.1344)": true,
-        "lava: coverage_replay(0.0496) >= no_replay(0.1280)": false
+        "empty: coverage_replay(0.2444) >= no_replay(0.2944)": false,
+        "doorkey: coverage_replay(0.1433) >= no_replay(0.1433)": true,
+        "lava: coverage_replay(0.0516) >= no_replay(0.0714)": false
       }
     },
     "exp40": {

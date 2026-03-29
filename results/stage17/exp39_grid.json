@@ -1,0 +1,344 @@
+{
+  "N500_mode=importance_steps=1": {
+    "n_nodes": 500,
+    "replay_mode": "importance",
+    "n_steps": 1,
+    "envs": {
+      "empty": {
+        "deltas": [
+          -0.0289,
+          -0.09
+        ],
+        "mean_delta": -0.0594,
+        "std_delta": 0.0306,
+        "pass_rate": 0.0,
+        "confirmed": false
+      },
+      "doorkey": {
+        "deltas": [
+          -0.0133,
+          0.0067
+        ],
+        "mean_delta": -0.0033,
+        "std_delta": 0.01,
+        "pass_rate": 0.5,
+        "confirmed": false
+      },
+      "lava": {
+        "deltas": [
+          -0.0002,
+          0.0439
+        ],
+        "mean_delta": 0.0218,
+        "std_delta": 0.022,
+        "pass_rate": 0.5,
+        "confirmed": false
+      }
+    },
+    "all_confirmed": false
+  },
+  "N500_mode=importance_steps=5": {
+    "n_nodes": 500,
+    "replay_mode": "importance",
+    "n_steps": 5,
+    "envs": {
+      "empty": {
+        "deltas": [
+          -0.0211,
+          -0.02
+        ],
+        "mean_delta": -0.0206,
+        "std_delta": 0.0006,
+        "pass_rate": 0.0,
+        "confirmed": false
+      },
+      "doorkey": {
+        "deltas": [
+          0.0211,
+          0.0033
+        ],
+        "mean_delta": 0.0122,
+        "std_delta": 0.0089,
+        "pass_rate": 1.0,
+        "confirmed": true
+      },
+      "lava": {
+        "deltas": [
+          -0.0084,
+          0.0012
+        ],
+        "mean_delta": -0.0036,
+        "std_delta": 0.0048,
+        "pass_rate": 0.5,
+        "confirmed": false
+      }
+    },
+    "all_confirmed": false
+  },
+  "N500_mode=importance_steps=20": {
+    "n_nodes": 500,
+    "replay_mode": "importance",
+    "n_steps": 20,
+    "envs": {
+      "empty": {
+        "deltas": [
+          -0.0322,
+          0.0056
+        ],
+        "mean_delta": -0.0133,
+        "std_delta": 0.0189,
+        "pass_rate": 0.5,
+        "confirmed": false
+      },
+      "doorkey": {
+        "deltas": [
+          -0.0133,
+          0.0067
+        ],
+        "mean_delta": -0.0033,
+        "std_delta": 0.01,
+        "pass_rate": 0.5,
+        "confirmed": false
+      },
+      "lava": {
+        "deltas": [
+          -0.0002,
+          0.0439
+        ],
+        "mean_delta": 0.0218,
+        "std_delta": 0.022,
+        "pass_rate": 0.5,
+        "confirmed": false
+      }
+    },
+    "all_confirmed": false
+  },
+  "N500_mode=recency_steps=1": {
+    "n_nodes": 500,
+    "replay_mode": "recency",
+    "n_steps": 1,
+    "envs": {
+      "empty": {
+        "deltas": [
+          -0.0356,
+          0.08
+        ],
+        "mean_delta": 0.0222,
+        "std_delta": 0.0578,
+        "pass_rate": 0.5,
+        "confirmed": false
+      },
+      "doorkey": {
+        "deltas": [
+          -0.0089,
+          0.0156
+        ],
+        "mean_delta": 0.0033,
+        "std_delta": 0.0122,
+        "pass_rate": 0.5,
+        "confirmed": false
+      },
+      "lava": {
+        "deltas": [
+          -0.0104,
+          -0.0006
+        ],
+        "mean_delta": -0.0055,
+        "std_delta": 0.0049,
+        "pass_rate": 0.0,
+        "confirmed": false
+      }
+    },
+    "all_confirmed": false
+  },
+  "N500_mode=recency_steps=5": {
+    "n_nodes": 500,
+    "replay_mode": "recency",
+    "n_steps": 5,
+    "envs": {
+      "empty": {
+        "deltas": [
+          0.0044,
+          -0.0167
+        ],
+        "mean_delta": -0.0061,
+        "std_delta": 0.0106,
+        "pass_rate": 0.5,
+        "confirmed": false
+      },
+      "doorkey": {
+        "deltas": [
+          -0.0067,
+          -0.0033
+        ],
+        "mean_delta": -0.005,
+        "std_delta": 0.0017,
+        "pass_rate": 0.0,
+        "confirmed": false
+      },
+      "lava": {
+        "deltas": [
+          0.0241,
+          -0.0016
+        ],
+        "mean_delta": 0.0112,
+        "std_delta": 0.0129,
+        "pass_rate": 0.5,
+        "confirmed": false
+      }
+    },
+    "all_confirmed": false
+  },
+  "N500_mode=recency_steps=20": {
+    "n_nodes": 500,
+    "replay_mode": "recency",
+    "n_steps": 20,
+    "envs": {
+      "empty": {
+        "deltas": [
+          -0.0356,
+          0.08
+        ],
+        "mean_delta": 0.0222,
+        "std_delta": 0.0578,
+        "pass_rate": 0.5,
+        "confirmed": false
+      },
+      "doorkey": {
+        "deltas": [
+          -0.0089,
+          0.0156
+        ],
+        "mean_delta": 0.0033,
+        "std_delta": 0.0122,
+        "pass_rate": 0.5,
+        "confirmed": false
+      },
+      "lava": {
+        "deltas": [
+          -0.0104,
+          -0.0006
+        ],
+        "mean_delta": -0.0055,
+        "std_delta": 0.0049,
+        "pass_rate": 0.0,
+        "confirmed": false
+      }
+    },
+    "all_confirmed": false
+  },
+  "N500_mode=uniform_steps=1": {
+    "n_nodes": 500,
+    "replay_mode": "uniform",
+    "n_steps": 1,
+    "envs": {
+      "empty": {
+        "deltas": [
+          -0.0244,
+          -0.0244
+        ],
+        "mean_delta": -0.0244,
+        "std_delta": 0.0,
+        "pass_rate": 0.0,
+        "confirmed": false
+      },
+      "doorkey": {
+        "deltas": [
+          -0.0144,
+          -0.0011
+        ],
+        "mean_delta": -0.0078,
+        "std_delta": 0.0067,
+        "pass_rate": 0.0,
+        "confirmed": false
+      },
+      "lava": {
+        "deltas": [
+          0.0014,
+          0.0063
+        ],
+        "mean_delta": 0.0039,
+        "std_delta": 0.0024,
+        "pass_rate": 1.0,
+        "confirmed": true
+      }
+    },
+    "all_confirmed": false
+  },
+  "N500_mode=uniform_steps=5": {
+    "n_nodes": 500,
+    "replay_mode": "uniform",
+    "n_steps": 5,
+    "envs": {
+      "empty": {
+        "deltas": [
+          0.0078,
+          -0.0244
+        ],
+        "mean_delta": -0.0083,
+        "std_delta": 0.0161,
+        "pass_rate": 0.5,
+        "confirmed": false
+      },
+      "doorkey": {
+        "deltas": [
+          0.01,
+          -0.0033
+        ],
+        "mean_delta": 0.0033,
+        "std_delta": 0.0067,
+        "pass_rate": 0.5,
+        "confirmed": false
+      },
+      "lava": {
+        "deltas": [
+          0.0269,
+          0.0531
+        ],
+        "mean_delta": 0.04,
+        "std_delta": 0.0131,
+        "pass_rate": 1.0,
+        "confirmed": true
+      }
+    },
+    "all_confirmed": false
+  },
+  "N500_mode=uniform_steps=20": {
+    "n_nodes": 500,
+    "replay_mode": "uniform",
+    "n_steps": 20,
+    "envs": {
+      "empty": {
+        "deltas": [
+          -0.0244,
+          -0.0244
+        ],
+        "mean_delta": -0.0244,
+        "std_delta": 0.0,
+        "pass_rate": 0.0,
+        "confirmed": false
+      },
+      "doorkey": {
+        "deltas": [
+          -0.0144,
+          -0.0011
+        ],
+        "mean_delta": -0.0078,
+        "std_delta": 0.0067,
+        "pass_rate": 0.0,
+        "confirmed": false
+      },
+      "lava": {
+        "deltas": [
+          0.0014,
+          0.0063
+        ],
+        "mean_delta": 0.0039,
+        "std_delta": 0.0024,
+        "pass_rate": 1.0,
+        "confirmed": true
+      }
+    },
+    "all_confirmed": false
+  }
+}
