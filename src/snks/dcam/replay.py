@@ -25,11 +25,13 @@ class ReplayEngine:
         stdp,           # STDP
         top_k: int = 10,
         n_steps: int = 50,
+        mode: str = "importance",  # "importance" | "recency" | "uniform"
     ) -> None:
         self.daf_engine = daf_engine
         self.stdp = stdp
         self.top_k = top_k
         self.n_steps = n_steps
+        self.mode = mode
 
     def replay(self, agent_buffer) -> ReplayReport:
         """Replay top_k transitions by importance through DAF + STDP.
@@ -40,7 +42,7 @@ class ReplayEngine:
         Returns:
             ReplayReport with counts of replayed episodes and STDP updates.
         """
-        episodes = agent_buffer.get_top_k(k=self.top_k, by="importance")
+        episodes = agent_buffer.get_top_k(k=self.top_k, by=self.mode)
         stdp_updates = 0
         for ep in episodes:
             # post_nodes: from observe_result() where oscillator is warmed up

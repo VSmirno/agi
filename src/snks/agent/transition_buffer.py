@@ -43,7 +43,19 @@ class AgentTransitionBuffer:
         ))
 
     def get_top_k(self, k: int, by: str = "importance") -> list[AgentTransition]:
-        """Return top-k transitions sorted by the given field (descending)."""
+        """Return top-k transitions by selection mode.
+
+        by="importance": highest prediction_error first (current default).
+        by="recency":    most recent transitions (last-in-buffer).
+        by="uniform":    random sample without replacement.
+        """
+        import random as _random
+        if by == "recency":
+            buf = list(self._buf)
+            return buf[-k:] if len(buf) >= k else buf
+        if by == "uniform":
+            buf = list(self._buf)
+            return _random.sample(buf, min(k, len(buf)))
         return sorted(self._buf, key=lambda t: t.importance, reverse=True)[:k]
 
     def __len__(self) -> int:
