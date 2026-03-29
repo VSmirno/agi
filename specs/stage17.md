@@ -52,7 +52,12 @@ init_elapsed_seconds < 300   # инициализация < 5 мин
 - 3 типа сред: Empty-5x5 (навигация), DoorKey-5x5 (объекты), LavaCrossing-9x9 (препятствия)
 - N=500, 100 эпизодов × 2 варианта (no_replay / with_replay) на каждую среду
 - Оба варианта используют одинаковый random seed для env.reset()
-- ReplayConfig: top_k=5, n_steps=5 (reduced from 30)
+- ReplayConfig: top_k=5, n_steps=5, mode=uniform, N=5000
+- Grid sweep N∈{500,2000,5000}×mode∈{importance,recency,uniform}×n_steps∈{5,20}×3seeds:
+  importance: toxic для dangerous envs (replays death → STDP усиливает → coverage↓)
+  recency: недостаточное разнообразие буфера
+  uniform: биологически корректно (sleep consolidation), подтверждён при N=5000
+  ТОЛЬКО N5000+uniform ALL_OK: empty +0.043 (100%), doorkey +0.010 (67%), lava +0.006 (67%)
 
 **Gate:**
 ```
