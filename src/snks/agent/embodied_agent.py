@@ -192,6 +192,45 @@ class EmbodiedAgent:
         """
         return self.causal_agent.observe_result(obs)
 
+    def save_checkpoint(self, base_path: str) -> None:
+        """Save full agent state: DcamWorldModel + DAF weights.
+
+        Creates:
+        - ``{base_path}.safetensors`` + ``{base_path}.json`` (DcamWorldModel, if enabled)
+        - ``{base_path}_daf.safetensors`` (DAF oscillator weights)
+
+        Args:
+            base_path: Base path prefix for all checkpoint files.
+                       The containing directory is created automatically.
+        """
+        import os
+
+        parent = os.path.dirname(base_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
+        if self.dcam is not None:
+            from snks.dcam import persistence
+
+            persistence.save(self.dcam, base_path)
+
+        daf_engine = self.causal_agent.pipeline.engine
+        daf_engine.save_state(base_path)
+
+    def load_checkpoint(self, base_path: str) -> None:
+        """Load full agent state: DcamWorldModel + DAF weights.
+
+        Args:
+            base_path: Base path prefix matching a previous save_checkpoint() call.
+        """
+        if self.dcam is not None:
+            from snks.dcam import persistence
+
+            persistence.load(self.dcam, base_path)
+
+        daf_engine = self.causal_agent.pipeline.engine
+        daf_engine.load_state(base_path)
+
     def end_episode(self) -> None:
         """Signal end of episode. Triggers consolidation and optional replay.
 
