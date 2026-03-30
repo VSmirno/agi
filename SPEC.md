@@ -2,7 +2,7 @@
 
 **Версия:** 0.9.0
 **Дата:** 2026-03-30
-**Статус:** Этапы 0–17 MVP COMPLETE. Stages 19–21 (Language Grounding, Compositional, Verbalization) COMPLETE.
+**Статус:** Этапы 0–17 MVP COMPLETE. Stages 19–22 (Language Grounding, Compositional, Verbalization, Grounded QA) COMPLETE.
 
 > Детальные спецификации этапов: [`specs/`](specs/)
 
@@ -222,6 +222,9 @@ class DcamWorldModel:
 | 45 | Grounding speed | reps to ratio>2.0 | < 20 | **1 rep** | ✅ PASS |
 | 46 | Role extraction | accuracy | > 0.8 | **1.000 (64/64)** | ✅ PASS |
 | 47 | Compositional generalization | unbind accuracy (novel) | > 0.7 | **1.000 (30/30)** | ✅ PASS |
+| 49 | Factual QA | accuracy | > 0.7 | **0.750 (15/20)** | ✅ PASS |
+| 50 | Simulation QA | accuracy | > 0.6 | **1.000 (15/15)** | ✅ PASS |
+| 51 | Reflective QA | accuracy | > 0.6 | **0.867 (13/15)** | ✅ PASS |
 
 ### Критерии MVP
 
@@ -295,6 +298,10 @@ class DcamWorldModel:
   Ролевая система (6 ролей в HAC-пространстве), rule-based SVO(L) chunker (3 паттерна),
   RoleFillerParser (bind/unbind), EmbeddingResolver (гибрид: GroundingMap cache + DAF fallback).
   Exp 46 accuracy=1.000 (64/64) ✅, Exp 47 test_acc=1.000 (30/30 novel combos) ✅.
+- Stage 22 (2026-03-30): COMPLETE. Grounded QA (factual/simulation/reflective).
+  QuestionClassifier (rule-based), GroundedQA orchestrator, pluggable QABackend protocol.
+  Key finding: chunker designed for declarative sentences, questions need prefix-stripping + word-level resolve.
+  Exp 49 accuracy=0.750 ✅, Exp 50 accuracy=1.000 ✅, Exp 51 accuracy=0.867 ✅.
 
 ### Граф зависимостей
 
