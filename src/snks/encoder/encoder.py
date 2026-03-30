@@ -1,6 +1,9 @@
 """Visual encoder: image → SDR → DAF external currents."""
 
+from __future__ import annotations
+
 import math
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
@@ -8,6 +11,9 @@ import torch.nn as nn
 from snks.daf.types import EncoderConfig
 from snks.encoder.gabor import GaborBank
 from snks.encoder.sdr import kwta
+
+if TYPE_CHECKING:
+    from snks.daf.types import ZoneConfig
 
 
 class VisualEncoder(nn.Module):
@@ -51,24 +57,27 @@ class VisualEncoder(nn.Module):
             return sdr.squeeze(0)
         return sdr
 
-    def sdr_to_currents(self, sdr: torch.Tensor, n_nodes: int) -> torch.Tensor:
+    def sdr_to_currents(
+        self, sdr: torch.Tensor, n_nodes: int, zone: ZoneConfig | None = None,
+    ) -> torch.Tensor:
         """Map SDR to external currents for DAF engine.
 
-        Uses modular mapping: node i → SDR bit (i % sdr_size).
-        This ensures all SDR bits are covered regardless of n_nodes.
+        Uses modular mapping: node i → SDR bit (i * PRIME % sdr_size).
         Active bits inject current_strength into channel 0.
 
         Args:
             sdr: (sdr_size,) binary SDR.
-            n_nodes: number of DAF nodes.
+            n_nodes: total number of DAF nodes (ignored when zone is set).
+            zone: if provided, hash only within zone.size nodes and return
+                  (zone.size, 8) tensor for zone-based injection.
 
         Returns:
-            (n_nodes, 8) external currents tensor.
+            (n_nodes, 8) or (zone.size, 8) external currents tensor.
         """
-        # Multiplicative hash distributes nodes uniformly across all SDR bits
         PRIME = 2654435761
-        node_sdr_idx = (torch.arange(n_nodes, device=sdr.device) * PRIME) % self.config.sdr_size
+        sz = zone.size if zone is not None else n_nodes
+        node_sdr_idx = (torch.arange(sz, device=sdr.device) * PRIME) % self.config.sdr_size
 
-        currents = torch.zeros(n_nodes, 8, device=sdr.device)
+        currents = torch.zeros(sz, 8, device=sdr.device)
         currents[:, 0] = sdr[node_sdr_idx] * self.config.sdr_current_strength
         return currents

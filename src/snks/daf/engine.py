@@ -50,9 +50,15 @@ class DafEngine:
         self.device = get_device(config.device)
 
         N = config.num_nodes
+        self.zones = config.zones
         self.states = init_states(N, config.state_dim, config.oscillator_model, self.device,
                                    omega_std=config.omega_std)
-        self.graph = SparseDafGraph.random_sparse(N, config.avg_degree, self.device)
+        if self.zones is not None:
+            self.graph = SparseDafGraph.random_sparse_zonal(
+                N, self.zones, config.avg_degree, config.inter_zone_avg_degree, self.device,
+            )
+        else:
+            self.graph = SparseDafGraph.random_sparse(N, config.avg_degree, self.device)
 
         self._external_currents = torch.zeros(N, config.state_dim, device=self.device)
         self._last_fired_history: torch.Tensor | None = None
@@ -125,12 +131,28 @@ class DafEngine:
             self._external_currents[valid, 0] += value
 
     def set_input(self, currents: torch.Tensor) -> None:
-        """Set external currents. currents: (N, 8) or (N,) for channel 0 only."""
+        """Set external currents globally. currents: (N, 8) or (N,) for channel 0 only."""
         if currents.dim() == 1:
             self._external_currents.zero_()
             self._external_currents[:, 0] = currents
         else:
             self._external_currents.copy_(currents)
+
+    def set_input_zone(self, currents: torch.Tensor, zone: str) -> None:
+        """Set external currents for a specific zone only.
+
+        Args:
+            currents: (zone_size, 8) or (zone_size,) tensor.
+            zone: name of zone (must exist in self.zones).
+        """
+        if self.zones is None:
+            raise ValueError("set_input_zone requires zonal DAF config (zones is None)")
+        zc = self.zones[zone]
+        s, e = zc.start, zc.start + zc.size
+        if currents.dim() == 1:
+            self._external_currents[s:e, 0] = currents
+        else:
+            self._external_currents[s:e] = currents
 
     def step(self, n_steps: int = 100) -> StepResult:
         """Run n integration steps with coupling, STDP, and homeostasis.
