@@ -143,8 +143,13 @@ def main():
         mean_act = activation.mean().item()
         paired_activations.append(mean_act)
 
+        # Reconstruct spatial map from firing rates
+        spatial_map = pipeline.encoder.firing_to_spatial_map(
+            activation, vis_zone.size, image_size=32,
+        )
+
         heatmaps[cat] = {
-            "visual_activation": activation.tolist(),
+            "reconstructed_image": spatial_map.tolist(),
             "original_image": images[cat].tolist(),
             "cross_modal_ratio": 0.0,  # filled after random
         }
@@ -165,18 +170,20 @@ def main():
 
     # Discrimination matrix: row=word presented, col=category pattern activated
     print("\n  Building discrimination matrix...")
+    # Collect raw activations per category for comparison
+    cat_activations = {}
+    for cat in CATEGORIES:
+        cat_activations[cat] = collect_activation(pipeline, cat, vis_zone).cpu()
+
     disc_matrix = []
     for word_idx, word in enumerate(CATEGORIES):
         row = []
-        # Present word, measure activation overlap with each category's typical pattern
-        activation = collect_activation(pipeline, word, vis_zone)
+        word_act = cat_activations[word]
         for cat_idx, cat in enumerate(CATEGORIES):
-            # Use correlation with that category's activation as similarity
-            cat_act = torch.tensor(heatmaps[cat]["visual_activation"])
-            act_cpu = activation.cpu()
-            if cat_act.norm() > 0 and act_cpu.norm() > 0:
+            cat_act = cat_activations[cat]
+            if cat_act.norm() > 0 and word_act.norm() > 0:
                 sim = torch.nn.functional.cosine_similarity(
-                    act_cpu.unsqueeze(0), cat_act.unsqueeze(0)
+                    word_act.unsqueeze(0), cat_act.unsqueeze(0)
                 ).item()
             else:
                 sim = 0.0

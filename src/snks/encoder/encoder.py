@@ -81,3 +81,52 @@ class VisualEncoder(nn.Module):
         currents = torch.zeros(sz, 8, device=sdr.device)
         currents[:, 0] = sdr[node_sdr_idx] * self.config.sdr_current_strength
         return currents
+
+    def firing_to_spatial_map(
+        self,
+        firing_rates: torch.Tensor,
+        zone_size: int,
+        image_size: int = 32,
+    ) -> torch.Tensor:
+        """Reconstruct spatial activation map from visual zone firing rates.
+
+        Maps firing rates back through the modular hash to SDR space,
+        then reshapes SDR activations into (pool_h, pool_w) spatial grid
+        summed across Gabor filters, and upscales to image_size.
+
+        Args:
+            firing_rates: (zone_size,) float firing rates per visual node.
+            zone_size: number of nodes in visual zone.
+            image_size: target output size (square).
+
+        Returns:
+            (image_size, image_size) float spatial activation map in [0, 1].
+        """
+        PRIME = 2654435761
+        device = firing_rates.device
+
+        # Node → SDR bit (same hash as sdr_to_currents)
+        node_sdr_idx = (torch.arange(zone_size, device=device) * PRIME) % self.config.sdr_size
+
+        # Accumulate firing rates per SDR bit
+        sdr_activation = torch.zeros(self.config.sdr_size, device=device)
+        sdr_activation.scatter_add_(0, node_sdr_idx, firing_rates)
+
+        # SDR layout: (n_filters, pool_h, pool_w) flattened
+        n_filters = self.config.n_orientations * self.config.n_scales * self.config.n_phases
+        ph, pw = self.config.pool_h, self.config.pool_w
+        spatial = sdr_activation.view(n_filters, ph, pw)
+
+        # Sum across filters → (pool_h, pool_w) spatial map
+        spatial_map = spatial.sum(dim=0)
+
+        # Normalize to [0, 1]
+        if spatial_map.max() > 0:
+            spatial_map = spatial_map / spatial_map.max()
+
+        # Upscale to image_size × image_size
+        spatial_map = spatial_map.unsqueeze(0).unsqueeze(0)  # (1, 1, ph, pw)
+        spatial_map = torch.nn.functional.interpolate(
+            spatial_map, size=(image_size, image_size), mode="bilinear", align_corners=False,
+        )
+        return spatial_map.squeeze()
