@@ -14,7 +14,7 @@ import time
 
 import numpy as np
 
-from stage18_utils import (
+from snks.experiments.stage18_utils import (
     ENV_DIFFICULTY,
     ENV_STEPS,
     build_agent_config,

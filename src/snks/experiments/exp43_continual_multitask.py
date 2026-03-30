@@ -20,7 +20,7 @@ from typing import Optional
 
 import numpy as np
 
-from stage18_utils import (
+from snks.experiments.stage18_utils import (
     ENVS,
     ENV_DIFFICULTY,
     ENV_STEPS,
