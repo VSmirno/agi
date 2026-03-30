@@ -540,7 +540,8 @@ def run(device: str | None = None) -> dict:
     ]
 
     print("exp42: launching Pool(5) for transfer evaluation...", flush=True)
-    with multiprocessing.Pool(processes=5) as pool:
+    ctx = multiprocessing.get_context("spawn")
+    with ctx.Pool(processes=5) as pool:
         group_results: list[list[dict]] = pool.starmap(_worker_eval_group, pool_args)
 
     all_results: list[dict] = [r for group in group_results for r in group]

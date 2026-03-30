@@ -415,7 +415,8 @@ def run(device: str | None = None) -> dict:
         for i in range(len(WORKER_GROUPS))
     ]
 
-    with multiprocessing.Pool(processes=5) as pool:
+    ctx = multiprocessing.get_context("spawn")
+    with ctx.Pool(processes=5) as pool:
         group_results: list[list[dict]] = pool.starmap(_train_group, pool_args)
 
     # Flatten results list
