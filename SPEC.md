@@ -2,7 +2,7 @@
 
 **Версия:** 0.9.0
 **Дата:** 2026-03-30
-**Статус:** Этапы 0–17 MVP COMPLETE. Stage 19 (Language Grounding) COMPLETE.
+**Статус:** Этапы 0–17 MVP COMPLETE. Stages 19–21 (Language Grounding, Compositional, Verbalization) COMPLETE.
 
 > Детальные спецификации этапов: [`specs/`](specs/)
 
@@ -218,6 +218,10 @@ class DcamWorldModel:
 | 29 | EmbodiedAgent integration | coverage ≥ 0.30 | ≥ 0.30 | **coverage=0.362** | ✅ PASS |
 | 30 | EmbodiedAgent ablation | все варианты coverage ≥ 0.25 | ≥ 0.25 | **min=0.351** | ✅ PASS |
 | 31 | Scaling (miniPC) | steps_per_sec ≥ 9 | ≥ 9 | **steps_per_sec=9.41 (CPU, N=5K)** | ✅ PASS |
+| 44 | Cross-modal recall | cross_modal_ratio | > 2.0 | **A=178, B=116742** | ✅ PASS |
+| 45 | Grounding speed | reps to ratio>2.0 | < 20 | **1 rep** | ✅ PASS |
+| 46 | Role extraction | accuracy | > 0.8 | **1.000 (64/64)** | ✅ PASS |
+| 47 | Compositional generalization | unbind accuracy (novel) | > 0.7 | **1.000 (30/30)** | ✅ PASS |
 
 ### Критерии MVP
 
@@ -287,6 +291,10 @@ class DcamWorldModel:
   Complementary priming (top-down visual SDR injection at 0.3× strength) solves it.
   Exp 44 Config A ratio=178, Config B ratio=116742 ✅. Exp 45 grounding in 1 rep ✅.
   Chosen: Config B (with convergence zone). Spec: specs/stages19-24-language-grounding-design.md.
+- Stage 20 (2026-03-30): COMPLETE. Композиционное понимание (HAC Role-Filler).
+  Ролевая система (6 ролей в HAC-пространстве), rule-based SVO(L) chunker (3 паттерна),
+  RoleFillerParser (bind/unbind), EmbeddingResolver (гибрид: GroundingMap cache + DAF fallback).
+  Exp 46 accuracy=1.000 (64/64) ✅, Exp 47 test_acc=1.000 (30/30 novel combos) ✅.
 
 ### Граф зависимостей
 

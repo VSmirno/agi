@@ -1,7 +1,7 @@
 # Stages 19–24: Language & Grounded Cognition — Design Doc
 
 **Дата:** 2026-03-30
-**Статус:** Stage 19 COMPLETE (2026-03-30). Stages 20–24 pending.
+**Статус:** Stages 19–21 COMPLETE (2026-03-30). Stages 22–24 pending.
 **Зависимости:** Этапы 0–18 ✅
 
 ---
@@ -179,65 +179,205 @@ configs/
 
 ## Stage 20: Композиционное понимание (HAC Role-Filler)
 
-### 20.1 — Ролевая система
+**Статус:** COMPLETE (2026-03-30)
 
-Роли — фиксированные вектора в HAC-пространстве (не СКС, не аттракторы):
+### Архитектурный принцип: масштабируемость
+
+Каждый компонент Stage 20 — интерфейс, за которым стоит текущая реализация (scaffold).
+Замена реализации = ноль изменений в остальном коде. Это критично для масштабирования
+до полной модели мира с терабайтами данных и произвольными языковыми конструкциями.
+
+### 20.1 — Ролевая система (`language/roles.py`)
+
+Роли — фиксированные единичные вектора в HAC-пространстве (не СКС, не аттракторы).
+Каждая роль = "подпись на конверте": `bind(ROLE, filler)` кладёт filler в конверт,
+`unbind(ROLE, sentence)` достаёт обратно.
 
 ```python
-ROLES = {
-    "AGENT":    random_hac_vector(seed=100),   # кто
-    "ACTION":   random_hac_vector(seed=101),   # что делает
-    "OBJECT":   random_hac_vector(seed=102),   # с чем/кем
-    "LOCATION": random_hac_vector(seed=103),   # где
-    "GOAL":     random_hac_vector(seed=104),   # зачем
-    "ATTR":     random_hac_vector(seed=105),   # атрибут (цвет, размер)
-}
+def random_hac_vector(dim: int, seed: int) -> Tensor:
+    """Детерминистичный единичный вектор в HAC-пространстве."""
+    gen = torch.Generator().manual_seed(seed)
+    v = torch.randn(dim, generator=gen)
+    return v / v.norm()
+
+def get_roles(hac_dim: int = 2048) -> dict[str, Tensor]:
+    """Возвращает dict ролевых векторов. hac_dim параметризован, не хардкод."""
+    return {
+        "AGENT":    random_hac_vector(hac_dim, seed=100),   # кто
+        "ACTION":   random_hac_vector(hac_dim, seed=101),   # что делает
+        "OBJECT":   random_hac_vector(hac_dim, seed=102),   # с чем/кем
+        "LOCATION": random_hac_vector(hac_dim, seed=103),   # где
+        "GOAL":     random_hac_vector(hac_dim, seed=104),   # зачем
+        "ATTR":     random_hac_vector(hac_dim, seed=105),   # атрибут (цвет, размер)
+    }
 ```
 
-### 20.2 — Парсинг предложения
+**Масштабируемость:** В 2048-dim ~100-200 ортогональных ролей (cosine < 0.05).
+Сейчас 6, запас огромный. Добавление TEMPORAL, INSTRUMENT, CAUSE, MANNER — одна строка.
+При hac_dim=4096 — ещё на порядок больше.
 
+### 20.2 — Chunker (`language/chunker.py`)
+
+Rule-based scaffold за абстрактным интерфейсом:
+
+```python
+@dataclass
+class Chunk:
+    text: str       # "cat", "sits", "on mat", "pick up"
+    role: str       # "AGENT", "ACTION", "OBJECT", "LOCATION", "GOAL", "ATTR"
+
+class BaseChunker(ABC):
+    @abstractmethod
+    def chunk(self, sentence: str) -> list[Chunk]: ...
+
+class RuleBasedChunker(BaseChunker):
+    def chunk(self, sentence: str) -> list[Chunk]: ...
+    def detect_pattern(self, sentence: str) -> str: ...  # "svo" | "svo_attr" | "minigrid"
+```
+
+**Три грамматических паттерна:**
+
+Паттерн 1 — SVO(L):
 ```
 "cat sits on mat"
-       │
-       ▼ (sentence-transformers + simple rule-based chunker)
-  chunks: ["cat", "sits", "on mat"]
-       │
-       ▼ (каждый chunk → SDR → linguistic zone → активация СКС)
-  СКС_CAT, СКС_SIT, СКС_MAT
-       │
-       ▼ (HAC bind)
-  sentence_hac = bind(AGENT, СКС_CAT) + bind(ACTION, СКС_SIT) + bind(LOCATION, СКС_MAT)
-       │
-       ▼ (HAC unbind — извлечение)
-  unbind(AGENT, sentence_hac) → СКС_CAT  ✓
+→ [("cat", AGENT), ("sits", ACTION), ("on mat", LOCATION)]
+Правило: 1-е слово=AGENT, 2-е=ACTION, "on/in/at X"=LOCATION, остальное=OBJECT
 ```
 
-**Chunker — rule-based:**
-- Синтетические грамматики: фиксированный порядок SVO(L), парсинг по позиции
-- BabyAI-инструкции: формальная грамматика, парсинг тривиальный
-- Естественный язык: spaCy dependency parse → роли (строительные леса)
+Паттерн 2 — ATTR+SVO(L):
+```
+"red cat sits on mat"
+→ [("red", ATTR), ("cat", AGENT), ("sits", ACTION), ("on mat", LOCATION)]
+Правило: 1-е слово в ADJECTIVES → ATTR, далее как паттерн 1
+```
 
-**Почему не emergent парсинг:** синтаксис — конвенция языка, не свойство мира. Это интерфейсная задача, не когнитивная.
+Паттерн 3 — MiniGrid imperative:
+```
+"pick up the red key"
+→ [("pick up", ACTION), ("red", ATTR), ("key", OBJECT)]
+Правило: начало в ACTION_VERBS → ACTION, цвет → ATTR, существительное → OBJECT
+```
+
+Детектор паттерна: 1-е слово в ACTION_VERBS (imperatives) → minigrid,
+в ADJECTIVES → svo_attr, иначе → svo.
+
+**Масштабирование:** Сейчас RuleBasedChunker (scaffold). Потом SpaCyChunker,
+потом LearnedChunker. Pipeline знает только BaseChunker.chunk().
+
+### 20.3 — Parser (`language/parser.py`)
+
+```python
+class RoleFillerParser:
+    def __init__(self, hac: HACEngine, roles: dict[str, Tensor]):
+        self.hac = hac
+        self.roles = roles
+
+    def parse(self, chunks: list[Chunk], embeddings: dict[str, Tensor]) -> Tensor:
+        """chunks + HAC-эмбеддинги слов → один sentence_hac вектор."""
+        bindings = []
+        for chunk in chunks:
+            role_vec = self.roles[chunk.role]
+            filler_vec = embeddings[chunk.text]
+            bindings.append(self.hac.bind(role_vec, filler_vec))
+        return self.hac.bundle(bindings)
+
+    def extract(self, role: str, sentence_hac: Tensor) -> Tensor:
+        """Извлечь filler по роли."""
+        return self.hac.unbind(self.roles[role], sentence_hac)
+
+    def extract_all(self, sentence_hac: Tensor) -> dict[str, Tensor]:
+        """Извлечь все роли."""
+        return {name: self.extract(name, sentence_hac) for name in self.roles}
+```
+
+### 20.4 — EmbeddingResolver (гибридный подход)
+
+```python
+class EmbeddingResolver:
+    """Резолвит chunk.text → HAC embedding. Гибрид: кэш + DAF fallback."""
+
+    def __init__(self, grounding_map, embedder, pipeline):
+        self.grounding_map = grounding_map
+        self.embedder = embedder
+        self.pipeline = pipeline  # для DAF fallback
+
+    def resolve(self, word: str) -> Tensor | None:
+        # 1. Кэш: GroundingMap → SKS → embedding
+        sks_id = self.grounding_map.word_to_sks(word)
+        if sks_id is not None:
+            return self.embedder.get_embedding(sks_id)
+        # 2. Fallback: DAF perception cycle для незнакомого слова
+        return self._run_daf_for_word(word)
+```
+
+### 20.5 — Синтетический датасет
+
+Три уровня сложности, каждый расширяет предыдущий:
+
+| Уровень | Пример | Роли | Словарь |
+|---------|--------|------|---------|
+| SVO | "cat sits on mat" | AGENT, ACTION, LOCATION | 6 сущ + 5 глаг + 4 места |
+| ATTR+SVO | "red cat sits on mat" | +ATTR | + 3 цвета |
+| MiniGrid | "pick up the red key" | ACTION, ATTR, OBJECT | MiniGrid объекты + действия |
+
+Всего ~120 предложений. Все слова заземляются в grounding-фазе эксперимента.
 
 ### Эксперименты Stage 20
 
 | # | Название | Метрика | Gate |
 |---|----------|---------|------|
-| 46 | Role extraction (SVO) | accuracy на синтетических предложениях | > 0.8 |
+| 46 | Role extraction | accuracy на всех 3 уровнях | > 0.8 |
 | 47 | Compositional generalization | unbind accuracy на невиданных комбинациях | > 0.7 |
+
+**Exp 46 — Role extraction:**
+```
+Фаза 1 (grounding): показать image+word пары через perception_cycle()
+Фаза 2 (test): для каждого предложения:
+  1. chunker.chunk() → chunks
+  2. resolver.resolve() → embeddings
+  3. parser.parse(chunks, embeddings) → sentence_hac
+  4. parser.extract(role, sentence_hac) → recovered_vec
+  5. similarity(recovered_vec, original_vec) > 0.3 → correct
+  accuracy = correct / total
+```
+
+Метод: best-match среди всех известных embeddings (argmax similarity).
+Correct = best match совпадает с ground truth.
+Абсолютные значения similarity после unbind из 3-4 role bundle: ~0.15-0.25
+(random noise ~0.02), но best-match надёжно выбирает правильный filler.
+
+**Exp 47 — Compositional generalization:**
+```
+Split: 70% train / 30% test (невиданные комбинации слов)
+  Train: "cat sits on mat", "dog runs on floor", ...
+  Test:  "cat runs on floor" (cat+runs никогда вместе)
+Grounding: все СЛОВА видны, новы КОМБИНАЦИИ.
+Метрика: unbind accuracy на тестовых предложениях.
+```
+
+Тестирует фундаментальное свойство circular convolution —
+bind/unbind не зависят от конкретных комбинаций.
 
 ### Структура файлов Stage 20
 
 ```
 src/snks/
 ├── language/
-│   ├── roles.py               🆕  ROLES constants + HAC role vectors
-│   ├── chunker.py             🆕  rule-based SVO(L) chunker
-│   └── parser.py              🆕  text → role-filler HAC structure
+│   ├── roles.py               🆕  get_roles(), random_hac_vector()
+│   ├── chunker.py             🆕  BaseChunker, RuleBasedChunker, Chunk
+│   └── parser.py              🆕  RoleFillerParser, EmbeddingResolver
 └── experiments/
     ├── exp46_role_extraction.py    🆕
-    └── exp47_compositional.py     🆕
+    └── exp47_compositional.py      🆕
+
+tests/language/
+├── test_roles.py              🆕  детерминистичность, ортогональность
+├── test_chunker.py            🆕  все 3 паттерна
+└── test_parser.py             🆕  parse + extract roundtrip
 ```
+
+**Изменения в существующих файлах:** Нет. Stage 20 чисто аддитивный.
+**Новые pip-зависимости:** Нет.
 
 ---
 
@@ -249,51 +389,79 @@ src/snks/
 ```
 Активные СКС в visual zone → grounding → слова
   СКС_KEY активна, СКС_DOOR активна
-  → grounding label lookup
+  → grounding_map.sks_to_word() lookup
+  → фильтрация: только SKS с grounding label
   → шаблон DESCRIBE: "I see [OBJECT_1] and [OBJECT_2]"
-  → "I see a key and a door"
+  → "I see key and door"
 ```
 
 **Каузальное объяснение ("Почему/как"):**
 ```
-DCAM query: причины и следствия для активной СКС
-  СКС_KEY → action_pickup → СКС_KEY_HELD → action_toggle → СКС_DOOR_OPEN
-  → каждый узел цепочки → grounding label
-  → шаблон CAUSAL: "[AGENT] [ACTION] [OBJECT] → [EFFECT]"
-  → "picking up key → can open door"
+CausalWorldModel.get_causal_links() → фильтр по sks_id
+  → для каждого link: найти "главный" SKS (первый с grounding label)
+  → упрощённая форма: "[ACTION] [OBJECT] causes [EFFECT]"
+  → "pick up key causes key held"
+
+Решение: вербализуем только "главный" SKS из frozenset (первый
+с grounding label). Полная вербализация всех SKS в frozenset —
+post-Stage 24 future work.
 ```
 
 **Вербализация плана ("Что собираюсь делать"):**
 ```
-StochasticSimulator: текущий план
-  plan: [СКС_KEY, СКС_DOOR, СКС_DOOR_OPEN]
-  → grounding labels + actions
+Вход: action_ids из StochasticSimulator + initial_sks + CausalWorldModel
+  → для каждого action_id: action_names[id] → имя действия
+  → causal_model.predict_effect(state, action) → SKS-эффект
+  → grounding_map: SKS → слово
   → шаблон PLAN: "I need to [ACTION_1] [OBJECT_1], then [ACTION_2] [OBJECT_2]"
-  → "I need to pick up the key, then open the door"
+  → "I need to pick up key, then toggle door"
+
+action_names — внешний словарь {0: "go left", 1: "go right", ...},
+передаётся в конструктор Verbalizer. Не захардкожен.
 ```
 
 ### 21.2 — Verbalizer
 
 ```python
 class Verbalizer:
-    def describe_state(self, active_sks, grounding_map) -> str
-    def explain_causal(self, sks, dcam_world_model) -> str
-    def verbalize_plan(self, plan_sks, grounding_map) -> str
+    def __init__(self, grounding_map: GroundingMap, action_names: dict[int, str]):
+        ...
+
+    def describe_state(self, active_sks_ids: list[int]) -> str:
+        """Вербализует активные SKS через grounding_map."""
+
+    def explain_causal(self, sks_id: int, causal_model: CausalWorldModel) -> str:
+        """Находит каузальные связи для sks_id, вербализует упрощённо."""
+
+    def verbalize_plan(
+        self, action_ids: list[int], initial_sks: set[int],
+        causal_model: CausalWorldModel,
+    ) -> str:
+        """Восстанавливает SKS-цепочку через predict_effect, вербализует план."""
 ```
 
 Интерфейсный слой, не когнитивный. Шаблоны — осознанное решение: точная передача содержимого world model, не "красивые формулировки".
 
 **Масштабируемость шаблонов:** Текущие шаблоны покрывают простые структуры (SVO, одношаговые планы, линейные каузальные цепочки). При росте сложности (вложенные каузальные цепочки, условные планы, multiple agents) потребуется рекурсивная вербализация или шаблонное расширение. Это вынесено в post-Stage 24 future work.
 
-**Grounding map:** при ко-активации (Stage 19) запоминаем пару (сks_id, word) в dict. Не противоречит emergent grounding — map лишь фиксирует то, что STDP уже сформировал.
+**Grounding map:** при ко-активации (Stage 19) запоминаем пару (sks_id, word) в dict. Не противоречит emergent grounding — map лишь фиксирует то, что STDP уже сформировал.
 
 ### Эксперименты Stage 21
 
+Все эксперименты работают на **синтетических данных** (без DAF/pipeline).
+Проверяют изолированно логику Verbalizer.
+
 | # | Название | Метрика | Gate |
 |---|----------|---------|------|
-| 48a | Describe recall & precision | recall: реальные объекты упомянуты; precision: упомянутое корректно. Gate на recall | > 0.7 (recall) |
-| 48b | Causal verbalization | корректность каузальных цепочек | > 0.7 |
-| 48c | Plan verbalization | план соответствует Simulator output | > 0.7 |
+| 48a | Describe recall & precision | recall: grounded объекты упомянуты; precision: нет ложных | recall > 0.7, precision = 1.0 |
+| 48b | Causal verbalization | корректность каузальных фраз vs known ground truth | accuracy > 0.7 |
+| 48c | Plan verbalization | план содержит правильные action+object пары в порядке | accuracy > 0.7 |
+
+**Exp 48a** — синтетический grounding_map (5-6 слов), active_sks = подмножество + SKS без label. Проверка: все grounded упомянуты, лишних нет.
+
+**Exp 48b** — синтетический CausalWorldModel с 3-4 известными переходами через observe_transition. Вызов explain_causal, сверка с ожидаемым текстом.
+
+**Exp 48c** — синтетическая каузальная цепочка (sks_key →pickup→ sks_key_held →toggle→ sks_door_open). plan=[3,5]. Проверка корректности вербализации.
 
 ### Структура файлов Stage 21
 
@@ -306,6 +474,8 @@ src/snks/
     ├── exp48a_describe.py         🆕
     ├── exp48b_causal_verbal.py    🆕
     └── exp48c_plan_verbal.py      🆕
+tests/
+    └── test_verbalizer.py         🆕
 ```
 
 ---
