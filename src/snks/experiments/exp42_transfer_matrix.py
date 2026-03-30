@@ -13,7 +13,7 @@ import warnings
 
 import numpy as np
 
-from stage18_utils import (
+from snks.experiments.stage18_utils import (
     build_agent_config,
     checkpoint_path,
     coverage_ratio,
