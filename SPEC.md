@@ -1,8 +1,8 @@
 # СНКС MVP — Спецификация
 
-**Версия:** 0.8.0
-**Дата:** 2026-03-26
-**Статус:** Этапы 0–17 реализованы (код + unit тесты). MVP COMPLETE.
+**Версия:** 0.9.0
+**Дата:** 2026-03-30
+**Статус:** Этапы 0–17 MVP COMPLETE. Stage 19 (Language Grounding) COMPLETE.
 
 > Детальные спецификации этапов: [`specs/`](specs/)
 
@@ -279,6 +279,14 @@ class DcamWorldModel:
 - Stage 17 (2026-03-29): COMPLETE. Full-Scale Validation.
   Exp 38 N=50K 16.47 steps/sec ✅, Exp 39 replay+coverage (N=5000, uniform) ✅, Exp 40 goal_seeking=49028 ✅.
   Key findings: replay requires N≥5000 + uniform sampling (importance toxic for dangerous envs).
+- Stage 18 (2026-03-30): IN PROGRESS. Multi-Env Validation + Transfer Learning.
+  Exp 41/42/43 реализованы, ночной запуск на minipc.
+- Stage 19 (2026-03-30): COMPLETE. Zonal DAF + Language Grounding + Complementary Priming.
+  Zonal architecture (visual/linguistic/convergence zones), GroundingMap, cross-modal priming.
+  Key finding: pure STDP coupling insufficient for cross-modal recall at any N (5K-50K).
+  Complementary priming (top-down visual SDR injection at 0.3× strength) solves it.
+  Exp 44 Config A ratio=178, Config B ratio=116742 ✅. Exp 45 grounding in 1 rep ✅.
+  Chosen: Config B (with convergence zone). Spec: specs/stages19-24-language-grounding-design.md.
 
 ### Граф зависимостей
 
