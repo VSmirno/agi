@@ -19,6 +19,7 @@ from snks.dcam.hac import HACEngine
 from snks.device import get_device
 from snks.encoder.encoder import VisualEncoder
 from snks.encoder.text_encoder import TextEncoder
+from snks.language.grounding_map import GroundingMap
 from snks.gws.workspace import GlobalWorkspace, GWSState
 from snks.metacog.configurator import Configurator
 from snks.metacog.cost_module import IntrinsicCostModule
@@ -125,6 +126,9 @@ class Pipeline:
         # Stage 14: cached last result for EmbodiedAgent access
         self.last_cycle_result: "CycleResult | None" = None
 
+        # Stage 19: cross-modal grounding map + priming
+        self.grounding_map = GroundingMap()
+
     def inject_motor_currents(self, currents: torch.Tensor) -> None:
         """Set motor currents for dual injection (sensory + motor).
 
@@ -181,6 +185,19 @@ class Pipeline:
                 ling_zone = zones["linguistic"]
                 text_currents = self.text_encoder.sdr_to_currents(text_sdr, n_nodes, zone=ling_zone).to(self.engine.device)
                 self.engine.set_input_zone(text_currents, "linguistic")
+
+                # Stage 19: cross-modal priming
+                if image is not None:
+                    # Co-activation: register visual SDR for future priming
+                    self.grounding_map.register_visual(text, vis_currents.detach())
+                else:
+                    # Text-only: inject priming current into visual zone
+                    priming_sdr = self.grounding_map.word_to_visual_sdr(text)
+                    if priming_sdr is not None:
+                        strength = self.config.priming_strength
+                        self.engine.set_input_zone(
+                            priming_sdr.to(self.engine.device) * strength, "visual",
+                        )
 
             # Motor and broadcast currents: applied globally (not zone-routed)
             if self._motor_currents is not None:
