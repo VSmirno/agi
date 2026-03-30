@@ -133,7 +133,6 @@ class GroundedQA:
         classifier: QuestionClassifier,
         grounding_map: GroundingMap,
         chunker: BaseChunker,
-        verbalizer: Verbalizer,
         factual: QABackend,
         simulation: QABackend,
         reflective: QABackend,
@@ -323,7 +322,7 @@ log = [
 Существующие компоненты (без изменений):
 - `GroundingMap` (Stage 19): `word_to_sks()`, `sks_to_word()`
 - `RuleBasedChunker` (Stage 20): `chunk()` → `list[Chunk]`
-- `Verbalizer` (Stage 21): не вызывается напрямую, но переиспользуем templates.py
+- `templates.py` (Stage 21): переиспользуем, добавляем 3 новых шаблона
 
 Новые зависимости: нет. Всё на stdlib + существующем коде.
 
