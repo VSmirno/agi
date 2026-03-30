@@ -561,7 +561,8 @@ def run(device: Optional[str] = None) -> dict:
     # ---- 43a: parallel chains ----
     print("[exp43a] Running 5 sequential chains in parallel...", flush=True)
     chain_args = [(i, chain, device) for i, chain in enumerate(CHAINS)]
-    with multiprocessing.Pool(processes=5) as pool:
+    ctx = multiprocessing.get_context("spawn")
+    with ctx.Pool(processes=5) as pool:
         chain_results = pool.map(_run_chain, chain_args)
 
     # Count passing transitions
