@@ -19,6 +19,7 @@ class GroundingMap:
         self._word_to_sks: dict[str, int] = {}
         self._sks_to_word: dict[int, str] = {}
         self._word_to_sdr: dict[str, torch.Tensor] = {}
+        self._word_to_visual_sdr: dict[str, torch.Tensor] = {}
 
     def register(self, word: str, sks_id: int, sdr: torch.Tensor) -> None:
         """Register a grounding association.
@@ -31,6 +32,18 @@ class GroundingMap:
         self._word_to_sks[word] = sks_id
         self._sks_to_word[sks_id] = word
         self._word_to_sdr[word] = sdr.detach().cpu()
+
+    def register_visual(self, word: str, visual_sdr: torch.Tensor) -> None:
+        """Register visual SDR for cross-modal priming.
+
+        Called during co-activation (image + text). Stores the visual zone
+        currents so that text-only presentation can prime the visual zone.
+        """
+        self._word_to_visual_sdr[word] = visual_sdr.detach().cpu()
+
+    def word_to_visual_sdr(self, word: str) -> torch.Tensor | None:
+        """Look up visual SDR for top-down priming."""
+        return self._word_to_visual_sdr.get(word)
 
     def word_to_sks(self, word: str) -> int | None:
         return self._word_to_sks.get(word)

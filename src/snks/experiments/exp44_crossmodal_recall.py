@@ -1,8 +1,11 @@
-"""Experiment 44: Cross-modal recall with zonal DAF.
+"""Experiment 44: Cross-modal recall with zonal DAF + complementary priming.
 
 Stage 19 validation: after co-activation (image + word), presenting only the word
-activates the visual zone. Tests both Config A (no convergence) and Config B
-(with convergence zone).
+activates the visual zone via top-down priming through GroundingMap.
+
+Mechanism: during co-activation, Pipeline registers visual SDR in GroundingMap.
+On text-only recall, priming injects a fraction (priming_strength) of the learned
+visual SDR into the visual zone, enabling cross-modal activation.
 
 Metric: cross_modal_ratio = mean_firing(visual_zone | paired_word) /
                             mean_firing(visual_zone | random_word)
@@ -107,14 +110,14 @@ def make_config(
         daf=DafConfig(
             num_nodes=total,
             avg_degree=20,
-            inter_zone_avg_degree=5,
+            inter_zone_avg_degree=30,
             zones=zones,
             oscillator_model="fhn",
-            coupling_strength=0.08,
+            coupling_strength=0.2,
             dt=0.01,
             noise_sigma=0.003,
             fhn_I_base=0.0,
-            stdp_a_plus=0.05,
+            stdp_a_plus=0.08,
             device=device,
             disable_csr=True,
         ),
@@ -129,6 +132,7 @@ def make_config(
         prediction=PredictionConfig(),
         steps_per_cycle=200,
         device=device,
+        priming_strength=0.3,
     )
 
 
@@ -162,7 +166,7 @@ def run_variant(
     zones: dict[str, ZoneConfig],
     variant_name: str,
     device: str = "cpu",
-    n_train_reps: int = 10,
+    n_train_reps: int = 15,
     n_variations: int = 5,
 ) -> dict:
     """Run cross-modal recall experiment for one zone config."""

@@ -229,6 +229,8 @@ class PipelineConfig:
     hac_prediction: HACPredictionConfig = field(default_factory=HACPredictionConfig)
     steps_per_cycle: int = 100      # integration steps per perception cycle
     device: str = "auto"
+    # --- Stage 19: cross-modal priming ---
+    priming_strength: float = 0.3   # fraction of full SDR current for top-down priming
     # --- Stage 10 ---
     hierarchical: HierarchicalConfig = field(default_factory=HierarchicalConfig)
     # --- Stage 12 ---
