@@ -6,6 +6,13 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class ZoneConfig:
+    """A contiguous slice of DAF nodes belonging to one sensory zone."""
+    start: int
+    size: int
+
+
+@dataclass
 class DafConfig:
     """Configuration for the Dynamic Attractor Fields engine."""
 
@@ -13,6 +20,8 @@ class DafConfig:
     num_nodes: int = 50_000
     state_dim: int = 8          # per-oscillator state: [v, amplitude, freq, threshold, w_recovery, adapt, aux1, aux2]
     avg_degree: int = 50
+    zones: dict[str, ZoneConfig] | None = None   # Stage 19: zonal DAF (None = legacy flat mode)
+    inter_zone_avg_degree: int = 10              # Stage 19: inter-zone edge density
 
     # Integration
     dt: float = 0.0001          # 0.1 ms model time

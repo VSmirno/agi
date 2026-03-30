@@ -1,0 +1,9 @@
+# Stage 19: Zonal DAF — Config A (no convergence zone)
+# Two sensory zones, N=50K total
+zones:
+  visual:
+    start: 0
+    size: 28000
+  linguistic:
+    start: 28000
+    size: 22000

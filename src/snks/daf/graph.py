@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
+
+if TYPE_CHECKING:
+    from snks.daf.types import ZoneConfig
 
 
 class SparseDafGraph:
@@ -68,6 +73,87 @@ class SparseDafGraph:
         phase_shift = torch.zeros(num_edges)
         delay = torch.zeros(num_edges)
         # 80% excitatory (0.0), 20% inhibitory (1.0)
+        edge_type = (torch.rand(num_edges, generator=gen) < 0.2).float()
+
+        edge_attr = torch.stack([strength, phase_shift, delay, edge_type], dim=1).to(device)
+
+        graph = SparseDafGraph(edge_index, edge_attr, num_nodes, device)
+        graph.sort_by_dst()
+        return graph
+
+    @staticmethod
+    def random_sparse_zonal(
+        num_nodes: int,
+        zones: dict[str, ZoneConfig],
+        intra_degree: int,
+        inter_degree: int,
+        device: torch.device,
+        seed: int | None = None,
+    ) -> SparseDafGraph:
+        """Create a random directed graph with zone-aware connectivity.
+
+        Intra-zone edges are dense (intra_degree per node), inter-zone edges
+        are sparse (inter_degree per node) to allow STDP-driven cross-modal
+        grounding.
+
+        Args:
+            num_nodes: total number of oscillator nodes.
+            zones: mapping of zone names to ZoneConfig (start, size).
+            intra_degree: average out-degree within a zone.
+            inter_degree: average out-degree to other zones (per zone pair).
+            device: target device.
+            seed: optional RNG seed.
+        """
+        if seed is not None:
+            gen = torch.Generator(device="cpu").manual_seed(seed)
+        else:
+            gen = None
+
+        all_src: list[torch.Tensor] = []
+        all_dst: list[torch.Tensor] = []
+
+        zone_list = list(zones.values())
+
+        # Intra-zone edges
+        for z in zone_list:
+            n_edges = z.size * intra_degree
+            src = torch.randint(0, z.size, (n_edges,), dtype=torch.int64, generator=gen) + z.start
+            dst = torch.randint(0, z.size, (n_edges,), dtype=torch.int64, generator=gen) + z.start
+            all_src.append(src)
+            all_dst.append(dst)
+
+        # Inter-zone edges (both directions for each pair)
+        for i, za in enumerate(zone_list):
+            for j, zb in enumerate(zone_list):
+                if i >= j:
+                    continue
+                n_edges = min(za.size, zb.size) * inter_degree
+                # A -> B
+                src_ab = torch.randint(0, za.size, (n_edges,), dtype=torch.int64, generator=gen) + za.start
+                dst_ab = torch.randint(0, zb.size, (n_edges,), dtype=torch.int64, generator=gen) + zb.start
+                all_src.append(src_ab)
+                all_dst.append(dst_ab)
+                # B -> A
+                src_ba = torch.randint(0, zb.size, (n_edges,), dtype=torch.int64, generator=gen) + zb.start
+                dst_ba = torch.randint(0, za.size, (n_edges,), dtype=torch.int64, generator=gen) + za.start
+                all_src.append(src_ba)
+                all_dst.append(dst_ba)
+
+        src = torch.cat(all_src)
+        dst = torch.cat(all_dst)
+
+        # Remove self-loops
+        mask = src != dst
+        src = src[mask]
+        dst = dst[mask]
+
+        edge_index = torch.stack([src, dst], dim=0).to(device)
+        num_edges = edge_index.shape[1]
+
+        # Edge attributes: [strength, phase_shift, delay, type]
+        strength = torch.rand(num_edges, generator=gen) * 0.5
+        phase_shift = torch.zeros(num_edges)
+        delay = torch.zeros(num_edges)
         edge_type = (torch.rand(num_edges, generator=gen) < 0.2).float()
 
         edge_attr = torch.stack([strength, phase_shift, delay, edge_type], dim=1).to(device)
