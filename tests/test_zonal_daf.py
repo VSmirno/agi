@@ -265,3 +265,54 @@ class TestPipelineZonal:
         currents = p.encoder.sdr_to_currents(sdr, 500, zone=vis_zone)
         max_val = currents[:, 0].max().item()
         assert max_val == pytest.approx(1.0), f"Expected full strength 1.0, got {max_val}"
+
+
+class TestPipelineCheckpoint:
+
+    def test_save_load_roundtrip(self, tmp_path):
+        """Pipeline checkpoint preserves DAF state and GroundingMap."""
+        zones = {
+            "visual": ZoneConfig(start=0, size=300),
+            "linguistic": ZoneConfig(start=300, size=200),
+        }
+        cfg = PipelineConfig(
+            daf=DafConfig(
+                num_nodes=500, avg_degree=10, zones=zones,
+                device="cpu", disable_csr=True,
+            ),
+            encoder=EncoderConfig(sdr_size=512, sdr_sparsity=0.04, image_size=32),
+            steps_per_cycle=10,
+            device="cpu",
+            priming_strength=0.3,
+        )
+        from snks.pipeline.runner import Pipeline
+
+        p = Pipeline(cfg)
+        # Train a bit
+        img = torch.rand(32, 32)
+        p.perception_cycle(image=img, text="test object")
+        p.perception_cycle(image=img, text="test object")
+
+        # Verify grounding map populated
+        assert len(p.grounding_map._word_to_visual_sdr) > 0
+
+        # Save
+        ckpt = str(tmp_path / "ckpt")
+        p.save_checkpoint(ckpt)
+
+        # Load into fresh pipeline
+        p2 = Pipeline(cfg)
+        assert len(p2.grounding_map._word_to_visual_sdr) == 0
+        p2.load_checkpoint(ckpt)
+
+        # DAF state restored
+        assert p2.engine.step_count == p.engine.step_count
+        assert torch.allclose(
+            p2.engine.graph.edge_attr, p.engine.graph.edge_attr
+        )
+
+        # GroundingMap restored
+        vis_orig = p.grounding_map.word_to_visual_sdr("test object")
+        vis_loaded = p2.grounding_map.word_to_visual_sdr("test object")
+        assert vis_loaded is not None
+        assert torch.allclose(vis_loaded, vis_orig)

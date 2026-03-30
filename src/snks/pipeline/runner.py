@@ -129,6 +129,39 @@ class Pipeline:
         # Stage 19: cross-modal grounding map + priming
         self.grounding_map = GroundingMap()
 
+    def save_checkpoint(self, path: str) -> None:
+        """Save pipeline state: DAF weights + GroundingMap.
+
+        Args:
+            path: Base path prefix. Creates {path}_daf.safetensors,
+                  {path}_grounding_* files, and {path}_pipeline.json.
+        """
+        import json as _json
+        import os
+
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+
+        self.engine.save_state(path)
+        self.grounding_map.save(path + "_grounding")
+
+        meta = {
+            "steps_per_cycle": self.config.steps_per_cycle,
+            "priming_strength": self.config.priming_strength,
+            "num_nodes": self.config.daf.num_nodes,
+            "grounding_vocab_size": self.grounding_map.vocab_size,
+        }
+        with open(path + "_pipeline.json", "w") as f:
+            _json.dump(meta, f, indent=2)
+
+    def load_checkpoint(self, path: str) -> None:
+        """Load pipeline state: DAF weights + GroundingMap.
+
+        Args:
+            path: Base path prefix matching a previous save_checkpoint() call.
+        """
+        self.engine.load_state(path)
+        self.grounding_map.load(path + "_grounding")
+
     def inject_motor_currents(self, currents: torch.Tensor) -> None:
         """Set motor currents for dual injection (sensory + motor).
 

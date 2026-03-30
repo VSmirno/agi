@@ -75,6 +75,10 @@ class GroundingMap:
             tensors = {word: sdr for word, sdr in self._word_to_sdr.items()}
             save_file(tensors, path + "_sdrs.safetensors")
 
+        if self._word_to_visual_sdr:
+            vis_tensors = {word: sdr for word, sdr in self._word_to_visual_sdr.items()}
+            save_file(vis_tensors, path + "_visual_sdrs.safetensors")
+
     def load(self, path: str) -> None:
         """Load grounding map from disk."""
         from safetensors.torch import load_file
@@ -88,3 +92,7 @@ class GroundingMap:
         sdrs_path = path + "_sdrs.safetensors"
         if os.path.exists(sdrs_path):
             self._word_to_sdr = dict(load_file(sdrs_path))
+
+        vis_sdrs_path = path + "_visual_sdrs.safetensors"
+        if os.path.exists(vis_sdrs_path):
+            self._word_to_visual_sdr = dict(load_file(vis_sdrs_path))

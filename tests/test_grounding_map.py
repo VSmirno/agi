@@ -67,6 +67,38 @@ class TestGroundingMap:
             assert torch.allclose(gm2.word_to_sdr("key"), sdr_key)
             assert torch.allclose(gm2.word_to_sdr("door"), sdr_door)
 
+    def test_visual_sdr_register_and_lookup(self):
+        gm = GroundingMap()
+        vis_sdr = torch.randn(3000)
+        gm.register_visual("cat", vis_sdr)
+
+        result = gm.word_to_visual_sdr("cat")
+        assert result is not None
+        assert torch.allclose(result, vis_sdr)
+        assert gm.word_to_visual_sdr("dog") is None
+
+    def test_save_load_with_visual_sdrs(self):
+        gm = GroundingMap()
+        sdr = torch.zeros(512)
+        sdr[:20] = 1.0
+        gm.register("key", 42, sdr)
+
+        vis_sdr = torch.randn(3000)
+        gm.register_visual("key", vis_sdr)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "grounding")
+            gm.save(path)
+
+            gm2 = GroundingMap()
+            gm2.load(path)
+
+            assert gm2.word_to_sks("key") == 42
+            assert torch.allclose(gm2.word_to_sdr("key"), sdr)
+            loaded_vis = gm2.word_to_visual_sdr("key")
+            assert loaded_vis is not None
+            assert torch.allclose(loaded_vis, vis_sdr)
+
     def test_save_load_empty_map(self):
         gm = GroundingMap()
         with tempfile.TemporaryDirectory() as tmpdir:
