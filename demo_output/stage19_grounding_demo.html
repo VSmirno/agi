@@ -357,7 +357,7 @@
         </div>
         <div class="heatmap-box">
           <canvas id="canvas-activation" width="220" height="220"></canvas>
-          <div class="heatmap-label">Активация visual zone (~55×55)</div>
+          <div class="heatmap-label">Реконструкция (32×32)</div>
         </div>
       </div>
 
@@ -782,17 +782,9 @@ function updateMentalImage(category) {
   const canvOrig = document.getElementById('canvas-original');
   draw2DGrid(canvOrig, hm.original_image.flat(), 32, 32, INFERNO);
 
-  // --- visual activation: reshape to ~55x55 ---
-  const flatAct = hm.visual_activation;
-  const total = flatAct.length;
-  const cols = Math.ceil(Math.sqrt(total));
-  const rows = Math.ceil(total / cols);
-  // pad if needed
-  const padded = new Float64Array(cols * rows);
-  for (let i = 0; i < total; i++) padded[i] = flatAct[i];
-
+  // --- reconstructed image 32x32 ---
   const canvAct = document.getElementById('canvas-activation');
-  draw2DGrid(canvAct, padded, cols, rows, VIRIDIS);
+  draw2DGrid(canvAct, hm.reconstructed_image.flat(), 32, 32, VIRIDIS);
 
   // --- ratio bar ---
   const ratio = hm.cross_modal_ratio;
