@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SNKS Inference Viewer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0a0e17;
+    color: #e0e0e0;
+    min-height: 100vh;
+  }
+
+  /* ---- Header ---- */
+  header {
+    padding: 12px 24px;
+    background: #111827;
+    border-bottom: 1px solid #1f2937;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  header h1 { font-size: 18px; font-weight: 600; color: #60a5fa; }
+
+  #rec-badge {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #9ca3af;
+  }
+  #rec-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #ef4444;
+    animation: blink 1.2s infinite;
+  }
+  #rec-dot.active { background: #22c55e; animation: none; }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+  /* ---- Main layout ---- */
+  .main {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    grid-template-rows: auto;
+    gap: 0;
+    height: calc(100vh - 50px);
+  }
+
+  /* ---- Left: frame viewer ---- */
+  .frame-panel {
+    background: #0d1117;
+    border-right: 1px solid #1f2937;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    position: relative;
+  }
+  #frame-img {
+    max-width: 400px;
+    max-height: 400px;
+    width: 100%;
+    image-rendering: pixelated;
+    border: 1px solid #1f2937;
+    border-radius: 4px;
+    background: #111827;
+  }
+  #no-frame-msg {
+    position: absolute;
+    color: #4b5563;
+    font-size: 14px;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  /* ---- Right: controls + metrics + chart ---- */
+  .right-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow-y: auto;
+  }
+
+  .section {
+    padding: 16px 20px;
+    border-bottom: 1px solid #1f2937;
+  }
+  .section h2 {
+    font-size: 11px;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 12px;
+  }
+
+  /* ---- Controls ---- */
+  .control-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .control-row label {
+    font-size: 12px;
+    color: #9ca3af;
+    min-width: 40px;
+  }
+
+  select {
+    padding: 5px 10px;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    background: #1f2937;
+    color: #e0e0e0;
+    font-size: 13px;
+    cursor: pointer;
+    min-width: 180px;
+  }
+  select:focus { outline: none; border-color: #3b82f6; }
+
+  button {
+    padding: 6px 14px;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    background: #1f2937;
+    color: #e0e0e0;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  button:hover { background: #374151; }
+  button.primary { background: #1d4ed8; border-color: #2563eb; }
+  button.primary:hover { background: #2563eb; }
+  button.active { background: #065f46; border-color: #10b981; color: #6ee7b7; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ---- Metrics ---- */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .metric-tile {
+    background: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 6px;
+    padding: 10px 12px;
+    text-align: center;
+  }
+  .metric-tile .value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #60a5fa;
+  }
+  .metric-tile .label {
+    font-size: 10px;
+    color: #6b7280;
+    margin-top: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  /* ---- FSM badge ---- */
+  .fsm-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+  }
+  .fsm-label { font-size: 12px; color: #9ca3af; }
+  #fsm-badge {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    background: #1f2937;
+    color: #888;
+    border: 1px solid #374151;
+    transition: background 0.3s, color 0.3s, border-color 0.3s;
+    letter-spacing: 0.5px;
+  }
+
+  /* ---- Coverage chart ---- */
+  .chart-section {
+    flex: 1;
+    padding: 16px 20px;
+    min-height: 200px;
+  }
+  .chart-section h2 {
+    font-size: 11px;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 10px;
+  }
+  .chart-wrapper { position: relative; height: 180px; }
+
+  /* ---- Status bar ---- */
+  #status-bar {
+    padding: 6px 20px;
+    font-size: 11px;
+    color: #6b7280;
+    background: #0d1117;
+    border-top: 1px solid #1f2937;
+    min-height: 28px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SNKS Inference Viewer</h1>
+  <div id="rec-badge">
+    <div id="rec-dot"></div>
+    <span id="rec-label">DISCONNECTED</span>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- Left: MiniGrid frame -->
+  <div class="frame-panel">
+    <div id="no-frame-msg">No frame yet.<br>Load a checkpoint and press Play.</div>
+    <img id="frame-img" alt="MiniGrid frame" style="display:none">
+  </div>
+
+  <!-- Right: controls, metrics, chart -->
+  <div class="right-panel">
+
+    <!-- Checkpoint controls -->
+    <div class="section">
+      <h2>Checkpoint</h2>
+      <div class="control-row">
+        <label>ENV</label>
+        <select id="env-select" onchange="onEnvChange()">
+          <option value="">-- loading --</option>
+        </select>
+      </div>
+      <div class="control-row">
+        <label>STEP</label>
+        <select id="step-select">
+          <option value="final">final</option>
+        </select>
+      </div>
+      <div class="control-row">
+        <button class="primary" onclick="doLoad()">Load</button>
+        <button onclick="doPlay()" id="btn-play">Play</button>
+        <button onclick="doPause()" id="btn-pause">Pause</button>
+        <button onclick="doStep()" id="btn-step">Step</button>
+        <button onclick="doReset()">Reset</button>
+      </div>
+    </div>
+
+    <!-- Metrics -->
+    <div class="section">
+      <h2>Metrics</h2>
+      <div class="metrics-grid">
+        <div class="metric-tile">
+          <div class="value" id="m-coverage">0.00</div>
+          <div class="label">Coverage</div>
+        </div>
+        <div class="metric-tile">
+          <div class="value" id="m-step">0</div>
+          <div class="label">Step</div>
+        </div>
+        <div class="metric-tile">
+          <div class="value" id="m-sks">0</div>
+          <div class="label">SKS</div>
+        </div>
+      </div>
+      <div class="fsm-row" style="margin-top:14px">
+        <span class="fsm-label">FSM State:</span>
+        <span id="fsm-badge">NEUTRAL</span>
+      </div>
+    </div>
+
+    <!-- Coverage chart -->
+    <div class="chart-section">
+      <h2>Coverage over time (last 200 steps)</h2>
+      <div class="chart-wrapper">
+        <canvas id="coverage-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div id="status-bar">Ready. Select a checkpoint and press Load.</div>
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// WebSocket
+// ---------------------------------------------------------------------------
+const WS_URL = `ws://${location.host}/ws`;
+let ws = null;
+
+// Coverage history (rolling 200)
+const MAX_HISTORY = 200;
+const coverageHistory = [];
+
+function connect() {
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    setStatus('Connected', true);
+  };
+
+  ws.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'step') {
+      handleStep(d);
+    }
+  };
+
+  ws.onclose = () => {
+    setStatus('Disconnected — reconnecting...', false);
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+function handleStep(d) {
+  // Update frame
+  if (d.frame) {
+    const img = document.getElementById('frame-img');
+    img.src = 'data:image/png;base64,' + d.frame;
+    img.style.display = 'block';
+    document.getElementById('no-frame-msg').style.display = 'none';
+  }
+
+  // Update metrics
+  document.getElementById('m-coverage').textContent = (d.coverage * 100).toFixed(1) + '%';
+  document.getElementById('m-step').textContent = d.step;
+  document.getElementById('m-sks').textContent = d.sks_count !== undefined ? d.sks_count : '--';
+
+  // FSM badge
+  setFsmBadge(d.fsm || 'NEUTRAL');
+
+  // Chart update
+  coverageHistory.push(d.coverage);
+  if (coverageHistory.length > MAX_HISTORY) coverageHistory.shift();
+  updateChart();
+}
+
+// ---------------------------------------------------------------------------
+// FSM badge colors
+// ---------------------------------------------------------------------------
+const FSM_COLORS = {
+  'EXPLORE':      { bg: '#1e3a5f', text: '#4a9eff', border: '#2563eb' },
+  'GOAL_SEEKING': { bg: '#064e3b', text: '#4eff7a', border: '#10b981' },
+  'NEUTRAL':      { bg: '#1f2937', text: '#888888', border: '#374151' },
+  'CONSOLIDATE':  { bg: '#451a03', text: '#ffaa00', border: '#d97706' },
+};
+
+function setFsmBadge(mode) {
+  const badge = document.getElementById('fsm-badge');
+  const key = mode.toUpperCase();
+  const c = FSM_COLORS[key] || FSM_COLORS['NEUTRAL'];
+  badge.textContent = key;
+  badge.style.background = c.bg;
+  badge.style.color = c.text;
+  badge.style.borderColor = c.border;
+}
+
+// ---------------------------------------------------------------------------
+// Coverage chart (Chart.js)
+// ---------------------------------------------------------------------------
+const ctx = document.getElementById('coverage-chart').getContext('2d');
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [{
+      label: 'Coverage',
+      data: [],
+      borderColor: '#4a9eff',
+      backgroundColor: 'rgba(74,158,255,0.08)',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.3,
+      fill: true,
+    }]
+  },
+  options: {
+    animation: false,
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+    },
+    scales: {
+      x: {
+        display: false,
+        ticks: { color: '#6b7280' },
+        grid: { color: '#1f2937' },
+      },
+      y: {
+        min: 0,
+        max: 1,
+        ticks: {
+          color: '#6b7280',
+          font: { size: 10 },
+          callback: v => (v * 100).toFixed(0) + '%',
+        },
+        grid: { color: '#1f2937' },
+      }
+    }
+  }
+});
+
+function updateChart() {
+  chart.data.labels = coverageHistory.map((_, i) => i);
+  chart.data.datasets[0].data = [...coverageHistory];
+  chart.update('none');
+}
+
+// ---------------------------------------------------------------------------
+// Checkpoint loader: populate ENV dropdown from GET /checkpoints
+// ---------------------------------------------------------------------------
+let checkpointData = {};
+
+async function loadCheckpointList() {
+  try {
+    const r = await fetch('/checkpoints');
+    const d = await r.json();
+    checkpointData = d.envs || {};
+    const envSelect = document.getElementById('env-select');
+    envSelect.innerHTML = '';
+
+    const keys = Object.keys(checkpointData);
+    if (keys.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '-- no checkpoints found --';
+      envSelect.appendChild(opt);
+    } else {
+      keys.forEach(envId => {
+        const opt = document.createElement('option');
+        opt.value = envId;
+        opt.textContent = envId;
+        envSelect.appendChild(opt);
+      });
+      onEnvChange();
+    }
+  } catch (err) {
+    setStatus('Could not load checkpoint list: ' + err, false);
+    const envSelect = document.getElementById('env-select');
+    envSelect.innerHTML = '<option value="">-- error loading --</option>';
+  }
+}
+
+function onEnvChange() {
+  const envId = document.getElementById('env-select').value;
+  const stepSelect = document.getElementById('step-select');
+  stepSelect.innerHTML = '';
+
+  const steps = checkpointData[envId] || ['final'];
+  steps.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = s;
+    stepSelect.appendChild(opt);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Controls
+// ---------------------------------------------------------------------------
+async function doLoad() {
+  const envId = document.getElementById('env-select').value;
+  const step  = document.getElementById('step-select').value || 'final';
+  if (!envId) {
+    setStatus('Please select an ENV first.', false);
+    return;
+  }
+  setStatus(`Loading ${envId} / ${step} ...`, false);
+  try {
+    const r = await fetch('/load', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ env_id: envId, step }),
+    });
+    const d = await r.json();
+    if (d.status === 'loaded') {
+      const ckptNote = d.checkpoint_found ? 'checkpoint loaded' : 'fresh agent (no checkpoint)';
+      setStatus(`Loaded: ${envId} / ${step} — ${ckptNote}`, true);
+      // Reset chart
+      coverageHistory.length = 0;
+      updateChart();
+      // Reset metrics display
+      document.getElementById('m-coverage').textContent = '0.0%';
+      document.getElementById('m-step').textContent = '0';
+      document.getElementById('m-sks').textContent = '0';
+      setFsmBadge('NEUTRAL');
+    } else {
+      setStatus('Load error: ' + (d.detail || JSON.stringify(d)), false);
+    }
+  } catch (err) {
+    setStatus('Load failed: ' + err, false);
+  }
+}
+
+async function doPlay() {
+  try {
+    const r = await fetch('/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'play' }),
+    });
+    const d = await r.json();
+    if (d.status === 'playing') {
+      document.getElementById('btn-play').classList.add('active');
+      document.getElementById('btn-pause').classList.remove('active');
+      setStatus('Playing...', true);
+    }
+  } catch (err) {
+    setStatus('Play error: ' + err, false);
+  }
+}
+
+async function doPause() {
+  try {
+    const r = await fetch('/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'pause' }),
+    });
+    const d = await r.json();
+    if (d.status === 'paused') {
+      document.getElementById('btn-pause').classList.add('active');
+      document.getElementById('btn-play').classList.remove('active');
+      setStatus('Paused.', true);
+    }
+  } catch (err) {
+    setStatus('Pause error: ' + err, false);
+  }
+}
+
+async function doStep() {
+  try {
+    const r = await fetch('/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'step' }),
+    });
+    const d = await r.json();
+    if (d.status !== 'stepped') {
+      setStatus('Step error: ' + (d.detail || JSON.stringify(d)), false);
+    }
+  } catch (err) {
+    setStatus('Step error: ' + err, false);
+  }
+}
+
+async function doReset() {
+  try {
+    const r = await fetch('/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reset' }),
+    });
+    const d = await r.json();
+    if (d.status === 'reset') {
+      coverageHistory.length = 0;
+      updateChart();
+      document.getElementById('m-coverage').textContent = '0.0%';
+      document.getElementById('m-step').textContent = '0';
+      setStatus('Reset.', true);
+    } else {
+      setStatus('Reset error: ' + (d.detail || JSON.stringify(d)), false);
+    }
+  } catch (err) {
+    setStatus('Reset error: ' + err, false);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Status bar
+// ---------------------------------------------------------------------------
+function setStatus(msg, connected) {
+  document.getElementById('status-bar').textContent = msg;
+  const dot = document.getElementById('rec-dot');
+  const label = document.getElementById('rec-label');
+  if (connected) {
+    dot.classList.add('active');
+    label.textContent = 'LIVE';
+  } else {
+    dot.classList.remove('active');
+    label.textContent = 'OFFLINE';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+loadCheckpointList();
+connect();
+</script>
+</body>
+</html>

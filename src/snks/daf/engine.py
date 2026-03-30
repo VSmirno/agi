@@ -341,6 +341,53 @@ class DafEngine:
             self._reallocate_edge_buffers()
             self._cuda_graph = None  # invalidate — topology changed
 
+    def save_state(self, path: str) -> None:
+        """Save trained DAF weights to {path}_daf.safetensors.
+
+        Saves: states, graph edge_attr, graph edge_index, step_count.
+
+        Args:
+            path: Base path prefix. File written is ``{path}_daf.safetensors``.
+        """
+        from safetensors.torch import save_file
+
+        tensors = {
+            "states": self.states.detach().cpu(),
+            "edge_attr": self.graph.edge_attr.detach().cpu(),
+            "edge_index": self.graph.edge_index.detach().cpu(),
+            "step_count": torch.tensor(self.step_count, dtype=torch.int64),
+        }
+        save_file(tensors, path + "_daf.safetensors")
+
+    def load_state(self, path: str) -> None:
+        """Load trained DAF weights from {path}_daf.safetensors.
+
+        Args:
+            path: Base path prefix. File read is ``{path}_daf.safetensors``.
+
+        Raises:
+            FileNotFoundError: If the checkpoint file does not exist.
+        """
+        import os
+        from safetensors.torch import load_file
+
+        file_path = path + "_daf.safetensors"
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(
+                f"DAF checkpoint not found: {file_path!r}. "
+                "Call save_state() first or check the base_path argument."
+            )
+        tensors = load_file(file_path, device=str(self.device))
+        self.states = tensors["states"].to(self.device)
+        self.graph.edge_attr = tensors["edge_attr"].to(self.device)
+        self.graph.edge_index = tensors["edge_index"].to(self.device)
+        self.step_count = int(tensors["step_count"].item())
+
+        # Derived buffers that depend on edge_attr / edge_index must be
+        # rebuilt so the engine is fully consistent after loading.
+        self._reallocate_edge_buffers()
+        self._cuda_graph = None  # invalidate any captured graph
+
     def _reallocate_edge_buffers(self) -> None:
         """Reallocate edge-sized buffers after graph topology changes."""
         E = self.graph.num_edges
