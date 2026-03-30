@@ -41,32 +41,39 @@ git pull origin main 2>&1 | tee -a "${LOG_FILE}"
 
 # ---------------------------------------------------------------------------
 # Helper: run one experiment
+# spawn-safe: write runner to a real .py file (not stdin) so multiprocessing
+# spawn can re-import it in worker processes.
 # ---------------------------------------------------------------------------
 run_exp() {
     local name="$1"
     local module="$2"
+    local runner="/tmp/run_${name}.py"
 
-    echo "" | tee -a "${LOG_FILE}"
-    echo "--- ${name} start: $(date) ---" | tee -a "${LOG_FILE}"
-
-    python - <<PYEOF 2>&1 | tee -a "${LOG_FILE}"; local ec=${PIPESTATUS[0]}
+    cat > "${runner}" <<PYEOF
 import os, json, sys, importlib
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 sys.path.insert(0, "${REPO_DIR}/src")
 
-mod = importlib.import_module("${module}")
-result = mod.run(device="${DEVICE}")
+if __name__ == "__main__":
+    mod = importlib.import_module("${module}")
+    result = mod.run(device="${DEVICE}")
 
-out_path = "${RESULTS_DIR}/${name}.json"
-with open(out_path, "w") as f:
-    json.dump(result, f, indent=2)
+    out_path = "${RESULTS_DIR}/${name}.json"
+    with open(out_path, "w") as f:
+        json.dump(result, f, indent=2)
 
-print(json.dumps(result, indent=2))
-status = "PASS" if result.get("passed") else "FAIL"
-print(f"\\n{status}")
-sys.exit(0 if result.get("passed") else 1)
+    print(json.dumps(result, indent=2))
+    status = "PASS" if result.get("passed") else "FAIL"
+    print(f"\\n{status}")
+    sys.exit(0 if result.get("passed") else 1)
 PYEOF
+
+    echo "" | tee -a "${LOG_FILE}"
+    echo "--- ${name} start: $(date) ---" | tee -a "${LOG_FILE}"
+
+    python "${runner}" 2>&1 | tee -a "${LOG_FILE}"; local ec=${PIPESTATUS[0]}
+
     echo "--- ${name} end: $(date) exit=${ec} ---" | tee -a "${LOG_FILE}"
     return ${ec}
 }
