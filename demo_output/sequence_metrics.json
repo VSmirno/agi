@@ -1,0 +1,7 @@
+{
+  "accuracy": 0.8405797101449275,
+  "seq_length": 7,
+  "n_train_steps": 280,
+  "train_time_sec": 190.93081331253052,
+  "gate_pass": true
+}
