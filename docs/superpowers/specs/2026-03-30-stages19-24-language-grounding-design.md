@@ -1,7 +1,7 @@
 # Stages 19–24: Language & Grounded Cognition — Design Doc
 
 **Дата:** 2026-03-30
-**Статус:** Stages 19–22 COMPLETE (2026-03-30). Stages 23–24 pending.
+**Статус:** Stages 19–23 COMPLETE (2026-03-31). Stage 24 pending.
 **Зависимости:** Этапы 0–18 ✅
 
 ---

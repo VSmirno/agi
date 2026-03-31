@@ -58,6 +58,11 @@ class GroundingMap:
     def vocab_size(self) -> int:
         return len(self._word_to_sks)
 
+    @property
+    def vocab_words(self) -> set[str]:
+        """Set of all registered words."""
+        return set(self._word_to_sdr.keys())
+
     def save(self, path: str) -> None:
         """Save grounding map to disk (JSON metadata + safetensors SDRs)."""
         from safetensors.torch import save_file
