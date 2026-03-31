@@ -1,12 +1,17 @@
-"""SkillAgent: GoalAgent with skill-first execution (Stage 27)."""
+"""SkillAgent: GoalAgent with skill-first execution (Stage 27).
+
+Extended in Stage 28 with analogical reasoning:
+  Priority: skill → analogy → backward chaining → explore.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
 from snks.agent.causal_model import CausalWorldModel
+from snks.language.analogical_reasoner import AnalogicalReasoner
 from snks.language.goal_agent import GoalAgent, EpisodeResult, ACT_PICKUP, ACT_TOGGLE, ACTION_NAME_TO_ID
-from snks.language.grid_perception import SKS_DOOR_OPEN, SKS_KEY_HELD
+from snks.language.grid_perception import SKS_DOOR_OPEN, SKS_GATE_OPEN, SKS_KEY_HELD
 from snks.language.grid_navigator import PathStatus
 from snks.language.grounding_map import GroundingMap
 from snks.language.skill import Skill
@@ -34,9 +39,11 @@ class SkillAgent(GoalAgent):
         skill_library: SkillLibrary | None = None,
         grounding_map: GroundingMap | None = None,
         causal_model: CausalWorldModel | None = None,
+        analogy_threshold: float = 0.7,
     ) -> None:
         super().__init__(env, grounding_map=grounding_map, causal_model=causal_model)
         self._library = skill_library or SkillLibrary()
+        self._analogical_reasoner = AnalogicalReasoner(threshold=analogy_threshold)
 
     @property
     def library(self) -> SkillLibrary:
@@ -97,7 +104,7 @@ class SkillAgent(GoalAgent):
             # Skills are generic (no target_pos), so try only once per attempt.
             # If skill fails or doesn't resolve blocker, fall through to
             # backward chaining which has position-specific targeting.
-            goal_sks = frozenset({SKS_DOOR_OPEN})
+            goal_sks = frozenset({SKS_DOOR_OPEN, SKS_GATE_OPEN})
             applicable = self._library.find_applicable(current_sks, goal_sks)
 
             skill_used = False
@@ -124,6 +131,37 @@ class SkillAgent(GoalAgent):
                 if ok and sks_after != sks_before:
                     skill.success_count += 1
                     skill_used = True
+
+            if skill_used:
+                continue
+
+            # Step 3: Try analogical reasoning if no direct skill matched.
+            if not skill_used and attempt == 0:
+                analogies = self._analogical_reasoner.find_analogy(
+                    self._library, current_sks,
+                )
+                for analogy in analogies:
+                    adapted = analogy.adapted_skill
+                    sks_before = set(current_sks)
+                    # Register sub-skills into library if composite.
+                    if adapted.is_composite and adapted.sub_skills:
+                        self._register_adapted_sub_skills(analogy)
+                        ok, s, r = self._try_composite_skill(adapted, max_steps - steps)
+                    else:
+                        ok, s, r = self._try_primitive_skill(adapted, max_steps - steps)
+                    steps += s
+                    total_reward += r
+                    result.skills_used.append(adapted.name)
+
+                    uw_check = self._env.unwrapped
+                    carrying_check = getattr(uw_check, "carrying", None)
+                    sks_after = self._perception.perceive(
+                        uw_check.grid, tuple(uw_check.agent_pos), int(uw_check.agent_dir),
+                        carrying=carrying_check,
+                    )
+                    if ok and sks_after != sks_before:
+                        skill_used = True
+                        break
 
             if skill_used:
                 continue
@@ -247,6 +285,25 @@ class SkillAgent(GoalAgent):
                 return False, total_steps, total_reward
 
         return True, total_steps, total_reward
+
+    def _register_adapted_sub_skills(self, analogy) -> None:
+        """Register adapted sub-skills into library so _try_composite_skill can find them."""
+        from snks.language.analogical_reasoner import AnalogyMap
+        source_name = analogy.source_skill_name
+        source_skill = self._library.get(source_name)
+        if source_skill is None or not source_skill.sub_skills:
+            return
+        for sub_name in source_skill.sub_skills:
+            adapted_name = f"adapted_{sub_name}"
+            if self._library.get(adapted_name) is not None:
+                continue
+            original = self._library.get(sub_name)
+            if original is None:
+                continue
+            adapted_sub = self._analogical_reasoner._adapt_skill(
+                original, analogy.sks_mapping,
+            )
+            self._library._skills[adapted_name] = adapted_sub
 
     def _after_episode(self) -> None:
         """Extract skills from updated causal model."""
