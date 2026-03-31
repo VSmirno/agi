@@ -1,7 +1,7 @@
 # СНКС — Roadmap к AGI
 
 **Последнее обновление:** 2026-03-31
-**Статус:** Stages 0-30 COMPLETE (75 экспериментов PASS)
+**Статус:** Stages 0-31 COMPLETE (80 экспериментов PASS)
 
 ---
 
@@ -46,7 +46,7 @@
 |-------|----------|--------|----------------|
 | 29 | Curiosity-Driven Exploration | COMPLETE (2026-03-31) | 2.48x vs random, 100% coverage, count-based r_int |
 | 30 | Few-Shot Learning | COMPLETE (2026-03-31) | One-shot skill extraction 100%, cross-env transfer 100% |
-| 31 | Abstract Pattern Reasoning | PLANNED | Raven's-style pattern completion на концептах |
+| 31 | Abstract Pattern Reasoning | COMPLETE (2026-03-31) | Raven's-style 100% accuracy, HAC algebra, dual-rule, analogy |
 | 32 | Meta-Learning | PLANNED | Learning to learn — адаптация стратегий обучения |
 
 ## Блок 5: Social & Integration (PLANNED)
@@ -58,14 +58,14 @@
 
 ---
 
-## Текущий фокус: Stage 31 — Abstract Pattern Reasoning
+## Текущий фокус: Stage 32 — Meta-Learning
 
 **Спецификация:** TBD
 **Ветка:** TBD
-**Эксперименты:** exp77-79
+**Эксперименты:** exp80-82
 
 ### Gate-критерии:
-- TBD — Raven's-style pattern completion на концептах
+- TBD — Learning to learn, адаптация стратегий обучения
 
 ---
 
