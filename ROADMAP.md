@@ -1,7 +1,7 @@
 # СНКС — Roadmap к AGI
 
 **Последнее обновление:** 2026-03-31
-**Статус:** Stages 0-32 COMPLETE (85 экспериментов PASS)
+**Статус:** Stages 0-33 COMPLETE (88 экспериментов PASS)
 
 ---
 
@@ -52,20 +52,20 @@
 ## Блок 5: Social & Integration (PLANNED)
 | Stage | Название | Статус | Что доказывает |
 |-------|----------|--------|----------------|
-| 33 | Multi-Agent Communication | PLANNED | Агенты обмениваются концептами (не словами) |
+| 33 | Multi-Agent Communication | COMPLETE (2026-03-31) | Concept-level messaging, 1.59x speedup, 100% cooperation |
 | 34 | Long-Horizon Planning | PLANNED | Планирование на 1000+ шагов с иерархией |
 | 35 | Integration Demo | PLANNED | Все capabilities в одном когерентном агенте |
 
 ---
 
-## Текущий фокус: Stage 33 — Multi-Agent Communication
+## Текущий фокус: Stage 34 — Long-Horizon Planning
 
 **Спецификация:** TBD
 **Ветка:** TBD
-**Эксперименты:** exp83-85
+**Эксперименты:** exp86-88
 
 ### Gate-критерии:
-- TBD — Агенты обмениваются концептами (не словами)
+- TBD — Планирование на 1000+ шагов с иерархией
 
 ---
 
