@@ -1,7 +1,7 @@
 # СНКС — Roadmap к AGI
 
 **Последнее обновление:** 2026-03-31
-**Статус:** Stages 0-34 COMPLETE (91 экспериментов PASS)
+**Статус:** Stages 0-35 COMPLETE (94 экспериментов PASS) — ALL BLOCKS DONE
 
 ---
 
@@ -49,23 +49,25 @@
 | 31 | Abstract Pattern Reasoning | COMPLETE (2026-03-31) | Raven's-style 100% accuracy, HAC algebra, dual-rule, analogy |
 | 32 | Meta-Learning | COMPLETE (2026-03-31) | Strategy selection 100%, 1.29x vs fixed, 5 task types |
 
-## Блок 5: Social & Integration (PLANNED)
+## Блок 5: Social & Integration (COMPLETE)
 | Stage | Название | Статус | Что доказывает |
 |-------|----------|--------|----------------|
 | 33 | Multi-Agent Communication | COMPLETE (2026-03-31) | Concept-level messaging, 1.59x speedup, 100% cooperation |
 | 34 | Long-Horizon Planning | COMPLETE (2026-03-31) | 1800+ steps, 3-level hierarchy, re-planning 1.67x overhead |
-| 35 | Integration Demo | PLANNED | Все capabilities в одном когерентном агенте |
+| 35 | Integration Demo | COMPLETE (2026-03-31) | 10 capabilities, zero backprop, 100% integration |
 
 ---
 
-## Текущий фокус: Stage 35 — Integration Demo
+## Статус: ВСЕ ЭТАПЫ ЗАВЕРШЕНЫ
 
-**Спецификация:** TBD
-**Ветка:** TBD
-**Эксперименты:** exp89-91
+**Stages 0-35: COMPLETE**
+**94 эксперимента: ALL PASS**
+**5 блоков: ALL COMPLETE**
 
-### Gate-критерии:
-- TBD — Все capabilities в одном когерентном агенте
+### Что дальше
+- Scaling experiments на GPU (minipc)
+- Новые среды и задачи
+- Публикация результатов
 
 ---
 
