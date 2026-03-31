@@ -1,7 +1,7 @@
 # СНКС — Roadmap к AGI
 
 **Последнее обновление:** 2026-03-31
-**Статус:** Stages 0-33 COMPLETE (88 экспериментов PASS)
+**Статус:** Stages 0-34 COMPLETE (91 экспериментов PASS)
 
 ---
 
@@ -53,19 +53,19 @@
 | Stage | Название | Статус | Что доказывает |
 |-------|----------|--------|----------------|
 | 33 | Multi-Agent Communication | COMPLETE (2026-03-31) | Concept-level messaging, 1.59x speedup, 100% cooperation |
-| 34 | Long-Horizon Planning | PLANNED | Планирование на 1000+ шагов с иерархией |
+| 34 | Long-Horizon Planning | COMPLETE (2026-03-31) | 1800+ steps, 3-level hierarchy, re-planning 1.67x overhead |
 | 35 | Integration Demo | PLANNED | Все capabilities в одном когерентном агенте |
 
 ---
 
-## Текущий фокус: Stage 34 — Long-Horizon Planning
+## Текущий фокус: Stage 35 — Integration Demo
 
 **Спецификация:** TBD
 **Ветка:** TBD
-**Эксперименты:** exp86-88
+**Эксперименты:** exp89-91
 
 ### Gate-критерии:
-- TBD — Планирование на 1000+ шагов с иерархией
+- TBD — Все capabilities в одном когерентном агенте
 
 ---
 
