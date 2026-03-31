@@ -132,14 +132,8 @@ class BlockingAnalyzer:
             if is_gate:
                 results = causal_model.query_by_effect(frozenset({SKS_DOOR_OPEN}))
             if not results:
-                # Fallback: try toggle directly (even without causal knowledge)
-                return SubGoal(
-                    action="toggle",
-                    target_word="gate" if is_gate else blocker.cell_type,
-                    target_sks=SKS_GATE_OPEN if is_gate else SKS_DOOR_OPEN,
-                    prerequisite=None,
-                    target_pos=blocker.pos,
-                )
+                # No causal knowledge yet — return None so agent explores
+                return None
 
         action_id, required_context, _confidence = results[0]
 
