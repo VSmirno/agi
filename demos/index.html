@@ -364,6 +364,139 @@ body {
     <span class="btn">Открыть отчёт →</span>
   </a>
 
+  <!-- Stage 19: Grounding -->
+  <a class="demo-card" href="stage19_grounding_demo.html">
+    <div class="icon">🔗</div>
+    <h2>Stage 19: Cross-Modal Grounding
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      Grounding Map: связывание визуальных СКС-кластеров с языковыми токенами.
+      Без внешних моделей — только локальная ассоциативная связь.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">100%</div>
+        <div class="lbl">Grounding</div>
+      </div>
+    </div>
+    <span class="btn">Открыть отчёт →</span>
+  </a>
+
+  <!-- Exp41: Multi-env baseline -->
+  <a class="demo-card" href="exp41_baseline.html">
+    <div class="icon">📊</div>
+    <h2>Exp 41: Multi-Env Baseline
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      Сравнение СНКС-агента в нескольких средах MiniGrid.
+      Базовые метрики навигации и goal-completion.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">multi</div>
+        <div class="lbl">Environments</div>
+      </div>
+    </div>
+    <span class="btn">Открыть отчёт →</span>
+  </a>
+
+  <!-- BabyAI -->
+  <a class="demo-card" href="babyai_demo.html">
+    <div class="icon">👶</div>
+    <h2>BabyAI E2E Demo
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      End-to-end: язык → grounding → планирование → навигация.
+      BabyAI-GoToObj: агент понимает текстовую инструкцию и выполняет задание.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">E2E</div>
+        <div class="lbl">Pipeline</div>
+      </div>
+    </div>
+    <span class="btn">Открыть отчёт →</span>
+  </a>
+
+  <!-- Stage 30: Few-Shot -->
+  <a class="demo-card" href="stage-30-few-shot.html">
+    <div class="icon">🎯</div>
+    <h2>Stage 30: Few-Shot Learning
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      Обучение с 1-5 примерами на класс. Curiosity-driven exploration +
+      few-shot обобщение на новые категории.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">100%</div>
+        <div class="lbl">Gate</div>
+      </div>
+    </div>
+    <span class="btn">Открыть отчёт →</span>
+  </a>
+
+  <!-- Stage 31: Abstract Pattern Reasoning -->
+  <a class="demo-card" href="stage-31-abstract-pattern.html">
+    <div class="icon">🧩</div>
+    <h2>Stage 31: Abstract Patterns
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      Raven's Progressive Matrices — абстрактные правила (increment, alternate, constant).
+      Система выводит правило и дополняет паттерн.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">100%</div>
+        <div class="lbl">Gate</div>
+      </div>
+    </div>
+    <span class="btn">Открыть отчёт →</span>
+  </a>
+
+  <!-- Stage 32: Meta-Learning -->
+  <a class="demo-card" href="stage-32-meta-learning.html">
+    <div class="icon">🧠</div>
+    <h2>Stage 32: Meta-Learning
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      Мета-обучение: система выбирает стратегию (few-shot, curiosity, pattern reasoning)
+      в зависимости от задачи. Адаптация к новым задачам за минимум шагов.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">100%</div>
+        <div class="lbl">Exp80-82</div>
+      </div>
+    </div>
+    <span class="btn">Открыть отчёт →</span>
+  </a>
+
+  <!-- Stage 33: Multi-Agent Communication -->
+  <a class="demo-card" href="stage-33-multi-agent.html">
+    <div class="icon">🤝</div>
+    <h2>Stage 33: Multi-Agent Communication
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      Агенты обмениваются концептами (не словами) через HAC embeddings и каузальные связи.
+      Совместное решение задач быстрее одиночного агента в 1.59x.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">100%</div>
+        <div class="lbl">Exp83-85</div>
+      </div>
+    </div>
+    <span class="btn">Открыть отчёт →</span>
+  </a>
+
 </div>
 
 <div class="info-section">
@@ -395,8 +528,8 @@ body {
 </div>
 
 <div class="footer">
-  СНКС MVP v0.4.0 · Этапы 0–8 завершены · 17 экспериментов PASS ·
-  FHN+STDP · No backpropagation · 2026-03-25 09:28
+  СНКС v0.5.0 · Этапы 0–32 завершены · 85 экспериментов PASS ·
+  FHN+STDP · No backpropagation · 2026-03-31
 </div>
 </body>
 </html>
