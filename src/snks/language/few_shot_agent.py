@@ -23,7 +23,7 @@ class FewShotAgent(CuriosityAgent):
 
     def __init__(self, env, **kwargs) -> None:
         super().__init__(env, **kwargs)
-        self._learner = FewShotLearner(min_observations=1)
+        self._few_shot_learner = FewShotLearner(min_observations=1)
         self._n_demos_learned: int = 0
 
     @property
@@ -41,7 +41,7 @@ class FewShotAgent(CuriosityAgent):
         """
         old_skills = len(self._library.skills)
 
-        model, library = self._learner.learn_from_demonstrations(
+        model, library = self._few_shot_learner.learn_from_demonstrations(
             demos,
             existing_model=self._causal_model,
             existing_library=self._library,
