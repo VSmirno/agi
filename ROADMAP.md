@@ -1,7 +1,7 @@
 # СНКС — Roadmap к AGI
 
 **Последнее обновление:** 2026-03-31
-**Статус:** Stages 0-24 COMPLETE (57 экспериментов PASS)
+**Статус:** Stages 0-26 COMPLETE (63 эксперимента PASS)
 
 ---
 
@@ -37,7 +37,7 @@
 | Stage | Название | Статус | Что доказывает |
 |-------|----------|--------|----------------|
 | 25 | Goal Composition | COMPLETE (2026-03-31) | Автономная декомпозиция целей, backward chaining |
-| 26 | Transfer Learning | PLANNED | Каузальные знания переносятся между средами |
+| 26 | Transfer Learning | COMPLETE (2026-03-31) | Каузальные знания переносятся между средами |
 | 27 | Skill Abstraction | PLANNED | Иерархические макро-действия (навыки) |
 | 28 | Analogical Reasoning | PLANNED | Решение новых задач по аналогии с прошлым опытом |
 
@@ -58,16 +58,14 @@
 
 ---
 
-## Текущий фокус: Stage 26 — Transfer Learning
+## Текущий фокус: Stage 27 — Skill Abstraction
 
-**Спецификация:** `docs/superpowers/specs/2026-03-31-stage26-transfer-learning-design.md`
-**Ветка:** `stage26-transfer-learning`
-**Эксперименты:** exp62-64
+**Спецификация:** TBD
+**Ветка:** TBD
+**Эксперименты:** exp65-67
 
 ### Gate-критерии:
-- Exp 62: Cross-environment transfer accuracy ≥ 70%
-- Exp 63: Learning speedup ≥ 2x vs naive agent
-- Exp 64: Zero-shot transfer success ≥ 30%
+- TBD — иерархические макро-действия (навыки)
 
 ---
 
