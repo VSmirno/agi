@@ -47,6 +47,11 @@ htmlcov/
 .cache/
 *.log
 
+# Experiment artifacts (large/binary, not needed in repo)
+checkpoints/
+results/
+data/MNIST/
+
 # Claude Code
 .agents/
 .claude/
