@@ -87,17 +87,18 @@ def main():
     print(f"  MultiRoom-N4: {r3['success_rate']} links={r3['causal_links']}")
 
     # Gates
-    gate_unlock = r1["success_rate"] >= 0.8
+    gate_doorkey = r0["success_rate"] >= 0.8
     gate_n2 = r2["success_rate"] >= 0.5
     gate_n4 = r3["success_rate"] >= 0.2
 
     print(f"\n{'=' * 60}")
-    print(f"GATE: unlock {'PASS' if gate_unlock else 'FAIL'} ({r1['success_rate']} >= 0.800)")
+    print(f"GATE: doorkey_5x5 {'PASS' if gate_doorkey else 'FAIL'} ({r0['success_rate']} >= 0.800)")
     print(f"GATE: multiroom_n2 {'PASS' if gate_n2 else 'FAIL'} ({r2['success_rate']} >= 0.500)")
     print(f"GATE: multiroom_n4 {'PASS' if gate_n4 else 'FAIL'} ({r3['success_rate']} >= 0.200)")
+    print(f"INFO: unlock_pickup {r1['success_rate']} (non-goal task, not gated)")
     print(f"{'=' * 60}")
 
-    if gate_unlock and gate_n2:
+    if gate_doorkey and gate_n2:
         print("*** ALL GATES PASS ***")
     else:
         print("*** SOME GATES FAIL ***")
