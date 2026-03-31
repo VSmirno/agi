@@ -63,7 +63,7 @@ class TestMultiRoomDoorKey:
         obs, reward, terminated, truncated, info = env.step(2)
         assert not (terminated and truncated)
 
-    def test_doors_are_locked(self):
+    def test_doors_are_locked_and_yellow(self):
         env = MultiRoomDoorKey(size=10, seed=42)
         env.reset()
         for j in range(env.grid.height):
@@ -71,6 +71,7 @@ class TestMultiRoomDoorKey:
                 obj = env.grid.get(i, j)
                 if obj is not None and obj.type == "door":
                     assert obj.is_locked, f"Door at ({i},{j}) should be locked"
+                    assert obj.color == "yellow", f"Door at ({i},{j}) should be yellow"
 
     def test_action_space(self):
         """Uses MiniGrid native action space (7 actions)."""
