@@ -239,6 +239,10 @@ class TestHierarchicalPlanner:
         assert not planner.check_deviation(
             frozenset({50, 51}), frozenset({50, 51}),
         )
+        # Superset (gained extra) = no deviation.
+        assert not planner.check_deviation(
+            frozenset({50, 51}), frozenset({50, 51, 54}),
+        )
         # Different state = deviation.
         assert planner.check_deviation(
             frozenset({50, 51}), frozenset({52, 53}),
