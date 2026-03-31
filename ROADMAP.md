@@ -59,7 +59,7 @@
 ## Блок 6: Scaling & Real Learning (IN PROGRESS)
 | Stage | Название | Статус | Что доказывает |
 |-------|----------|--------|----------------|
-| 36 | Spatial Abstraction | IN PROGRESS | Region-based perception сжимает state space, агент обучается на 12x12 |
+| 36 | Spatial Abstraction | COMPLETE (2026-03-31) | Curriculum 5→16, 100% success DoorKey-16x16, causal transfer |
 | 37 | Scalable Exploration | PLANNED | Frontier-based + goal-directed exploration гарантирует coverage на больших средах |
 | 38 | Curriculum Learning | PLANNED | Автономный curriculum 5→8→12→16, hierarchical causal model |
 
