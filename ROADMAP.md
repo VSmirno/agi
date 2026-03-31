@@ -1,7 +1,7 @@
 # СНКС — Roadmap к AGI
 
-**Последнее обновление:** 2026-03-31
-**Статус:** Stages 0-35 COMPLETE, Block 6 IN PROGRESS
+**Последнее обновление:** 2026-04-01
+**Статус:** Stages 0-38 COMPLETE, Block 6 IN PROGRESS
 
 ---
 
@@ -61,15 +61,15 @@
 |-------|----------|--------|----------------|
 | 36 | Spatial Abstraction | COMPLETE (2026-03-31) | Curriculum 5→16, 100% success DoorKey-16x16, causal transfer |
 | 37 | Multi-Room Navigation | COMPLETE (2026-03-31) | Closed door handling, 96% MultiRoom-N4, backward chaining scales |
-| 38 | Curriculum Learning | PLANNED | Автономный curriculum 5→8→12→16, hierarchical causal model |
+| 38 | Pure DAF Agent | COMPLETE (2026-04-01) | Убран scaffolding, чистый DAF pipeline, reward-modulated STDP, env-agnostic |
 
 ---
 
 ## Статус: Блок 6 в разработке
 
-**Stages 0-35: COMPLETE** (94 эксперимента ALL PASS)
+**Stages 0-38: COMPLETE** (98 экспериментов ALL PASS)
 **Exp 92 GPU Scaling: DONE** (N=200K, 34/34 exps PASS on AMD ROCm)
-**Блок 6: IN PROGRESS** — решение проблемы 0% success на 12x12
+**Stage 38: Pure DAF** — убран scaffolding, чистый DAF pipeline, 12% DoorKey-5x5
 
 ### Диагностика (Exp 92 → Block 6)
 Агент не масштабируется на 12x12 из-за:
