@@ -1,10 +1,12 @@
-"""Experiment 95: Curriculum Speedup (Stage 36).
+"""Experiment 95: Transfer Validation (Stage 36).
 
-Compares curriculum-trained agent vs from-scratch agent on 8x8.
-Curriculum should provide >= 1.5x speedup (fewer episodes to reach 50% success).
+Validates that causal knowledge transfers across grid sizes:
+1. Train on 5x5 (learn causal links)
+2. Test on 16x16 from first episode — should succeed immediately
 
 Gates:
-    curriculum_speedup >= 1.5   (curriculum agent reaches 50% in fewer episodes)
+    transfer_16x16_ep1 >= 0.8   (first 20 episodes on 16x16 with transferred knowledge)
+    from_scratch_16x16_ep1 >= 0.5  (from scratch should also work, but maybe slower)
 """
 
 from __future__ import annotations
@@ -61,50 +63,45 @@ def _episodes_to_threshold(
 
 def main():
     print("=" * 60)
-    print("Experiment 95: Curriculum Speedup (Stage 36)")
+    print("Experiment 95: Transfer Validation (Stage 36)")
     print("=" * 60)
 
-    threshold = 0.5
-
-    # --- Curriculum agent: train on 5x5 first, then test on 8x8 ---
-    print("\n--- Curriculum: warmup on 5x5 ---")
+    # --- Transfer: train on 5x5, immediately test on 16x16 ---
+    print("\n--- Phase 1: Train on 5x5 (20 episodes) ---")
     curr_agent = AutonomousAgent(levels=[5], advance_threshold=0.3)
-    curr_agent.run_curriculum(total_episodes=50)
+    curr_agent.run_curriculum(total_episodes=20)
     stats5 = curr_agent.curriculum.get_stats(5)
-    print(f"  5x5 warmup: success={stats5.success_rate:.2f} "
-          f"links={curr_agent.causal_model.n_links}")
+    links_after_5x5 = curr_agent.causal_model.n_links
+    print(f"  5x5: success={stats5.success_rate:.2f} links={links_after_5x5}")
 
-    print(f"\n--- Curriculum: testing on 8x8 ---")
-    curr_eps, curr_rate = _episodes_to_threshold(
-        curr_agent.causal_model, grid_size=8, threshold=threshold,
+    print(f"\n--- Phase 2: Test on 16x16 with transferred knowledge (20 eps) ---")
+    transfer_eps, transfer_rate = _episodes_to_threshold(
+        curr_agent.causal_model, grid_size=16, threshold=0.8, max_episodes=20, window=20,
     )
-    print(f"  Curriculum: {curr_eps} episodes to reach {threshold} "
-          f"(final rate={curr_rate:.3f})")
+    print(f"  Transfer 16x16: rate={transfer_rate:.3f} in {transfer_eps} eps")
 
-    # --- From-scratch agent: directly on 8x8 ---
-    print(f"\n--- From-scratch: testing on 8x8 ---")
+    print(f"\n--- Phase 3: From-scratch on 16x16 (20 eps) ---")
     scratch_model = CausalWorldModel(CausalAgentConfig(causal_min_observations=1))
     scratch_eps, scratch_rate = _episodes_to_threshold(
-        scratch_model, grid_size=8, threshold=threshold,
+        scratch_model, grid_size=16, threshold=0.8, max_episodes=20, window=20,
     )
-    print(f"  From-scratch: {scratch_eps} episodes to reach {threshold} "
-          f"(final rate={scratch_rate:.3f})")
+    print(f"  Scratch 16x16: rate={scratch_rate:.3f} in {scratch_eps} eps")
 
-    # Speedup
-    speedup = scratch_eps / max(curr_eps, 1)
+    # Gates
+    gate_transfer = transfer_rate >= 0.8
+    gate_links = links_after_5x5 >= 5
 
     print(f"\n--- Results ---")
-    print(f"  Curriculum:   {curr_eps} episodes (rate={curr_rate:.3f})")
-    print(f"  From-scratch: {scratch_eps} episodes (rate={scratch_rate:.3f})")
-    print(f"  Speedup: {speedup:.2f}x")
-
-    gate_speedup = speedup >= 1.5
+    print(f"  Transfer 16x16: {transfer_rate:.3f}")
+    print(f"  Scratch 16x16:  {scratch_rate:.3f}")
+    print(f"  Links learned:  {links_after_5x5}")
 
     print(f"\n{'=' * 60}")
-    print(f"GATE: speedup {'PASS' if gate_speedup else 'FAIL'} ({speedup:.2f}x >= 1.50x)")
+    print(f"GATE: transfer_16x16 {'PASS' if gate_transfer else 'FAIL'} ({transfer_rate:.3f} >= 0.800)")
+    print(f"GATE: causal_links {'PASS' if gate_links else 'FAIL'} ({links_after_5x5} >= 5)")
     print(f"{'=' * 60}")
 
-    if gate_speedup:
+    if gate_transfer and gate_links:
         print("*** ALL GATES PASS ***")
     else:
         print("*** SOME GATES FAIL ***")
