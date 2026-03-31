@@ -1,0 +1,88 @@
+{
+  "timestamp": "2026-03-25 09:39:29",
+  "phase_completed": "B",
+  "sota_reference": {
+    "K-Means (raw pixels)": {
+      "nmi": 0.5,
+      "train_sec": 2,
+      "ref": "Xie et al. 2016"
+    },
+    "PCA(50) + K-Means": {
+      "nmi": 0.53,
+      "train_sec": 5,
+      "ref": "Guo et al. 2017"
+    },
+    "Sparse AE + K-Means": {
+      "nmi": 0.71,
+      "train_sec": 300,
+      "ref": "Le et al. 2011"
+    },
+    "DEC (Xie 2016)": {
+      "nmi": 0.836,
+      "train_sec": 1800,
+      "ref": "Xie et al. 2016"
+    },
+    "IDEC (Guo 2017)": {
+      "nmi": 0.881,
+      "train_sec": 3600,
+      "ref": "Guo et al. 2017"
+    }
+  },
+  "snks_results": [
+    {
+      "name": "K-Means (raw pixels)",
+      "nmi": 0.49394873839116693,
+      "train_sec": 1.740683973999694,
+      "n_samples": 1000,
+      "n_epochs": 1,
+      "num_nodes": null,
+      "cycles_per_sec": null,
+      "device": "cpu",
+      "notes": ""
+    },
+    {
+      "name": "PCA(50) + K-Means",
+      "nmi": 0.44725827249089334,
+      "train_sec": 0.3994971039937809,
+      "n_samples": 1000,
+      "n_epochs": 1,
+      "num_nodes": null,
+      "cycles_per_sec": null,
+      "device": "cpu",
+      "notes": ""
+    },
+    {
+      "name": "PCA(100) + K-Means",
+      "nmi": 0.444260006287253,
+      "train_sec": 0.4608497070148587,
+      "n_samples": 1000,
+      "n_epochs": 1,
+      "num_nodes": null,
+      "cycles_per_sec": null,
+      "device": "cpu",
+      "notes": ""
+    },
+    {
+      "name": "СНКС-A-10K-raw",
+      "nmi": 0.5918112436147982,
+      "train_sec": 1194.6721356239868,
+      "n_samples": 5000,
+      "n_epochs": 3,
+      "num_nodes": 10000,
+      "cycles_per_sec": 12.604553786054765,
+      "device": "cuda",
+      "notes": "coupling=0.05 avg_degree=30 sdr=8192 steps=200"
+    },
+    {
+      "name": "СНКС-B-10K-contour",
+      "nmi": 0.5006081433481546,
+      "train_sec": 4246.3011607500375,
+      "n_samples": 10000,
+      "n_epochs": 5,
+      "num_nodes": 10000,
+      "cycles_per_sec": 11.800511486387851,
+      "device": "cuda",
+      "notes": "coupling=0.05 avg_degree=30 sdr=8192 steps=200"
+    }
+  ]
+}
