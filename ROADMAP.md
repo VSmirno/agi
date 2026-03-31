@@ -1,7 +1,7 @@
 # СНКС — Roadmap к AGI
 
 **Последнее обновление:** 2026-03-31
-**Статус:** Stages 0-29 COMPLETE (72 эксперимента PASS)
+**Статус:** Stages 0-30 COMPLETE (75 экспериментов PASS)
 
 ---
 
@@ -41,11 +41,11 @@
 | 27 | Skill Abstraction | COMPLETE (2026-03-31) | Иерархические макро-действия, 1.54x speedup, transfer 100% |
 | 28 | Analogical Reasoning | COMPLETE (2026-03-31) | 100% transfer card/gate, similarity=0.75, no regression |
 
-## Блок 4: Self-Directed Learning (PLANNED)
+## Блок 4: Self-Directed Learning (IN PROGRESS)
 | Stage | Название | Статус | Что доказывает |
 |-------|----------|--------|----------------|
 | 29 | Curiosity-Driven Exploration | COMPLETE (2026-03-31) | 2.48x vs random, 100% coverage, count-based r_int |
-| 30 | Few-Shot Learning | PLANNED | Обучение из 1-3 демонстраций |
+| 30 | Few-Shot Learning | COMPLETE (2026-03-31) | One-shot skill extraction 100%, cross-env transfer 100% |
 | 31 | Abstract Pattern Reasoning | PLANNED | Raven's-style pattern completion на концептах |
 | 32 | Meta-Learning | PLANNED | Learning to learn — адаптация стратегий обучения |
 
@@ -58,14 +58,14 @@
 
 ---
 
-## Текущий фокус: Stage 27 — Skill Abstraction
+## Текущий фокус: Stage 31 — Abstract Pattern Reasoning
 
 **Спецификация:** TBD
 **Ветка:** TBD
-**Эксперименты:** exp65-67
+**Эксперименты:** exp77-79
 
 ### Gate-критерии:
-- TBD — иерархические макро-действия (навыки)
+- TBD — Raven's-style pattern completion на концептах
 
 ---
 
