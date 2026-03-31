@@ -60,7 +60,7 @@
 | Stage | Название | Статус | Что доказывает |
 |-------|----------|--------|----------------|
 | 36 | Spatial Abstraction | COMPLETE (2026-03-31) | Curriculum 5→16, 100% success DoorKey-16x16, causal transfer |
-| 37 | Scalable Exploration | PLANNED | Frontier-based + goal-directed exploration гарантирует coverage на больших средах |
+| 37 | Multi-Room Navigation | COMPLETE (2026-03-31) | Closed door handling, 96% MultiRoom-N4, backward chaining scales |
 | 38 | Curriculum Learning | PLANNED | Автономный curriculum 5→8→12→16, hierarchical causal model |
 
 ---

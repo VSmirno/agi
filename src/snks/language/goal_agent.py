@@ -71,7 +71,7 @@ class GoalAgent:
         result = EpisodeResult()
         steps = 0
         total_reward = 0.0
-        max_retries = 5  # retry backward chaining after exploration (supports multi-door envs)
+        max_retries = 10  # retry backward chaining after exploration (supports multi-door/room envs)
 
         for attempt in range(max_retries):
             # Perceive current state.

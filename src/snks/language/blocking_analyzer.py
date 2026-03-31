@@ -64,21 +64,33 @@ class BlockingAnalyzer:
         if path is not None:
             return None  # path is clear
 
-        # Scan for locked doors (yellow = door, purple = gate).
+        # Scan for locked or closed doors, prioritize by distance to agent.
+        blockers: list[tuple[int, Blocker]] = []
+        ax, ay = agent_pos
         for j in range(grid.height):
             for i in range(grid.width):
                 cell = grid.get(i, j)
                 if cell is None:
                     continue
-                if cell.type == "door" and getattr(cell, "is_locked", False):
-                    sks_id = SKS_GATE_LOCKED if cell.color == "purple" else SKS_DOOR_LOCKED
-                    return Blocker(
-                        cell_type="door",
-                        cell_color=cell.color,
-                        pos=(i, j),
-                        state="locked",
-                        sks_id=sks_id,
-                    )
+                if cell.type == "door":
+                    is_locked = getattr(cell, "is_locked", False)
+                    is_open = getattr(cell, "is_open", False)
+                    if is_locked or not is_open:
+                        state = "locked" if is_locked else "closed"
+                        sks_id = SKS_GATE_LOCKED if cell.color == "purple" else SKS_DOOR_LOCKED
+                        dist = abs(i - ax) + abs(j - ay)
+                        blockers.append((dist, Blocker(
+                            cell_type="door",
+                            cell_color=cell.color,
+                            pos=(i, j),
+                            state=state,
+                            sks_id=sks_id,
+                        )))
+
+        if blockers:
+            # Return closest blocker to agent
+            blockers.sort(key=lambda x: x[0])
+            return blockers[0][1]
 
         return None  # blocked but no identifiable blocker
 
@@ -99,10 +111,20 @@ class BlockingAnalyzer:
 
         # What state do we want?
         is_gate = (blocker.cell_type == "door" and blocker.cell_color == "purple")
-        if blocker.cell_type == "door" and blocker.state == "locked":
+        if blocker.cell_type == "door" and blocker.state in ("locked", "closed"):
             desired = frozenset({SKS_GATE_OPEN if is_gate else SKS_DOOR_OPEN})
         else:
             return None
+
+        # Closed (not locked) doors: just toggle, no prerequisites
+        if blocker.state == "closed":
+            return SubGoal(
+                action="toggle",
+                target_word="gate" if is_gate else blocker.cell_type,
+                target_sks=SKS_GATE_OPEN if is_gate else SKS_DOOR_OPEN,
+                prerequisite=None,
+                target_pos=blocker.pos,
+            )
 
         results = causal_model.query_by_effect(desired)
         if not results:
@@ -110,6 +132,7 @@ class BlockingAnalyzer:
             if is_gate:
                 results = causal_model.query_by_effect(frozenset({SKS_DOOR_OPEN}))
             if not results:
+                # No causal knowledge yet — return None so agent explores
                 return None
 
         action_id, required_context, _confidence = results[0]
