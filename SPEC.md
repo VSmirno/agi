@@ -1,8 +1,8 @@
 # СНКС MVP — Спецификация
 
 **Версия:** 0.9.0
-**Дата:** 2026-03-30
-**Статус:** Этапы 0–17 MVP COMPLETE. Stages 19–22 (Language Grounding, Compositional, Verbalization, Grounded QA) COMPLETE.
+**Дата:** 2026-03-31
+**Статус:** Этапы 0–17 MVP COMPLETE. Stages 19–23 (Language Grounding, Compositional, Verbalization, QA, Scaffold Removal) COMPLETE.
 
 > Детальные спецификации этапов: [`specs/`](specs/)
 
@@ -225,6 +225,8 @@ class DcamWorldModel:
 | 49 | Factual QA | accuracy | > 0.7 | **0.750 (15/20)** | ✅ PASS |
 | 50 | Simulation QA | accuracy | > 0.6 | **1.000 (15/15)** | ✅ PASS |
 | 51 | Reflective QA | accuracy | > 0.6 | **0.867 (13/15)** | ✅ PASS |
+| 52 | Autonomous cross-modal recall | sdr/currents match | > 0.8 | **1.000 (15/15)** | ✅ PASS |
+| 53 | Autonomous QA | accuracy без ST | > 0.6 | **1.000 (15/15)** | ✅ PASS |
 
 ### Критерии MVP
 
@@ -302,6 +304,9 @@ class DcamWorldModel:
   QuestionClassifier (rule-based), GroundedQA orchestrator, pluggable QABackend protocol.
   Key finding: chunker designed for declarative sentences, questions need prefix-stripping + word-level resolve.
   Exp 49 accuracy=0.750 ✅, Exp 50 accuracy=1.000 ✅, Exp 51 accuracy=0.867 ✅.
+- Stage 23 (2026-03-31): COMPLETE. Scaffold Removal (GroundedTokenizer).
+  GroundedTokenizer replaces sentence-transformers for SDR generation via GroundingMap lookup.
+  Exp 52 sdr_match=1.000 ✅, Exp 53 accuracy=1.000 ✅.
 
 ### Граф зависимостей
 
