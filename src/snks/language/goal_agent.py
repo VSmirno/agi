@@ -71,7 +71,7 @@ class GoalAgent:
         result = EpisodeResult()
         steps = 0
         total_reward = 0.0
-        max_retries = 3  # retry backward chaining after exploration
+        max_retries = 5  # retry backward chaining after exploration (supports multi-door envs)
 
         for attempt in range(max_retries):
             # Perceive current state.
@@ -176,15 +176,28 @@ class GoalAgent:
             uw.grid, tuple(uw.agent_pos), int(uw.agent_dir), carrying=carrying,
         )
 
-        # Find the target object.
-        target_obj = self._perception.find_object(subgoal.target_word)
+        # Find the target object — prefer specific position if given.
+        target_pos = subgoal.target_pos
+        if target_pos is not None:
+            target_obj = self._perception.find_object_at(target_pos)
+            if target_obj is None:
+                # Object at position not found by perception; use position directly.
+                target_obj = self._perception.find_object(subgoal.target_word)
+        else:
+            target_obj = self._perception.find_object(subgoal.target_word)
         if target_obj is None:
-            return False, 0, 0.0
+            if target_pos is not None:
+                # Navigate to known position even without perceived object.
+                nav_target = target_pos
+            else:
+                return False, 0, 0.0
+        else:
+            nav_target = target_obj.pos
 
         # Navigate to target (stop adjacent for interaction).
         nav_actions = self._navigator.plan_path(
             uw.grid, tuple(uw.agent_pos), int(uw.agent_dir),
-            target_obj.pos, stop_adjacent=True,
+            nav_target, stop_adjacent=True,
         )
 
         steps = 0

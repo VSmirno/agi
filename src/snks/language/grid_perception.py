@@ -176,6 +176,13 @@ class GridPerception:
 
         return None
 
+    def find_object_at(self, pos: tuple[int, int]) -> GridObject | None:
+        """Find a perceived object at a specific grid position."""
+        for obj in self._objects:
+            if obj.pos == pos:
+                return obj
+        return None
+
     def find_object_by_sks(self, sks_id: int) -> GridObject | None:
         """Find a perceived object by SKS ID."""
         for obj in self._objects:

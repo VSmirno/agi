@@ -44,6 +44,7 @@ class SubGoal:
     target_word: str        # "key", "door"
     target_sks: int         # SKS concept for the target state
     prerequisite: SubGoal | None  # recursive chain
+    target_pos: tuple[int, int] | None = None  # specific position (for multi-object envs)
 
 
 class BlockingAnalyzer:
@@ -131,4 +132,5 @@ class BlockingAnalyzer:
             target_word=blocker.cell_type,
             target_sks=SKS_DOOR_OPEN,
             prerequisite=prerequisite,
+            target_pos=blocker.pos,
         )
