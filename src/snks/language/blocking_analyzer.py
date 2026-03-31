@@ -15,6 +15,10 @@ from snks.language.grid_perception import (
     SKS_DOOR_OPEN,
     SKS_KEY_HELD,
     SKS_KEY_PRESENT,
+    SKS_GATE_LOCKED,
+    SKS_GATE_OPEN,
+    SKS_CARD_HELD,
+    SKS_CARD_PRESENT,
 )
 
 # Action IDs.
@@ -60,19 +64,20 @@ class BlockingAnalyzer:
         if path is not None:
             return None  # path is clear
 
-        # Scan for locked doors.
+        # Scan for locked doors (yellow = door, purple = gate).
         for j in range(grid.height):
             for i in range(grid.width):
                 cell = grid.get(i, j)
                 if cell is None:
                     continue
                 if cell.type == "door" and getattr(cell, "is_locked", False):
+                    sks_id = SKS_GATE_LOCKED if cell.color == "purple" else SKS_DOOR_LOCKED
                     return Blocker(
                         cell_type="door",
                         cell_color=cell.color,
                         pos=(i, j),
                         state="locked",
-                        sks_id=SKS_DOOR_LOCKED,
+                        sks_id=sks_id,
                     )
 
         return None  # blocked but no identifiable blocker
@@ -93,14 +98,19 @@ class BlockingAnalyzer:
             return None
 
         # What state do we want?
+        is_gate = (blocker.cell_type == "door" and blocker.cell_color == "purple")
         if blocker.cell_type == "door" and blocker.state == "locked":
-            desired = frozenset({SKS_DOOR_OPEN})
+            desired = frozenset({SKS_GATE_OPEN if is_gate else SKS_DOOR_OPEN})
         else:
             return None
 
         results = causal_model.query_by_effect(desired)
         if not results:
-            return None
+            # For gate, also try querying by DOOR_OPEN (analogically mapped).
+            if is_gate:
+                results = causal_model.query_by_effect(frozenset({SKS_DOOR_OPEN}))
+            if not results:
+                return None
 
         action_id, required_context, _confidence = results[0]
 
@@ -109,28 +119,40 @@ class BlockingAnalyzer:
             action_id, f"action_{action_id}"
         )
 
+        # Target word depends on object type.
+        blocker_word = "gate" if is_gate else blocker.cell_type
+        done_sks = SKS_GATE_OPEN if is_gate else SKS_DOOR_OPEN
+
         # Check prerequisites: what's in required_context that we don't have?
         prerequisite = None
         missing = required_context - frozenset(current_sks)
-        if SKS_KEY_HELD in missing:
-            # Need key_held → find how to get it.
-            key_results = causal_model.query_by_effect(frozenset({SKS_KEY_HELD}))
-            if key_results:
-                key_action, _key_ctx, _ = key_results[0]
-                key_action_name = {ACT_PICKUP: "pickup", ACT_TOGGLE: "toggle"}.get(
-                    key_action, f"action_{key_action}"
+
+        # Key/card held prerequisite.
+        need_instrument = SKS_KEY_HELD in missing or SKS_CARD_HELD in missing
+        if need_instrument:
+            instrument_sks = SKS_CARD_HELD if is_gate else SKS_KEY_HELD
+            instrument_word = "card" if is_gate else "key"
+            # Find how to get instrument.
+            inst_results = causal_model.query_by_effect(frozenset({instrument_sks}))
+            if not inst_results and is_gate:
+                # Fall back to key pickup (same action).
+                inst_results = causal_model.query_by_effect(frozenset({SKS_KEY_HELD}))
+            if inst_results:
+                inst_action, _inst_ctx, _ = inst_results[0]
+                inst_action_name = {ACT_PICKUP: "pickup", ACT_TOGGLE: "toggle"}.get(
+                    inst_action, f"action_{inst_action}"
                 )
                 prerequisite = SubGoal(
-                    action=key_action_name,
-                    target_word="key",
-                    target_sks=SKS_KEY_HELD,
+                    action=inst_action_name,
+                    target_word=instrument_word,
+                    target_sks=instrument_sks,
                     prerequisite=None,
                 )
 
         return SubGoal(
             action=action_name,
-            target_word=blocker.cell_type,
-            target_sks=SKS_DOOR_OPEN,
+            target_word=blocker_word,
+            target_sks=done_sks,
             prerequisite=prerequisite,
             target_pos=blocker.pos,
         )

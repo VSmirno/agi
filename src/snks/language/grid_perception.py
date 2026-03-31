@@ -3,6 +3,8 @@
 Scaffold replacing DAF visual encoder for grid-world environments.
 Maps each unique (object_type, color) pair to a stable SKS concept ID,
 and tracks agent position/direction.
+
+Extended in Stage 28 with card/gate analogical predicates (55-58).
 """
 
 from __future__ import annotations
@@ -27,6 +29,13 @@ SKS_KEY_HELD = 51        # agent carrying key
 SKS_DOOR_LOCKED = 52     # door exists and is_locked
 SKS_DOOR_OPEN = 53       # door exists and is_open
 SKS_GOAL_PRESENT = 54    # goal cell visible
+
+# Analogical predicates — card/gate world (Stage 28).
+# purple key → "card"; purple door → "gate".
+SKS_CARD_PRESENT = 55    # card (purple key) visible on grid floor
+SKS_CARD_HELD = 56       # agent carrying card (purple key)
+SKS_GATE_LOCKED = 57     # gate (purple door) exists and is_locked
+SKS_GATE_OPEN = 58       # gate (purple door) exists and is_open
 
 
 @dataclass
@@ -113,7 +122,6 @@ class GridPerception:
         """
         active_sks: set[int] = {SKS_AGENT}
         self._objects = []
-        has_key_on_floor = False
 
         for j in range(grid.height):
             for i in range(grid.width):
@@ -125,36 +133,86 @@ class GridPerception:
 
                 sks_id = self.register_object(cell.type, cell.color)
                 active_sks.add(sks_id)
+
+                # For purple key/door, also register under alias word.
+                obj_type = cell.type
+                color = cell.color
+                if obj_type == "key" and color == "purple":
+                    # Register "card" as alias for purple key.
+                    self._register_alias("card", sks_id)
+                elif obj_type == "door" and color == "purple":
+                    # Register "gate" as alias for purple door.
+                    self._register_alias("gate", sks_id)
+
                 self._objects.append(GridObject(
-                    obj_type=cell.type,
-                    color=cell.color,
+                    obj_type=obj_type,
+                    color=color,
                     pos=(i, j),
                     sks_id=sks_id,
                 ))
 
-                # State predicates.
-                if cell.type == "key":
-                    has_key_on_floor = True
-                    active_sks.add(SKS_KEY_PRESENT)
-                elif cell.type == "door":
-                    if getattr(cell, "is_locked", False):
-                        active_sks.add(SKS_DOOR_LOCKED)
-                    if getattr(cell, "is_open", False):
-                        active_sks.add(SKS_DOOR_OPEN)
-                elif cell.type == "goal":
+                # State predicates — with card/gate analogy (Stage 28).
+                if obj_type == "key":
+                    if color == "purple":
+                        active_sks.add(SKS_CARD_PRESENT)
+                    else:
+                        active_sks.add(SKS_KEY_PRESENT)
+                elif obj_type == "door":
+                    locked = getattr(cell, "is_locked", False)
+                    opened = getattr(cell, "is_open", False)
+                    if color == "purple":
+                        if locked:
+                            active_sks.add(SKS_GATE_LOCKED)
+                        if opened:
+                            active_sks.add(SKS_GATE_OPEN)
+                    else:
+                        if locked:
+                            active_sks.add(SKS_DOOR_LOCKED)
+                        if opened:
+                            active_sks.add(SKS_DOOR_OPEN)
+                elif obj_type == "goal":
                     active_sks.add(SKS_GOAL_PRESENT)
 
         # Agent carrying state.
-        if carrying is not None and getattr(carrying, "type", None) == "key":
-            active_sks.add(SKS_KEY_HELD)
+        if carrying is not None:
+            c_type = getattr(carrying, "type", None)
+            c_color = getattr(carrying, "color", None)
+            if c_type == "key":
+                if c_color == "purple":
+                    active_sks.add(SKS_CARD_HELD)
+                else:
+                    active_sks.add(SKS_KEY_HELD)
 
         return active_sks
 
+    def _register_alias(self, word: str, sks_id: int) -> None:
+        """Register an alias word for an existing SKS ID (e.g. 'card' for purple key)."""
+        if self._gmap.word_to_sks(word) is None:
+            sdr = torch.zeros(self._sdr_size)
+            sdr[sks_id % self._sdr_size] = 1.0
+            self._gmap.register(word, sks_id, sdr)
+
     def find_object(self, word: str) -> GridObject | None:
-        """Find a perceived object by word (e.g. 'red key', 'key', 'ball').
+        """Find a perceived object by word (e.g. 'red key', 'key', 'ball', 'card', 'gate').
+
+        Supports Stage 28 analogical aliases:
+          - 'card' → purple key
+          - 'gate' → purple door
 
         Searches last perceive() results.
         """
+        # Analogical aliases (Stage 28).
+        if word == "card":
+            for obj in self._objects:
+                if obj.obj_type == "key" and obj.color == "purple":
+                    return obj
+            return None
+        if word == "gate":
+            for obj in self._objects:
+                if obj.obj_type == "door" and obj.color == "purple":
+                    return obj
+            return None
+
         # Try exact composite match first.
         for obj in self._objects:
             composite = f"{obj.color} {obj.obj_type}"
