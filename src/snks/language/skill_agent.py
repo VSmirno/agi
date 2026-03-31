@@ -93,12 +93,18 @@ class SkillAgent(GoalAgent):
                     break
                 continue
 
-            # Path BLOCKED — try skills first, then backward chaining.
+            # Path BLOCKED — try ONE skill first, then backward chaining.
+            # Skills are generic (no target_pos), so try only once per attempt.
+            # If skill fails or doesn't resolve blocker, fall through to
+            # backward chaining which has position-specific targeting.
             goal_sks = frozenset({SKS_DOOR_OPEN})
             applicable = self._library.find_applicable(current_sks, goal_sks)
 
             skill_used = False
-            for skill in applicable:
+            if applicable and attempt == 0:
+                # Try best applicable skill on FIRST attempt only.
+                skill = applicable[0]
+                sks_before = set(current_sks)
                 if skill.is_composite:
                     ok, s, r = self._try_composite_skill(skill, max_steps - steps)
                 else:
@@ -107,10 +113,17 @@ class SkillAgent(GoalAgent):
                 total_reward += r
                 result.skills_used.append(skill.name)
                 skill.attempt_count += 1
-                if ok:
+
+                # Check if state actually changed.
+                uw_check = self._env.unwrapped
+                carrying_check = getattr(uw_check, "carrying", None)
+                sks_after = self._perception.perceive(
+                    uw_check.grid, tuple(uw_check.agent_pos), int(uw_check.agent_dir),
+                    carrying=carrying_check,
+                )
+                if ok and sks_after != sks_before:
                     skill.success_count += 1
                     skill_used = True
-                    break
 
             if skill_used:
                 continue

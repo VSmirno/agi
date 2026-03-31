@@ -1,7 +1,7 @@
 # СНКС — Roadmap к AGI
 
 **Последнее обновление:** 2026-03-31
-**Статус:** Stages 0-26 COMPLETE (63 эксперимента PASS)
+**Статус:** Stages 0-27 COMPLETE (66 экспериментов PASS)
 
 ---
 
@@ -38,7 +38,7 @@
 |-------|----------|--------|----------------|
 | 25 | Goal Composition | COMPLETE (2026-03-31) | Автономная декомпозиция целей, backward chaining |
 | 26 | Transfer Learning | COMPLETE (2026-03-31) | Каузальные знания переносятся между средами |
-| 27 | Skill Abstraction | PLANNED | Иерархические макро-действия (навыки) |
+| 27 | Skill Abstraction | COMPLETE (2026-03-31) | Иерархические макро-действия, 1.54x speedup, transfer 100% |
 | 28 | Analogical Reasoning | PLANNED | Решение новых задач по аналогии с прошлым опытом |
 
 ## Блок 4: Self-Directed Learning (PLANNED)
