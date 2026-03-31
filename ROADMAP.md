@@ -1,7 +1,7 @@
 # СНКС — Roadmap к AGI
 
 **Последнее обновление:** 2026-03-31
-**Статус:** Stages 0-28 COMPLETE (69 экспериментов PASS)
+**Статус:** Stages 0-29 COMPLETE (72 эксперимента PASS)
 
 ---
 
@@ -44,7 +44,7 @@
 ## Блок 4: Self-Directed Learning (PLANNED)
 | Stage | Название | Статус | Что доказывает |
 |-------|----------|--------|----------------|
-| 29 | Curiosity-Driven Exploration | PLANNED | Автономное исследование без внешней награды |
+| 29 | Curiosity-Driven Exploration | COMPLETE (2026-03-31) | 2.48x vs random, 100% coverage, count-based r_int |
 | 30 | Few-Shot Learning | PLANNED | Обучение из 1-3 демонстраций |
 | 31 | Abstract Pattern Reasoning | PLANNED | Raven's-style pattern completion на концептах |
 | 32 | Meta-Learning | PLANNED | Learning to learn — адаптация стратегий обучения |
