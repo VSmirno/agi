@@ -1,8 +1,8 @@
 # СНКС MVP — Спецификация
 
-**Версия:** 0.8.0
-**Дата:** 2026-03-26
-**Статус:** Этапы 0–17 реализованы (код + unit тесты). MVP COMPLETE.
+**Версия:** 0.9.0
+**Дата:** 2026-03-31
+**Статус:** Этапы 0–17 MVP COMPLETE. Stages 19–23 (Language Grounding, Compositional, Verbalization, QA, Scaffold Removal) COMPLETE.
 
 > Детальные спецификации этапов: [`specs/`](specs/)
 
@@ -25,6 +25,27 @@
 - Знания = устойчивые паттерны осцилляций (СКС)
 - Обучение = локальная модификация связей (STDP)
 - Память = двухкодовое хранение (HAC + SSG)
+- Мышление = оперирование концептами (СКС), НЕ словами
+- Язык = интерфейс ввода-вывода к концептному пространству, НЕ основа мышления
+
+### Принцип: Концепты первичны, язык вторичен
+
+СКС — это концепт (смысл), сформированный из опыта, а не из языка. Слово — это **якорь** (grounding label), привязанный к уже существующей концептной СКС. World model оперирует исключительно концептами. Язык — одна из модальностей доступа к концептному пространству, наравне с визуальной и моторной.
+
+```
+Концептный уровень (World Model):
+    СКС_A [концепт] ──причина──► СКС_B [концепт]
+       ▲         ▲                    ▲         ▲
+       │         │                    │         │
+    🖼️ образ  📝 слово            🖼️ образ  📝 слово
+    🎮 действие                    🎮 действие
+```
+
+Следствия:
+1. Слово НЕ создаёт новую СКС — оно привязывается к существующей
+2. World model НЕ хранит слова — она хранит концепты и их связи
+3. Генерация текста = обход концептного графа + линеаризация через grounding map
+4. Понимание текста = активация концептных СКС через языковые якоря
 
 ---
 
@@ -197,6 +218,18 @@ class DcamWorldModel:
 | 29 | EmbodiedAgent integration | coverage ≥ 0.30 | ≥ 0.30 | **coverage=0.362** | ✅ PASS |
 | 30 | EmbodiedAgent ablation | все варианты coverage ≥ 0.25 | ≥ 0.25 | **min=0.351** | ✅ PASS |
 | 31 | Scaling (miniPC) | steps_per_sec ≥ 9 | ≥ 9 | **steps_per_sec=9.41 (CPU, N=5K)** | ✅ PASS |
+| 44 | Cross-modal recall | cross_modal_ratio | > 2.0 | **A=178, B=116742** | ✅ PASS |
+| 45 | Grounding speed | reps to ratio>2.0 | < 20 | **1 rep** | ✅ PASS |
+| 46 | Role extraction | accuracy | > 0.8 | **1.000 (64/64)** | ✅ PASS |
+| 47 | Compositional generalization | unbind accuracy (novel) | > 0.7 | **1.000 (30/30)** | ✅ PASS |
+| 49 | Factual QA | accuracy | > 0.7 | **0.750 (15/20)** | ✅ PASS |
+| 50 | Simulation QA | accuracy | > 0.6 | **1.000 (15/15)** | ✅ PASS |
+| 51 | Reflective QA | accuracy | > 0.6 | **0.867 (13/15)** | ✅ PASS |
+| 52 | Autonomous cross-modal recall | sdr/currents match | > 0.8 | **1.000 (15/15)** | ✅ PASS |
+| 53 | Autonomous QA | accuracy без ST | > 0.6 | **1.000 (15/15)** | ✅ PASS |
+| 54a | Instruction parsing | accuracy (5 types) | > 0.9 | **1.000 (30/30)** | ✅ PASS |
+| 54b | Plan correctness | accuracy | > 0.7 | **1.000 (12/12)** | ✅ PASS |
+| 55 | Causal chain detection | chain accuracy | > 0.5 | **0.833 (5/6)** | ✅ PASS |
 
 ### Критерии MVP
 
@@ -258,6 +291,31 @@ class DcamWorldModel:
 - Stage 17 (2026-03-29): COMPLETE. Full-Scale Validation.
   Exp 38 N=50K 16.47 steps/sec ✅, Exp 39 replay+coverage (N=5000, uniform) ✅, Exp 40 goal_seeking=49028 ✅.
   Key findings: replay requires N≥5000 + uniform sampling (importance toxic for dangerous envs).
+- Stage 18 (2026-03-30): IN PROGRESS. Multi-Env Validation + Transfer Learning.
+  Exp 41/42/43 реализованы, ночной запуск на minipc.
+- Stage 19 (2026-03-30): COMPLETE. Zonal DAF + Language Grounding + Complementary Priming.
+  Zonal architecture (visual/linguistic/convergence zones), GroundingMap, cross-modal priming.
+  Key finding: pure STDP coupling insufficient for cross-modal recall at any N (5K-50K).
+  Complementary priming (top-down visual SDR injection at 0.3× strength) solves it.
+  Exp 44 Config A ratio=178, Config B ratio=116742 ✅. Exp 45 grounding in 1 rep ✅.
+  Chosen: Config B (with convergence zone). Spec: specs/stages19-24-language-grounding-design.md.
+- Stage 20 (2026-03-30): COMPLETE. Композиционное понимание (HAC Role-Filler).
+  Ролевая система (6 ролей в HAC-пространстве), rule-based SVO(L) chunker (3 паттерна),
+  RoleFillerParser (bind/unbind), EmbeddingResolver (гибрид: GroundingMap cache + DAF fallback).
+  Exp 46 accuracy=1.000 (64/64) ✅, Exp 47 test_acc=1.000 (30/30 novel combos) ✅.
+- Stage 22 (2026-03-30): COMPLETE. Grounded QA (factual/simulation/reflective).
+  QuestionClassifier (rule-based), GroundedQA orchestrator, pluggable QABackend protocol.
+  Key finding: chunker designed for declarative sentences, questions need prefix-stripping + word-level resolve.
+  Exp 49 accuracy=0.750 ✅, Exp 50 accuracy=1.000 ✅, Exp 51 accuracy=0.867 ✅.
+- Stage 23 (2026-03-31): COMPLETE. Scaffold Removal (GroundedTokenizer).
+  GroundedTokenizer replaces sentence-transformers for SDR generation via GroundingMap lookup.
+  Exp 52 sdr_match=1.000 ✅, Exp 53 accuracy=1.000 ✅.
+- Stage 24a (2026-03-31): COMPLETE. InstructionParser + Attribute Grounding.
+  RuleBasedChunker extended: +sequential (SEQ_BREAK), +spatial patterns. 5 BabyAI levels.
+  Exp 54a parsing accuracy=1.000 ✅, grounding resolve=1.000 ✅.
+- Stage 24b (2026-03-31): COMPLETE. Instruction Planning + Real QA Backends.
+  InstructionPlanner (causal prerequisite detection), CausalQABackend, SimulationQABackend.
+  Exp 54b plan accuracy=1.000 ✅, Exp 55 chain accuracy=0.833 ✅.
 
 ### Граф зависимостей
 
