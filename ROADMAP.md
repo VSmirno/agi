@@ -1,7 +1,7 @@
 # СНКС — Roadmap к AGI
 
 **Последнее обновление:** 2026-03-31
-**Статус:** Stages 0-31 COMPLETE (80 экспериментов PASS)
+**Статус:** Stages 0-32 COMPLETE (85 экспериментов PASS)
 
 ---
 
@@ -41,13 +41,13 @@
 | 27 | Skill Abstraction | COMPLETE (2026-03-31) | Иерархические макро-действия, 1.54x speedup, transfer 100% |
 | 28 | Analogical Reasoning | COMPLETE (2026-03-31) | 100% transfer card/gate, similarity=0.75, no regression |
 
-## Блок 4: Self-Directed Learning (IN PROGRESS)
+## Блок 4: Self-Directed Learning (COMPLETE)
 | Stage | Название | Статус | Что доказывает |
 |-------|----------|--------|----------------|
 | 29 | Curiosity-Driven Exploration | COMPLETE (2026-03-31) | 2.48x vs random, 100% coverage, count-based r_int |
 | 30 | Few-Shot Learning | COMPLETE (2026-03-31) | One-shot skill extraction 100%, cross-env transfer 100% |
 | 31 | Abstract Pattern Reasoning | COMPLETE (2026-03-31) | Raven's-style 100% accuracy, HAC algebra, dual-rule, analogy |
-| 32 | Meta-Learning | PLANNED | Learning to learn — адаптация стратегий обучения |
+| 32 | Meta-Learning | COMPLETE (2026-03-31) | Strategy selection 100%, 1.29x vs fixed, 5 task types |
 
 ## Блок 5: Social & Integration (PLANNED)
 | Stage | Название | Статус | Что доказывает |
@@ -58,14 +58,14 @@
 
 ---
 
-## Текущий фокус: Stage 32 — Meta-Learning
+## Текущий фокус: Stage 33 — Multi-Agent Communication
 
 **Спецификация:** TBD
 **Ветка:** TBD
-**Эксперименты:** exp80-82
+**Эксперименты:** exp83-85
 
 ### Gate-критерии:
-- TBD — Learning to learn, адаптация стратегий обучения
+- TBD — Агенты обмениваются концептами (не словами)
 
 ---
 
