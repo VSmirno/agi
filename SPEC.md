@@ -228,6 +228,8 @@ class DcamWorldModel:
 | 52 | Autonomous cross-modal recall | sdr/currents match | > 0.8 | **1.000 (15/15)** | ✅ PASS |
 | 53 | Autonomous QA | accuracy без ST | > 0.6 | **1.000 (15/15)** | ✅ PASS |
 | 54a | Instruction parsing | accuracy (5 types) | > 0.9 | **1.000 (30/30)** | ✅ PASS |
+| 54b | Plan correctness | accuracy | > 0.7 | **1.000 (12/12)** | ✅ PASS |
+| 55 | Causal chain detection | chain accuracy | > 0.5 | **0.833 (5/6)** | ✅ PASS |
 
 ### Критерии MVP
 
@@ -311,6 +313,9 @@ class DcamWorldModel:
 - Stage 24a (2026-03-31): COMPLETE. InstructionParser + Attribute Grounding.
   RuleBasedChunker extended: +sequential (SEQ_BREAK), +spatial patterns. 5 BabyAI levels.
   Exp 54a parsing accuracy=1.000 ✅, grounding resolve=1.000 ✅.
+- Stage 24b (2026-03-31): COMPLETE. Instruction Planning + Real QA Backends.
+  InstructionPlanner (causal prerequisite detection), CausalQABackend, SimulationQABackend.
+  Exp 54b plan accuracy=1.000 ✅, Exp 55 chain accuracy=0.833 ✅.
 
 ### Граф зависимостей
 
