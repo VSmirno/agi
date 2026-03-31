@@ -1,7 +1,7 @@
 # СНКС — Roadmap к AGI
 
 **Последнее обновление:** 2026-03-31
-**Статус:** Stages 0-35 COMPLETE (94 экспериментов PASS) — ALL BLOCKS DONE
+**Статус:** Stages 0-35 COMPLETE, Block 6 IN PROGRESS
 
 ---
 
@@ -56,18 +56,28 @@
 | 34 | Long-Horizon Planning | COMPLETE (2026-03-31) | 1800+ steps, 3-level hierarchy, re-planning 1.67x overhead |
 | 35 | Integration Demo | COMPLETE (2026-03-31) | 10 capabilities, zero backprop, 100% integration |
 
+## Блок 6: Scaling & Real Learning (IN PROGRESS)
+| Stage | Название | Статус | Что доказывает |
+|-------|----------|--------|----------------|
+| 36 | Spatial Abstraction | IN PROGRESS | Region-based perception сжимает state space, агент обучается на 12x12 |
+| 37 | Scalable Exploration | PLANNED | Frontier-based + goal-directed exploration гарантирует coverage на больших средах |
+| 38 | Curriculum Learning | PLANNED | Автономный curriculum 5→8→12→16, hierarchical causal model |
+
 ---
 
-## Статус: ВСЕ ЭТАПЫ ЗАВЕРШЕНЫ
+## Статус: Блок 6 в разработке
 
-**Stages 0-35: COMPLETE**
-**94 эксперимента: ALL PASS**
-**5 блоков: ALL COMPLETE**
+**Stages 0-35: COMPLETE** (94 эксперимента ALL PASS)
+**Exp 92 GPU Scaling: DONE** (N=200K, 34/34 exps PASS on AMD ROCm)
+**Блок 6: IN PROGRESS** — решение проблемы 0% success на 12x12
 
-### Что дальше
-- Scaling experiments на GPU (minipc)
-- Новые среды и задачи
-- Публикация результатов
+### Диагностика (Exp 92 → Block 6)
+Агент не масштабируется на 12x12 из-за:
+1. Взрыв пространства состояний (100 клеток vs 9 на 5x5)
+2. Каузальная модель слишком разрежена за 100 эпизодов
+3. Горизонт планирования (5) мал для 12x12 (нужно 15+)
+4. Exploration = random walk на большом пространстве
+5. Perception без пространственной абстракции
 
 ---
 
