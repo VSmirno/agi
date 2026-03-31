@@ -1,6 +1,6 @@
 # Stage 25: Autonomous Goal Composition
 
-**Version:** 1.1
+**Version:** 1.2
 **Date:** 2026-03-31
 **Status:** DESIGN APPROVED
 
@@ -92,12 +92,19 @@ GridPerception currently maps `(object_type, color)` → SKS ID. For causal lear
 **Extension to GridPerception:** emit state-dependent SKS IDs:
 
 ```python
-# New state-dependent concept IDs (reserved range 50-99)
+# State-dependent concept IDs (reserved range 50-99).
+# These are STABLE IDs — _split_context must treat them as stable
+# (not coarsen with % n_bins). See CausalWorldModel section below.
 SKS_KEY_PRESENT = 50    # key visible on grid floor
 SKS_KEY_HELD = 51       # agent carrying key (env.unwrapped.carrying)
 SKS_DOOR_LOCKED = 52    # door exists and is_locked=True
 SKS_DOOR_OPEN = 53      # door exists and is_open=True
 SKS_GOAL_PRESENT = 54   # goal cell visible
+
+# NOTE: existing SKS_AGENT=1 and SKS_AGENT_CARRYING=2 from grid_perception.py
+# are kept but NOT used for causal learning. SKS_KEY_HELD (51) replaces
+# SKS_AGENT_CARRYING (2) for causal reasoning — they are semantically
+# equivalent but SKS_KEY_HELD is in the stable range.
 
 class GridPerception:
     def perceive(self, grid, agent_pos, agent_dir, carrying=None) -> set[int]:
@@ -108,10 +115,15 @@ class GridPerception:
         - door.is_locked → SKS_DOOR_LOCKED
         - door.is_open → SKS_DOOR_OPEN
         - goal cell → SKS_GOAL_PRESENT
+
+        Args:
+            carrying: env.unwrapped.carrying (WorldObject or None).
+                      All existing callers (BabyAIExecutor, experiments)
+                      must be updated to pass this parameter.
         """
 ```
 
-This is the minimal extension needed for causal learning to work. The `carrying` parameter comes from `env.unwrapped.carrying`.
+This is the minimal extension needed for causal learning to work.
 
 ---
 
@@ -151,24 +163,31 @@ Goal: "get to the goal"
 
 ### GridNavigator Path Result
 
-Current `plan_path()` returns `[]` for both "already there" and "no path". This is ambiguous. **Fix:** add a return wrapper:
+Current `plan_path()` returns `[]` for both "already there" and "no path". This is ambiguous. **Fix:** add a return wrapper with proper enum:
 
 ```python
+import enum
+
+class PathStatus(enum.Enum):
+    OK = "ok"
+    BLOCKED = "blocked"
+    ALREADY_THERE = "already_there"
+
 @dataclass
 class PathResult:
     actions: list[int]
-    status: str  # "ok", "blocked", "already_there"
+    status: PathStatus
 
 class GridNavigator:
     def plan_path_ex(self, grid, agent_pos, agent_dir, target_pos,
                      stop_adjacent=False) -> PathResult:
         if agent_pos == target_pos:
-            return PathResult([], "already_there")
+            return PathResult([], PathStatus.ALREADY_THERE)
         path = _bfs(grid, agent_pos, target_pos)
         if path is None:
-            return PathResult([], "blocked")
+            return PathResult([], PathStatus.BLOCKED)
         # ... convert to actions ...
-        return PathResult(actions, "ok")
+        return PathResult(actions, PathStatus.OK)
 ```
 
 Original `plan_path()` remains for backward compatibility.
@@ -224,7 +243,14 @@ def query_by_effect(
     """Reverse lookup: find (action, context) pairs that produce desired effect.
 
     Scans all stored transitions for ones whose effect_sks overlaps
-    with desired_effect_sks.
+    with desired_effect_sks. Uses overlap (intersection) matching
+    because observe_transition stores symmetric_difference as effect —
+    so effect_sks contains both APPEARING and DISAPPEARING SKS IDs.
+
+    Example: toggle door with key produces effect_sks =
+    {SKS_DOOR_OPEN, SKS_DOOR_LOCKED, SKS_KEY_HELD} (open appeared,
+    locked disappeared, key consumed). Querying for {SKS_DOOR_OPEN}
+    matches via overlap.
 
     Returns:
         List of (action, required_context_sks, confidence) sorted by confidence desc.
@@ -232,6 +258,21 @@ def query_by_effect(
 ```
 
 This is a linear scan over `get_causal_links()` — acceptable for the small number of links in MiniGrid domains.
+
+### Issue: `_split_context` must preserve state-dependent IDs
+
+State-dependent SKS IDs (50-99) must NOT be coarsened by `_split_context`. Fix: extend `_split_context` to treat IDs in range 50-99 as stable (alongside IDs >= `_PERCEPTUAL_HASH_OFFSET`):
+
+```python
+_STATE_SKS_RANGE = range(50, 100)
+
+def _split_context(sks: set[int], n_bins: int) -> frozenset[int]:
+    stable = frozenset(s for s in sks if s >= _PERCEPTUAL_HASH_OFFSET or s in _STATE_SKS_RANGE)
+    unstable = frozenset(s % n_bins for s in sks if s < _PERCEPTUAL_HASH_OFFSET and s not in _STATE_SKS_RANGE)
+    return stable | unstable
+```
+
+This ensures `SKS_KEY_HELD=51` stays as `51` in context hashes, enabling correct `query_by_effect` matching.
 
 ### Issue: CausalLearner API
 
@@ -295,14 +336,15 @@ def explore(self, max_tries=8) -> bool:
 **Purpose:** GoalAgent correctly decomposes DoorKey mission into sub-goals.
 
 **Protocol:**
-- 20 episodes DoorKey-5x5, varying seeds
-- CausalWorldModel pre-loaded with 5 training episodes (so decomposition tests reasoning, not learning)
+- Warmup phase: 5 episodes DoorKey-5x5 (same GoalAgent, learning enabled) to populate CausalWorldModel
+- Test phase: 20 episodes DoorKey-5x5, varying seeds, with the warmed-up model
 - Agent receives original mission text
 - Check: correct sub-goals identified (pickup key, toggle door, goto goal)
+- max_steps_per_episode: 200
 
 **Gate:**
 ```
-decomposition_accuracy >= 0.9   # 18/20 correct (deterministic algorithm, should be near-perfect with trained model)
+decomposition_accuracy >= 0.9   # 18/20 correct (deterministic algorithm with trained model)
 ```
 
 ### Exp 59: Causal Learning Speed
@@ -313,6 +355,7 @@ decomposition_accuracy >= 0.9   # 18/20 correct (deterministic algorithm, should
 - CausalWorldModel starts empty
 - Series of 10 episodes DoorKey-5x5
 - After each episode: check for links that match pickup→key_held, toggle+key→door_open
+- max_steps_per_episode: 200
 
 **Gate:**
 ```
@@ -327,11 +370,12 @@ episodes_to_learn <= 5          # all key links learned within 5 episodes
 - 10 series of 5 episodes each (varying seeds)
 - CausalWorldModel preserved within series, reset between series
 - Measure success rate at each trial position (1st, 2nd, ..., 5th)
+- max_steps_per_episode: 200
 
 **Gate:**
 ```
-trial_5_success_rate >= 0.6     # by 5th attempt >= 60% of series solved
-trial_1_success_rate < trial_5  # learning curve grows (not random)
+trial_5_success_rate >= 0.6                    # by 5th attempt >= 60% of series solved
+trial_5_success_rate - trial_1_success_rate >= 0.2  # meaningful improvement, not noise
 ```
 
 ### Exp 61: Transfer Across Layouts
@@ -348,6 +392,8 @@ trial_1_success_rate < trial_5  # learning curve grows (not random)
 transfer_success >= 0.3           # 3/10 on 6x6 first-try
 transfer_success > control + 0.1  # transfer better than no knowledge
 ```
+
+**Episode limits:** max_steps_per_episode: 300 (6x6 is larger).
 
 ---
 
@@ -386,4 +432,6 @@ transfer_success > control + 0.1  # transfer better than no knowledge
 2. **CausalWorldModel context too specific** — `_split_context()` coarsens unstable SKS IDs into `n_bins` buckets. State-dependent SKS IDs (50-99 range) are stable → will match across episodes. This is the key reason for introducing them.
 3. **Door detection** — GridNavigator returns `PathResult.BLOCKED` but doesn't say where the blocker is. `BlockingAnalyzer.find_blocker()` scans all grid cells for locked doors / impassable objects.
 4. **DoorKey mission text** — "use the key to open the door" doesn't parse with RuleBasedChunker. GoalAgent always uses goal-driven mode: extract final goal noun ("goal") and backward chain. No text-driven mode needed.
-5. **observe_transition context sensitivity** — `_split_context` may coarsen state-dependent IDs (50-99) since they're below `_PERCEPTUAL_HASH_OFFSET` (10000). Mitigation: either add them to the stable range, or ensure `n_bins > 100` so IDs 50-99 map to themselves.
+5. **observe_transition context sensitivity** — `_split_context` coarsens IDs < 10000 with `% n_bins`. State-dependent IDs (50-99) must be treated as stable. Fix specified above: extend `_split_context` with `_STATE_SKS_RANGE`.
+6. **symmetric_difference semantics** — `observe_transition` stores symmetric_difference as effect (both appearing AND disappearing IDs). `query_by_effect` uses overlap matching to handle this correctly. Documented in the `query_by_effect` docstring.
+7. **Max steps** — all experiments specify `max_steps_per_episode` (200 for 5x5, 300 for 6x6). Episode counts as failure if exceeded.
