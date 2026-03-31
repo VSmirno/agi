@@ -97,7 +97,8 @@ class BabyAIExecutor:
         agent_pos = tuple(env_unwrapped.agent_pos)
         agent_dir = int(env_unwrapped.agent_dir)
 
-        self._perception.perceive(grid, agent_pos, agent_dir)
+        carrying = getattr(env_unwrapped, 'carrying', None)
+        self._perception.perceive(grid, agent_pos, agent_dir, carrying=carrying)
 
         # 3. Find target object.
         target_word = f"{attr_text} {object_text}" if attr_text else object_text

@@ -6,7 +6,9 @@ Converts BFS path to MiniGrid action sequences (turn + forward).
 
 from __future__ import annotations
 
+import enum
 from collections import deque
+from dataclasses import dataclass
 
 from minigrid.core.constants import OBJECT_TO_IDX
 
@@ -18,6 +20,19 @@ DIR_VEC = {0: (1, 0), 1: (0, 1), 2: (-1, 0), 3: (0, -1)}
 ACT_LEFT = 0
 ACT_RIGHT = 1
 ACT_FORWARD = 2
+
+
+class PathStatus(enum.Enum):
+    OK = "ok"
+    BLOCKED = "blocked"
+    ALREADY_THERE = "already_there"
+
+
+@dataclass
+class PathResult:
+    """Result of plan_path_ex with explicit status."""
+    actions: list[int]
+    status: PathStatus
 
 
 def _is_passable(grid, x: int, y: int) -> bool:
@@ -148,3 +163,22 @@ class GridNavigator:
             actions.extend(_turn_actions(current_dir, target_dir))
 
         return actions
+
+    def plan_path_ex(
+        self,
+        grid,
+        agent_pos: tuple[int, int],
+        agent_dir: int,
+        target_pos: tuple[int, int],
+        stop_adjacent: bool = False,
+    ) -> PathResult:
+        """Like plan_path but returns PathResult with explicit status."""
+        if agent_pos == target_pos:
+            return PathResult([], PathStatus.ALREADY_THERE)
+
+        path = _bfs(grid, agent_pos, target_pos)
+        if path is None:
+            return PathResult([], PathStatus.BLOCKED)
+
+        actions = self.plan_path(grid, agent_pos, agent_dir, target_pos, stop_adjacent)
+        return PathResult(actions, PathStatus.OK)
