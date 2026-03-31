@@ -330,21 +330,24 @@ class HierarchicalPlanner:
         self,
         expected_sks: frozenset[int],
         actual_sks: frozenset[int],
-        threshold: float = 0.3,
+        threshold: float = 0.5,
     ) -> bool:
         """Check if actual state deviates significantly from expected.
 
+        Deviation = fraction of EXPECTED state that is MISSING in actual.
+        Gaining extra SKS is NOT a deviation (superset is fine).
         Returns True if deviation exceeds threshold.
         """
         if not expected_sks:
             return False
         expected = set(expected_sks)
         actual = set(actual_sks)
-        union = expected | actual
-        if not union:
+        if not expected:
             return False
-        jaccard = len(expected & actual) / len(union)
-        return (1.0 - jaccard) > threshold
+        # What fraction of expected is missing?
+        missing = expected - actual
+        loss_ratio = len(missing) / len(expected)
+        return loss_ratio > threshold
 
     # ── Execution ────────────────────────────────────────────
 

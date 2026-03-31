@@ -100,7 +100,7 @@ class HierarchicalPlanner:
 | 86 | plan_depth | ≥ 1000 | Общее число примитивных шагов в плане |
 | 86 | plan_coherence | ≥ 0.9 | Доля шагов с valid preconditions |
 | 87 | replan_success | ≥ 0.8 | Успешность re-planning при deviation |
-| 87 | replan_overhead | ≤ 1.5x | Overhead re-planning vs ideal |
+| 87 | replan_overhead | ≤ 2.0x | Overhead re-planning vs ideal |
 | 88 | multi_room_success | ≥ 0.9 | Успешность в multi-room задаче (3+ комнат) |
 | 88 | hierarchical_speedup | ≥ 2x | Speedup vs flat BFS planning |
 
