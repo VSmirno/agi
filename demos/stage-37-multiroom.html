@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 37: Навигация через комнаты</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e17;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-serif}
+.container{max-width:1100px;margin:0 auto;padding:20px}
+h1{color:#60a5fa;font-size:1.8em;margin-bottom:8px}
+h2{color:#60a5fa;font-size:1.2em;margin:16px 0 8px}
+.subtitle{color:#94a3b8;font-size:1em;margin-bottom:20px}
+.grid-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.panel{background:#1e293b;border-radius:12px;padding:16px;flex:1;min-width:260px}
+.metric{display:inline-block;background:#0f172a;padding:8px 14px;border-radius:8px;margin:4px;text-align:center}
+.metric .value{font-size:1.5em;font-weight:bold;color:#10b981}
+.metric .label{font-size:0.8em;color:#94a3b8}
+canvas{border-radius:8px;display:block;margin:8px auto}
+.btn{background:#3b82f6;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.85em;margin:3px}
+.btn:hover{background:#2563eb}
+.controls{text-align:center;margin:8px 0}
+table{width:100%;border-collapse:collapse;margin:8px 0}
+th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #334155;font-size:0.9em}
+th{color:#94a3b8;text-transform:uppercase;font-size:0.8em}
+td.pass{color:#10b981;font-weight:bold}
+.explanation{background:#1e293b;border-left:3px solid #60a5fa;padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0;line-height:1.5;font-size:0.95em}
+#status{text-align:center;margin:6px 0;color:#94a3b8;font-size:0.85em}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Этап 37: Навигация через комнаты</h1>
+<p class="subtitle">Агент проходит через 4 комнаты, последовательно открывая двери — 96% успеха</p>
+
+<div class="grid-row">
+<div class="metric"><div class="value">100%</div><div class="label">MultiRoom N2</div></div>
+<div class="metric"><div class="value">96%</div><div class="label">MultiRoom N4</div></div>
+<div class="metric"><div class="value">154</div><div class="label">Каузальных связей</div></div>
+<div class="metric"><div class="value">10</div><div class="label">Макс. попыток</div></div>
+</div>
+
+<div class="grid-row">
+<div class="panel" style="flex:2">
+<h2>Среда MultiRoom</h2>
+<div class="controls">
+<button class="btn" onclick="setMode('n2')">N2 (2 комнаты)</button>
+<button class="btn" onclick="setMode('n4')">N4 (4 комнаты)</button>
+<button class="btn" onclick="startAnim()">▶ Запустить</button>
+<button class="btn" onclick="resetAnim()">↺ Сброс</button>
+</div>
+<canvas id="c" width="500" height="400"></canvas>
+<div id="status">Нажмите "Запустить"</div>
+</div>
+<div class="panel" style="flex:1">
+<h2>Результаты</h2>
+<table>
+<tr><th>Среда</th><th>Успех</th><th>Статус</th></tr>
+<tr><td>DoorKey 5×5</td><td>100%</td><td class="pass">PASS</td></tr>
+<tr><td>MultiRoom N2</td><td>100%</td><td class="pass">PASS</td></tr>
+<tr><td>MultiRoom N4</td><td>96%</td><td class="pass">PASS</td></tr>
+</table>
+<h2>Алгоритм</h2>
+<ol style="font-size:0.85em;padding-left:20px;line-height:1.8">
+<li>Найти цель (goal)</li>
+<li>BFS-путь к цели</li>
+<li>Путь заблокирован? → найти дверь</li>
+<li>Дверь закрыта → toggle (открыть)</li>
+<li>Дверь заперта → найти ключ → pickup → toggle</li>
+<li>Повторить до 10 раз</li>
+</ol>
+</div>
+</div>
+
+<div class="explanation">
+<h2>Как это работает</h2>
+<p>В MultiRoom среде комнаты разделены стенами с дверями. Агент использует <strong>backward chaining</strong>: если путь к цели заблокирован дверью, он открывает ближайшую дверь (toggle) и пробует снова. Для закрытых (не запертых) дверей ключ не нужен — просто toggle. Для запертых дверей агент использует каузальные знания: "pickup key → toggle door".</p>
+<p style="margin-top:8px"><strong>Результат Stage 37:</strong> BlockingAnalyzer теперь различает locked и closed doors. GoalAgent выполняет до 10 итераций backward chaining, что позволяет открыть 3+ двери последовательно. На MultiRoom-N4 (4 комнаты) достигнут 96% success rate.</p>
+</div>
+</div>
+
+<script>
+const c=document.getElementById('c'),ctx=c.getContext('2d');
+let mode='n2',playing=false,step=0,rooms=[];
+
+function genRooms(n){
+  const rs=[];
+  const w=n===2?2:4, cols=n===2?2:2, rows=n===2?1:2;
+  const rw=Math.floor(480/(cols*1.2)),rh=Math.floor(380/(rows*1.2));
+  for(let r=0;r<rows;r++)for(let cl=0;cl<cols;cl++){
+    rs.push({x:10+cl*(rw+10),y:10+r*(rh+10),w:rw,h:rh,doorOpen:false});
+  }
+  return rs;
+}
+
+function draw(){
+  ctx.fillStyle='#0f172a';ctx.fillRect(0,0,500,400);
+  rooms.forEach((r,i)=>{
+    ctx.strokeStyle='#666';ctx.lineWidth=3;ctx.strokeRect(r.x,r.y,r.w,r.h);
+    ctx.fillStyle='#1a1a2e';ctx.fillRect(r.x+3,r.y+3,r.w-6,r.h-6);
+    ctx.fillStyle='#94a3b8';ctx.font='12px sans-serif';ctx.textAlign='center';
+    ctx.fillText(`Комната ${i+1}`,r.x+r.w/2,r.y+20);
+    // Door on right side (except last room)
+    if(i<rooms.length-1){
+      const dx=r.x+r.w-2,dy=r.y+r.h/2-15;
+      ctx.fillStyle=r.doorOpen?'rgba(101,67,33,0.3)':'#8B4513';
+      ctx.fillRect(dx,dy,6,30);
+    }
+  });
+  // Goal in last room
+  const last=rooms[rooms.length-1];
+  ctx.fillStyle='#00ff88';ctx.font='24px sans-serif';ctx.textAlign='center';
+  ctx.fillText('◆',last.x+last.w*0.7,last.y+last.h*0.6);
+  // Agent
+  const agentRoom=Math.min(step,rooms.length-1);
+  const ar=rooms[agentRoom];
+  const ax=ar.x+ar.w*0.3,ay=ar.y+ar.h*0.6;
+  ctx.fillStyle='#ff4444';ctx.beginPath();
+  ctx.moveTo(ax+12,ay);ctx.lineTo(ax-8,ay-8);ctx.lineTo(ax-8,ay+8);ctx.closePath();ctx.fill();
+}
+
+function setMode(m){mode=m;resetAnim();}
+function resetAnim(){playing=false;step=0;rooms=genRooms(mode==='n2'?2:4);rooms.forEach(r=>r.doorOpen=false);draw();document.getElementById('status').textContent='Сброшено';}
+function startAnim(){if(playing)return;playing=true;animate();}
+function animate(){
+  if(!playing)return;
+  if(step<rooms.length-1){
+    rooms[step].doorOpen=true;
+    document.getElementById('status').textContent=`Открываю дверь ${step+1}... → переход в комнату ${step+2}`;
+    step++;draw();
+    setTimeout(()=>requestAnimationFrame(animate),800);
+  }else{
+    document.getElementById('status').textContent='🎯 Цель достигнута!';
+    draw();playing=false;
+  }
+}
+rooms=genRooms(2);draw();
+</script>
+</body>
+</html>
