@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stage 33: Multi-Agent Communication — СНКС</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0e17; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+h1 { color: #60a5fa; font-size: 28px; margin-bottom: 8px; }
+h2 { color: #60a5fa; font-size: 20px; margin: 24px 0 12px; }
+.subtitle { color: #94a3b8; font-size: 16px; margin-bottom: 24px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+@media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+.card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+.card h3 { color: #f1f5f9; font-size: 16px; margin-bottom: 12px; }
+.metric { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #334155; }
+.metric:last-child { border-bottom: none; }
+.metric-label { color: #94a3b8; }
+.metric-value { font-weight: 700; font-size: 18px; }
+.pass { color: #34d399; }
+.fail { color: #ef4444; }
+.gate-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.gate-pass { background: #065f46; color: #34d399; }
+
+.demo-area { background: #1e293b; border-radius: 12px; padding: 24px; border: 1px solid #334155; margin-bottom: 24px; }
+.controls { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.btn { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; }
+.btn:hover { background: #2563eb; }
+.btn:disabled { background: #475569; cursor: not-allowed; }
+.btn-secondary { background: #475569; }
+.btn-secondary:hover { background: #64748b; }
+
+/* Agent visualization */
+.agents-container { display: flex; gap: 40px; justify-content: center; align-items: flex-start; margin: 20px 0; flex-wrap: wrap; }
+.agent-box { background: #0f172a; border: 2px solid #334155; border-radius: 16px; padding: 20px; min-width: 280px; transition: all 0.5s; }
+.agent-box.active { border-color: #60a5fa; box-shadow: 0 0 20px rgba(96, 165, 250, 0.2); }
+.agent-box.sending { border-color: #f59e0b; box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
+.agent-box.receiving { border-color: #34d399; box-shadow: 0 0 20px rgba(52, 211, 153, 0.3); }
+.agent-name { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+.agent-role { font-size: 12px; color: #94a3b8; margin-bottom: 12px; }
+.knowledge-list { list-style: none; padding: 0; }
+.knowledge-list li { padding: 4px 0; font-size: 13px; color: #cbd5e1; display: flex; align-items: center; gap: 6px; }
+.knowledge-list li::before { content: ''; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.knowledge-list li.causal::before { background: #7c3aed; }
+.knowledge-list li.skill::before { background: #059669; }
+.knowledge-list li.warning::before { background: #ef4444; }
+.knowledge-list li.new { animation: fadeIn 0.5s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+
+/* Message animation */
+.message-lane { position: relative; height: 60px; margin: 0 0 20px; }
+.message-particle { position: absolute; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; animation: fly 1.2s ease-in-out forwards; z-index: 10; }
+.message-particle.causal { background: #7c3aed; }
+.message-particle.skill { background: #059669; }
+.message-particle.warning { background: #ef4444; }
+.message-particle.request { background: #3b82f6; }
+@keyframes fly { 0% { left: 10%; opacity: 0; transform: scale(0.5); } 20% { opacity: 1; transform: scale(1); } 80% { opacity: 1; } 100% { left: 85%; opacity: 0; transform: scale(0.5); } }
+@keyframes flyBack { 0% { left: 85%; opacity: 0; transform: scale(0.5); } 20% { opacity: 1; transform: scale(1); } 80% { opacity: 1; } 100% { left: 10%; opacity: 0; transform: scale(0.5); } }
+.message-lane-label { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 11px; color: #475569; letter-spacing: 2px; text-transform: uppercase; }
+.message-lane-line { position: absolute; top: 50%; left: 15%; right: 15%; height: 2px; background: linear-gradient(90deg, #334155, #475569, #334155); }
+.message-lane-arrow { position: absolute; top: calc(50% - 5px); right: 14%; width: 10px; height: 10px; border-top: 2px solid #475569; border-right: 2px solid #475569; transform: rotate(45deg); }
+
+/* Metrics gauge */
+.gauge-row { display: flex; gap: 24px; margin: 16px 0; flex-wrap: wrap; }
+.gauge { flex: 1; min-width: 140px; }
+.gauge-label { color: #94a3b8; font-size: 12px; margin-bottom: 4px; }
+.gauge-bar { background: #0f172a; border-radius: 8px; height: 24px; overflow: hidden; position: relative; }
+.gauge-fill { height: 100%; border-radius: 8px; transition: width 0.8s ease; }
+.gauge-value { position: absolute; right: 8px; top: 3px; font-size: 12px; font-weight: 700; color: white; }
+
+/* Log */
+.log { background: #0f172a; border-radius: 8px; padding: 16px; max-height: 250px; overflow-y: auto; font-family: 'Cascadia Code', monospace; font-size: 13px; line-height: 1.6; margin-top: 16px; }
+.log-line { padding: 2px 0; }
+.log-send { color: #f59e0b; }
+.log-recv { color: #34d399; }
+.log-info { color: #60a5fa; }
+.log-warn { color: #ef4444; }
+
+.explanation { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; margin-top: 24px; line-height: 1.8; color: #cbd5e1; }
+.explanation strong { color: #60a5fa; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>Stage 33: Multi-Agent Communication</h1>
+    <p class="subtitle">Agents exchange concepts (not words) through HAC embeddings and causal links</p>
+
+    <!-- Gate metrics -->
+    <div class="grid">
+        <div class="card">
+            <h3>Experiment Results</h3>
+            <div class="metric">
+                <span class="metric-label">Exp 83: Concept Transfer</span>
+                <span class="metric-value pass">1.000 <span class="gate-badge gate-pass">PASS</span></span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Exp 83: HAC Alignment</span>
+                <span class="metric-value pass">1.000 <span class="gate-badge gate-pass">PASS</span></span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Exp 84: Multi-Agent Speedup</span>
+                <span class="metric-value pass">1.59x <span class="gate-badge gate-pass">PASS</span></span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Exp 84: Knowledge Reuse</span>
+                <span class="metric-value pass">1.667 <span class="gate-badge gate-pass">PASS</span></span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Exp 85: Cooperative Success</span>
+                <span class="metric-value pass">1.000 <span class="gate-badge gate-pass">PASS</span></span>
+            </div>
+            <div class="metric">
+                <span class="metric-label">Exp 85: No Word Exchange</span>
+                <span class="metric-value pass">True <span class="gate-badge gate-pass">PASS</span></span>
+            </div>
+        </div>
+        <div class="card">
+            <h3>What This Proves</h3>
+            <div style="line-height: 1.8; color: #cbd5e1; font-size: 14px;">
+                <p><strong style="color: #60a5fa;">Concept-level communication</strong> between agents works without natural language.</p>
+                <br>
+                <p>Agents exchange <strong style="color: #7c3aed;">causal links</strong> (cause &rarr; effect knowledge),
+                <strong style="color: #059669;">skills</strong> (reusable actions), and
+                <strong style="color: #ef4444;">warnings</strong> (danger signals).</p>
+                <br>
+                <p>2 agents solve tasks <strong style="color: #f59e0b;">1.59x faster</strong> than 1 agent through parallel exploration + knowledge sharing.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Interactive Demo -->
+    <h2>Interactive Demo: Cooperative DoorKey Task</h2>
+    <div class="demo-area">
+        <div class="controls">
+            <button class="btn" id="btnRun" onclick="runDemo()">Run Simulation</button>
+            <button class="btn btn-secondary" id="btnStep" onclick="stepDemo()">Step</button>
+            <button class="btn btn-secondary" onclick="resetDemo()">Reset</button>
+        </div>
+
+        <div class="agents-container">
+            <div class="agent-box" id="agentA">
+                <div class="agent-name" style="color: #60a5fa;">Agent A: Explorer</div>
+                <div class="agent-role">Explores environment, finds key</div>
+                <div style="margin-top: 8px; font-size: 12px; color: #94a3b8;">Knowledge Base:</div>
+                <ul class="knowledge-list" id="knowledgeA"></ul>
+            </div>
+            <div style="flex-shrink: 0;">
+                <div class="message-lane" id="msgLane" style="width: 200px; height: 120px;">
+                    <div class="message-lane-line" style="top: 30%;"></div>
+                    <div class="message-lane-arrow" style="top: calc(30% - 5px);"></div>
+                    <div class="message-lane-line" style="top: 70%;"></div>
+                    <div class="message-lane-arrow" style="top: calc(70% - 5px); right: auto; left: 14%; transform: rotate(-135deg);"></div>
+                    <div class="message-lane-label" style="top: 50%;">concept<br>channel</div>
+                </div>
+            </div>
+            <div class="agent-box" id="agentB">
+                <div class="agent-name" style="color: #34d399;">Agent B: Solver</div>
+                <div class="agent-role">Receives knowledge, solves task</div>
+                <div style="margin-top: 8px; font-size: 12px; color: #94a3b8;">Knowledge Base:</div>
+                <ul class="knowledge-list" id="knowledgeB"></ul>
+            </div>
+        </div>
+
+        <div class="gauge-row">
+            <div class="gauge">
+                <div class="gauge-label">Knowledge Overlap</div>
+                <div class="gauge-bar">
+                    <div class="gauge-fill" id="overlapGauge" style="width: 0%; background: linear-gradient(90deg, #7c3aed, #60a5fa);"></div>
+                    <span class="gauge-value" id="overlapValue">0%</span>
+                </div>
+            </div>
+            <div class="gauge">
+                <div class="gauge-label">Links Transferred</div>
+                <div class="gauge-bar">
+                    <div class="gauge-fill" id="transferGauge" style="width: 0%; background: linear-gradient(90deg, #059669, #34d399);"></div>
+                    <span class="gauge-value" id="transferValue">0</span>
+                </div>
+            </div>
+            <div class="gauge">
+                <div class="gauge-label">Cooperation Score</div>
+                <div class="gauge-bar">
+                    <div class="gauge-fill" id="coopGauge" style="width: 0%; background: linear-gradient(90deg, #f59e0b, #fbbf24);"></div>
+                    <span class="gauge-value" id="coopValue">0%</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="log" id="demoLog">
+            <div class="log-line log-info">Ready. Press "Run Simulation" to start cooperative task.</div>
+        </div>
+    </div>
+
+    <!-- Explanation -->
+    <div class="explanation">
+        <h2 style="margin-bottom: 12px;">How It Works</h2>
+        <p>In СНКС, agents think in <strong>concepts</strong> (SKS — stable knowledge structures), not in words.
+        When Agent A discovers that "picking up a key changes state from key_present to key_held",
+        this is encoded as a <strong>CausalLink</strong>: <code style="color: #7c3aed;">action=pickup, context={key_present} → effect={key_held}</code>.</p>
+        <br>
+        <p>Agent A sends this knowledge to Agent B via a <strong>ConceptMessage</strong> — a structured data packet
+        containing SKS IDs, HAC embeddings (2048-dim vectors), and causal links. No natural language is involved.</p>
+        <br>
+        <p>Agent B integrates the received causal links into its own world model using confidence-weighted merging.
+        Now Agent B can <strong>predict</strong> what happens when it picks up a key — without ever having done it.</p>
+        <br>
+        <p>This is fundamentally different from LLM-based multi-agent systems where agents exchange text prompts.
+        In СНКС, communication is at the <strong>semantic level</strong> — exchanging meaning, not symbols.</p>
+    </div>
+</div>
+
+<script>
+// ── Simulation State ──
+const state = {
+    step: 0,
+    running: false,
+    agentA: {
+        knowledge: [
+            { type: 'causal', text: 'pickup(key_present) → key_held', action: 3, ctx: [50], eff: [51], conf: 0.9 },
+            { type: 'causal', text: 'navigate(open_space) → goal_present', action: 1, ctx: [53, 54], eff: [54], conf: 0.8 },
+        ],
+    },
+    agentB: {
+        knowledge: [
+            { type: 'causal', text: 'toggle(key_held+door_locked) → door_open', action: 5, ctx: [51, 52], eff: [53], conf: 0.85 },
+        ],
+    },
+    transfers: 0,
+    overlap: 0,
+    coopScore: 0,
+};
+
+const steps = [
+    {
+        desc: 'Agent A explores environment, discovers key mechanics',
+        action: () => {
+            log('Agent A: discovered causal link — pickup(key_present) → key_held', 'info');
+            log('Agent A: discovered causal link — navigate(open_space) → goal_present', 'info');
+            highlightAgent('agentA', 'active');
+        }
+    },
+    {
+        desc: 'Agent B explores environment, discovers door mechanics',
+        action: () => {
+            log('Agent B: discovered causal link — toggle(key_held+door_locked) → door_open', 'info');
+            highlightAgent('agentB', 'active');
+        }
+    },
+    {
+        desc: 'Agent A shares causal links → Agent B',
+        action: () => {
+            highlightAgent('agentA', 'sending');
+            animateMessage('causal', 'forward');
+            log('A → B: ConceptMessage(type=causal_links, links=2, sks_ctx={50,53,54})', 'send');
+            setTimeout(() => {
+                addKnowledge('B', { type: 'causal', text: 'pickup(key_present) → key_held', new: true });
+                addKnowledge('B', { type: 'causal', text: 'navigate(open_space) → goal_present', new: true });
+                state.transfers += 2;
+                updateGauges();
+                log('Agent B: integrated 2 causal links from Agent A', 'recv');
+                highlightAgent('agentB', 'receiving');
+            }, 800);
+        }
+    },
+    {
+        desc: 'Agent B shares causal links → Agent A',
+        action: () => {
+            highlightAgent('agentB', 'sending');
+            animateMessage('causal', 'backward');
+            log('B → A: ConceptMessage(type=causal_links, links=1, sks_ctx={51,52})', 'send');
+            setTimeout(() => {
+                addKnowledge('A', { type: 'causal', text: 'toggle(key_held+door_locked) → door_open', new: true });
+                state.transfers += 1;
+                updateGauges();
+                log('Agent A: integrated 1 causal link from Agent B', 'recv');
+                highlightAgent('agentA', 'receiving');
+            }, 800);
+        }
+    },
+    {
+        desc: 'Agent B shares skill: toggle_door',
+        action: () => {
+            highlightAgent('agentB', 'sending');
+            animateMessage('skill', 'backward');
+            log('B → A: ConceptMessage(type=skill, skill=toggle_door, precond={51,52}, effect={53})', 'send');
+            setTimeout(() => {
+                addKnowledge('A', { type: 'skill', text: 'Skill: toggle_door (success_rate=85%)', new: true });
+                updateGauges();
+                log('Agent A: registered skill toggle_door', 'recv');
+                highlightAgent('agentA', 'receiving');
+            }, 800);
+        }
+    },
+    {
+        desc: 'Agent A sends warning about danger zone',
+        action: () => {
+            highlightAgent('agentA', 'sending');
+            animateMessage('warning', 'forward');
+            log('A → B: ConceptMessage(type=warning, sks_ctx={52,57}, urgency=1.0)', 'send');
+            setTimeout(() => {
+                addKnowledge('B', { type: 'warning', text: 'WARNING: danger zone {door_locked, gate_locked}', new: true });
+                updateGauges();
+                log('Agent B: registered danger context {52, 57}', 'warn');
+                highlightAgent('agentB', 'receiving');
+            }, 800);
+        }
+    },
+    {
+        desc: 'Knowledge converged — both agents can solve DoorKey',
+        action: () => {
+            state.overlap = 100;
+            state.coopScore = 100;
+            updateGauges();
+            log('Knowledge overlap: 100% — both agents have complete world model', 'info');
+            log('Cooperative task: SOLVED — pickup_key → toggle_door → navigate_to_goal', 'info');
+            highlightAgent('agentA', 'active');
+            highlightAgent('agentB', 'active');
+        }
+    },
+];
+
+// ── Rendering ──
+function renderKnowledge() {
+    const listA = document.getElementById('knowledgeA');
+    const listB = document.getElementById('knowledgeB');
+    listA.innerHTML = '';
+    listB.innerHTML = '';
+    state.agentA.knowledge.forEach(k => {
+        listA.innerHTML += `<li class="${k.type}">${k.text}</li>`;
+    });
+    state.agentB.knowledge.forEach(k => {
+        listB.innerHTML += `<li class="${k.type}">${k.text}</li>`;
+    });
+}
+
+function addKnowledge(agent, item) {
+    const list = document.getElementById('knowledge' + agent);
+    const li = document.createElement('li');
+    li.className = `${item.type} new`;
+    li.textContent = item.text;
+    list.appendChild(li);
+    if (agent === 'A') state.agentA.knowledge.push(item);
+    else state.agentB.knowledge.push(item);
+}
+
+function updateGauges() {
+    const totalKA = state.agentA.knowledge.length;
+    const totalKB = state.agentB.knowledge.length;
+    const maxK = Math.max(totalKA, totalKB, 1);
+    const overlap = Math.min(totalKA, totalKB) / maxK * 100;
+    state.overlap = Math.round(overlap);
+
+    document.getElementById('overlapGauge').style.width = state.overlap + '%';
+    document.getElementById('overlapValue').textContent = state.overlap + '%';
+    document.getElementById('transferGauge').style.width = Math.min(state.transfers / 5 * 100, 100) + '%';
+    document.getElementById('transferValue').textContent = state.transfers;
+    document.getElementById('coopGauge').style.width = state.coopScore + '%';
+    document.getElementById('coopValue').textContent = state.coopScore + '%';
+}
+
+function highlightAgent(id, cls) {
+    const el = document.getElementById(id);
+    el.className = 'agent-box ' + cls;
+    setTimeout(() => { el.className = 'agent-box'; }, 2000);
+}
+
+function animateMessage(type, direction) {
+    const lane = document.getElementById('msgLane');
+    const particle = document.createElement('div');
+    particle.className = `message-particle ${type}`;
+    particle.textContent = type === 'causal' ? 'C' : type === 'skill' ? 'S' : type === 'warning' ? '!' : '?';
+    particle.style.top = direction === 'forward' ? '20%' : '60%';
+    particle.style.animation = (direction === 'forward' ? 'fly' : 'flyBack') + ' 1.2s ease-in-out forwards';
+    lane.appendChild(particle);
+    setTimeout(() => particle.remove(), 1300);
+}
+
+function log(text, type) {
+    const logEl = document.getElementById('demoLog');
+    const line = document.createElement('div');
+    line.className = `log-line log-${type}`;
+    const t = new Date();
+    line.textContent = `[${t.getMinutes().toString().padStart(2,'0')}:${t.getSeconds().toString().padStart(2,'0')}] ${text}`;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ── Controls ──
+function stepDemo() {
+    if (state.step >= steps.length) {
+        log('Simulation complete.', 'info');
+        return;
+    }
+    const s = steps[state.step];
+    log(`Step ${state.step + 1}: ${s.desc}`, 'info');
+    s.action();
+    state.step++;
+    document.getElementById('btnStep').textContent = state.step < steps.length ? `Step (${state.step + 1}/${steps.length})` : 'Done';
+}
+
+async function runDemo() {
+    if (state.running) return;
+    state.running = true;
+    document.getElementById('btnRun').disabled = true;
+    document.getElementById('btnStep').disabled = true;
+
+    while (state.step < steps.length) {
+        stepDemo();
+        await new Promise(r => setTimeout(r, 1800));
+    }
+
+    state.running = false;
+    document.getElementById('btnRun').disabled = false;
+    document.getElementById('btnStep').disabled = false;
+}
+
+function resetDemo() {
+    state.step = 0;
+    state.running = false;
+    state.transfers = 0;
+    state.overlap = 0;
+    state.coopScore = 0;
+    state.agentA.knowledge = [
+        { type: 'causal', text: 'pickup(key_present) → key_held' },
+        { type: 'causal', text: 'navigate(open_space) → goal_present' },
+    ];
+    state.agentB.knowledge = [
+        { type: 'causal', text: 'toggle(key_held+door_locked) → door_open' },
+    ];
+    renderKnowledge();
+    updateGauges();
+    document.getElementById('demoLog').innerHTML = '<div class="log-line log-info">Reset. Press "Run Simulation" to start.</div>';
+    document.getElementById('btnRun').disabled = false;
+    document.getElementById('btnStep').disabled = false;
+    document.getElementById('btnStep').textContent = 'Step';
+    document.getElementById('agentA').className = 'agent-box';
+    document.getElementById('agentB').className = 'agent-box';
+}
+
+// Init
+renderKnowledge();
+updateGauges();
+</script>
+</body>
+</html>
