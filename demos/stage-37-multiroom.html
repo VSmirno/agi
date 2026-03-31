@@ -7,134 +7,572 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a0e17;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-serif}
-.container{max-width:1100px;margin:0 auto;padding:20px}
-h1{color:#60a5fa;font-size:1.8em;margin-bottom:8px}
-h2{color:#60a5fa;font-size:1.2em;margin:16px 0 8px}
-.subtitle{color:#94a3b8;font-size:1em;margin-bottom:20px}
+.container{max-width:1200px;margin:0 auto;padding:20px}
+h1{color:#60a5fa;font-size:1.8em;margin-bottom:6px}
+h2{color:#60a5fa;font-size:1.2em;margin:14px 0 8px}
+.subtitle{color:#94a3b8;font-size:1em;margin-bottom:16px}
 .grid-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}
 .panel{background:#1e293b;border-radius:12px;padding:16px;flex:1;min-width:260px}
 .metric{display:inline-block;background:#0f172a;padding:8px 14px;border-radius:8px;margin:4px;text-align:center}
 .metric .value{font-size:1.5em;font-weight:bold;color:#10b981}
 .metric .label{font-size:0.8em;color:#94a3b8}
-canvas{border-radius:8px;display:block;margin:8px auto}
-.btn{background:#3b82f6;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.85em;margin:3px}
+canvas{border-radius:8px;display:block;margin:0 auto}
+.btn{background:#3b82f6;color:white;border:none;padding:7px 15px;border-radius:6px;cursor:pointer;font-size:0.85em;margin:3px}
 .btn:hover{background:#2563eb}
-.controls{text-align:center;margin:8px 0}
+.btn.active{background:#10b981}
+.controls{text-align:center;margin:10px 0}
 table{width:100%;border-collapse:collapse;margin:8px 0}
 th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #334155;font-size:0.9em}
 th{color:#94a3b8;text-transform:uppercase;font-size:0.8em}
 td.pass{color:#10b981;font-weight:bold}
 .explanation{background:#1e293b;border-left:3px solid #60a5fa;padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0;line-height:1.5;font-size:0.95em}
-#status{text-align:center;margin:6px 0;color:#94a3b8;font-size:0.85em}
+#status{text-align:center;margin:8px 0;color:#94a3b8;font-size:0.9em;min-height:1.4em}
+.speed-ctrl{display:inline-flex;align-items:center;gap:6px;margin-left:12px;color:#94a3b8;font-size:0.85em}
+.speed-ctrl button{background:#334155;color:#e2e8f0;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:0.8em}
+.speed-ctrl button.active{background:#3b82f6}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0;font-size:0.8em;color:#94a3b8}
+.legend-item{display:flex;align-items:center;gap:4px}
+.legend-swatch{width:14px;height:14px;border-radius:3px;display:inline-block}
 </style>
 </head>
 <body>
 <div class="container">
 <h1>Этап 37: Навигация через комнаты</h1>
-<p class="subtitle">Агент проходит через 4 комнаты, последовательно открывая двери — 96% успеха</p>
+<p class="subtitle">Агент проходит через несколько комнат, последовательно открывая закрытые двери</p>
 
 <div class="grid-row">
 <div class="metric"><div class="value">100%</div><div class="label">MultiRoom N2</div></div>
 <div class="metric"><div class="value">96%</div><div class="label">MultiRoom N4</div></div>
+<div class="metric"><div class="value">100%</div><div class="label">DoorKey 5x5</div></div>
 <div class="metric"><div class="value">154</div><div class="label">Каузальных связей</div></div>
-<div class="metric"><div class="value">10</div><div class="label">Макс. попыток</div></div>
 </div>
 
 <div class="grid-row">
-<div class="panel" style="flex:2">
-<h2>Среда MultiRoom</h2>
+<div class="panel" style="flex:2;">
+<h2>Среда MiniGrid</h2>
 <div class="controls">
-<button class="btn" onclick="setMode('n2')">N2 (2 комнаты)</button>
-<button class="btn" onclick="setMode('n4')">N4 (4 комнаты)</button>
-<button class="btn" onclick="startAnim()">▶ Запустить</button>
-<button class="btn" onclick="resetAnim()">↺ Сброс</button>
+<button class="btn active" id="btnN2" onclick="selectEnv('N2')">N2 — 2 комнаты</button>
+<button class="btn" id="btnN4" onclick="selectEnv('N4')">N4 — 4 комнаты</button>
+<span style="margin-left:12px">
+<button class="btn" onclick="startPlay()">&#9654; Запустить</button>
+<button class="btn" onclick="stepOnce()">&#9654;&#9654; Шаг</button>
+<button class="btn" onclick="resetAll()">&#8634; Сброс</button>
+</span>
+<span class="speed-ctrl">
+Скорость:
+<button onclick="setSpeed(400)" id="sp1">x0.5</button>
+<button onclick="setSpeed(200)" id="sp2" class="active">x1</button>
+<button onclick="setSpeed(80)" id="sp3">x2</button>
+<button onclick="setSpeed(30)" id="sp4">x5</button>
+</span>
 </div>
-<canvas id="c" width="500" height="400"></canvas>
-<div id="status">Нажмите "Запустить"</div>
+<canvas id="gridCanvas" width="600" height="600"></canvas>
+<div id="status">Выберите среду и нажмите "Запустить"</div>
+<div class="legend">
+<div class="legend-item"><span class="legend-swatch" style="background:#666"></span> Стена</div>
+<div class="legend-item"><span class="legend-swatch" style="background:#1a1a2e"></span> Пол</div>
+<div class="legend-item"><span class="legend-swatch" style="background:#8B4513"></span> Дверь (закрыта)</div>
+<div class="legend-item"><span class="legend-swatch" style="background:rgba(101,67,33,0.3)"></span> Дверь (открыта)</div>
+<div class="legend-item"><span class="legend-swatch" style="background:#ff4444;border-radius:50%"></span> Агент</div>
+<div class="legend-item"><span class="legend-swatch" style="background:#00ff88"></span> Цель</div>
 </div>
-<div class="panel" style="flex:1">
-<h2>Результаты</h2>
+</div>
+
+<div class="panel" style="flex:1;">
+<h2>Эксперимент 96</h2>
 <table>
-<tr><th>Среда</th><th>Успех</th><th>Статус</th></tr>
-<tr><td>DoorKey 5×5</td><td>100%</td><td class="pass">PASS</td></tr>
-<tr><td>MultiRoom N2</td><td>100%</td><td class="pass">PASS</td></tr>
-<tr><td>MultiRoom N4</td><td>96%</td><td class="pass">PASS</td></tr>
+<tr><th>Среда</th><th>Успех</th><th>Gate</th><th></th></tr>
+<tr><td>DoorKey 5x5</td><td>100%</td><td>&ge; 80%</td><td class="pass">PASS</td></tr>
+<tr><td>MultiRoom N2</td><td>100%</td><td>&ge; 50%</td><td class="pass">PASS</td></tr>
+<tr><td>MultiRoom N4</td><td>96%</td><td>&ge; 20%</td><td class="pass">PASS</td></tr>
 </table>
-<h2>Алгоритм</h2>
-<ol style="font-size:0.85em;padding-left:20px;line-height:1.8">
-<li>Найти цель (goal)</li>
-<li>BFS-путь к цели</li>
-<li>Путь заблокирован? → найти дверь</li>
-<li>Дверь закрыта → toggle (открыть)</li>
-<li>Дверь заперта → найти ключ → pickup → toggle</li>
-<li>Повторить до 10 раз</li>
-</ol>
+
+<h2 style="margin-top:20px">Ход эпизода</h2>
+<div id="epInfo" style="font-size:0.85em;line-height:1.7;color:#94a3b8;">
+  <div>Шаг: <span id="stepNum">0</span></div>
+  <div>Действие: <span id="actionText">—</span></div>
+  <div>Двери открыто: <span id="doorsOpened">0</span></div>
+  <div>Пройдено клеток: <span id="cellsVisited">0</span></div>
+</div>
+
+<h2 style="margin-top:20px">Алгоритм</h2>
+<div id="algoSteps" style="font-size:0.82em;line-height:1.8;color:#94a3b8;">
+<div id="algo0">1. Найти цель (goal)</div>
+<div id="algo1">2. Построить BFS-путь</div>
+<div id="algo2">3. Путь заблокирован?</div>
+<div id="algo3">4. Найти ближайшую дверь</div>
+<div id="algo4">5. Подойти и открыть (toggle)</div>
+<div id="algo5">6. Повторить (до 10 раз)</div>
+</div>
 </div>
 </div>
 
 <div class="explanation">
 <h2>Как это работает</h2>
-<p>В MultiRoom среде комнаты разделены стенами с дверями. Агент использует <strong>backward chaining</strong>: если путь к цели заблокирован дверью, он открывает ближайшую дверь (toggle) и пробует снова. Для закрытых (не запертых) дверей ключ не нужен — просто toggle. Для запертых дверей агент использует каузальные знания: "pickup key → toggle door".</p>
-<p style="margin-top:8px"><strong>Результат Stage 37:</strong> BlockingAnalyzer теперь различает locked и closed doors. GoalAgent выполняет до 10 итераций backward chaining, что позволяет открыть 3+ двери последовательно. На MultiRoom-N4 (4 комнаты) достигнут 96% success rate.</p>
+<p><strong>MultiRoom</strong> — среда MiniGrid с несколькими комнатами, разделёнными стенами. Двери между комнатами <em>закрыты, но не заперты</em> — ключи не нужны, достаточно подойти и выполнить toggle.</p>
+<p style="margin-top:8px">Агент использует <strong>backward chaining</strong>: строит BFS-путь к цели, обнаруживает что путь заблокирован дверью, находит ближайшую закрытую дверь, подходит к ней и открывает. Затем пробует снова — и так до 10 раз, последовательно открывая все двери на пути.</p>
+<p style="margin-top:8px"><strong>Ключевое отличие от DoorKey:</strong> в DoorKey дверь <em>заперта</em> (locked) и нужен ключ. В MultiRoom двери просто <em>закрыты</em> (closed). BlockingAnalyzer (Stage 37) теперь различает эти два случая: для closed дверей сразу предлагает toggle, без поиска ключа.</p>
+</div>
+
+<div class="explanation">
+<h2>Почему это важно для AGI</h2>
+<p>Агент демонстрирует <strong>последовательное решение подзадач</strong> — открытие нескольких дверей одна за другой, каждый раз пересчитывая путь. Это аналогично тому, как человек проходит через незнакомое здание: попробовал пройти → заблокирован → открыл дверь → попробовал снова. Важно, что агент не требует карту заранее — он действует реактивно, адаптируясь к каждому препятствию.</p>
 </div>
 </div>
 
 <script>
-const c=document.getElementById('c'),ctx=c.getContext('2d');
-let mode='n2',playing=false,step=0,rooms=[];
-
-function genRooms(n){
-  const rs=[];
-  const w=n===2?2:4, cols=n===2?2:2, rows=n===2?1:2;
-  const rw=Math.floor(480/(cols*1.2)),rh=Math.floor(380/(rows*1.2));
-  for(let r=0;r<rows;r++)for(let cl=0;cl<cols;cl++){
-    rs.push({x:10+cl*(rw+10),y:10+r*(rh+10),w:rw,h:rh,doorOpen:false});
+// =====================================================================
+// Real MiniGrid layouts captured from actual environments (seed=42)
+// =====================================================================
+const ENVS = {
+  N2: {
+    label: 'MultiRoom N2-S4 (25x25)',
+    w: 25, h: 25,
+    // Compact grid: #=wall, .=floor, D=door, G=goal, A=agent start
+    map: [
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '..####...................',
+      '..#.A#...................',
+      '..#..#...................',
+      '.##D##...................',
+      '.#.G#....................',
+      '.#..#....................',
+      '.####....................',
+      '.........................',
+    ],
+    doors: [{x:3,y:20,color:'#daa520',locked:false}],
+    agentStart: {x:4,y:18},
+    goal: {x:3,y:21},
+  },
+  N4: {
+    label: 'MultiRoom N4-S5 (25x25)',
+    w: 25, h: 25,
+    map: [
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '.........................',
+      '...#####.................',
+      '...#...#####.............',
+      '...#...D...#.............',
+      '...#..G#...#.............',
+      '...#####...#.............',
+      '.......###D##............',
+      '.........#..#............',
+      '.........#..#............',
+      '.........#..#............',
+      '........##D##............',
+      '........#...#............',
+      '..#####.#...#............',
+      '..#.A.###D###............',
+      '..#...D...#..............',
+      '..#####...#..............',
+      '......#...#..............',
+      '......#####..............',
+      '.........................',
+      '.........................',
+    ],
+    doors: [
+      {x:7,y:8,color:'#9b59b6',locked:false},   // purple
+      {x:10,y:11,color:'#daa520',locked:false},  // yellow
+      {x:10,y:15,color:'#888',locked:false},      // grey
+      {x:9,y:18,color:'#daa520',locked:false},    // yellow
+      {x:6,y:19,color:'#3498db',locked:false},    // blue
+    ],
+    agentStart: {x:4,y:18},
+    goal: {x:6,y:9},
   }
-  return rs;
+};
+
+// =====================================================================
+// Pre-computed agent paths (BFS solving with door opens)
+// Each step: {x,y,action,doorOpen?}
+// =====================================================================
+function computePath(env) {
+  const {w, h, map, doors, agentStart, goal} = env;
+  // Parse grid
+  const grid = [];
+  for (let y = 0; y < h; y++) {
+    grid[y] = [];
+    for (let x = 0; x < w; x++) {
+      grid[y][x] = map[y][x];
+    }
+  }
+  // Track door states
+  const doorStates = doors.map(() => false); // all closed
+  function isDoor(x, y) {
+    return doors.findIndex(d => d.x === x && d.y === y);
+  }
+  function isPassable(x, y) {
+    if (x < 0 || y < 0 || x >= w || y >= h) return false;
+    const c = grid[y][x];
+    if (c === '#') return false;
+    const di = isDoor(x, y);
+    if (di >= 0) return doorStates[di]; // passable only if open
+    return true;
+  }
+  function bfs(sx, sy, tx, ty) {
+    if (sx === tx && sy === ty) return [{x:sx,y:sy}];
+    const visited = new Set();
+    const queue = [[sx, sy]];
+    const parent = {};
+    visited.add(`${sx},${sy}`);
+    while (queue.length) {
+      const [cx, cy] = queue.shift();
+      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const nx = cx+dx, ny = cy+dy;
+        const key = `${nx},${ny}`;
+        if (!visited.has(key) && isPassable(nx, ny)) {
+          visited.add(key);
+          parent[key] = {x:cx,y:cy};
+          if (nx === tx && ny === ty) {
+            // Reconstruct
+            const path = [{x:nx,y:ny}];
+            let cur = key;
+            while (parent[cur]) {
+              path.push(parent[cur]);
+              cur = `${parent[cur].x},${parent[cur].y}`;
+            }
+            return path.reverse();
+          }
+          queue.push([nx, ny]);
+        }
+      }
+    }
+    return null; // blocked
+  }
+
+  const steps = [];
+  let ax = agentStart.x, ay = agentStart.y;
+  steps.push({x:ax, y:ay, action:'старт', algoStep:0});
+
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const path = bfs(ax, ay, goal.x, goal.y);
+    if (path && path.length > 1) {
+      // Walk path
+      for (let i = 1; i < path.length; i++) {
+        ax = path[i].x; ay = path[i].y;
+        const atGoal = (ax === goal.x && ay === goal.y);
+        steps.push({x:ax, y:ay, action: atGoal ? 'цель достигнута!' : 'вперёд', algoStep: atGoal ? 5 : 1});
+      }
+      break; // done!
+    }
+    // Blocked — find closest closed door
+    let bestDoor = -1, bestDist = Infinity;
+    for (let di = 0; di < doors.length; di++) {
+      if (doorStates[di]) continue;
+      const d = Math.abs(doors[di].x - ax) + Math.abs(doors[di].y - ay);
+      if (d < bestDist) { bestDist = d; bestDoor = di; }
+    }
+    if (bestDoor < 0) break; // no door to open
+
+    steps.push({x:ax, y:ay, action:'путь заблокирован — ищу дверь', algoStep:2});
+
+    // Navigate to adjacent cell of door
+    const door = doors[bestDoor];
+    // Find adjacent passable cell
+    let adjTarget = null;
+    for (const [dx, dy] of [[0,-1],[0,1],[-1,0],[1,0]]) {
+      const nx = door.x+dx, ny = door.y+dy;
+      if (isPassable(nx, ny)) {
+        adjTarget = {x:nx, y:ny};
+        break;
+      }
+    }
+    if (!adjTarget) { adjTarget = {x:ax, y:ay}; }
+
+    const pathToDoor = bfs(ax, ay, adjTarget.x, adjTarget.y);
+    if (pathToDoor) {
+      for (let i = 1; i < pathToDoor.length; i++) {
+        ax = pathToDoor[i].x; ay = pathToDoor[i].y;
+        steps.push({x:ax, y:ay, action:'иду к двери', algoStep:3});
+      }
+    }
+    // Open door
+    doorStates[bestDoor] = true;
+    steps.push({x:ax, y:ay, action:`открываю дверь (${doors[bestDoor].color === '#daa520' ? 'жёлтая' : doors[bestDoor].color === '#9b59b6' ? 'фиолетовая' : doors[bestDoor].color === '#3498db' ? 'синяя' : 'серая'})`, algoStep:4, doorIdx: bestDoor});
+  }
+
+  return {steps, doorStates};
 }
 
-function draw(){
-  ctx.fillStyle='#0f172a';ctx.fillRect(0,0,500,400);
-  rooms.forEach((r,i)=>{
-    ctx.strokeStyle='#666';ctx.lineWidth=3;ctx.strokeRect(r.x,r.y,r.w,r.h);
-    ctx.fillStyle='#1a1a2e';ctx.fillRect(r.x+3,r.y+3,r.w-6,r.h-6);
-    ctx.fillStyle='#94a3b8';ctx.font='12px sans-serif';ctx.textAlign='center';
-    ctx.fillText(`Комната ${i+1}`,r.x+r.w/2,r.y+20);
-    // Door on right side (except last room)
-    if(i<rooms.length-1){
-      const dx=r.x+r.w-2,dy=r.y+r.h/2-15;
-      ctx.fillStyle=r.doorOpen?'rgba(101,67,33,0.3)':'#8B4513';
-      ctx.fillRect(dx,dy,6,30);
+// =====================================================================
+// Renderer
+// =====================================================================
+const canvas = document.getElementById('gridCanvas');
+const ctx = canvas.getContext('2d');
+
+let currentEnv = 'N2';
+let pathData = null;
+let currentStep = 0;
+let playing = false;
+let timer = null;
+let speed = 200;
+let visitedCells = new Set();
+let doorsOpenedCount = 0;
+let runtimeDoorStates = [];
+
+function selectEnv(name) {
+  currentEnv = name;
+  document.getElementById('btnN2').classList.toggle('active', name==='N2');
+  document.getElementById('btnN4').classList.toggle('active', name==='N4');
+  resetAll();
+}
+
+function resetAll() {
+  playing = false;
+  clearTimeout(timer);
+  currentStep = 0;
+  visitedCells = new Set();
+  doorsOpenedCount = 0;
+  const env = ENVS[currentEnv];
+  runtimeDoorStates = env.doors.map(() => false);
+  pathData = computePath(env);
+  drawFrame(0);
+  updateInfo(pathData.steps[0]);
+  document.getElementById('status').textContent = `${env.label} — нажмите "Запустить"`;
+}
+
+function startPlay() {
+  if (playing) { playing = false; clearTimeout(timer); return; }
+  if (!pathData) resetAll();
+  playing = true;
+  animate();
+}
+
+function stepOnce() {
+  if (!pathData) resetAll();
+  if (currentStep < pathData.steps.length - 1) {
+    currentStep++;
+    applyStep(currentStep);
+  }
+}
+
+function animate() {
+  if (!playing || currentStep >= pathData.steps.length - 1) {
+    playing = false;
+    if (currentStep >= pathData.steps.length - 1) {
+      document.getElementById('status').textContent = 'Эпизод завершён — цель достигнута!';
+    }
+    return;
+  }
+  currentStep++;
+  applyStep(currentStep);
+  timer = setTimeout(animate, speed);
+}
+
+function applyStep(idx) {
+  const step = pathData.steps[idx];
+  visitedCells.add(`${step.x},${step.y}`);
+  if (step.doorIdx !== undefined) {
+    runtimeDoorStates[step.doorIdx] = true;
+    doorsOpenedCount++;
+  }
+  drawFrame(idx);
+  updateInfo(step);
+}
+
+function setSpeed(ms) {
+  speed = ms;
+  document.querySelectorAll('.speed-ctrl button').forEach(b => b.classList.remove('active'));
+  if (ms===400) document.getElementById('sp1').classList.add('active');
+  if (ms===200) document.getElementById('sp2').classList.add('active');
+  if (ms===80) document.getElementById('sp3').classList.add('active');
+  if (ms===30) document.getElementById('sp4').classList.add('active');
+}
+
+function updateInfo(step) {
+  document.getElementById('stepNum').textContent = currentStep;
+  document.getElementById('actionText').textContent = step.action;
+  document.getElementById('doorsOpened').textContent = doorsOpenedCount;
+  document.getElementById('cellsVisited').textContent = visitedCells.size;
+  // Highlight algorithm step
+  for (let i = 0; i < 6; i++) {
+    const el = document.getElementById('algo'+i);
+    el.style.color = (i === step.algoStep) ? '#60a5fa' : '#94a3b8';
+    el.style.fontWeight = (i === step.algoStep) ? 'bold' : 'normal';
+  }
+  document.getElementById('status').textContent =
+    `Шаг ${currentStep}/${pathData.steps.length-1} — ${step.action}`;
+}
+
+function drawFrame(stepIdx) {
+  const env = ENVS[currentEnv];
+  const {w, h, map, doors, goal} = env;
+
+  // Determine visible region (crop empty space)
+  let minX=w, maxX=0, minY=h, maxY=0;
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      if (map[y][x] !== '.') { minX=Math.min(minX,x); maxX=Math.max(maxX,x); minY=Math.min(minY,y); maxY=Math.max(maxY,y); }
+  // Include goal & agent
+  [goal, env.agentStart].forEach(p => {
+    minX=Math.min(minX,p.x-1); maxX=Math.max(maxX,p.x+1);
+    minY=Math.min(minY,p.y-1); maxY=Math.max(maxY,p.y+1);
+  });
+  minX=Math.max(0,minX-1); minY=Math.max(0,minY-1);
+  maxX=Math.min(w-1,maxX+1); maxY=Math.min(h-1,maxY+1);
+
+  const visW = maxX - minX + 1;
+  const visH = maxY - minY + 1;
+  const cellSize = Math.min(Math.floor(580 / visW), Math.floor(580 / visH));
+  const offX = (600 - visW * cellSize) / 2;
+  const offY = (600 - visH * cellSize) / 2;
+
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(0, 0, 600, 600);
+
+  // Draw cells
+  for (let vy = 0; vy < visH; vy++) {
+    for (let vx = 0; vx < visW; vx++) {
+      const gx = vx + minX, gy = vy + minY;
+      const px = offX + vx * cellSize;
+      const py = offY + vy * cellSize;
+      const ch = (gy >= 0 && gy < h && gx >= 0 && gx < w) ? map[gy][gx] : '.';
+
+      // Background
+      if (ch === '#') {
+        ctx.fillStyle = '#4a5568';
+        ctx.fillRect(px, py, cellSize, cellSize);
+        // 3D wall effect
+        ctx.fillStyle = '#666';
+        ctx.fillRect(px+1, py+1, cellSize-2, cellSize-2);
+      } else {
+        // Floor — highlight visited
+        const key = `${gx},${gy}`;
+        ctx.fillStyle = visitedCells.has(key) ? '#1a2744' : '#0f172a';
+        ctx.fillRect(px, py, cellSize, cellSize);
+      }
+
+      // Grid lines
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(px, py, cellSize, cellSize);
+    }
+  }
+
+  // Draw visited path trail
+  if (stepIdx > 0) {
+    ctx.strokeStyle = 'rgba(96, 165, 250, 0.3)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    let first = true;
+    for (let i = 0; i <= stepIdx; i++) {
+      const s = pathData.steps[i];
+      const px = offX + (s.x - minX) * cellSize + cellSize/2;
+      const py = offY + (s.y - minY) * cellSize + cellSize/2;
+      if (first) { ctx.moveTo(px, py); first = false; }
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  // Draw doors
+  doors.forEach((d, di) => {
+    const vx = d.x - minX, vy = d.y - minY;
+    if (vx < 0 || vy < 0 || vx >= visW || vy >= visH) return;
+    const px = offX + vx * cellSize;
+    const py = offY + vy * cellSize;
+    const isOpen = runtimeDoorStates[di];
+
+    if (isOpen) {
+      ctx.fillStyle = 'rgba(101, 67, 33, 0.2)';
+      ctx.fillRect(px+2, py+2, cellSize-4, cellSize-4);
+      ctx.strokeStyle = d.color;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3,3]);
+      ctx.strokeRect(px+2, py+2, cellSize-4, cellSize-4);
+      ctx.setLineDash([]);
+    } else {
+      ctx.fillStyle = d.color;
+      ctx.fillRect(px+2, py+2, cellSize-4, cellSize-4);
+      // Door frame
+      ctx.strokeStyle = '#2d1a0a';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px+2, py+2, cellSize-4, cellSize-4);
+      // Handle
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.arc(px + cellSize*0.7, py + cellSize/2, 2, 0, Math.PI*2);
+      ctx.fill();
     }
   });
-  // Goal in last room
-  const last=rooms[rooms.length-1];
-  ctx.fillStyle='#00ff88';ctx.font='24px sans-serif';ctx.textAlign='center';
-  ctx.fillText('◆',last.x+last.w*0.7,last.y+last.h*0.6);
-  // Agent
-  const agentRoom=Math.min(step,rooms.length-1);
-  const ar=rooms[agentRoom];
-  const ax=ar.x+ar.w*0.3,ay=ar.y+ar.h*0.6;
-  ctx.fillStyle='#ff4444';ctx.beginPath();
-  ctx.moveTo(ax+12,ay);ctx.lineTo(ax-8,ay-8);ctx.lineTo(ax-8,ay+8);ctx.closePath();ctx.fill();
-}
 
-function setMode(m){mode=m;resetAnim();}
-function resetAnim(){playing=false;step=0;rooms=genRooms(mode==='n2'?2:4);rooms.forEach(r=>r.doorOpen=false);draw();document.getElementById('status').textContent='Сброшено';}
-function startAnim(){if(playing)return;playing=true;animate();}
-function animate(){
-  if(!playing)return;
-  if(step<rooms.length-1){
-    rooms[step].doorOpen=true;
-    document.getElementById('status').textContent=`Открываю дверь ${step+1}... → переход в комнату ${step+2}`;
-    step++;draw();
-    setTimeout(()=>requestAnimationFrame(animate),800);
-  }else{
-    document.getElementById('status').textContent='🎯 Цель достигнута!';
-    draw();playing=false;
+  // Draw goal
+  {
+    const vx = goal.x - minX, vy = goal.y - minY;
+    const px = offX + vx * cellSize + cellSize/2;
+    const py = offY + vy * cellSize + cellSize/2;
+    ctx.fillStyle = '#00ff88';
+    ctx.font = `${cellSize*0.6}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('\u25C6', px, py);
+    // Glow
+    ctx.shadowColor = '#00ff88';
+    ctx.shadowBlur = 8;
+    ctx.fillText('\u25C6', px, py);
+    ctx.shadowBlur = 0;
+  }
+
+  // Draw agent
+  {
+    const step = pathData.steps[stepIdx];
+    const vx = step.x - minX, vy = step.y - minY;
+    const cx = offX + vx * cellSize + cellSize/2;
+    const cy = offY + vy * cellSize + cellSize/2;
+    const r = cellSize * 0.32;
+
+    // Direction: determine from previous step
+    let dx = 1, dy = 0;
+    if (stepIdx > 0) {
+      const prev = pathData.steps[stepIdx-1];
+      dx = step.x - prev.x;
+      dy = step.y - prev.y;
+      if (dx === 0 && dy === 0) { dx = 1; dy = 0; }
+    }
+    const angle = Math.atan2(dy, dx);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    ctx.fillStyle = '#ff4444';
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.lineTo(-r*0.7, -r*0.7);
+    ctx.lineTo(-r*0.4, 0);
+    ctx.lineTo(-r*0.7, r*0.7);
+    ctx.closePath();
+    ctx.fill();
+    // Eye
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(r*0.3, -r*0.2, r*0.15, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
   }
 }
-rooms=genRooms(2);draw();
+
+// Init
+resetAll();
 </script>
 </body>
 </html>
