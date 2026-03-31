@@ -1,12 +1,12 @@
 """MultiRoomDoorKey: 3-room MiniGrid environment for transfer learning (Stage 26).
 
 Layout: 3 rooms separated by 2 vertical walls, each with a locked door.
-Room 1: agent start + yellow key
-Room 2: blue key + box distractors
+Room 1: agent start + yellow key (near agent path to door 1)
+Room 2: yellow key (near door 2) + box distractors
 Room 3: goal
 
-Agent must use yellow key to open door 1, enter room 2,
-pick up blue key, open door 2, reach goal in room 3.
+Both doors are yellow — same causal mechanics as DoorKey-5x5.
+Keys placed so agent naturally encounters each before its door.
 """
 
 from __future__ import annotations
@@ -60,22 +60,23 @@ class MultiRoomDoorKey(MiniGridEnv):
 
         # Wall 2 (between room 2 and room 3)
         self.grid.vert_wall(self._wall2_x, 1, height - 2)
-        door2 = Door("blue", is_locked=True)
+        door2 = Door("yellow", is_locked=True)
         door2_y = height // 2
         self.grid.set(self._wall2_x, door2_y, door2)
 
         # Room 1: agent + yellow key
+        # Key at row 1 so it's found first in grid scan order (before room 2 key).
         self.agent_pos = np.array([1, 1])
         self.agent_dir = 0  # facing right
 
-        key1_x = self._wall1_x - 2 if self._wall1_x > 2 else 1
-        key1_y = height - 2
+        key1_x = self._wall1_x - 2 if self._wall1_x > 2 else 2
+        key1_y = 2  # row 2, found first in scan order, agent at (1,1) can reach
         self.put_obj(Key("yellow"), key1_x, key1_y)
 
-        # Room 2: blue key + box distractors
+        # Room 2: yellow key (row near bottom, found after key 1 in scan order)
         room2_center_x = (self._wall1_x + self._wall2_x) // 2
-        key2_y = 2
-        self.put_obj(Key("blue"), room2_center_x, key2_y)
+        key2_y = height - 3  # bottom of room 2, NOT on door-row path
+        self.put_obj(Key("yellow"), room2_center_x, key2_y)
 
         # Distractor boxes in room 2
         box_y = height - 3
