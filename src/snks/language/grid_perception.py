@@ -21,6 +21,13 @@ INTERACTIVE_OBJECTS = frozenset({"key", "ball", "box", "door", "goal"})
 SKS_AGENT = 1
 SKS_AGENT_CARRYING = 2
 
+# State-dependent SKS IDs (stable range 50-99, preserved by _split_context).
+SKS_KEY_PRESENT = 50     # key visible on grid floor
+SKS_KEY_HELD = 51        # agent carrying key
+SKS_DOOR_LOCKED = 52     # door exists and is_locked
+SKS_DOOR_OPEN = 53       # door exists and is_open
+SKS_GOAL_PRESENT = 54    # goal cell visible
+
 
 @dataclass
 class GridObject:
@@ -89,21 +96,24 @@ class GridPerception:
 
         return sks_id
 
-    def perceive(self, grid, agent_pos, agent_dir) -> set[int]:
+    def perceive(self, grid, agent_pos, agent_dir, carrying=None) -> set[int]:
         """Extract active SKS IDs from current grid state.
 
         Scans the full grid (scaffolding — bypasses partial observability).
+        Also emits state-dependent predicates (key_held, door_locked, etc.).
 
         Args:
             grid: MiniGrid Grid object.
             agent_pos: (x, y) agent position.
             agent_dir: agent direction (0=right, 1=down, 2=left, 3=up).
+            carrying: env.unwrapped.carrying (WorldObject or None).
 
         Returns:
             Set of active SKS IDs.
         """
         active_sks: set[int] = {SKS_AGENT}
         self._objects = []
+        has_key_on_floor = False
 
         for j in range(grid.height):
             for i in range(grid.width):
@@ -121,6 +131,22 @@ class GridPerception:
                     pos=(i, j),
                     sks_id=sks_id,
                 ))
+
+                # State predicates.
+                if cell.type == "key":
+                    has_key_on_floor = True
+                    active_sks.add(SKS_KEY_PRESENT)
+                elif cell.type == "door":
+                    if getattr(cell, "is_locked", False):
+                        active_sks.add(SKS_DOOR_LOCKED)
+                    if getattr(cell, "is_open", False):
+                        active_sks.add(SKS_DOOR_OPEN)
+                elif cell.type == "goal":
+                    active_sks.add(SKS_GOAL_PRESENT)
+
+        # Agent carrying state.
+        if carrying is not None and getattr(carrying, "type", None) == "key":
+            active_sks.add(SKS_KEY_HELD)
 
         return active_sks
 
