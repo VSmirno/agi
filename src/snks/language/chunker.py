@@ -1,9 +1,11 @@
-"""Rule-based sentence chunker for compositional understanding (Stage 20).
+"""Rule-based sentence chunker for compositional understanding (Stages 20, 24a).
 
-Splits sentences into (text, role) chunks. Three grammar patterns:
+Splits sentences into (text, role) chunks. Five grammar patterns:
 - SVO(L): "cat sits on mat"
 - ATTR+SVO(L): "red cat sits on mat"
 - MiniGrid imperative: "pick up the red key"
+- Sequential: "pick up the key then open the door" (Stage 24a)
+- Spatial: "put the red ball next to the blue box" (Stage 24a)
 
 This is a scaffold (like sentence-transformers in Stage 19).
 Pipeline depends only on BaseChunker.chunk() — swap implementation later.
@@ -20,7 +22,7 @@ class Chunk:
     """A text fragment with an assigned semantic role."""
 
     text: str
-    role: str  # "AGENT", "ACTION", "OBJECT", "LOCATION", "GOAL", "ATTR"
+    role: str  # "AGENT", "ACTION", "OBJECT", "LOCATION", "GOAL", "ATTR", "SEQ_BREAK"
 
 
 class BaseChunker(ABC):
@@ -43,7 +45,10 @@ ACTION_PHRASES = (
 )
 
 # Prepositions that introduce LOCATION.
-LOCATION_PREPS = frozenset({"on", "in", "at", "near", "next to"})
+LOCATION_PREPS = frozenset({"on", "in", "at", "near"})
+
+# Spatial prepositions (multi-word, checked before single-word LOCATION_PREPS).
+SPATIAL_PREPS = ("next to", "beside")
 
 # Articles to strip.
 ARTICLES = frozenset({"the", "a", "an"})
@@ -54,6 +59,10 @@ class RuleBasedChunker(BaseChunker):
 
     def chunk(self, sentence: str) -> list[Chunk]:
         pattern = self.detect_pattern(sentence)
+        if pattern == "sequential":
+            return self._parse_sequential(sentence)
+        if pattern == "spatial":
+            return self._parse_spatial(sentence)
         if pattern == "minigrid":
             return self._parse_minigrid(sentence)
         if pattern == "svo_attr":
@@ -63,9 +72,21 @@ class RuleBasedChunker(BaseChunker):
     def detect_pattern(self, sentence: str) -> str:
         """Detect grammar pattern from first word(s)."""
         lower = sentence.lower().strip()
+        # Sequential: contains " then " (most specific, checked first).
+        if " then " in lower:
+            return "sequential"
+        # MiniGrid imperative.
         for phrase in ACTION_PHRASES:
             if lower.startswith(phrase):
+                # Check for spatial sub-pattern.
+                for sp in SPATIAL_PREPS:
+                    if sp in lower:
+                        return "spatial"
                 return "minigrid"
+        # Spatial (non-imperative).
+        for sp in SPATIAL_PREPS:
+            if sp in lower:
+                return "spatial"
         words = lower.split()
         if words and words[0] in ADJECTIVES:
             return "svo_attr"
@@ -138,6 +159,68 @@ class RuleBasedChunker(BaseChunker):
                 chunks.append(Chunk(text=w, role="OBJECT"))
 
         return chunks
+
+    def _parse_sequential(self, sentence: str) -> list[Chunk]:
+        """Sequential: 'pick up the key then open the door'."""
+        lower = sentence.lower().strip()
+        # Split on " and then " first, then " then ".
+        parts = lower.replace(" and then ", " then ").split(" then ")
+        chunks: list[Chunk] = []
+        for i, part in enumerate(parts):
+            part = part.strip()
+            if not part:
+                continue
+            if i > 0:
+                chunks.append(Chunk(text="", role="SEQ_BREAK"))
+            # Parse each part as its own instruction.
+            sub_pattern = self._detect_single(part)
+            if sub_pattern == "minigrid":
+                chunks.extend(self._parse_minigrid(part))
+            elif sub_pattern == "svo_attr":
+                chunks.extend(self._parse_svo_attr(part))
+            else:
+                chunks.extend(self._parse_svo(part))
+        return chunks
+
+    def _parse_spatial(self, sentence: str) -> list[Chunk]:
+        """Spatial: 'put the red ball next to the blue box'."""
+        lower = sentence.lower().strip()
+        # Find the spatial preposition.
+        split_prep = None
+        for sp in SPATIAL_PREPS:
+            if sp in lower:
+                split_prep = sp
+                break
+        if split_prep is None:
+            return self._parse_minigrid(lower)
+
+        idx = lower.index(split_prep)
+        before = lower[:idx].strip()
+        after = lower[idx + len(split_prep):].strip()
+
+        # Parse before as minigrid (action + object).
+        chunks = self._parse_minigrid(before)
+
+        # Parse after as location target (may have ATTR).
+        words = self._strip_articles(after.split())
+        for w in words:
+            if w in ADJECTIVES:
+                chunks.append(Chunk(text=w, role="ATTR"))
+            else:
+                chunks.append(Chunk(text=w, role="LOCATION"))
+
+        return chunks
+
+    def _detect_single(self, part: str) -> str:
+        """Detect pattern for a single (non-sequential) instruction."""
+        lower = part.strip()
+        for phrase in ACTION_PHRASES:
+            if lower.startswith(phrase):
+                return "minigrid"
+        words = lower.split()
+        if words and words[0] in ADJECTIVES:
+            return "svo_attr"
+        return "svo"
 
     # --- Helpers ---
 

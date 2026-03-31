@@ -227,6 +227,7 @@ class DcamWorldModel:
 | 51 | Reflective QA | accuracy | > 0.6 | **0.867 (13/15)** | ✅ PASS |
 | 52 | Autonomous cross-modal recall | sdr/currents match | > 0.8 | **1.000 (15/15)** | ✅ PASS |
 | 53 | Autonomous QA | accuracy без ST | > 0.6 | **1.000 (15/15)** | ✅ PASS |
+| 54a | Instruction parsing | accuracy (5 types) | > 0.9 | **1.000 (30/30)** | ✅ PASS |
 
 ### Критерии MVP
 
@@ -307,6 +308,9 @@ class DcamWorldModel:
 - Stage 23 (2026-03-31): COMPLETE. Scaffold Removal (GroundedTokenizer).
   GroundedTokenizer replaces sentence-transformers for SDR generation via GroundingMap lookup.
   Exp 52 sdr_match=1.000 ✅, Exp 53 accuracy=1.000 ✅.
+- Stage 24a (2026-03-31): COMPLETE. InstructionParser + Attribute Grounding.
+  RuleBasedChunker extended: +sequential (SEQ_BREAK), +spatial patterns. 5 BabyAI levels.
+  Exp 54a parsing accuracy=1.000 ✅, grounding resolve=1.000 ✅.
 
 ### Граф зависимостей
 
