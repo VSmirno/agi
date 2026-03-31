@@ -1,0 +1,314 @@
+{
+  "partA": {
+    "N50000": {
+      "num_nodes": 50000,
+      "init_seconds": 2.2,
+      "steps_per_sec": 17.25,
+      "total_steps": 2056,
+      "run_seconds": 119.2,
+      "vram_before_mb": 0.0,
+      "vram_after_mb": 473.0,
+      "vram_delta_mb": null,
+      "status": "PASS"
+    },
+    "N100000": {
+      "num_nodes": 100000,
+      "init_seconds": 0.1,
+      "steps_per_sec": 9.0,
+      "total_steps": 2062,
+      "run_seconds": 229.2,
+      "vram_before_mb": 474.0,
+      "vram_after_mb": 946.0,
+      "vram_delta_mb": 472.0,
+      "status": "PASS"
+    },
+    "N200000": {
+      "num_nodes": 200000,
+      "init_seconds": 0.1,
+      "steps_per_sec": 4.59,
+      "total_steps": 2053,
+      "run_seconds": 447.6,
+      "vram_before_mb": 949.0,
+      "vram_after_mb": 1890.0,
+      "vram_delta_mb": 941.0,
+      "status": "PASS"
+    }
+  },
+  "partB": {
+    "grid12": {
+      "grid_size": 12,
+      "max_steps": 300,
+      "n_episodes": 100,
+      "total_steps": 30330,
+      "successes": 0,
+      "success_rate": 0.0,
+      "steps_per_sec": 17.49,
+      "run_seconds": 1733.9,
+      "status": "DONE"
+    },
+    "grid16": {
+      "grid_size": 16,
+      "max_steps": 500,
+      "n_episodes": 100,
+      "total_steps": 50262,
+      "successes": 0,
+      "success_rate": 0.0,
+      "steps_per_sec": 17.29,
+      "run_seconds": 2907.2,
+      "status": "DONE"
+    }
+  },
+  "partC": {
+    "passed": 19,
+    "failed": 15,
+    "total": 34,
+    "all_pass": false,
+    "experiments": {
+      "exp58": {
+        "module": "exp58_goal_decomposition",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": ": decomposition PASS (1.000 >= 0.900)\n============================================================\n>>> Experiment 58: GATE PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp59": {
+        "module": "exp59_causal_learning",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.5,
+        "output_tail": "==\nGATE: learning_speed PASS (1 <= 5)\n============================================================\n>>> Experiment 59: GATE PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp60": {
+        "module": "exp60_multitrial_success",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": ".000 >= 0.8, learning immediate)\n============================================================\n>>> Experiment 60: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp61": {
+        "module": "exp61_transfer_layouts",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": " (efficiency: 13.2 < 20.0 * 0.8)\n============================================================\n>>> Experiment 61: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp62": {
+        "module": "exp62_cross_env_transfer",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": "up           PASS (2.0x >= 2.0x)\n============================================================\n>>> Experiment 62: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp63": {
+        "module": "exp63_persistence",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.5,
+        "output_tail": "TE: link_count   PASS (11 == 11)\n============================================================\n>>> Experiment 63: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp64": {
+        "module": "exp64_selective_transfer",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": "tion   PASS (ratio=1.00 <= 1.10)\n============================================================\n>>> Experiment 64: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp65": {
+        "module": "exp65_skill_extraction",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": "s_rate   PASS (min=1.00 >= 0.80)\n============================================================\n>>> Experiment 65: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp66": {
+        "module": "exp66_skill_reuse",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": "ATE: exploration   PASS (0 <= 1)\n============================================================\n>>> Experiment 66: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp67": {
+        "module": "exp67_skill_transfer",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": " skill_reuse   PASS (1.0 >= 1.0)\n============================================================\n>>> Experiment 67: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp68": {
+        "module": "exp68_analogy_found",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.5,
+        "output_tail": "larity     PASS (0.750 >= 0.700)\n============================================================\n>>> Experiment 68: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp69": {
+        "module": "exp69_analogy_solve",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": "analogies_used PASS (3.9 >= 1.0)\n============================================================\n>>> Experiment 69: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp70": {
+        "module": "exp70_regression",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": "iroom_rate PASS (1.000 >= 0.800)\n============================================================\n>>> Experiment 70: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp71": {
+        "module": "exp71_curiosity_unit",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.5,
+        "output_tail": "distinct_states  PASS (10 >= 10)\n============================================================\n>>> Experiment 71: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp72": {
+        "module": "exp72_curiosity_vs_random",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": "rage       PASS (1.000 >= 0.250)\n============================================================\n>>> Experiment 72: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp73": {
+        "module": "exp73_curiosity_goal",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.5,
+        "output_tail": "skills_per_ep  PASS (1.0 >= 1.0)\n============================================================\n>>> Experiment 73: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp74": {
+        "module": "exp74_one_shot_skill",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": "TE: composite_found  PASS (True)\n============================================================\n>>> Experiment 74: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp75": {
+        "module": "exp75_few_shot_goal",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": "o_success  PASS (1.000 >= 0.800)\n============================================================\n>>> Experiment 75: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp76": {
+        "module": "exp76_few_shot_transfer",
+        "passed": true,
+        "exit_code": 0,
+        "elapsed_seconds": 2.6,
+        "output_tail": "nv_success PASS (1.000 >= 0.700)\n============================================================\n>>> Experiment 76: ALL GATES PASS <<<\n/opt/agi/venv/lib/python3.12/site-packages/pygame/pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.\n  from pkg_resources import resource_stream, resource_exists\n"
+      },
+      "exp77": {
+        "module": "exp77_pattern_rules",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.5,
+        "output_tail": "=============\n\n--- Test 1: Constant Row Transform ---\n  Row found rate: 1.000 (gate >= 0.8)\n  Row mean consistency: 1.000 (gate >= 0.7)\n\n--- Test 2: Constant Column Transform ---\n  Column found rate: 1.000 (gate >= 0.8)\n  Column mean consistency: 1.000 (gate >= 0.7)\n\n============================================================\nrule_found_rate = 1.000 (gate >= 0.8)\nrule_consistency = 1.000 (gate >= 0.7)\n\nGate rule_consistency >= 0.7: PASS\nGate rule_found_rate >= 0.8: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp78": {
+        "module": "exp78_pattern_completion",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "==========================================\nExperiment 78: Pattern Completion Accuracy\n============================================================\n\n--- Test 1: 3x3 Matrix Completion ---\n  Correct: 20/20\n  completion_accuracy = 1.000 (gate >= 0.8)\n\n--- Test 2: Analogy A:B :: C:? ---\n  Correct: 20/20\n  analogy_accuracy = 1.000 (gate >= 0.8)\n\n============================================================\nGate completion_accuracy >= 0.8: PASS\nGate analogy_accuracy >= 0.8: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp79": {
+        "module": "exp79_multi_rule",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "=============================================\nExperiment 79: Multi-Rule Pattern Completion\n============================================================\n\n--- Test 1: Shared Row+Column Transform ---\n  Correct: 20/20\n  shared_accuracy = 1.000\n\n--- Test 2: Independent Row+Column Transforms ---\n  Correct: 20/20\n  indep_accuracy = 1.000\n\n============================================================\nmulti_rule_accuracy = 1.000 (gate >= 0.7)\n\nGate multi_rule_accuracy >= 0.7: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp80": {
+        "module": "exp80_strategy_selection",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "\n  Scenario 9: expected=few_shot, got=few_shot [PASS] reason: demos available, no skills \u2014 bootstrap via few-shot\n  Scenario 10: expected=skill, got=skill [PASS] reason: skills=2, links=5 \u2014 exploit\n\n--- Profile Extraction ---\n  All 10 profiles correctly mapped to strategy\n\n============================================================\nstrategy_selection_accuracy = 1.000 (gate >= 0.8)\n\nGate strategy_selection_accuracy >= 0.8: PASS\nGate profile_extraction = all correct: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp81": {
+        "module": "exp81_adaptation",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "ategy=skill\n  Episode 9: strategy=skill\n  Total successes: 9/10\n\n--- Fixed: curiosity ---\n  Total successes: 3/10\n\n--- Fixed: skill ---\n  Total successes: 7/10\n\n--- Fixed: explore ---\n  Total successes: 0/10\n\n============================================================\nMetaLearner successes: 9\nBest fixed (skill): 7\nmeta_vs_fixed_ratio = 1.29 (gate >= 1.2)\nadaptation_improves = True (gate = True)\n\nGate adaptation_improves = True: PASS\nGate meta_vs_fixed_ratio >= 1.2: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp82": {
+        "module": "exp82_multi_task",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "y, got=curiosity [PASS]\n  Phase 1: expected=curiosity, got=curiosity [PASS]\n\n============================================================\nTask Results:\n  Empty Room (exploration): 3/3 (PASS)\n  DoorKey + Demo (few-shot): 3/3 (PASS)\n  New Environment (progressive): 3/3 (PASS)\n  Transfer Learning (analogical): 2/2 (PASS)\n  High Uncertainty (noisy): 2/2 (PASS)\n\nmulti_task_accuracy = 1.000 (gate >= 0.8)\nAll 5 task types represented: True\n\nGate multi_task_accuracy >= 0.8: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp83": {
+        "module": "exp83_concept_transfer",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "S]\n\n--- HAC Alignment ---\n  Same concept similarity: 1.000\n  Different concept similarity: -0.034\n  Partial overlap similarity: 0.487\n  Score: 1.000 [PASS]\n\n--- Warning Propagation ---\n  Agent A warned: True\n  Agent B warned: True\n  Score: 1.000 [PASS]\n\n============================================================\nconcept_transfer_accuracy = 1.000 (gate >= 0.9)\nhac_alignment = 1.000 (gate >= 0.7)\n\nGate concept_transfer_accuracy >= 0.9: PASS\nGate hac_alignment >= 0.7: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp84": {
+        "module": "exp84_multi_agent_speedup",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": " 1.50x)\n    3 agents: 16 rounds (speedup 2.44x)\n    3-agent > 2-agent: True\n\n--- Knowledge Reuse Test ---\n  Solver predicted effect: {51}\n  Solver confidence: 1.000\n  Correct prediction (51 in effect): True\n  Knowledge usable (confidence > 0): True\n\n============================================================\nmulti_agent_speedup = 1.59x (gate >= 1.3x)\nknowledge_reuse_rate = 1.667 (gate >= 0.5)\n\nGate multi_agent_speedup >= 1.3x: PASS\nGate knowledge_reuse_rate >= 0.5: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp85": {
+        "module": "exp85_cooperative",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "ult: PASS\n\n--- Request-Response ---\n  Novice has key knowledge: True\n  Novice links: 1\n  Result: PASS\n\n--- No Text Exchange ---\n  All messages concept-based: True\n  Total messages checked: 3\n  Message types: ['causal_links', 'skill', 'warning']\n  Result: PASS\n\n============================================================\ncooperative_success = 1.000 (gate >= 0.9)\nno_word_exchange = True (gate = True)\n\nGate cooperative_success >= 0.9: PASS\nGate no_word_exchange = True: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp86": {
+        "module": "exp86_plan_depth",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "herence=1.000\n  XL (40x40, 6 rooms): 1082 steps, 1090 nodes, coherence=1.000\n  XXL (50x50, 8 rooms): 1802 steps, 1810 nodes, coherence=1.000\n\n--- Plan Structure Test ---\n  Root level: 2 (expected 2)\n  Has level 1/2 children: True\n  Total primitives: 272\n  All valid actions: True\n\n============================================================\nplan_depth = 1802 (gate >= 1000)\nplan_coherence = 1.000 (gate >= 0.9)\n\nGate plan_depth >= 1000: PASS\nGate plan_coherence >= 0.9: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp87": {
+        "module": "exp87_replan",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "me state: deviated=False, expected=False [OK]\n  Superset (gained extra): deviated=False, expected=False [OK]\n  Totally different: deviated=True, expected=True [OK]\n  Lost 2/3 of state: deviated=True, expected=True [OK]\n  Both empty: deviated=False, expected=False [OK]\n\n============================================================\nreplan_success = 1.000 (gate >= 0.8)\nreplan_overhead = 1.67x (gate <= 2.0x)\n\nGate replan_success >= 0.8: PASS\nGate replan_overhead <= 2.0x: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp88": {
+        "module": "exp88_multi_room",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "hier/flat)\n  Throughput speedup: 11.5x\n\n--- Execution Completeness ---\n  1 rooms: 56 steps, 0 replans [OK]\n  2 rooms: 110 steps, 0 replans [OK]\n  3 rooms: 164 steps, 0 replans [OK]\n  4 rooms: 218 steps, 0 replans [OK]\n  5 rooms: 272 steps, 0 replans [OK]\n\n============================================================\nmulti_room_success = 1.000 (gate >= 0.9)\nhierarchical_speedup = 11.5x (gate >= 2x)\n\nGate multi_room_success >= 0.9: PASS\nGate hierarchical_speedup >= 2x: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp89": {
+        "module": "exp89_capabilities",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "=curiosity, expected={'explore', 'curiosity'} [PASS]\n    reason: coverage=0.00 < 0.3 \u2014 explore\n  Knowledgeable agent \u2192 skill: got=skill, expected={'skill'} [PASS]\n    reason: skills=2, links=5 \u2014 exploit\n  Full pipeline: strategy=skill, success=True, steps=38 [PASS]\n\n============================================================\ncapabilities_count = 10 (gate = 10)\nstrategy_pipeline = 1.000 (gate >= 0.9)\n\nGate capabilities_count = 10: PASS\nGate strategy_pipeline >= 0.9: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp90": {
+        "module": "exp90_end_to_end",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "PASS]\n  Communication: shared 5 links [PASS]\n  Pattern Reasoning: analogy solved, shape=2048 [PASS]\n  Curiosity: intrinsic_reward=1.000 [PASS]\n\n--- Learning Across Episodes ---\n  Episode 1 capabilities: 7\n  Episode 5 capabilities: 6\n  Agent success rate: 1.000\n\n============================================================\nend_to_end_success = 1.000 (gate >= 0.9)\ncross_capability = 1.000 (gate >= 0.8)\n\nGate end_to_end_success >= 0.9: PASS\nGate cross_capability >= 0.8: PASS\n\n*** ALL GATES PASS ***\n"
+      },
+      "exp91": {
+        "module": "exp91_full_integration",
+        "passed": false,
+        "exit_code": 0,
+        "elapsed_seconds": 2.4,
+        "output_tail": "_reasoning', 'curiosity_exploration', 'goal_decomposition', 'hierarchical_planning', 'meta_learning', 'multi_agent_communication', 'skill_abstraction']\n  Count: 7\n  Strategy: explore\n  Steps: 92\n  Plan steps: 92\n  Messages sent: 1\n  Curiosity reward: 10.000\n\n============================================================\nmulti_agent_integration = 1.000 (gate >= 0.9)\nzero_backprop = True (gate = True)\n\nGate multi_agent_integration >= 0.9: PASS\nGate zero_backprop = True: PASS\n\n*** ALL GATES PASS ***\n"
+      }
+    }
+  },
+  "partD": {
+    "status": "FAIL",
+    "error": "'IntegratedAgent' object has no attribute 'profile_task'",
+    "traceback": "Traceback (most recent call last):\n  File \"/opt/agi/src/snks/experiments/exp92_gpu_scaling_suite.py\", line 417, in run_integrated_scaling\n    profile = agent.profile_task(goal_sks=frozenset({53}), current_sks=frozenset({50}))\n              ^^^^^^^^^^^^^^^^^^\nAttributeError: 'IntegratedAgent' object has no attribute 'profile_task'\n"
+  },
+  "total_seconds": 5526.6,
+  "total_hours": 1.54
+}

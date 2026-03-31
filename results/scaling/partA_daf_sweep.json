@@ -1,0 +1,35 @@
+{
+  "N50000": {
+    "num_nodes": 50000,
+    "init_seconds": 2.2,
+    "steps_per_sec": 17.25,
+    "total_steps": 2056,
+    "run_seconds": 119.2,
+    "vram_before_mb": 0.0,
+    "vram_after_mb": 473.0,
+    "vram_delta_mb": null,
+    "status": "PASS"
+  },
+  "N100000": {
+    "num_nodes": 100000,
+    "init_seconds": 0.1,
+    "steps_per_sec": 9.0,
+    "total_steps": 2062,
+    "run_seconds": 229.2,
+    "vram_before_mb": 474.0,
+    "vram_after_mb": 946.0,
+    "vram_delta_mb": 472.0,
+    "status": "PASS"
+  },
+  "N200000": {
+    "num_nodes": 200000,
+    "init_seconds": 0.1,
+    "steps_per_sec": 4.59,
+    "total_steps": 2053,
+    "run_seconds": 447.6,
+    "vram_before_mb": 949.0,
+    "vram_after_mb": 1890.0,
+    "vram_delta_mb": 941.0,
+    "status": "PASS"
+  }
+}

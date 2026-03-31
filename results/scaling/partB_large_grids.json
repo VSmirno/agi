@@ -1,0 +1,24 @@
+{
+  "grid12": {
+    "grid_size": 12,
+    "max_steps": 300,
+    "n_episodes": 100,
+    "total_steps": 30330,
+    "successes": 0,
+    "success_rate": 0.0,
+    "steps_per_sec": 17.49,
+    "run_seconds": 1733.9,
+    "status": "DONE"
+  },
+  "grid16": {
+    "grid_size": 16,
+    "max_steps": 500,
+    "n_episodes": 100,
+    "total_steps": 50262,
+    "successes": 0,
+    "success_rate": 0.0,
+    "steps_per_sec": 17.29,
+    "run_seconds": 2907.2,
+    "status": "DONE"
+  }
+}

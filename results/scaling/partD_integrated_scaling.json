@@ -1,0 +1,5 @@
+{
+  "status": "FAIL",
+  "error": "'IntegratedAgent' object has no attribute 'profile_task'",
+  "traceback": "Traceback (most recent call last):\n  File \"/opt/agi/src/snks/experiments/exp92_gpu_scaling_suite.py\", line 417, in run_integrated_scaling\n    profile = agent.profile_task(goal_sks=frozenset({53}), current_sks=frozenset({50}))\n              ^^^^^^^^^^^^^^^^^^\nAttributeError: 'IntegratedAgent' object has no attribute 'profile_task'\n"
+}
