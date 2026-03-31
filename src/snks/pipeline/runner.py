@@ -19,6 +19,7 @@ from snks.dcam.hac import HACEngine
 from snks.device import get_device
 from snks.encoder.encoder import VisualEncoder
 from snks.encoder.text_encoder import TextEncoder
+from snks.language.grounding_map import GroundingMap
 from snks.gws.workspace import GlobalWorkspace, GWSState
 from snks.metacog.configurator import Configurator
 from snks.metacog.cost_module import IntrinsicCostModule
@@ -125,6 +126,42 @@ class Pipeline:
         # Stage 14: cached last result for EmbodiedAgent access
         self.last_cycle_result: "CycleResult | None" = None
 
+        # Stage 19: cross-modal grounding map + priming
+        self.grounding_map = GroundingMap()
+
+    def save_checkpoint(self, path: str) -> None:
+        """Save pipeline state: DAF weights + GroundingMap.
+
+        Args:
+            path: Base path prefix. Creates {path}_daf.safetensors,
+                  {path}_grounding_* files, and {path}_pipeline.json.
+        """
+        import json as _json
+        import os
+
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+
+        self.engine.save_state(path)
+        self.grounding_map.save(path + "_grounding")
+
+        meta = {
+            "steps_per_cycle": self.config.steps_per_cycle,
+            "priming_strength": self.config.priming_strength,
+            "num_nodes": self.config.daf.num_nodes,
+            "grounding_vocab_size": self.grounding_map.vocab_size,
+        }
+        with open(path + "_pipeline.json", "w") as f:
+            _json.dump(meta, f, indent=2)
+
+    def load_checkpoint(self, path: str) -> None:
+        """Load pipeline state: DAF weights + GroundingMap.
+
+        Args:
+            path: Base path prefix matching a previous save_checkpoint() call.
+        """
+        self.engine.load_state(path)
+        self.grounding_map.load(path + "_grounding")
+
     def inject_motor_currents(self, currents: torch.Tensor) -> None:
         """Set motor currents for dual injection (sensory + motor).
 
@@ -162,42 +199,82 @@ class Pipeline:
             self.engine.states[:, 0] = torch.randn(cfg.num_nodes, device=self.engine.device) * 0.1
             self.engine.states[:, 4] = 0.0  # w_recovery
 
-        # 1. Encode inputs → currents (average when both modalities present)
+        # 1. Encode inputs → currents
         n_nodes = self.engine.config.num_nodes
-        currents = None
+        zones = self.engine.zones
 
-        if image is not None:
-            sdr = self.encoder.encode(image)
-            currents = self.encoder.sdr_to_currents(sdr, n_nodes).to(self.engine.device)
+        if zones is not None:
+            # Stage 19: zone-based injection — each modality writes to its own zone
+            self.engine._external_currents.zero_()
 
-        if text is not None:
-            text_sdr = self.text_encoder.encode(text)
-            text_currents = self.text_encoder.sdr_to_currents(text_sdr, n_nodes).to(self.engine.device)
-            if currents is None:
-                currents = text_currents
-            else:
-                currents = (currents + text_currents) / 2.0  # усреднение, не сумма
+            if image is not None:
+                sdr = self.encoder.encode(image)
+                vis_zone = zones["visual"]
+                vis_currents = self.encoder.sdr_to_currents(sdr, n_nodes, zone=vis_zone).to(self.engine.device)
+                self.engine.set_input_zone(vis_currents, "visual")
 
-        # 1b. Dual injection: add motor currents if present
-        if self._motor_currents is not None:
-            motor = self._motor_currents
-            if currents.dim() == 2 and motor.dim() == 1:
-                # Add motor currents to channel 0 (voltage)
-                currents[:, 0] = currents[:, 0] + motor
-            elif currents.dim() == 1 and motor.dim() == 1:
-                currents = currents + motor
-            self._motor_currents = None  # consumed
+            if text is not None:
+                text_sdr = self.text_encoder.encode(text)
+                ling_zone = zones["linguistic"]
+                text_currents = self.text_encoder.sdr_to_currents(text_sdr, n_nodes, zone=ling_zone).to(self.engine.device)
+                self.engine.set_input_zone(text_currents, "linguistic")
 
-        # 1c. [Stage 9] Inject broadcast currents from previous cycle
-        if self._broadcast_currents is not None:
-            broadcast = self._broadcast_currents.to(self.engine.device)
-            if currents.dim() == 1:
-                currents = currents + broadcast
-            else:
-                currents[:, 0] = currents[:, 0] + broadcast
-            self._broadcast_currents = None
+                # Stage 19: cross-modal priming
+                if image is not None:
+                    # Co-activation: register visual SDR for future priming
+                    self.grounding_map.register_visual(text, vis_currents.detach())
+                else:
+                    # Text-only: inject priming current into visual zone
+                    priming_sdr = self.grounding_map.word_to_visual_sdr(text)
+                    if priming_sdr is not None:
+                        strength = self.config.priming_strength
+                        self.engine.set_input_zone(
+                            priming_sdr.to(self.engine.device) * strength, "visual",
+                        )
 
-        self.engine.set_input(currents)
+            # Motor and broadcast currents: applied globally (not zone-routed)
+            if self._motor_currents is not None:
+                self.engine._external_currents[:, 0] += self._motor_currents.to(self.engine.device)
+                self._motor_currents = None
+
+            if self._broadcast_currents is not None:
+                self.engine._external_currents[:, 0] += self._broadcast_currents.to(self.engine.device)
+                self._broadcast_currents = None
+        else:
+            # Legacy path: flat DAF, average modalities
+            currents = None
+
+            if image is not None:
+                sdr = self.encoder.encode(image)
+                currents = self.encoder.sdr_to_currents(sdr, n_nodes).to(self.engine.device)
+
+            if text is not None:
+                text_sdr = self.text_encoder.encode(text)
+                text_currents = self.text_encoder.sdr_to_currents(text_sdr, n_nodes).to(self.engine.device)
+                if currents is None:
+                    currents = text_currents
+                else:
+                    currents = (currents + text_currents) / 2.0
+
+            # 1b. Dual injection: add motor currents if present
+            if self._motor_currents is not None:
+                motor = self._motor_currents
+                if currents.dim() == 2 and motor.dim() == 1:
+                    currents[:, 0] = currents[:, 0] + motor
+                elif currents.dim() == 1 and motor.dim() == 1:
+                    currents = currents + motor
+                self._motor_currents = None
+
+            # 1c. [Stage 9] Inject broadcast currents from previous cycle
+            if self._broadcast_currents is not None:
+                broadcast = self._broadcast_currents.to(self.engine.device)
+                if currents.dim() == 1:
+                    currents = currents + broadcast
+                else:
+                    currents[:, 0] = currents[:, 0] + broadcast
+                self._broadcast_currents = None
+
+            self.engine.set_input(currents)
 
         # 2. Step DAF
         step_result = self.engine.step(self.config.steps_per_cycle)

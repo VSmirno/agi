@@ -27,24 +27,26 @@ def _context_hash(sks: frozenset[int]) -> int:
 # See agent.py: _perceptual_hash() uses offset=10_000.
 _PERCEPTUAL_HASH_OFFSET = 10_000
 
+# State-dependent SKS IDs (50-99) are stable across episodes — they
+# represent predicates like key_held, door_locked. Must NOT be coarsened.
+_STATE_SKS_RANGE = range(50, 100)
+
 
 def _split_context(sks: set[int], n_bins: int) -> frozenset[int]:
     """Build a context key from SKS IDs, separating stable from unstable IDs.
 
-    Stable IDs (>= _PERCEPTUAL_HASH_OFFSET): perceptual hash pseudo-SKS.
-    These are deterministic functions of the image → used as-is.
-
-    Unstable IDs (< _PERCEPTUAL_HASH_OFFSET): DAF cluster IDs that vary
-    across runs and episodes → coarsen to n_bins buckets.
-
-    Rationale: different visual scenes (key visible, door open, empty room)
-    produce different perceptual hash IDs, giving the causal model enough
-    discrimination without relying on noisy DAF cluster IDs.
+    Stable IDs (>= _PERCEPTUAL_HASH_OFFSET or in 50-99): kept as-is.
+    Unstable IDs (all others < _PERCEPTUAL_HASH_OFFSET): coarsen to n_bins.
     """
     if not sks:
         return frozenset()
-    stable   = frozenset(s for s in sks if s >= _PERCEPTUAL_HASH_OFFSET)
-    unstable = frozenset(s % n_bins for s in sks if s < _PERCEPTUAL_HASH_OFFSET)
+    stable = frozenset(
+        s for s in sks if s >= _PERCEPTUAL_HASH_OFFSET or s in _STATE_SKS_RANGE
+    )
+    unstable = frozenset(
+        s % n_bins for s in sks
+        if s < _PERCEPTUAL_HASH_OFFSET and s not in _STATE_SKS_RANGE
+    )
     return stable | unstable
 
 
@@ -192,6 +194,28 @@ class CausalWorldModel:
         for record in records.values():
             confidence = record.count / max(total, 1)
             results.append((set(record.effect_sks), confidence))
+        return results
+
+    def query_by_effect(
+        self,
+        desired_effect_sks: frozenset[int],
+        min_confidence: float = 0.1,
+    ) -> list[tuple[int, frozenset[int], float]]:
+        """Reverse lookup: find (action, context) pairs producing desired effect.
+
+        Uses overlap matching (intersection) because observe_transition stores
+        symmetric_difference as effect — so effect_sks contains both appearing
+        and disappearing SKS IDs.
+
+        Returns:
+            List of (action, required_context_sks, confidence) sorted by
+            confidence descending.
+        """
+        results: list[tuple[int, frozenset[int], float]] = []
+        for link in self.get_causal_links(min_confidence):
+            if link.effect_sks & desired_effect_sks:
+                results.append((link.action, link.context_sks, link.strength))
+        results.sort(key=lambda x: x[2], reverse=True)
         return results
 
     def best_action(

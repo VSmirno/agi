@@ -1,0 +1,14 @@
+{
+  "device": "cuda",
+  "num_nodes": 30000,
+  "n_per_class_per_phase": 100,
+  "epochs_per_phase": 5,
+  "oscillator": "FHN",
+  "learning": "STDP",
+  "nmi_phase_a": 0.75919097570316,
+  "nmi_a_after_b": 0.7895942888272953,
+  "nmi_phase_b": 0.616657389991646,
+  "nmi_all": 0.646772841248762,
+  "retention_pct": 104.00469896207287,
+  "train_time_sec": 2759.741839170456
+}

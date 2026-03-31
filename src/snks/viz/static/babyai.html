@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>СНКС — BabyAI Demo</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0a0e17;
+  color: #e0e0e0;
+  min-height: 100vh;
+}
+
+/* ── Header ── */
+header {
+  padding: 12px 24px;
+  background: #111827;
+  border-bottom: 1px solid #1f2937;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+header h1 { font-size: 18px; font-weight: 600; color: #60a5fa; }
+header .nav { display: flex; gap: 8px; margin-left: auto; }
+header .nav a {
+  padding: 5px 14px;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  background: #1f2937;
+  color: #9ca3af;
+  text-decoration: none;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+header .nav a:hover { background: #374151; color: #e0e0e0; }
+header .nav a.active { background: #1d4ed8; border-color: #3b82f6; color: #fff; }
+
+/* ── Pipeline diagram ── */
+.pipeline-bar {
+  padding: 16px 24px;
+  background: #0d1117;
+  border-bottom: 1px solid #1f2937;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pipe-node {
+  padding: 5px 12px;
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #6b7280;
+  transition: all 0.3s;
+}
+.pipe-node.lit { border-color: #3b82f6; color: #60a5fa; background: #1e3a5f22; }
+.pipe-arrow { color: #374151; font-size: 14px; }
+
+/* ── Controls ── */
+.toolbar {
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #1f2937;
+}
+.toolbar label { font-size: 13px; color: #9ca3af; }
+.toolbar select, .toolbar input {
+  padding: 5px 10px;
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 13px;
+}
+.toolbar button {
+  padding: 6px 20px;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  background: #1d4ed8;
+  border-color: #3b82f6;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.toolbar button:hover { background: #2563eb; }
+.toolbar button:disabled { opacity: 0.5; cursor: not-allowed; }
+#gen-status { font-size: 12px; color: #6b7280; }
+
+/* ── Stats bar ── */
+.stats-bar {
+  padding: 10px 24px;
+  background: #0d1117;
+  border-bottom: 1px solid #1f2937;
+  display: flex;
+  gap: 24px;
+  font-size: 13px;
+  color: #6b7280;
+}
+.stats-bar .stat-val { color: #60a5fa; font-weight: 600; }
+.stats-bar .stat-success { color: #34d399; }
+
+/* ── Episodes grid ── */
+.episodes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+  gap: 20px;
+  padding: 20px 24px;
+}
+
+.episode {
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 0.3s;
+}
+.episode:hover { border-color: #374151; }
+.episode.success { border-left: 3px solid #34d399; }
+.episode.fail { border-left: 3px solid #ef4444; }
+
+.ep-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #1f2937;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.ep-header .mission {
+  font-size: 14px;
+  color: #fbbf24;
+  font-style: italic;
+  flex: 1;
+}
+.ep-header .env-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #1f2937;
+  color: #6b7280;
+}
+.badge {
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 99px;
+  font-weight: 700;
+}
+.badge.pass { background: #34d39922; color: #34d399; }
+.badge.fail { background: #ef444422; color: #ef4444; }
+
+.ep-parse {
+  padding: 8px 16px;
+  background: #0d1117;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.tag {
+  background: #1f2937;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+.tag .label { color: #6b7280; }
+.tag .val { color: #60a5fa; }
+
+.ep-objects {
+  padding: 4px 16px 8px;
+  background: #0d1117;
+  font-size: 11px;
+  color: #4b5563;
+}
+.ep-objects span { color: #6b7280; }
+
+/* Player */
+.player { padding: 12px 16px; text-align: center; }
+.player img {
+  border: 2px solid #1f2937;
+  border-radius: 6px;
+  image-rendering: pixelated;
+  max-width: 100%;
+  cursor: pointer;
+}
+.controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.controls button {
+  background: #1f2937;
+  color: #e0e0e0;
+  border: 1px solid #374151;
+  padding: 4px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+.controls button:hover { background: #374151; }
+.controls button.playing { background: #1d4ed822; border-color: #3b82f6; color: #60a5fa; }
+.speed-select {
+  padding: 3px 6px;
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+/* Timeline */
+.timeline {
+  display: flex;
+  gap: 3px;
+  justify-content: center;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #1f2937;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.dot.active { background: #3b82f6; transform: scale(1.3); }
+.dot.done { background: #3b82f644; }
+
+.step-info {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #6b7280;
+  min-height: 20px;
+}
+.step-info .action-name { color: #fbbf24; }
+.step-info .reward { color: #34d399; font-weight: 600; }
+
+/* Plan display */
+.plan-bar {
+  padding: 6px 16px 10px;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 11px;
+}
+.plan-step {
+  padding: 2px 6px;
+  background: #1f2937;
+  border-radius: 3px;
+  color: #6b7280;
+  transition: all 0.2s;
+}
+.plan-step.current { background: #1d4ed8; color: #fff; }
+.plan-step.completed { background: #1f2937; color: #374151; text-decoration: line-through; }
+
+/* Loading */
+.loading {
+  text-align: center;
+  padding: 80px 20px;
+  color: #6b7280;
+}
+.loading .spinner {
+  display: inline-block;
+  width: 32px; height: 32px;
+  border: 3px solid #1f2937;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 16px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>СНКС — BabyAI e2e Demo</h1>
+  <div class="nav">
+    <a href="/">Dashboard</a>
+    <a href="/stage6">Stage 6</a>
+    <a href="/babyai" class="active">BabyAI</a>
+  </div>
+</header>
+
+<div class="pipeline-bar" id="pipeline">
+  <span class="pipe-node lit" id="pn-text">Text</span>
+  <span class="pipe-arrow">→</span>
+  <span class="pipe-node" id="pn-chunk">Chunker</span>
+  <span class="pipe-arrow">→</span>
+  <span class="pipe-node" id="pn-perc">GridPerception</span>
+  <span class="pipe-arrow">→</span>
+  <span class="pipe-node" id="pn-nav">BFS Nav</span>
+  <span class="pipe-arrow">→</span>
+  <span class="pipe-node" id="pn-exec">Execute</span>
+  <span class="pipe-arrow">→</span>
+  <span class="pipe-node" id="pn-verify">Verify</span>
+</div>
+
+<div class="toolbar">
+  <label>Окружение:</label>
+  <select id="env-select">
+    <option value="all">Все (8 эпизодов)</option>
+    <option value="BabyAI-GoToObj-v0">GoToObj</option>
+    <option value="BabyAI-PickupLoc-v0">PickupLoc</option>
+    <option value="BabyAI-GoToLocalS6N4-v0">GoToLocal (4 obj)</option>
+  </select>
+  <label>Seed:</label>
+  <input id="seed-input" type="number" value="" placeholder="random" style="width:70px">
+  <button id="btn-generate" onclick="generate()">Запустить</button>
+  <span id="gen-status"></span>
+</div>
+
+<div class="stats-bar" id="stats-bar" style="display:none">
+  <span>Эпизодов: <span class="stat-val" id="st-total">0</span></span>
+  <span>Успех: <span class="stat-val stat-success" id="st-success">0</span></span>
+  <span>Avg шагов: <span class="stat-val" id="st-steps">0</span></span>
+  <span>Parse accuracy: <span class="stat-val" id="st-parse">0</span></span>
+</div>
+
+<div id="content">
+  <div class="loading" id="loading" style="display:none">
+    <div class="spinner"></div>
+    <div>Генерация эпизодов...</div>
+  </div>
+  <div class="episodes" id="episodes"></div>
+</div>
+
+<script>
+let episodes = [];
+const playerState = {};
+
+// ── Generate / Load ──
+
+async function generate() {
+  const btn = document.getElementById('btn-generate');
+  const status = document.getElementById('gen-status');
+  const loading = document.getElementById('loading');
+
+  btn.disabled = true;
+  status.textContent = '';
+  loading.style.display = 'block';
+  document.getElementById('episodes').innerHTML = '';
+
+  const envSelect = document.getElementById('env-select').value;
+  const seedInput = document.getElementById('seed-input').value;
+
+  let url = '/api/babyai/generate';
+  const params = [];
+  if (envSelect !== 'all') params.push(`env=${encodeURIComponent(envSelect)}`);
+  if (seedInput) params.push(`seed=${seedInput}`);
+  if (params.length) url += '?' + params.join('&');
+
+  try {
+    const r = await fetch(url, { method: 'POST' });
+    episodes = await r.json();
+    renderEpisodes(episodes);
+    status.textContent = `${episodes.length} эпизодов`;
+  } catch (e) {
+    status.textContent = 'Ошибка: ' + e.message;
+  }
+
+  loading.style.display = 'none';
+  btn.disabled = false;
+}
+
+function renderEpisodes(eps) {
+  const container = document.getElementById('episodes');
+  container.innerHTML = '';
+
+  // Stats
+  const totalSuccess = eps.filter(e => e.success).length;
+  const avgSteps = eps.length ? (eps.reduce((s, e) => s + e.total_steps, 0) / eps.length).toFixed(1) : 0;
+  const parseOk = eps.filter(e => e.parsed.action).length;
+
+  document.getElementById('stats-bar').style.display = eps.length ? 'flex' : 'none';
+  document.getElementById('st-total').textContent = eps.length;
+  document.getElementById('st-success').textContent = `${totalSuccess}/${eps.length}`;
+  document.getElementById('st-steps').textContent = avgSteps;
+  document.getElementById('st-parse').textContent = `${parseOk}/${eps.length}`;
+
+  eps.forEach((ep, idx) => {
+    playerState[idx] = { frame: 0, playing: false, timer: null, speed: 500 };
+
+    const div = document.createElement('div');
+    div.className = 'episode ' + (ep.success ? 'success' : 'fail');
+    div.innerHTML = `
+      <div class="ep-header">
+        <span class="mission">"${ep.mission}"</span>
+        <span class="env-tag">${ep.env}</span>
+        <span class="badge ${ep.success ? 'pass' : 'fail'}">
+          ${ep.success ? '✓' : '✗'}
+        </span>
+      </div>
+      <div class="ep-parse">
+        <span class="tag"><span class="label">action: </span><span class="val">${ep.parsed.action}</span></span>
+        ${ep.parsed.attr ? `<span class="tag"><span class="label">attr: </span><span class="val">${ep.parsed.attr}</span></span>` : ''}
+        <span class="tag"><span class="label">object: </span><span class="val">${ep.parsed.object}</span></span>
+        <span class="tag"><span class="label">target: </span><span class="val">${ep.target.color} ${ep.target.type} @ (${ep.target.pos[0]},${ep.target.pos[1]})</span></span>
+      </div>
+      <div class="ep-objects">
+        Объекты в grid: <span>${ep.objects.join(', ')}</span>
+      </div>
+      <div class="plan-bar" id="plan-${idx}">
+        ${ep.plan.map((p, pi) => `<span class="plan-step" id="ps-${idx}-${pi}">${p}</span>`).join('<span style="color:#374151">→</span>')}
+      </div>
+      <div class="player">
+        <img id="frame-${idx}" src="data:image/png;base64,${ep.frames[0].img}" onclick="togglePlay(${idx})" title="Click to play/pause" />
+        <div class="controls">
+          <button onclick="resetEp(${idx})">⏮</button>
+          <button onclick="stepBack(${idx})">◀</button>
+          <button id="play-${idx}" onclick="togglePlay(${idx})">▶ Play</button>
+          <button onclick="stepForward(${idx})">▶</button>
+          <select class="speed-select" onchange="setSpeed(${idx}, this.value)">
+            <option value="800">0.5x</option>
+            <option value="500" selected>1x</option>
+            <option value="250">2x</option>
+            <option value="120">4x</option>
+          </select>
+        </div>
+        <div class="timeline" id="timeline-${idx}">
+          ${ep.frames.map((_, fi) =>
+            `<div class="dot ${fi === 0 ? 'active' : ''}" onclick="goToFrame(${idx}, ${fi})"></div>`
+          ).join('')}
+        </div>
+        <div class="step-info" id="info-${idx}">
+          <span class="action-name">START</span> — step 0/${ep.frames.length - 1}
+        </div>
+      </div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+// ── Player controls ──
+
+function updateFrame(idx) {
+  const ep = episodes[idx];
+  const s = playerState[idx];
+  const f = ep.frames[s.frame];
+
+  document.getElementById(`frame-${idx}`).src = 'data:image/png;base64,' + f.img;
+
+  // Timeline dots
+  const dots = document.querySelectorAll(`#timeline-${idx} .dot`);
+  dots.forEach((d, i) => {
+    d.className = 'dot' + (i === s.frame ? ' active' : i < s.frame ? ' done' : '');
+  });
+
+  // Plan steps highlight
+  ep.plan.forEach((_, pi) => {
+    const el = document.getElementById(`ps-${idx}-${pi}`);
+    if (!el) return;
+    // frame 0 = START, frame 1 = plan step 0, etc.
+    const planIdx = s.frame - 1;
+    if (pi < planIdx) el.className = 'plan-step completed';
+    else if (pi === planIdx) el.className = 'plan-step current';
+    else el.className = 'plan-step';
+  });
+
+  // Pipeline bar animation
+  const stage = s.frame === 0 ? 0 : s.frame < ep.frames.length - 1 ? 4 : 5;
+  animatePipeline(stage);
+
+  // Step info
+  let info = `<span class="action-name">${f.action}</span> — step ${s.frame}/${ep.frames.length - 1}`;
+  if (f.reward > 0) info += ` — <span class="reward">reward: ${f.reward}</span>`;
+  document.getElementById(`info-${idx}`).innerHTML = info;
+}
+
+function stepForward(idx) {
+  const ep = episodes[idx];
+  if (playerState[idx].frame < ep.frames.length - 1) {
+    playerState[idx].frame++;
+    updateFrame(idx);
+  } else {
+    stopPlay(idx);
+  }
+}
+
+function stepBack(idx) {
+  if (playerState[idx].frame > 0) {
+    playerState[idx].frame--;
+    updateFrame(idx);
+  }
+}
+
+function goToFrame(idx, fi) {
+  playerState[idx].frame = fi;
+  updateFrame(idx);
+}
+
+function resetEp(idx) {
+  stopPlay(idx);
+  playerState[idx].frame = 0;
+  updateFrame(idx);
+}
+
+function togglePlay(idx) {
+  if (playerState[idx].playing) {
+    stopPlay(idx);
+  } else {
+    // Reset if at end
+    if (playerState[idx].frame >= episodes[idx].frames.length - 1) {
+      playerState[idx].frame = 0;
+    }
+    playerState[idx].playing = true;
+    document.getElementById(`play-${idx}`).className = 'playing';
+    document.getElementById(`play-${idx}`).textContent = '⏸';
+    playerState[idx].timer = setInterval(() => stepForward(idx), playerState[idx].speed);
+  }
+}
+
+function stopPlay(idx) {
+  playerState[idx].playing = false;
+  clearInterval(playerState[idx].timer);
+  const btn = document.getElementById(`play-${idx}`);
+  if (btn) {
+    btn.className = '';
+    btn.textContent = '▶ Play';
+  }
+}
+
+function setSpeed(idx, ms) {
+  playerState[idx].speed = parseInt(ms);
+  if (playerState[idx].playing) {
+    clearInterval(playerState[idx].timer);
+    playerState[idx].timer = setInterval(() => stepForward(idx), playerState[idx].speed);
+  }
+}
+
+// ── Pipeline animation ──
+const pipeNodes = ['pn-text', 'pn-chunk', 'pn-perc', 'pn-nav', 'pn-exec', 'pn-verify'];
+function animatePipeline(upTo) {
+  pipeNodes.forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (i <= upTo) el.classList.add('lit');
+    else el.classList.remove('lit');
+  });
+}
+
+// ── Play All ──
+function playAll() {
+  episodes.forEach((_, idx) => {
+    setTimeout(() => togglePlay(idx), idx * 300);
+  });
+}
+
+// Auto-generate on load
+generate();
+</script>
+</body>
+</html>

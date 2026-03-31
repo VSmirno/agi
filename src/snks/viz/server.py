@@ -32,6 +32,7 @@ from snks.viz.stage6_data import (
     load_data,
     save_data,
 )
+from snks.viz.babyai_demo import generate_demo as _babyai_generate, run_episode as _babyai_run_episode
 
 # ---------------------------------------------------------------------------
 # State
@@ -298,6 +299,48 @@ async def api_stage6_generate():
     data = await loop.run_in_executor(None, collect_demo)
     await loop.run_in_executor(None, save_data, data)
     return JSONResponse(content=data)
+
+
+# ---------------------------------------------------------------------------
+# BabyAI routes (Stage 24c)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/babyai")
+async def babyai_page():
+    """Serve the BabyAI e2e demo page."""
+    page_path = STATIC_DIR / "babyai.html"
+    if page_path.exists():
+        return FileResponse(str(page_path))
+    return JSONResponse(
+        {"message": "BabyAI demo — babyai.html not found"},
+        status_code=404,
+    )
+
+
+@app.post("/api/babyai/generate")
+async def api_babyai_generate(env: str | None = None, seed: int | None = None):
+    """Generate BabyAI demo episodes.
+
+    Query params:
+        env: specific env name (e.g. BabyAI-GoToObj-v0), or None for all defaults
+        seed: specific seed, or None for defaults
+    """
+    loop = asyncio.get_event_loop()
+
+    if env and seed is not None:
+        # Single episode with specific env + seed.
+        ep = await loop.run_in_executor(None, _babyai_run_episode, env, seed)
+        episodes = [ep] if ep else []
+    elif env:
+        # 5 episodes with specific env, various seeds.
+        scenarios = [(env, s) for s in range(5)]
+        episodes = await loop.run_in_executor(None, _babyai_generate, scenarios)
+    else:
+        # Default: all scenarios.
+        episodes = await loop.run_in_executor(None, _babyai_generate, None)
+
+    return JSONResponse(content=episodes)
 
 
 # ---------------------------------------------------------------------------

@@ -1,9 +1,16 @@
 """Text encoder: str → SDR → DAF external currents."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import torch
 
 from snks.daf.types import EncoderConfig
 from snks.encoder.sdr import kwta
+
+if TYPE_CHECKING:
+    from snks.daf.types import ZoneConfig
 
 
 class TextEncoder:
@@ -61,7 +68,9 @@ class TextEncoder:
             sdr = kwta(projected, self.k)       # binary (sdr_size,)
         return sdr
 
-    def sdr_to_currents(self, sdr: torch.Tensor, n_nodes: int) -> torch.Tensor:
+    def sdr_to_currents(
+        self, sdr: torch.Tensor, n_nodes: int, zone: ZoneConfig | None = None,
+    ) -> torch.Tensor:
         """Map SDR to external currents for DAF engine.
 
         Same mapping as VisualEncoder: multiplicative hash distributes nodes
@@ -69,14 +78,17 @@ class TextEncoder:
 
         Args:
             sdr: (sdr_size,) binary SDR.
-            n_nodes: number of DAF nodes.
+            n_nodes: total number of DAF nodes (ignored when zone is set).
+            zone: if provided, hash only within zone.size nodes and return
+                  (zone.size, 8) tensor for zone-based injection.
 
         Returns:
-            (n_nodes, 8) external currents tensor.
+            (n_nodes, 8) or (zone.size, 8) external currents tensor.
         """
         PRIME = 2654435761
-        node_sdr_idx = (torch.arange(n_nodes, device=sdr.device) * PRIME) % self.config.sdr_size
+        sz = zone.size if zone is not None else n_nodes
+        node_sdr_idx = (torch.arange(sz, device=sdr.device) * PRIME) % self.config.sdr_size
 
-        currents = torch.zeros(n_nodes, 8, device=sdr.device)
+        currents = torch.zeros(sz, 8, device=sdr.device)
         currents[:, 0] = sdr[node_sdr_idx] * self.config.sdr_current_strength
         return currents
