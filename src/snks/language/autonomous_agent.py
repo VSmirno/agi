@@ -49,12 +49,22 @@ DOORKEY_ENV_MAP = {
     16: "MiniGrid-DoorKey-16x16-v0",
 }
 
+# Multi-room environments (Stage 37)
+MULTIROOM_ENV_MAP = {
+    "N2": "MiniGrid-MultiRoom-N2-S4-v0",
+    "N4": "MiniGrid-MultiRoom-N4-S5-v0",
+    "N6": "MiniGrid-MultiRoom-N6-v0",
+    "unlock": "MiniGrid-UnlockPickup-v0",
+    "blocked": "MiniGrid-BlockedUnlockPickup-v0",
+}
 
-def _env_name(grid_size: int) -> str:
-    """Get MiniGrid env name for a grid size."""
+
+def _env_name(grid_size: int, env_type: str = "doorkey") -> str:
+    """Get MiniGrid env name for a grid size or env type."""
+    if env_type != "doorkey" and env_type in MULTIROOM_ENV_MAP:
+        return MULTIROOM_ENV_MAP[env_type]
     if grid_size in DOORKEY_ENV_MAP:
         return DOORKEY_ENV_MAP[grid_size]
-    # Fallback: use closest available
     if grid_size <= 5:
         return DOORKEY_ENV_MAP[5]
     elif grid_size <= 6:
