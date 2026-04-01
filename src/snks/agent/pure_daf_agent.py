@@ -49,6 +49,8 @@ class PureDafConfig:
     # Episode
     max_episode_steps: int = 200
     n_actions: int = 5
+    # Stage 40: Hebbian encoder
+    use_hebbian: bool = False
 
 
 @dataclass
@@ -87,6 +89,10 @@ class PureDafAgent:
         if config is None:
             config = PureDafConfig()
         self.config = config
+
+        # Stage 40: enable Hebbian encoder if requested
+        if config.use_hebbian:
+            config.causal.pipeline.encoder.hebbian = True
 
         # Core DAF agent (owns Pipeline, DafEngine, STDP)
         self._agent = CausalAgent(config.causal)
