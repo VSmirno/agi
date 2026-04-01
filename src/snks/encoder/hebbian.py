@@ -1,10 +1,12 @@
-"""HebbianEncoder: learnable visual encoder via Oja's Hebbian rule.
+"""HebbianEncoder: learnable visual encoder via competitive Hebbian rule.
 
 Extends VisualEncoder — initialized from Gabor filters, then learns
-via local Hebbian updates modulated by prediction error.
+via local competitive Hebbian updates modulated by prediction error.
 
 Key properties:
-- No backprop — only local learning rule (Oja 1982)
+- No backprop — only local learning rule (Sanger 1989 / competitive Hebbian)
+- Competitive: only top-K active filters updated per image (lateral inhibition)
+- Sanger's triangular decorrelation: each filter extracts a different PC
 - PE modulation: high surprise → faster learning
 - Diversity regularization: prevents filter collapse
 - Drop-in replacement for VisualEncoder
@@ -20,15 +22,13 @@ from snks.encoder.encoder import VisualEncoder
 
 
 class HebbianEncoder(VisualEncoder):
-    """Learnable encoder using Oja's Hebbian rule on conv filters.
+    """Learnable encoder using competitive Hebbian rule on conv filters.
 
-    Oja's rule per filter f:
-        Δw_f = η_eff × <post_f> × (<pre_f> - <post_f> × w_f)
+    Sanger's Generalized Hebbian Algorithm (GHA) per filter f:
+        Δw_f = η_eff × post_f × (pre - Σ_{g≤f} post_g × w_g)
 
-    where:
-        pre_f = mean input patch under filter f
-        post_f = mean pooled activation of filter f
-        η_eff = η_base × clamp(PE / PE_baseline, 0.1, 2.0)
+    Only the top-K most active filters are updated (competitive learning).
+    This naturally leads to different filters extracting different features.
 
     PE modulation breaks Oja's self-normalization, so weight
     clamping to [w_min, w_max] is REQUIRED (not just safety).
@@ -44,6 +44,7 @@ class HebbianEncoder(VisualEncoder):
         diversity_threshold: float = 0.8,
         w_min: float = -2.0,
         w_max: float = 2.0,
+        competitive_k_ratio: float = 0.25,
     ) -> None:
         super().__init__(config)
         self.lr = lr
@@ -53,6 +54,7 @@ class HebbianEncoder(VisualEncoder):
         self.diversity_threshold = diversity_threshold
         self.w_min = w_min
         self.w_max = w_max
+        self.competitive_k_ratio = competitive_k_ratio
 
         # Adaptive PE baseline (EMA)
         self._pe_baseline = pe_baseline
@@ -64,7 +66,12 @@ class HebbianEncoder(VisualEncoder):
         sdr: torch.Tensor,
         prediction_error: float,
     ) -> float:
-        """Apply one Hebbian learning step to conv filters.
+        """Apply one competitive Hebbian learning step.
+
+        Uses Sanger's GHA with competitive selection:
+        1. Compute post-activations per filter
+        2. Select top-K active filters (winners)
+        3. Apply Sanger's rule (triangular decorrelation) to winners only
 
         Args:
             image: (H, W) grayscale float32 input image.
@@ -89,42 +96,58 @@ class HebbianEncoder(VisualEncoder):
         n_filters = weight.shape[0]
         kH, kW = weight.shape[2], weight.shape[3]
 
-        # Pre-synaptic: extract mean input patches per filter via unfold
-        # image: (H, W) → (1, 1, H, W)
-        x = image.unsqueeze(0).unsqueeze(0)
+        # Pre-synaptic: extract mean input patches via unfold
+        x = image.unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
         padding = kH // 2
-        # Unfold: (1, 1*kH*kW, L) where L = number of spatial positions
         patches = F.unfold(x, kernel_size=(kH, kW), padding=padding)  # (1, kH*kW, L)
-        # Mean across spatial positions → (kH*kW,) = mean input patch
         pre = patches.squeeze(0).mean(dim=1)  # (kH*kW,)
 
-        # Post-synaptic: pooled activations per filter (before k-WTA)
+        # Post-synaptic: activations per filter
         with torch.no_grad():
             features = self.gabor(x)  # (1, n_filters, H, W)
             pooled = self.pool(features)  # (1, n_filters, pool_h, pool_w)
-            # Mean activation per filter across spatial dimensions
             post = pooled.squeeze(0).mean(dim=(1, 2))  # (n_filters,)
 
-        # Oja's rule per filter:
-        # Δw_f = η × post_f × (pre - post_f × w_f)
-        # w_f shape: (1, kH, kW) → flatten to (kH*kW,)
+        # Competitive selection: only top-K active filters get updated
+        competitive_k = max(1, int(n_filters * self.competitive_k_ratio))
+        _, winner_idx = torch.topk(post, competitive_k)
+
         w_flat = weight.view(n_filters, -1)  # (n_filters, kH*kW)
 
-        # pre: (kH*kW,) broadcast to (n_filters, kH*kW)
-        # post: (n_filters,) → (n_filters, 1) for broadcasting
-        post_col = post.unsqueeze(1)  # (n_filters, 1)
+        # Sanger's GHA for winners (triangular decorrelation):
+        # For winner i (sorted by activation, highest first):
+        #   residual_i = pre - Σ_{j<i among winners} post_j × w_j
+        #   Δw_i = η × post_i × (residual_i - post_i × w_i)
+        # This ensures each winner extracts a different component.
 
-        # Δw = η × post × (pre - post × w)
-        delta_w = eta * post_col * (pre.unsqueeze(0) - post_col * w_flat)
+        # Sort winners by activation (descending) for proper triangular ordering
+        winner_post = post[winner_idx]
+        sort_order = torch.argsort(winner_post, descending=True)
+        sorted_idx = winner_idx[sort_order]
+        sorted_post = winner_post[sort_order]
 
-        # Apply update in-place
-        w_flat.add_(delta_w)
+        residual = pre.clone()  # Start with full input
+        total_delta = torch.zeros(1, device=weight.device)
+
+        for rank in range(competitive_k):
+            f = sorted_idx[rank].item()
+            y_f = sorted_post[rank].item()
+
+            if y_f < 1e-8:
+                continue  # Skip inactive filters
+
+            # Sanger update: Δw = η × y_f × (residual - y_f × w_f)
+            delta = eta * y_f * (residual - y_f * w_flat[f])
+            w_flat[f] += delta
+            total_delta += delta.abs().mean()
+
+            # Subtract this filter's contribution from residual (triangular)
+            residual = residual - y_f * w_flat[f]
 
         # Clamp weights (REQUIRED — PE modulation breaks self-normalization)
         weight.clamp_(self.w_min, self.w_max)
 
-        # Track convergence
-        mean_delta = delta_w.abs().mean().item()
+        mean_delta = total_delta.item() / max(competitive_k, 1)
 
         # Diversity regularization at intervals
         self._update_count += 1
@@ -162,13 +185,13 @@ class HebbianEncoder(VisualEncoder):
         for i, j in zip(rows.tolist(), cols.tolist()):
             if j in perturbed or i >= j:
                 continue
-            # Push j away from i
+            # Push j away from i with noise + orthogonal direction
             noise = torch.randn_like(w_flat[j]) * 0.1
             direction = w_flat[j] - w_flat[i]
-            w_flat[j] += noise + 0.05 * direction
+            w_flat[j] += noise + 0.1 * direction
             perturbed.add(j)
 
-        # Re-normalize perturbed filters to prevent drift
+        # Re-normalize perturbed filters
         for j in perturbed:
             norm = w_flat[j].norm()
             if norm > 1e-8:
