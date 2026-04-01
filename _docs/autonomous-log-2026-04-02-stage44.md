@@ -44,8 +44,11 @@ Stages 0-43 COMPLETE. Stage 44: Foundation Audit — проверка корре
 - Агент: 50K FHN нод, SymbolicEncoder, NO WM/eligibility/curriculum/navigator
 - 200 эпизодов, EpsilonScheduler 0.7→0.1
 - Запущен на minipc (tmux session: exp104)
-- **Ep 1:** success=False, steps=200, PE=0.126, SKS=64, time=153.3s
-- **ETA:** ~8.5 часов (508 мин) для 200 эпизодов
+- **12 эпизодов выполнено, 0 successes** (на момент последней проверки)
+- Все эпизоды: 200 шагов (max), reward=0, SKS=64, eps=0.70
+- PE range: 0.087-0.213 (нет тренда улучшения)
+- 153.2 sec/episode, ETA ~8.5 часов для 200 эпизодов
+- **Предварительный вердикт: FAIL** — naked DAF не может решить DoorKey-5x5
 - Gate: success >= 15% = PASS, 5-15% = PARTIAL, <5% with learning signal = LEARNING_SIGNAL
 
 ### Ключевые находки аудита
