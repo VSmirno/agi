@@ -70,14 +70,14 @@
 | Stage | Название | Статус | Что нужно |
 |-------|----------|--------|-----------|
 | 41 | Temporal Credit Assignment | COMPLETE (2026-04-01) | Eligibility trace: λ=0.92, window=35 steps, 5x memory savings |
-| 42 | Spatial Representation | PLANNED | Grid/place cells в аттракторах |
+| 42 | Spatial Representation | COMPLETE (2026-04-01) | Perception fix: symbolic+CNN encoders, diagnostic confirms dual bottleneck |
 | 43 | Working Memory | PLANNED | Sustained oscillation между шагами |
 
 ---
 
 ## Статус: Блок 6 в разработке
 
-**Stages 0-41: COMPLETE** (113 экспериментов ALL PASS)
+**Stages 0-42: COMPLETE** (118 экспериментов, 116 PASS, 1 FAIL expected, 1 reference)
 **Exp 92 GPU Scaling: DONE** (N=200K, 34/34 exps PASS on AMD ROCm)
 **Stage 38: Pure DAF** — убран scaffolding, чистый DAF pipeline, 12% DoorKey-5x5
 
