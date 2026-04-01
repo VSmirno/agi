@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 44: Аудит фундамента</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0e17; color: #e2e8f0; font-family: 'JetBrains Mono', 'Cascadia Code', monospace; padding: 20px; }
+h1 { color: #60a5fa; margin-bottom: 8px; font-size: 1.4rem; }
+h2 { color: #60a5fa; margin: 20px 0 10px; font-size: 1.1rem; }
+h3 { color: #94a3b8; margin: 15px 0 8px; font-size: 0.95rem; }
+.subtitle { color: #94a3b8; margin-bottom: 20px; font-size: 0.85rem; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+.card { background: #1e293b; border-radius: 8px; padding: 16px; border: 1px solid #334155; }
+.card-title { color: #60a5fa; font-size: 0.9rem; margin-bottom: 10px; }
+.pass { color: #22c55e; font-weight: bold; }
+.fail { color: #ef4444; font-weight: bold; }
+.warn { color: #f59e0b; font-weight: bold; }
+.finding { background: #1a1a2e; border-left: 3px solid #f59e0b; padding: 10px 14px; margin: 8px 0; border-radius: 0 6px 6px 0; font-size: 0.8rem; line-height: 1.5; }
+.finding-title { color: #f59e0b; font-weight: bold; margin-bottom: 4px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+th { text-align: left; padding: 6px 8px; border-bottom: 2px solid #334155; color: #94a3b8; }
+td { padding: 6px 8px; border-bottom: 1px solid #1e293b; }
+.bar-container { background: #0f172a; border-radius: 4px; height: 20px; position: relative; margin: 4px 0; }
+.bar { height: 100%; border-radius: 4px; transition: width 0.5s; }
+.bar-label { position: absolute; right: 6px; top: 2px; font-size: 0.7rem; }
+canvas { border-radius: 8px; }
+.explanation { background: #0f172a; border-radius: 8px; padding: 14px; margin-top: 16px; font-size: 0.8rem; line-height: 1.6; }
+.explanation strong { color: #60a5fa; }
+.status-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-pass { background: #22c55e; }
+.dot-fail { background: #ef4444; }
+.dot-running { background: #f59e0b; animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+</style>
+</head>
+<body>
+
+<h1>Этап 44: Аудит фундамента DAF</h1>
+<p class="subtitle">Проверка корректности каждого слоя DAF-ядра перед добавлением новых механизмов</p>
+
+<div class="grid">
+
+<!-- Phase 1: Layer-by-layer audit -->
+<div class="card">
+<div class="card-title">Фаза 1: Послойный аудит (26 тестов)</div>
+<table>
+<tr><th>Слой</th><th>Тесты</th><th>Статус</th></tr>
+<tr><td>FHN Dynamics</td><td>7</td><td class="pass">PASS</td></tr>
+<tr><td>STDP Learning</td><td>6</td><td class="pass">PASS</td></tr>
+<tr><td>Coupling</td><td>4</td><td class="pass">PASS</td></tr>
+<tr><td>SKS Detection</td><td>4</td><td class="pass">PASS</td></tr>
+<tr><td>Pipeline E2E</td><td>3</td><td class="pass">PASS</td></tr>
+<tr><td>Action Selection</td><td>2</td><td class="pass">PASS</td></tr>
+</table>
+<div style="margin-top: 10px;">
+<div class="bar-container">
+<div class="bar" style="width: 100%; background: #22c55e;"></div>
+<span class="bar-label">26/26 PASS</span>
+</div>
+</div>
+</div>
+
+<!-- Phase 0: Golden Path -->
+<div class="card">
+<div class="card-title">Фаза 0: Golden Path (3×3 grid)</div>
+<div style="text-align: center; margin: 10px 0;">
+<canvas id="goldenCanvas" width="180" height="180"></canvas>
+</div>
+<table>
+<tr><td>Success rate</td><td class="pass">56.7% (17/30)</td></tr>
+<tr><td>Gate (>50%)</td><td class="pass">PASS</td></tr>
+<tr><td>Weight delta</td><td class="pass">0.098</td></tr>
+<tr><td>Random baseline</td><td>~30-40%</td></tr>
+</table>
+</div>
+
+</div>
+
+<!-- Findings -->
+<h2>Ключевые находки</h2>
+
+<div class="finding">
+<div class="finding-title">Находка 1: FHN — excitable, не oscillatory</div>
+При default параметрах (I_base=0.5, tau=12.5) одиночный FHN нейрон <strong>не осциллирует</strong>.
+Он excitable — реагирует на вход, но не генерирует ритмическую активность.
+Система полагается на <strong>шум + coupling</strong> для spiking activity.
+</div>
+
+<div class="finding">
+<div class="finding-title">Находка 2: Coupling timescale mismatch</div>
+Передача активности через coupling требует <strong>~5000 шагов (0.5 сек модельного времени)</strong>.
+Pipeline использует <strong>steps_per_cycle=100 (0.01 сек)</strong> — за один цикл coupling
+практически не передаёт информацию между нодами. Это может объяснять плохую SKS-формацию.
+</div>
+
+<div class="finding">
+<div class="finding-title">Находка 3: Structural pruning</div>
+Во время обучения structural pruning удаляет слабые edges, меняя топологию графа.
+Количество edges уменьшается на ~1% за 30 эпизодов. Это штатное поведение, но
+влияет на метрики weight delta.
+</div>
+
+<!-- Phase 2 status -->
+<h2>Фаза 2: Naked DAF на DoorKey-5x5</h2>
+<div class="card">
+<div class="card-title">
+<span class="dot dot-running"></span> Эксперимент выполняется на GPU (minipc)
+</div>
+<table>
+<tr><td>Среда</td><td>MiniGrid-DoorKey-5x5-v0</td></tr>
+<tr><td>Нод</td><td>50,000 FHN</td></tr>
+<tr><td>Эпизоды</td><td>200</td></tr>
+<tr><td>Extras</td><td>NONE (без WM, eligibility, curriculum, navigator)</td></tr>
+<tr><td>Gate PASS</td><td>success ≥ 15%</td></tr>
+<tr><td>Gate PARTIAL</td><td>5% ≤ success < 15%</td></tr>
+</table>
+<div id="exp104Status" style="margin-top: 10px; font-size: 0.8rem; color: #94a3b8;">
+Результаты будут обновлены после завершения эксперимента.
+</div>
+</div>
+
+<!-- Explanation -->
+<div class="explanation">
+<strong>Зачем нужен этот аудит?</strong><br><br>
+После Stage 38 (Pure DAF) мы убрали scaffolding и обнаружили, что чистый DAF-pipeline
+даёт всего 5% на DoorKey-5x5. Stages 38-43 добавляли механизмы реактивно — каждый как
+ответ на конкретный провал. Stage 42 выявил скрытый дефект (perception blind), который
+маскировался месяцами.<br><br>
+Прежде чем добавлять новые механизмы, нужно было убедиться, что <strong>каждый существующий
+слой работает корректно</strong>. Этот аудит проверил: FHN dynamics, STDP learning, coupling,
+SKS detection, pipeline end-to-end, и action selection.<br><br>
+<strong>Результат:</strong> Все слои работают корректно по отдельности (26/26 PASS). Но аудит
+выявил важные <strong>timescale mismatches</strong> — coupling нуждается в 50x больше времени,
+чем даёт perception_cycle. Это системная проблема архитектуры, а не баг.
+</div>
+
+<script>
+// Golden Path grid visualization
+const canvas = document.getElementById('goldenCanvas');
+const ctx = canvas.getContext('2d');
+const cellSize = 50;
+const padding = 15;
+
+function drawGrid() {
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+            const x = padding + c * cellSize;
+            const y = padding + r * cellSize;
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+            ctx.strokeStyle = '#334155';
+            ctx.strokeRect(x, y, cellSize, cellSize);
+        }
+    }
+
+    // Agent at (0,0)
+    const ax = padding + 0.5 * cellSize;
+    const ay = padding + 0.5 * cellSize;
+    ctx.fillStyle = '#ff4444';
+    ctx.beginPath();
+    ctx.moveTo(ax + 12, ay);
+    ctx.lineTo(ax - 8, ay - 10);
+    ctx.lineTo(ax - 8, ay + 10);
+    ctx.closePath();
+    ctx.fill();
+
+    // Goal at (2,2)
+    const gx = padding + 2.5 * cellSize;
+    const gy = padding + 2.5 * cellSize;
+    ctx.fillStyle = '#00ff88';
+    ctx.beginPath();
+    ctx.moveTo(gx, gy - 14);
+    ctx.lineTo(gx + 12, gy);
+    ctx.lineTo(gx, gy + 14);
+    ctx.lineTo(gx - 12, gy);
+    ctx.closePath();
+    ctx.fill();
+
+    // Labels
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px monospace';
+    ctx.fillText('Агент', padding, padding + 3 * cellSize + 14);
+    ctx.fillText('Цель', padding + 2 * cellSize, padding + 3 * cellSize + 14);
+}
+
+drawGrid();
+</script>
+
+</body>
+</html>
