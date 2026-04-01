@@ -62,12 +62,13 @@
 | 36 | Spatial Abstraction | COMPLETE (2026-03-31) | Curriculum 5→16, 100% success DoorKey-16x16, causal transfer |
 | 37 | Multi-Room Navigation | COMPLETE (2026-03-31) | Closed door handling, 96% MultiRoom-N4, backward chaining scales |
 | 38 | Pure DAF Agent | COMPLETE (2026-04-01) | Убран scaffolding, чистый DAF pipeline, reward-modulated STDP, env-agnostic |
+| 39 | Curriculum Learning | COMPLETE (2026-04-01) | CurriculumScheduler, EpsilonDecay, PE exploration, 15 tests + 5 exps PASS |
 
 ---
 
 ## Статус: Блок 6 в разработке
 
-**Stages 0-38: COMPLETE** (98 экспериментов ALL PASS)
+**Stages 0-39: COMPLETE** (103 экспериментов ALL PASS)
 **Exp 92 GPU Scaling: DONE** (N=200K, 34/34 exps PASS on AMD ROCm)
 **Stage 38: Pure DAF** — убран scaffolding, чистый DAF pipeline, 12% DoorKey-5x5
 
