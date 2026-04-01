@@ -63,6 +63,9 @@ class PureDafConfig:
     trace_reward_lr: float = 0.5
     # Stage 42: Encoder type
     encoder_type: str = "gabor"  # "gabor" | "symbolic" | "cnn"
+    # Stage 43: Working Memory
+    wm_fraction: float = 0.0   # 0 = disabled, 0.2 = 20% of nodes
+    wm_decay: float = 0.95
 
 
 @dataclass
@@ -105,6 +108,11 @@ class PureDafAgent:
         # Stage 40: enable Hebbian encoder if requested
         if config.use_hebbian:
             config.causal.pipeline.encoder.hebbian = True
+
+        # Stage 43: Working Memory
+        if config.wm_fraction > 0:
+            config.causal.pipeline.daf.wm_fraction = config.wm_fraction
+            config.causal.pipeline.daf.wm_decay = config.wm_decay
 
         # Core DAF agent (owns Pipeline, DafEngine, STDP)
         self._agent = CausalAgent(config.causal)

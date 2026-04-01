@@ -62,6 +62,10 @@ class DafConfig:
     structural_prune_threshold: float = 0.01  # weight below which to prune
     structural_interval: int = 1000          # steps between structural updates
 
+    # Stage 43: Working Memory
+    wm_fraction: float = 0.0   # fraction of nodes in WM zone (0 = disabled, 0.2 = 20%)
+    wm_decay: float = 0.95     # per-cycle relaxation toward resting state
+
     # Device
     device: str = "auto"
 
