@@ -8,6 +8,7 @@ export HSA_OVERRIDE_GFX_VERSION=11.0.0
 export SNKS_NO_COMPILE=1
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
+export PYTHONUNBUFFERED=1
 
 echo "=== Stage 44: Foundation Audit — GPU Experiments ==="
 echo "Started: $(date)"
