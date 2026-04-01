@@ -61,6 +61,8 @@ class CycleResult:
     mean_firing_rate: float = 0.0
     # Stage 13: Configurator
     configurator_action: "ConfiguratorAction | None" = None
+    # Stage 41: STDP result for eligibility trace
+    stdp_result: "object | None" = None
 
 
 @dataclass
@@ -420,6 +422,7 @@ class Pipeline:
             meta_pe=meta_pe,
             mean_firing_rate=mean_firing_rate,
             configurator_action=configurator_action,
+            stdp_result=step_result.stdp_result,
         )
         # Stage 40: Hebbian encoder learning — update after PE is computed
         if isinstance(self.encoder, HebbianEncoder) and image is not None:
