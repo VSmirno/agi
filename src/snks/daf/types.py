@@ -65,6 +65,7 @@ class DafConfig:
     # Stage 43: Working Memory
     wm_fraction: float = 0.0   # fraction of nodes in WM zone (0 = disabled, 0.2 = 20%)
     wm_decay: float = 0.95     # per-cycle relaxation toward resting state
+    wm_coupling_scale: float = 0.1  # scale coupling INTO WM (0.1 = 10% of normal)
 
     # Device
     device: str = "auto"

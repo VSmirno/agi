@@ -60,6 +60,14 @@ class DafEngine:
         else:
             self.graph = SparseDafGraph.random_sparse(N, config.avg_degree, self.device)
 
+        # Stage 43 fix: weaken coupling INTO WM zone to prevent amplification
+        if config.wm_fraction > 0 and config.wm_coupling_scale < 1.0:
+            n_wm = int(N * config.wm_fraction)
+            wm_start = N - n_wm
+            dst_idx = self.graph.edge_index[1]
+            wm_edge_mask = dst_idx >= wm_start
+            self.graph.edge_attr[wm_edge_mask, 0] *= config.wm_coupling_scale
+
         self._external_currents = torch.zeros(N, config.state_dim, device=self.device)
         self._last_fired_history: torch.Tensor | None = None
         self.step_count: int = 0
