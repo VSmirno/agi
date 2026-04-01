@@ -18,6 +18,7 @@ from snks.daf.types import ConfiguratorAction, PipelineConfig
 from snks.dcam.hac import HACEngine
 from snks.device import get_device
 from snks.encoder.encoder import VisualEncoder
+from snks.encoder.hebbian import HebbianEncoder
 from snks.encoder.text_encoder import TextEncoder
 from snks.language.grounding_map import GroundingMap
 from snks.gws.workspace import GlobalWorkspace, GWSState
@@ -76,7 +77,11 @@ class Pipeline:
 
     def __init__(self, config: PipelineConfig) -> None:
         self.config = config
-        self.encoder = VisualEncoder(config.encoder)
+        if config.encoder.hebbian:
+            self.encoder = HebbianEncoder(config.encoder, lr=config.encoder.hebbian_lr)
+        else:
+            self.encoder = VisualEncoder(config.encoder)
+        self._hebbian_cycle_count = 0
         self.text_encoder = TextEncoder(config.encoder, device=config.device)
         self.engine = DafEngine(config.daf, enable_learning=True)
         self.tracker = SKSTracker()
@@ -416,6 +421,13 @@ class Pipeline:
             mean_firing_rate=mean_firing_rate,
             configurator_action=configurator_action,
         )
+        # Stage 40: Hebbian encoder learning — update after PE is computed
+        if isinstance(self.encoder, HebbianEncoder) and image is not None:
+            self._hebbian_cycle_count += 1
+            if self._hebbian_cycle_count % self.config.encoder.hebbian_update_interval == 0:
+                sdr_for_hebbian = self.encoder.encode(image)
+                self.encoder.hebbian_update(image, sdr_for_hebbian, mean_pe)
+
         self.last_cycle_result = result  # Stage 14: cached for EmbodiedAgent
         return result
 
