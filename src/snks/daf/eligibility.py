@@ -69,8 +69,9 @@ class EligibilityTrace:
             return 0
 
         # Modulate weights: Δw = η × reward × trace
-        delta = self.reward_lr * reward * self._trace
         w = graph.get_strength()
+        trace = self._trace.to(w.device) if self._trace.device != w.device else self._trace
+        delta = self.reward_lr * reward * trace
 
         # Safety: match edge count (structural pruning may have changed it)
         if w.shape[0] != delta.shape[0]:
