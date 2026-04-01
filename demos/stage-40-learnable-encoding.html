@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 40: Обучаемый энкодер — Hebbian Learning</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e17;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-serif}
+.container{max-width:1400px;margin:0 auto;padding:20px}
+h1{color:#60a5fa;font-size:1.8em;margin-bottom:6px}
+h2{color:#60a5fa;font-size:1.2em;margin:14px 0 8px}
+.subtitle{color:#94a3b8;font-size:1em;margin-bottom:16px}
+.grid-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.panel{background:#1e293b;border-radius:12px;padding:16px;flex:1;min-width:260px}
+.metric{display:inline-block;background:#0f172a;padding:8px 14px;border-radius:8px;margin:4px;text-align:center}
+.metric .value{font-size:1.5em;font-weight:bold}
+.metric .label{font-size:0.8em;color:#94a3b8}
+.metric .value.green{color:#10b981}
+.metric .value.blue{color:#60a5fa}
+.metric .value.yellow{color:#fbbf24}
+canvas{border-radius:8px;display:block}
+.btn{background:#3b82f6;color:white;border:none;padding:7px 15px;border-radius:6px;cursor:pointer;font-size:0.85em;margin:3px}
+.btn:hover{background:#2563eb}
+.btn.active{background:#10b981}
+.controls{text-align:center;margin:10px 0}
+table{width:100%;border-collapse:collapse;margin:8px 0}
+th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #334155;font-size:0.9em}
+th{color:#94a3b8;text-transform:uppercase;font-size:0.8em}
+td.pass{color:#10b981;font-weight:bold}
+.explanation{background:#1e293b;border-left:3px solid #60a5fa;padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0;line-height:1.5;font-size:0.95em}
+#status{text-align:center;margin:8px 0;color:#94a3b8;font-size:0.9em;min-height:1.4em}
+.speed-ctrl{display:inline-flex;align-items:center;gap:6px;margin-left:12px;color:#94a3b8;font-size:0.85em}
+.speed-ctrl button{background:#334155;color:#e2e8f0;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:0.8em}
+.speed-ctrl button.active{background:#3b82f6}
+.filter-grid{display:grid;gap:2px}
+.overlap-chart{height:100px;display:flex;align-items:flex-end;gap:2px;margin:8px 0}
+.overlap-bar{flex:1;border-radius:3px 3px 0 0;min-width:6px;transition:height 0.3s}
+.compare-row{display:flex;gap:16px;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Этап 40: Обучаемый энкодер</h1>
+<p class="subtitle">Hebbian Learning — фильтры адаптируются к задаче через правило Сэнгера (конкурентное обучение)</p>
+
+<div class="grid-row">
+  <div class="panel" style="flex:1.5">
+    <h2>Фильтры энкодера</h2>
+    <div class="compare-row">
+      <div>
+        <div style="text-align:center;color:#94a3b8;font-size:0.85em;margin-bottom:4px">Gabor (до обучения)</div>
+        <canvas id="filtersInit" width="320" height="320"></canvas>
+      </div>
+      <div style="font-size:2em;color:#60a5fa">&#10140;</div>
+      <div>
+        <div style="text-align:center;color:#94a3b8;font-size:0.85em;margin-bottom:4px">Hebbian (после обучения)</div>
+        <canvas id="filtersLearned" width="320" height="320"></canvas>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn" onclick="startTraining()">Запустить обучение</button>
+      <button class="btn" onclick="resetTraining()">Сброс</button>
+      <button class="btn" onclick="stepTraining()">Шаг</button>
+      <div class="speed-ctrl">
+        Скорость:
+        <button onclick="setSpeed(1)" id="sp1" class="active">x1</button>
+        <button onclick="setSpeed(3)" id="sp3">x3</button>
+        <button onclick="setSpeed(10)" id="sp10">x10</button>
+      </div>
+    </div>
+    <div id="status">Нажмите "Запустить обучение" для начала</div>
+  </div>
+
+  <div class="panel">
+    <h2>Метрики обучения</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px">
+      <div class="metric"><div class="value blue" id="mEpoch">0</div><div class="label">Эпоха</div></div>
+      <div class="metric"><div class="value yellow" id="mUpdates">0</div><div class="label">Обновлений</div></div>
+      <div class="metric"><div class="value green" id="mOverlap">—</div><div class="label">Overlap SDR</div></div>
+      <div class="metric"><div class="value blue" id="mDiversity">—</div><div class="label">Разнообр. фильтров</div></div>
+    </div>
+
+    <h2>SDR Overlap (меньше = лучше)</h2>
+    <canvas id="overlapChart" width="400" height="120"></canvas>
+
+    <h2>Сила обновлений (сходимость)</h2>
+    <canvas id="deltaChart" width="400" height="100"></canvas>
+  </div>
+</div>
+
+<div class="grid-row">
+  <div class="panel">
+    <h2>Входные образы (обучающая выборка)</h2>
+    <canvas id="inputImages" width="640" height="100"></canvas>
+    <p style="color:#94a3b8;font-size:0.85em;margin-top:6px">10 разных паттернов: полосы, точки, диагонали, шум</p>
+  </div>
+
+  <div class="panel">
+    <h2>SDR-представления (до и после)</h2>
+    <canvas id="sdrCompare" width="500" height="120"></canvas>
+    <p style="color:#94a3b8;font-size:0.85em;margin-top:6px">Верх: frozen Gabor SDR | Низ: Hebbian SDR. Зелёные биты — активные.</p>
+  </div>
+</div>
+
+<div class="grid-row">
+  <div class="panel">
+    <h2>Результаты экспериментов (exp99)</h2>
+    <table>
+      <tr><th>Эксп.</th><th>Метрика</th><th>Результат</th><th>Gate</th><th>Статус</th></tr>
+      <tr><td>99a</td><td>Дискриминация SDR</td><td>0.232 &rarr; 0.199</td><td>улучшение</td><td class="pass">PASS</td></tr>
+      <tr><td>99b</td><td>Разнообразие фильтров</td><td>0.89</td><td>&gt; 0.5</td><td class="pass">PASS</td></tr>
+      <tr><td>99c</td><td>Сходимость Hebbian</td><td>0.28x</td><td>убывание</td><td class="pass">PASS</td></tr>
+      <tr><td>99d</td><td>DoorKey (регрессия)</td><td>без ошибок</td><td>работает</td><td class="pass">PASS</td></tr>
+      <tr><td>99e</td><td>Кривая обучения</td><td>0.229 &rarr; 0.210</td><td>полож. наклон</td><td class="pass">PASS</td></tr>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Как это работает</h2>
+    <div class="explanation">
+      <strong>Проблема:</strong> Замороженные Gabor-фильтры видят только низкоуровневые края.
+      Агент не может научиться различать ключ, дверь и цель — все выглядят похоже.<br><br>
+      <strong>Решение:</strong> Hebbian encoder — фильтры учатся из опыта:
+      <ul style="margin:8px 0 8px 20px">
+        <li><strong>Конкурентное обучение:</strong> только самые активные фильтры обновляются (латеральное торможение)</li>
+        <li><strong>Правило Сэнгера:</strong> каждый фильтр извлекает свою компоненту (треугольная декорреляция)</li>
+        <li><strong>Модуляция ошибкой:</strong> неожиданные события ускоряют обучение</li>
+        <li><strong>Регуляризация:</strong> похожие фильтры расталкиваются для сохранения разнообразия</li>
+      </ul>
+      <strong>Почему важно:</strong> Это первый шаг к адаптивному представлению.
+      Мозг тоже начинает с простых фильтров (V1) и обучает их через опыт.
+      Для AGI критично — система должна сама формировать нужные представления.
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+// === Simulation State ===
+const N_FILTERS = 64; // 8x8 grid
+const FILTER_SIZE = 9;
+const N_IMAGES = 10;
+const IMG_SIZE = 32;
+const SDR_SIZE = 256;
+const SDR_K = 10; // active bits
+
+let filters = [];
+let initFilters = [];
+let images = [];
+let trainingActive = false;
+let epoch = 0;
+let updateCount = 0;
+let speed = 1;
+let overlapHistory = [];
+let deltaHistory = [];
+let animFrame = null;
+
+// === Initialize ===
+function initGaborFilters() {
+    const f = [];
+    for (let i = 0; i < N_FILTERS; i++) {
+        const kernel = new Float32Array(FILTER_SIZE * FILTER_SIZE);
+        const theta = (i % 8) * Math.PI / 8;
+        const freq = 0.1 + (Math.floor(i / 8) % 4) * 0.1;
+        const phase = ((Math.floor(i / 32)) % 2) * Math.PI;
+        const sigma = 1.5 + (Math.floor(i / 8) % 4) * 0.5;
+        const cx = FILTER_SIZE / 2, cy = FILTER_SIZE / 2;
+        let sum = 0;
+        for (let y = 0; y < FILTER_SIZE; y++) {
+            for (let x = 0; x < FILTER_SIZE; x++) {
+                const dx = x - cx, dy = y - cy;
+                const xr = dx * Math.cos(theta) + dy * Math.sin(theta);
+                const yr = -dx * Math.sin(theta) + dy * Math.cos(theta);
+                const g = Math.exp(-(xr*xr + yr*yr) / (2 * sigma * sigma));
+                kernel[y * FILTER_SIZE + x] = g * Math.cos(2 * Math.PI * freq * xr + phase);
+                sum += kernel[y * FILTER_SIZE + x];
+            }
+        }
+        // Zero-mean
+        const mean = sum / (FILTER_SIZE * FILTER_SIZE);
+        let norm = 0;
+        for (let k = 0; k < kernel.length; k++) { kernel[k] -= mean; norm += kernel[k]*kernel[k]; }
+        norm = Math.sqrt(norm) || 1;
+        for (let k = 0; k < kernel.length; k++) kernel[k] /= norm;
+        f.push(kernel);
+    }
+    return f;
+}
+
+function generateImages() {
+    const imgs = [];
+    for (let i = 0; i < N_IMAGES; i++) {
+        const img = new Float32Array(IMG_SIZE * IMG_SIZE);
+        const pattern = i % 5;
+        if (pattern === 0) { // vertical stripe
+            const col = (i * 7 + 3) % IMG_SIZE;
+            for (let y = 0; y < IMG_SIZE; y++) for (let x = Math.max(0,col-2); x < Math.min(IMG_SIZE,col+3); x++) img[y*IMG_SIZE+x] = 1;
+        } else if (pattern === 1) { // horizontal stripe
+            const row = (i * 11 + 5) % IMG_SIZE;
+            for (let x = 0; x < IMG_SIZE; x++) for (let y = Math.max(0,row-2); y < Math.min(IMG_SIZE,row+3); y++) img[y*IMG_SIZE+x] = 1;
+        } else if (pattern === 2) { // blob
+            const cx = (i*3+8)%IMG_SIZE, cy = (i*5+12)%IMG_SIZE;
+            for (let y = 0; y < IMG_SIZE; y++) for (let x = 0; x < IMG_SIZE; x++) {
+                if ((x-cx)*(x-cx)+(y-cy)*(y-cy) < 25) img[y*IMG_SIZE+x] = 1;
+            }
+        } else if (pattern === 3) { // diagonal
+            for (let k = 0; k < IMG_SIZE; k++) {
+                const r = k, c = (k + i*3) % IMG_SIZE;
+                for (let dc = -1; dc <= 1; dc++) { const cc = c+dc; if (cc>=0 && cc<IMG_SIZE) img[r*IMG_SIZE+cc] = 1; }
+            }
+        } else { // noise
+            let seed = i * 1337;
+            for (let k = 0; k < img.length; k++) { seed = (seed * 1103515245 + 12345) & 0x7fffffff; img[k] = (seed & 0xff) / 255; }
+        }
+        imgs.push(img);
+    }
+    return imgs;
+}
+
+function applyFilter(filter, image) {
+    // Simple convolution (center crop) → single output value (mean activation)
+    const pad = Math.floor(FILTER_SIZE/2);
+    let total = 0, count = 0;
+    for (let iy = pad; iy < IMG_SIZE - pad; iy += 4) {
+        for (let ix = pad; ix < IMG_SIZE - pad; ix += 4) {
+            let val = 0;
+            for (let fy = 0; fy < FILTER_SIZE; fy++) {
+                for (let fx = 0; fx < FILTER_SIZE; fx++) {
+                    val += filter[fy*FILTER_SIZE+fx] * image[(iy-pad+fy)*IMG_SIZE+(ix-pad+fx)];
+                }
+            }
+            total += Math.abs(val);
+            count++;
+        }
+    }
+    return total / count;
+}
+
+function computeSDR(filterSet, image) {
+    const activations = filterSet.map(f => applyFilter(f, image));
+    // Pad to SDR_SIZE
+    const sdr = new Float32Array(SDR_SIZE);
+    for (let i = 0; i < Math.min(N_FILTERS, SDR_SIZE); i++) sdr[i] = activations[i];
+    // k-WTA
+    const indexed = Array.from(sdr).map((v,i) => ({v,i}));
+    indexed.sort((a,b) => b.v - a.v);
+    const result = new Float32Array(SDR_SIZE);
+    for (let k = 0; k < SDR_K; k++) result[indexed[k].i] = 1;
+    return result;
+}
+
+function computeMeanOverlap(filterSet) {
+    let total = 0, count = 0;
+    for (let i = 0; i < images.length; i++) {
+        const sdri = computeSDR(filterSet, images[i]);
+        for (let j = i+1; j < images.length; j++) {
+            const sdrj = computeSDR(filterSet, images[j]);
+            let overlap = 0;
+            for (let k = 0; k < SDR_SIZE; k++) overlap += sdri[k] * sdrj[k];
+            total += overlap / SDR_K;
+            count++;
+        }
+    }
+    return total / count;
+}
+
+function hebbianStep() {
+    const imgIdx = updateCount % images.length;
+    const image = images[imgIdx];
+    const eta = 0.005;
+
+    // Compute post-activations
+    const post = filters.map(f => applyFilter(f, image));
+
+    // Find top-K winners (25%)
+    const k = Math.max(1, Math.floor(N_FILTERS * 0.25));
+    const indexed = post.map((v,i) => ({v,i}));
+    indexed.sort((a,b) => b.v - a.v);
+    const winners = indexed.slice(0, k);
+
+    // Compute mean input patch (pre)
+    const pre = new Float32Array(FILTER_SIZE * FILTER_SIZE);
+    const pad = Math.floor(FILTER_SIZE/2);
+    let patchCount = 0;
+    for (let iy = pad; iy < IMG_SIZE - pad; iy += 4) {
+        for (let ix = pad; ix < IMG_SIZE - pad; ix += 4) {
+            for (let fy = 0; fy < FILTER_SIZE; fy++) {
+                for (let fx = 0; fx < FILTER_SIZE; fx++) {
+                    pre[fy*FILTER_SIZE+fx] += image[(iy-pad+fy)*IMG_SIZE+(ix-pad+fx)];
+                }
+            }
+            patchCount++;
+        }
+    }
+    for (let k2 = 0; k2 < pre.length; k2++) pre[k2] /= patchCount;
+
+    // Sanger's rule for winners
+    const residual = new Float32Array(pre);
+    let totalDelta = 0;
+    for (const w of winners) {
+        const f = w.i;
+        const y = w.v;
+        if (y < 1e-8) continue;
+        const filter = filters[f];
+        for (let j = 0; j < filter.length; j++) {
+            const dw = eta * y * (residual[j] - y * filter[j]);
+            filter[j] += dw;
+            filter[j] = Math.max(-2, Math.min(2, filter[j]));
+            totalDelta += Math.abs(dw);
+        }
+        // Subtract contribution (triangular)
+        for (let j = 0; j < residual.length; j++) residual[j] -= y * filter[j];
+    }
+
+    updateCount++;
+    deltaHistory.push(totalDelta / (k * FILTER_SIZE * FILTER_SIZE));
+
+    if (updateCount % images.length === 0) {
+        epoch++;
+        const overlap = computeMeanOverlap(filters);
+        overlapHistory.push(overlap);
+    }
+}
+
+// === Drawing ===
+function drawFilters(canvasId, filterSet) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    const gridN = 8;
+    const cellSize = canvas.width / gridN;
+
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (let i = 0; i < Math.min(filterSet.length, gridN*gridN); i++) {
+        const row = Math.floor(i / gridN);
+        const col = i % gridN;
+        const x0 = col * cellSize + 1;
+        const y0 = row * cellSize + 1;
+        const s = cellSize - 2;
+        const f = filterSet[i];
+
+        // Find min/max for normalization
+        let fmin = Infinity, fmax = -Infinity;
+        for (let k = 0; k < f.length; k++) { fmin = Math.min(fmin, f[k]); fmax = Math.max(fmax, f[k]); }
+        const range = fmax - fmin || 1;
+
+        const imgData = ctx.createImageData(FILTER_SIZE, FILTER_SIZE);
+        for (let k = 0; k < f.length; k++) {
+            const v = Math.floor(((f[k] - fmin) / range) * 255);
+            imgData.data[k*4] = v;
+            imgData.data[k*4+1] = v;
+            imgData.data[k*4+2] = v;
+            imgData.data[k*4+3] = 255;
+        }
+        // Scale up
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = FILTER_SIZE;
+        tempCanvas.height = FILTER_SIZE;
+        tempCanvas.getContext('2d').putImageData(imgData, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(tempCanvas, x0, y0, s, s);
+    }
+    // Grid lines
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= gridN; i++) {
+        ctx.beginPath(); ctx.moveTo(i*cellSize, 0); ctx.lineTo(i*cellSize, canvas.height); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i*cellSize); ctx.lineTo(canvas.width, i*cellSize); ctx.stroke();
+    }
+}
+
+function drawInputImages() {
+    const canvas = document.getElementById('inputImages');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const cellW = canvas.width / N_IMAGES;
+    const cellH = canvas.height;
+
+    for (let i = 0; i < images.length; i++) {
+        const imgData = ctx.createImageData(IMG_SIZE, IMG_SIZE);
+        for (let k = 0; k < images[i].length; k++) {
+            const v = Math.floor(images[i][k] * 255);
+            imgData.data[k*4] = v; imgData.data[k*4+1] = v; imgData.data[k*4+2] = v; imgData.data[k*4+3] = 255;
+        }
+        const tc = document.createElement('canvas');
+        tc.width = IMG_SIZE; tc.height = IMG_SIZE;
+        tc.getContext('2d').putImageData(imgData, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(tc, i * cellW + 2, 2, cellW - 4, cellH - 4);
+    }
+}
+
+function drawSDRCompare() {
+    const canvas = document.getElementById('sdrCompare');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const imgIdx = updateCount % images.length;
+    const frozenSDR = computeSDR(initFilters, images[imgIdx]);
+    const hebbianSDR = computeSDR(filters, images[imgIdx]);
+
+    const bitW = canvas.width / SDR_SIZE;
+    const halfH = canvas.height / 2 - 4;
+
+    // Frozen SDR (top)
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(0, 0, canvas.width, halfH);
+    for (let i = 0; i < SDR_SIZE; i++) {
+        if (frozenSDR[i] > 0) {
+            ctx.fillStyle = '#10b981';
+            ctx.fillRect(i * bitW, 0, Math.max(1, bitW - 0.5), halfH);
+        }
+    }
+
+    // Hebbian SDR (bottom)
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(0, halfH + 8, canvas.width, halfH);
+    for (let i = 0; i < SDR_SIZE; i++) {
+        if (hebbianSDR[i] > 0) {
+            ctx.fillStyle = '#60a5fa';
+            ctx.fillRect(i * bitW, halfH + 8, Math.max(1, bitW - 0.5), halfH);
+        }
+    }
+
+    // Labels
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '11px monospace';
+    ctx.fillText('Frozen Gabor', 4, 12);
+    ctx.fillText('Hebbian', 4, halfH + 20);
+}
+
+function drawOverlapChart() {
+    const canvas = document.getElementById('overlapChart');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (overlapHistory.length < 2) return;
+
+    const maxV = Math.max(...overlapHistory) * 1.2;
+    const w = canvas.width;
+    const h = canvas.height - 20;
+
+    // Grid
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+        const y = 10 + h * i / 4;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+
+    // Line
+    ctx.beginPath();
+    ctx.strokeStyle = '#60a5fa';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < overlapHistory.length; i++) {
+        const x = (i / (overlapHistory.length - 1)) * w;
+        const y = 10 + h * (1 - overlapHistory[i] / maxV);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Dots
+    ctx.fillStyle = '#60a5fa';
+    for (let i = 0; i < overlapHistory.length; i++) {
+        const x = (i / (overlapHistory.length - 1)) * w;
+        const y = 10 + h * (1 - overlapHistory[i] / maxV);
+        ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2); ctx.fill();
+    }
+
+    // Labels
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px monospace';
+    ctx.fillText(`${overlapHistory[0].toFixed(3)}`, 4, 10 + h * (1 - overlapHistory[0]/maxV) - 6);
+    const last = overlapHistory[overlapHistory.length-1];
+    ctx.fillText(`${last.toFixed(3)}`, w - 45, 10 + h * (1 - last/maxV) - 6);
+
+    // Trend arrow
+    if (last < overlapHistory[0]) {
+        ctx.fillStyle = '#10b981';
+        ctx.font = '14px sans-serif';
+        ctx.fillText('\u2193 \u043b\u0443\u0447\u0448\u0435', w - 70, h + 16);
+    }
+}
+
+function drawDeltaChart() {
+    const canvas = document.getElementById('deltaChart');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (deltaHistory.length < 2) return;
+
+    // Subsample if too many points
+    let data = deltaHistory;
+    if (data.length > 200) {
+        const step = Math.ceil(data.length / 200);
+        data = data.filter((_, i) => i % step === 0);
+    }
+
+    const maxV = Math.max(...data) * 1.1;
+    const w = canvas.width;
+    const h = canvas.height - 10;
+
+    ctx.beginPath();
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < data.length; i++) {
+        const x = (i / (data.length - 1)) * w;
+        const y = 5 + h * (1 - data[i] / maxV);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px monospace';
+    ctx.fillText('\u0394w (converging \u2193)', 4, h + 8);
+}
+
+function updateMetrics() {
+    document.getElementById('mEpoch').textContent = epoch;
+    document.getElementById('mUpdates').textContent = updateCount;
+    if (overlapHistory.length > 0) {
+        document.getElementById('mOverlap').textContent = overlapHistory[overlapHistory.length-1].toFixed(3);
+    }
+    // Compute filter diversity
+    let simTotal = 0, simCount = 0;
+    for (let i = 0; i < Math.min(16, filters.length); i++) {
+        for (let j = i+1; j < Math.min(16, filters.length); j++) {
+            let dot = 0, ni = 0, nj = 0;
+            for (let k = 0; k < filters[i].length; k++) {
+                dot += filters[i][k] * filters[j][k];
+                ni += filters[i][k] * filters[i][k];
+                nj += filters[j][k] * filters[j][k];
+            }
+            simTotal += Math.abs(dot / (Math.sqrt(ni * nj) || 1));
+            simCount++;
+        }
+    }
+    const dissim = 1 - (simTotal / (simCount || 1));
+    document.getElementById('mDiversity').textContent = dissim.toFixed(2);
+}
+
+function updateAll() {
+    drawFilters('filtersLearned', filters);
+    drawSDRCompare();
+    drawOverlapChart();
+    drawDeltaChart();
+    updateMetrics();
+}
+
+// === Controls ===
+function startTraining() {
+    if (trainingActive) { trainingActive = false; return; }
+    trainingActive = true;
+    document.getElementById('status').textContent = 'Обучение...';
+    trainLoop();
+}
+
+function trainLoop() {
+    if (!trainingActive) {
+        document.getElementById('status').textContent = `Пауза. Эпоха ${epoch}, обновлений ${updateCount}`;
+        return;
+    }
+    for (let s = 0; s < speed; s++) hebbianStep();
+    updateAll();
+    document.getElementById('status').textContent =
+        `Эпоха ${epoch} | Обновление ${updateCount} | Образ ${updateCount % images.length + 1}/${images.length}`;
+    animFrame = requestAnimationFrame(trainLoop);
+}
+
+function stepTraining() {
+    trainingActive = false;
+    hebbianStep();
+    updateAll();
+    document.getElementById('status').textContent = `Шаг ${updateCount}`;
+}
+
+function resetTraining() {
+    trainingActive = false;
+    if (animFrame) cancelAnimationFrame(animFrame);
+    filters = initFilters.map(f => new Float32Array(f));
+    epoch = 0; updateCount = 0;
+    overlapHistory = []; deltaHistory = [];
+    updateAll();
+    drawFilters('filtersInit', initFilters);
+    document.getElementById('status').textContent = 'Сброс. Нажмите "Запустить обучение"';
+}
+
+function setSpeed(s) {
+    speed = s;
+    document.querySelectorAll('.speed-ctrl button').forEach(b => b.classList.remove('active'));
+    document.getElementById('sp' + s).classList.add('active');
+}
+
+// === Init ===
+initFilters = initGaborFilters();
+filters = initFilters.map(f => new Float32Array(f));
+images = generateImages();
+
+drawFilters('filtersInit', initFilters);
+drawFilters('filtersLearned', filters);
+drawInputImages();
+drawSDRCompare();
+updateMetrics();
+</script>
+</body>
+</html>
