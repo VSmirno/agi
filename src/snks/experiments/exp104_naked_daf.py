@@ -62,12 +62,11 @@ def run_naked_daf(n_episodes=200, num_nodes=50000, device="cuda"):
     agent = PureDafAgent(cfg)
 
     # Track initial weights for learning signal
-    initial_weights = agent.engine.graph.get_strength().clone()
+    initial_n_edges = agent.engine.graph.num_edges
+    initial_weight_mean = agent.engine.graph.get_strength().mean().item()
+    initial_weight_std = agent.engine.graph.get_strength().std().item()
 
-    import gymnasium as gym
-    import minigrid  # noqa: F401
-    env_raw = gym.make("MiniGrid-DoorKey-5x5-v0", max_steps=200)
-    env = MiniGridAdapter(env_raw)
+    env = MiniGridAdapter("MiniGrid-DoorKey-5x5-v0")
 
     results = []
     t_start = time.monotonic()
@@ -103,11 +102,12 @@ def run_naked_daf(n_episodes=200, num_nodes=50000, device="cuda"):
     successes = sum(1 for r in results if r["success"])
     success_rate = successes / n_episodes
 
-    # Learning signal analysis
-    final_weights = agent.engine.graph.get_strength()
-    weight_delta = (final_weights - initial_weights).abs().mean().item()
+    # Learning signal analysis (handle structural pruning changing edge count)
+    final_weight_mean = agent.engine.graph.get_strength().mean().item()
+    final_weight_std = agent.engine.graph.get_strength().std().item()
+    final_n_edges = agent.engine.graph.num_edges
+    weight_delta = abs(final_weight_mean - initial_weight_mean)
 
-    # Check if successful episodes have different weight patterns
     success_episodes = [i for i, r in enumerate(results) if r["success"]]
     fail_episodes = [i for i, r in enumerate(results) if not r["success"]]
 
