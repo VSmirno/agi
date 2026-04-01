@@ -79,6 +79,17 @@ class MiniGridAdapter:
         """Access underlying gymnasium env (for compatibility)."""
         return self._env
 
+    def get_symbolic_obs(self) -> np.ndarray:
+        """Get symbolic 7×7×3 observation from MiniGrid.
+
+        Returns:
+            (7, 7, 3) int array — [object_type, color, state] per cell.
+        """
+        obs = self._env.unwrapped.gen_obs()
+        if isinstance(obs, dict):
+            return obs["image"]
+        return obs
+
     @staticmethod
     def _extract_image(obs) -> np.ndarray:
         """Extract RGB image from observation."""
