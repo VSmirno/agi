@@ -368,12 +368,29 @@ class PureDafAgent:
         Returns:
             list of episode results
         """
+        import time as _time
         results: list[PureDafEpisodeResult] = []
+        t_start = _time.monotonic()
         for ep in range(n_episodes):
+            t_ep = _time.monotonic()
             # Stage 38_fix: update navigator epsilon from scheduler
             self._navigator._epsilon = self._epsilon_scheduler.value
             result = self.run_episode(env, max_steps)
             results.append(result)
             # Stage 38_fix: decay epsilon after each episode
             self._epsilon_scheduler.step()
+            # Progress logging
+            elapsed_ep = _time.monotonic() - t_ep
+            elapsed_total = _time.monotonic() - t_start
+            avg_per_ep = elapsed_total / (ep + 1)
+            remaining = avg_per_ep * (n_episodes - ep - 1)
+            print(
+                f"  Episode {ep+1}/{n_episodes} done in {elapsed_ep:.1f}s"
+                f" — steps={result.steps}, reward={result.reward:.2f},"
+                f" success={result.success}"
+                f" | ETA {remaining/60:.1f}min",
+                flush=True,
+            )
+        total = _time.monotonic() - t_start
+        print(f"  Training complete: {n_episodes} episodes in {total:.1f}s ({total/60:.1f}min)", flush=True)
         return results
