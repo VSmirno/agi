@@ -58,7 +58,12 @@ def _make_config(n_actions: int = 7, small: bool | None = None) -> PureDafConfig
         # n_filters = 64, actual sdr = 64 * 5 * 5 = 1600
         cfg.causal.pipeline.encoder.sdr_size = 1600
         cfg.causal.pipeline.sks.min_cluster_size = 3
+        cfg.causal.pipeline.sks.coherence_mode = "cofiring"
+        cfg.causal.pipeline.sks.top_k = 200
         cfg.causal.motor_sdr_size = 200
+        # Lower I_base so only SDR-driven nodes spike
+        cfg.causal.pipeline.daf.fhn_I_base = 0.3
+        cfg.causal.pipeline.daf.coupling_strength = 0.05
     else:
         # Full GPU config: 50K nodes
         cfg.causal.pipeline.daf.device = "auto"
@@ -103,11 +108,13 @@ def exp97a_doorkey():
         return {"status": "SKIP", "reason": "MiniGrid not installed"}
 
     cfg = _make_config(n_actions=env.n_actions)
-    cfg.max_episode_steps = 500
+    is_cpu = cfg.causal.pipeline.daf.device == "cpu" or not __import__('torch').cuda.is_available()
+    n_episodes = 10 if is_cpu else 50
+    max_steps = 100 if is_cpu else 500
+    cfg.max_episode_steps = max_steps
     agent = PureDafAgent(cfg)
 
-    n_episodes = 50
-    results = agent.run_training(env, n_episodes=n_episodes, max_steps=500)
+    results = agent.run_training(env, n_episodes=n_episodes, max_steps=max_steps)
 
     successes = sum(1 for r in results if r.success)
     success_rate = successes / n_episodes
@@ -116,7 +123,7 @@ def exp97a_doorkey():
     causal_stats = results[-1].causal_stats if results else {}
 
     # Random baseline
-    random_rate = _run_random_baseline(env, 50, 500)
+    random_rate = _run_random_baseline(env, n_episodes, max_steps)
 
     print(f"  Pure DAF:  success={success_rate:.3f} ({successes}/{n_episodes})")
     print(f"  Random:    success={random_rate:.3f}")
@@ -150,11 +157,13 @@ def exp97b_causal_learning():
         return {"status": "SKIP", "reason": "MiniGrid not installed"}
 
     cfg = _make_config(n_actions=env.n_actions)
-    cfg.max_episode_steps = 500
+    is_cpu = cfg.causal.pipeline.daf.device == "cpu" or not __import__('torch').cuda.is_available()
+    n_episodes = 10 if is_cpu else 30
+    max_steps = 100 if is_cpu else 500
+    cfg.max_episode_steps = max_steps
     agent = PureDafAgent(cfg)
 
-    # Run episodes until we get at least one reward
-    results = agent.run_training(env, n_episodes=30, max_steps=500)
+    results = agent.run_training(env, n_episodes=n_episodes, max_steps=max_steps)
     causal_stats = agent._causal.stats
 
     modulations = causal_stats.get("total_modulations", 0)
@@ -186,15 +195,17 @@ def exp97c_empty_navigation():
         return {"status": "SKIP", "reason": "MiniGrid not installed"}
 
     cfg = _make_config(n_actions=env.n_actions)
-    cfg.max_episode_steps = 200
+    is_cpu = cfg.causal.pipeline.daf.device == "cpu" or not __import__('torch').cuda.is_available()
+    n_episodes = 10 if is_cpu else 50
+    max_steps = 100 if is_cpu else 200
+    cfg.max_episode_steps = max_steps
     agent = PureDafAgent(cfg)
 
-    n_episodes = 50
-    results = agent.run_training(env, n_episodes=n_episodes, max_steps=200)
+    results = agent.run_training(env, n_episodes=n_episodes, max_steps=max_steps)
 
     successes = sum(1 for r in results if r.success)
     success_rate = successes / n_episodes
-    random_rate = _run_random_baseline(env, 50, 200)
+    random_rate = _run_random_baseline(env, n_episodes, max_steps)
 
     print(f"  Pure DAF:  success={success_rate:.3f} ({successes}/{n_episodes})")
     print(f"  Random:    success={random_rate:.3f}")
