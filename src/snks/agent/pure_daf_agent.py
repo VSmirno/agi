@@ -58,6 +58,9 @@ class PureDafConfig:
     # Stage 38_fix: PE exploration
     pe_window: int = 10
     pe_temperature: float = 2.0
+    # Stage 41: Eligibility trace
+    trace_decay: float = 0.92
+    trace_reward_lr: float = 0.5
 
 
 @dataclass
@@ -124,6 +127,8 @@ class PureDafAgent:
             reward_scale=config.reward_scale,
             trace_length=config.trace_length,
             negative_scale=config.negative_scale,
+            trace_decay=config.trace_decay,
+            trace_reward_lr=config.trace_reward_lr,
         )
 
         # Attractor-based navigation
@@ -208,6 +213,10 @@ class PureDafAgent:
         self._current_sks = set(result.sks_clusters.keys())
         self._current_sks |= _perceptual_hash(image)
 
+        # 1b. Stage 41: accumulate STDP changes into eligibility trace
+        if result.stdp_result is not None:
+            self._causal.accumulate_stdp(result.stdp_result)
+
         # Get current embedding
         if result.winner_embedding is not None:
             self._current_embedding = result.winner_embedding
@@ -263,7 +272,11 @@ class PureDafAgent:
         post_sks = set(result.sks_clusters.keys())
         post_sks |= _perceptual_hash(image)
 
-        # 2. Reward-modulated STDP learning
+        # 1b. Stage 41: accumulate STDP changes into eligibility trace
+        if result.stdp_result is not None:
+            self._causal.accumulate_stdp(result.stdp_result)
+
+        # 2. Reward-modulated STDP learning (uses eligibility trace + snapshot)
         self._causal.after_action(reward)
 
         # 3. Compute prediction error (for monitoring)
@@ -308,6 +321,7 @@ class PureDafAgent:
         # Reset
         self._episode_rewards.clear()
         self._episode_pes.clear()
+        self._causal._eligibility.reset()  # Stage 41: reset trace per episode
         obs = env.reset()
 
         total_reward = 0.0
