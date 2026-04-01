@@ -51,6 +51,13 @@ class PureDafConfig:
     n_actions: int = 5
     # Stage 40: Hebbian encoder
     use_hebbian: bool = False
+    # Stage 38_fix: Epsilon decay
+    epsilon_initial: float = 0.7
+    epsilon_decay: float = 0.95
+    epsilon_floor: float = 0.1
+    # Stage 38_fix: PE exploration
+    pe_window: int = 10
+    pe_temperature: float = 2.0
 
 
 @dataclass
@@ -98,6 +105,19 @@ class PureDafAgent:
         self._agent = CausalAgent(config.causal)
         self._obs_adapter = ObsAdapter(target_size=config.causal.pipeline.encoder.image_size)
 
+        # Stage 38_fix: override motor encoder to match config.n_actions
+        # CausalAgent hardcodes N_ACTIONS=5 but MiniGrid needs 7
+        if config.n_actions != self._agent.motor.n_actions:
+            self._agent.motor = MotorEncoder(
+                n_actions=config.n_actions,
+                num_nodes=config.causal.pipeline.daf.num_nodes,
+                sdr_size=config.causal.motor_sdr_size,
+                current_strength=config.causal.motor_current_strength,
+            )
+
+        # Effective n_actions (safety clamp)
+        self._effective_n_actions = config.n_actions
+
         # Reward-modulated causal learning
         self._causal = DafCausalModel(
             engine=self._agent.pipeline.engine,
@@ -114,6 +134,23 @@ class PureDafAgent:
             min_similarity=config.min_similarity,
             exploration_epsilon=config.exploration_epsilon,
         )
+
+        # Stage 38_fix: PE-driven exploration + epsilon decay
+        # Lazy import to avoid circular dependency (curriculum imports PureDafAgent)
+        from snks.agent.curriculum import EpsilonScheduler, PredictionErrorExplorer
+
+        self._pe_explorer = PredictionErrorExplorer(
+            n_actions=config.n_actions,
+            window_size=config.pe_window,
+            temperature=config.pe_temperature,
+        )
+        self._epsilon_scheduler = EpsilonScheduler(
+            initial=config.epsilon_initial,
+            decay=config.epsilon_decay,
+            floor=config.epsilon_floor,
+        )
+        self._pe_explore_count: int = 0
+        self._total_step_count: int = 0
 
         # State tracking
         self._goal_embedding: torch.Tensor | None = None
@@ -150,12 +187,21 @@ class PureDafAgent:
     def step(self, obs: np.ndarray) -> int:
         """One agent step: perceive → decide → prepare to learn.
 
+        Action selection hierarchy (Stage 38_fix):
+        1. Epsilon-greedy: PE-biased random exploration
+        2. Goal-directed: navigator (when goal_embedding available)
+        3. Curiosity: count-based IntrinsicMotivation (fallback)
+
         Args:
             obs: RGB observation (H, W, 3) uint8
 
         Returns:
             action integer
         """
+        import random as _rng
+
+        self._total_step_count += 1
+
         # 1. Perception via DAF pipeline
         image = self._obs_adapter.convert(obs)
         result = self._agent.pipeline.perception_cycle(image)
@@ -168,19 +214,28 @@ class PureDafAgent:
         else:
             self._current_embedding = None
 
-        # 2. Action selection via attractor navigator
-        if self._current_embedding is not None and self._goal_embedding is not None:
+        # 2. Action selection (3-tier: PE exploration → goal-directed → curiosity)
+        n = self._effective_n_actions
+        epsilon = self._epsilon_scheduler.value
+
+        if _rng.random() < epsilon:
+            # PE-biased exploration: prefer actions with high prediction error
+            action = self._pe_explorer.select_with_bonus()
+            action = min(action, n - 1)
+            self._pe_explore_count += 1
+        elif self._current_embedding is not None and self._goal_embedding is not None:
+            # Goal-directed: mental simulation toward goal
             action = self._navigator.select_action(
                 self._current_embedding,
                 self._goal_embedding,
-                self.config.n_actions,
+                n,
             )
         else:
-            # Fallback: use intrinsic motivation from CausalAgent
+            # Count-based curiosity: prefer novel (state, action) pairs
             action = self._agent.motivation.select_action(
                 self._current_sks,
                 self._agent.causal_model,
-                self.config.n_actions,
+                n,
             )
 
         # 3. Prepare causal learning
@@ -219,12 +274,23 @@ class PureDafAgent:
         self._episode_rewards.append(reward)
         self._episode_pes.append(pe)
 
+        # 4. Stage 38_fix: record PE per action for curiosity exploration
+        last_action = self._causal._trace[-1].action if self._trace_has_entries() else 0
+        self._pe_explorer.record(last_action, pe)
+
+        # 5. Stage 38_fix: update IntrinsicMotivation visit counts
+        self._agent.motivation.update(self._current_sks, last_action, pe)
+
         # Update current state
         self._current_sks = post_sks
         if result.winner_embedding is not None:
             self._current_embedding = result.winner_embedding
 
         return pe
+
+    def _trace_has_entries(self) -> bool:
+        """Check if causal trace has entries (avoids IndexError)."""
+        return len(self._causal._trace) > 0
 
     def run_episode(self, env: EnvAdapter, max_steps: int | None = None) -> PureDafEpisodeResult:
         """Run one complete episode.
@@ -257,6 +323,7 @@ class PureDafAgent:
             if terminated or truncated:
                 break
 
+        total = max(self._total_step_count, 1)
         return PureDafEpisodeResult(
             success=total_reward > 0,
             reward=total_reward,
@@ -264,7 +331,11 @@ class PureDafAgent:
             sks_count=len(self._current_sks),
             mean_pe=sum(self._episode_pes) / max(len(self._episode_pes), 1),
             causal_stats=self._causal.stats,
-            nav_stats=self._navigator.stats,
+            nav_stats={
+                **self._navigator.stats,
+                "pe_exploration_ratio": self._pe_explore_count / total,
+                "epsilon": self._epsilon_scheduler.value,
+            },
         )
 
     def run_training(
@@ -285,6 +356,10 @@ class PureDafAgent:
         """
         results: list[PureDafEpisodeResult] = []
         for ep in range(n_episodes):
+            # Stage 38_fix: update navigator epsilon from scheduler
+            self._navigator._epsilon = self._epsilon_scheduler.value
             result = self.run_episode(env, max_steps)
             results.append(result)
+            # Stage 38_fix: decay epsilon after each episode
+            self._epsilon_scheduler.step()
         return results
