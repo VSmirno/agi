@@ -68,6 +68,13 @@ def _make_config(n_actions: int = 7, small: bool | None = None) -> PureDafConfig
         # Full GPU config: 50K nodes
         cfg.causal.pipeline.daf.device = "auto"
         cfg.causal.pipeline.daf.disable_csr = True  # avoid HIP issues on AMD
+        # dt=0.001, 500 steps → 0.5s model time (enough for FHN spiking)
+        cfg.causal.pipeline.daf.dt = 0.001
+        cfg.causal.pipeline.steps_per_cycle = 500
+        cfg.causal.pipeline.sks.coherence_mode = "cofiring"
+        cfg.causal.pipeline.sks.top_k = 2000
+        cfg.causal.pipeline.daf.fhn_I_base = 0.3
+        cfg.causal.pipeline.daf.coupling_strength = 0.05
 
     cfg.exploration_epsilon = 0.7 if small else 0.3
     cfg.reward_scale = 3.0
