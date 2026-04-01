@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 39: Curriculum Learning — прогрессивное обучение</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e17;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-serif}
+.container{max-width:1400px;margin:0 auto;padding:20px}
+h1{color:#60a5fa;font-size:1.8em;margin-bottom:6px}
+h2{color:#60a5fa;font-size:1.2em;margin:14px 0 8px}
+.subtitle{color:#94a3b8;font-size:1em;margin-bottom:16px}
+.grid-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.panel{background:#1e293b;border-radius:12px;padding:16px;flex:1;min-width:260px}
+.metric{display:inline-block;background:#0f172a;padding:8px 14px;border-radius:8px;margin:4px;text-align:center}
+.metric .value{font-size:1.5em;font-weight:bold}
+.metric .label{font-size:0.8em;color:#94a3b8}
+.metric .value.green{color:#10b981}
+.metric .value.yellow{color:#fbbf24}
+.metric .value.red{color:#ef4444}
+.metric .value.blue{color:#60a5fa}
+canvas{border-radius:8px;display:block}
+.btn{background:#3b82f6;color:white;border:none;padding:7px 15px;border-radius:6px;cursor:pointer;font-size:0.85em;margin:3px}
+.btn:hover{background:#2563eb}
+.btn.active{background:#10b981}
+.controls{text-align:center;margin:10px 0}
+table{width:100%;border-collapse:collapse;margin:8px 0}
+th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #334155;font-size:0.9em}
+th{color:#94a3b8;text-transform:uppercase;font-size:0.8em}
+td.pass{color:#10b981;font-weight:bold}
+td.fail{color:#ef4444;font-weight:bold}
+.explanation{background:#1e293b;border-left:3px solid #60a5fa;padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0;line-height:1.5;font-size:0.95em}
+#status{text-align:center;margin:8px 0;color:#94a3b8;font-size:0.9em;min-height:1.4em}
+.speed-ctrl{display:inline-flex;align-items:center;gap:6px;margin-left:12px;color:#94a3b8;font-size:0.85em}
+.speed-ctrl button{background:#334155;color:#e2e8f0;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:0.8em}
+.speed-ctrl button.active{background:#3b82f6}
+.stage-indicator{display:flex;gap:8px;margin:12px 0;align-items:center}
+.stage-dot{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.75em;font-weight:bold;border:2px solid #334155;transition:all 0.5s}
+.stage-dot.active{border-color:#60a5fa;background:#1e3a5f;color:#60a5fa}
+.stage-dot.complete{border-color:#10b981;background:#064e3b;color:#10b981}
+.stage-dot.pending{border-color:#334155;color:#475569}
+.stage-arrow{color:#475569;font-size:1.2em}
+.epsilon-bar{height:20px;background:#0f172a;border-radius:10px;overflow:hidden;margin:8px 0}
+.epsilon-fill{height:100%;background:linear-gradient(90deg,#10b981,#fbbf24,#ef4444);border-radius:10px;transition:width 0.3s}
+.pe-chart{display:flex;gap:4px;align-items:flex-end;height:80px;margin:8px 0}
+.pe-bar{flex:1;background:#3b82f6;border-radius:3px 3px 0 0;min-width:8px;transition:height 0.3s}
+.pe-bar.highlight{background:#fbbf24}
+.curriculum-timeline{position:relative;height:30px;background:#0f172a;border-radius:8px;margin:12px 0;overflow:hidden}
+.curriculum-segment{position:absolute;height:100%;display:flex;align-items:center;justify-content:center;font-size:0.7em;font-weight:bold;transition:all 0.3s}
+.curriculum-segment.s0{background:#3b82f6}
+.curriculum-segment.s1{background:#8b5cf6}
+.curriculum-segment.s2{background:#ec4899}
+.progress-marker{position:absolute;top:-2px;width:3px;height:34px;background:#fbbf24;border-radius:2px;transition:left 0.3s}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Этап 39: Curriculum Learning</h1>
+<p class="subtitle">Прогрессивное обучение DAF-агента: от простых сред к сложным</p>
+
+<!-- Stage indicators -->
+<div class="grid-row">
+<div class="panel" style="flex:2">
+<h2>Прогресс обучения</h2>
+<div class="stage-indicator" id="stageIndicator">
+    <div class="stage-dot active" id="sd0">5×5</div>
+    <span class="stage-arrow">→</span>
+    <div class="stage-dot pending" id="sd1">8×8</div>
+    <span class="stage-arrow">→</span>
+    <div class="stage-dot pending" id="sd2">DK</div>
+</div>
+<div class="curriculum-timeline" id="timeline">
+    <div class="curriculum-segment s0" style="left:0;width:33%">Empty 5×5</div>
+    <div class="curriculum-segment s1" style="left:33%;width:33%">Empty 8×8</div>
+    <div class="curriculum-segment s2" style="left:66%;width:34%">DoorKey 5×5</div>
+    <div class="progress-marker" id="progressMarker" style="left:0%"></div>
+</div>
+<div id="status">Нажмите «Запустить» для начала обучения</div>
+<div class="controls">
+    <button class="btn" id="btnPlay" onclick="togglePlay()">▶ Запустить</button>
+    <button class="btn" id="btnStep" onclick="doStep()">⏭ Шаг</button>
+    <button class="btn" id="btnReset" onclick="doReset()">↺ Сброс</button>
+    <span class="speed-ctrl">
+        Скорость:
+        <button onclick="setSpeed(0.5)">×0.5</button>
+        <button class="active" onclick="setSpeed(1)">×1</button>
+        <button onclick="setSpeed(2)">×2</button>
+        <button onclick="setSpeed(5)">×5</button>
+    </span>
+</div>
+</div>
+<div class="panel">
+<h2>Метрики</h2>
+<div class="metric"><div class="value blue" id="mEpisode">0</div><div class="label">Эпизод</div></div>
+<div class="metric"><div class="value green" id="mSuccessRate">0%</div><div class="label">Успех</div></div>
+<div class="metric"><div class="value yellow" id="mEpsilon">70%</div><div class="label">Epsilon</div></div>
+<div class="metric"><div class="value blue" id="mStage">1/3</div><div class="label">Этап</div></div>
+<h2 style="margin-top:12px">Epsilon (исследование)</h2>
+<div class="epsilon-bar"><div class="epsilon-fill" id="epsilonFill" style="width:70%"></div></div>
+<div style="display:flex;justify-content:space-between;font-size:0.75em;color:#94a3b8">
+    <span>0% (жадный)</span><span>100% (случайный)</span>
+</div>
+</div>
+</div>
+
+<!-- Canvas environments side by side -->
+<div class="grid-row">
+<div class="panel" style="flex:1.5">
+<h2>Среда (текущий этап curriculum)</h2>
+<canvas id="envCanvas" width="300" height="300"></canvas>
+<div id="envLabel" style="text-align:center;color:#94a3b8;font-size:0.85em;margin-top:6px">Empty-5x5</div>
+</div>
+<div class="panel">
+<h2>Prediction Error по действиям</h2>
+<div class="pe-chart" id="peChart">
+    <div class="pe-bar" style="height:20%"></div>
+    <div class="pe-bar" style="height:20%"></div>
+    <div class="pe-bar" style="height:20%"></div>
+    <div class="pe-bar" style="height:20%"></div>
+    <div class="pe-bar" style="height:20%"></div>
+    <div class="pe-bar" style="height:20%"></div>
+    <div class="pe-bar" style="height:20%"></div>
+</div>
+<div style="display:flex;justify-content:space-around;font-size:0.7em;color:#94a3b8">
+    <span>◁</span><span>▷</span><span>▲</span><span>подобрать</span><span>убрать</span><span>открыть</span><span>готово</span>
+</div>
+<p style="color:#94a3b8;font-size:0.8em;margin-top:8px">Жёлтый = выбранное действие. Высокий PE → больше шансов быть выбранным (любопытство)</p>
+<h2 style="margin-top:14px">История успешности</h2>
+<canvas id="successChart" width="280" height="100"></canvas>
+</div>
+</div>
+
+<!-- Results table -->
+<div class="grid-row">
+<div class="panel">
+<h2>Результаты экспериментов</h2>
+<table>
+<tr><th>Эксп</th><th>Метрика</th><th>Результат</th><th>Gate</th><th>Статус</th></tr>
+<tr><td>98a: DoorKey-5x5</td><td>success_rate</td><td id="r98a">—</td><td>≥ 0.25</td><td id="s98a">—</td></tr>
+<tr><td>98b: Curriculum benefit</td><td>curr - direct</td><td id="r98b">—</td><td>&gt; 0.05</td><td id="s98b">—</td></tr>
+<tr><td>98c: Empty-8x8</td><td>success_rate</td><td id="r98c">—</td><td>≥ 0.50</td><td id="s98c">—</td></tr>
+<tr><td>98d: Epsilon decay</td><td>final &lt; initial</td><td id="r98d">—</td><td>True</td><td id="s98d">—</td></tr>
+<tr><td>98e: PE exploration</td><td>unique &gt; random</td><td id="r98e">—</td><td>True</td><td id="s98e">—</td></tr>
+</table>
+</div>
+</div>
+
+<!-- Explanation -->
+<div class="explanation">
+<h2>Как это работает</h2>
+<p>
+<strong>Curriculum Learning</strong> — агент учится постепенно, от простого к сложному.<br>
+Сначала он осваивает навигацию в пустой комнате 5×5 (только дойти до цели).
+Когда научился — переходит к 8×8 (дальше ходить, больше пространство).
+Наконец — DoorKey-5×5 (найти ключ, открыть дверь, добраться до цели).<br><br>
+
+<strong>Epsilon Decay</strong> — сначала агент исследует (70% случайных действий), затем всё больше
+полагается на свои знания (epsilon падает до 10%).<br><br>
+
+<strong>Prediction Error</strong> — агент предпочитает действия, которые дают неожиданные результаты.
+Это «любопытство» — он тянется к незнакомому, что ускоряет обучение.<br><br>
+
+<strong>Зачем это важно для AGI:</strong> настоящий интеллект учится постепенно, не пытаясь
+решить самую сложную задачу с нуля. Ребёнок сначала ползает, потом ходит, потом бегает.
+Это то же самое — но для нейроморфного DAF-агента.
+</p>
+</div>
+
+</div>
+
+<script>
+// ─── Simulated curriculum training data ───────────────────────
+
+const CELL = 50;
+const ACTION_NAMES = ['влево','вправо','вперёд','подобрать','убрать','открыть','готово'];
+const DIR_DX = [0, 0, -1, 0]; // up,right,down,left in grid coords
+const DIR_DY = [-1, 1, 0, 0];
+const DIR_ARROWS = ['▲','▶','▼','◁'];
+
+// Curriculum stages definition
+const STAGES = [
+    { name: 'Empty-5x5', gridW: 5, gridH: 5, hasKey: false, hasDoor: false },
+    { name: 'Empty-8x8', gridW: 8, gridH: 8, hasKey: false, hasDoor: false },
+    { name: 'DoorKey-5x5', gridW: 5, gridH: 5, hasKey: true, hasDoor: true },
+];
+
+let state = {
+    playing: false,
+    episode: 0,
+    step: 0,
+    stageIdx: 0,
+    epsilon: 0.7,
+    epsilonDecay: 0.95,
+    epsilonFloor: 0.1,
+    successHistory: [],
+    pePerAction: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2],
+    agentPos: {x: 1, y: 1},
+    agentDir: 0,
+    goalPos: {x: 3, y: 3},
+    keyPos: null,
+    doorPos: null,
+    hasPickedKey: false,
+    doorOpen: false,
+    path: [],
+    grid: null,
+    stepsInEpisode: 0,
+    maxSteps: 50,
+    speed: 1,
+    animId: null,
+    lastTime: 0,
+    stageSuccessCounts: [0, 0, 0],
+    stageEpisodeCounts: [0, 0, 0],
+    inventory: null,
+    currentAction: '',
+};
+
+function generateGrid() {
+    const st = STAGES[state.stageIdx];
+    const W = st.gridW, H = st.gridH;
+    state.grid = Array.from({length: H}, () => Array(W).fill(0));
+    // Walls on borders
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (x === 0 || y === 0 || x === W-1 || y === H-1) state.grid[y][x] = 1;
+    }
+    // Agent start
+    state.agentPos = {x: 1, y: 1};
+    state.agentDir = 1; // facing right
+    // Goal
+    state.goalPos = {x: W-2, y: H-2};
+    state.hasPickedKey = false;
+    state.doorOpen = false;
+    state.inventory = null;
+
+    if (st.hasKey) {
+        state.keyPos = {x: 1, y: H-2};
+        state.grid[state.keyPos.y][state.keyPos.x] = 3; // key
+    } else {
+        state.keyPos = null;
+    }
+    if (st.hasDoor) {
+        const doorX = Math.floor(W / 2);
+        state.doorPos = {x: doorX, y: 1};
+        // Vertical wall with door
+        for (let y = 1; y < H-1; y++) {
+            state.grid[y][doorX] = 1;
+        }
+        state.grid[state.doorPos.y][state.doorPos.x] = 4; // door
+    } else {
+        state.doorPos = null;
+    }
+    state.path = [{...state.agentPos}];
+    state.stepsInEpisode = 0;
+}
+
+function drawGrid() {
+    const canvas = document.getElementById('envCanvas');
+    const st = STAGES[state.stageIdx];
+    const W = st.gridW, H = st.gridH;
+    canvas.width = W * CELL;
+    canvas.height = H * CELL;
+    const ctx = canvas.getContext('2d');
+
+    // Background
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Grid lines
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 0.5;
+    for (let x = 0; x <= W; x++) {
+        ctx.beginPath(); ctx.moveTo(x*CELL,0); ctx.lineTo(x*CELL,H*CELL); ctx.stroke();
+    }
+    for (let y = 0; y <= H; y++) {
+        ctx.beginPath(); ctx.moveTo(0,y*CELL); ctx.lineTo(W*CELL,y*CELL); ctx.stroke();
+    }
+
+    // Cells
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const cx = x*CELL, cy = y*CELL;
+        if (state.grid[y][x] === 1) {
+            ctx.fillStyle = '#666666';
+            ctx.fillRect(cx+1, cy+1, CELL-2, CELL-2);
+        }
+        if (state.grid[y][x] === 4) {
+            ctx.fillStyle = state.doorOpen ? 'rgba(101,67,33,0.4)' : '#8B4513';
+            ctx.fillRect(cx+1, cy+1, CELL-2, CELL-2);
+            if (!state.doorOpen) {
+                ctx.fillStyle = '#ffd700';
+                ctx.fillRect(cx+CELL-12, cy+CELL/2-3, 6, 6);
+            }
+        }
+    }
+
+    // Key
+    if (state.keyPos && !state.hasPickedKey) {
+        const kx = state.keyPos.x*CELL + CELL/2, ky = state.keyPos.y*CELL + CELL/2;
+        ctx.fillStyle = '#ffd700';
+        ctx.font = `${CELL*0.6}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('★', kx, ky);
+    }
+
+    // Goal
+    const gx = state.goalPos.x*CELL + CELL/2, gy = state.goalPos.y*CELL + CELL/2;
+    ctx.fillStyle = '#00ff88';
+    ctx.font = `${CELL*0.6}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('◆', gx, gy);
+
+    // Path (translucent)
+    if (state.path.length > 1) {
+        ctx.strokeStyle = 'rgba(96,165,250,0.25)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(state.path[0].x*CELL+CELL/2, state.path[0].y*CELL+CELL/2);
+        for (let i = 1; i < state.path.length; i++) {
+            ctx.lineTo(state.path[i].x*CELL+CELL/2, state.path[i].y*CELL+CELL/2);
+        }
+        ctx.stroke();
+    }
+
+    // Agent (triangle with direction)
+    const ax = state.agentPos.x*CELL + CELL/2, ay = state.agentPos.y*CELL + CELL/2;
+    const r = CELL * 0.35;
+    const angle = [(-Math.PI/2), 0, (Math.PI/2), Math.PI][state.agentDir]; // up,right,down,left
+    ctx.fillStyle = '#ff4444';
+    ctx.beginPath();
+    ctx.moveTo(ax + r*Math.cos(angle), ay + r*Math.sin(angle));
+    ctx.lineTo(ax + r*Math.cos(angle + 2.4), ay + r*Math.sin(angle + 2.4));
+    ctx.lineTo(ax + r*Math.cos(angle - 2.4), ay + r*Math.sin(angle - 2.4));
+    ctx.closePath();
+    ctx.fill();
+
+    // Inventory
+    if (state.inventory === 'key') {
+        ctx.fillStyle = '#ffd700';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('★', ax + r, ay - r);
+    }
+
+    document.getElementById('envLabel').textContent = STAGES[state.stageIdx].name;
+}
+
+function simulateStep() {
+    const st = STAGES[state.stageIdx];
+    const W = st.gridW, H = st.gridH;
+    state.stepsInEpisode++;
+
+    // Decide action: PE-biased or goal-directed
+    let action;
+    const isExplore = Math.random() < state.epsilon;
+
+    if (isExplore) {
+        // PE-biased selection
+        const total = state.pePerAction.reduce((a,b)=>a+b, 0);
+        let r = Math.random() * total;
+        action = 0;
+        for (let i = 0; i < state.pePerAction.length; i++) {
+            r -= state.pePerAction[i];
+            if (r <= 0) { action = i; break; }
+        }
+    } else {
+        // Simple heuristic: move toward goal/key
+        let target = state.goalPos;
+        if (st.hasKey && !state.hasPickedKey && state.keyPos) target = state.keyPos;
+        else if (st.hasDoor && !state.doorOpen && state.doorPos) target = state.doorPos;
+
+        const dx = target.x - state.agentPos.x;
+        const dy = target.y - state.agentPos.y;
+
+        // Need to face the right direction first, then move forward
+        let wantDir;
+        if (Math.abs(dx) > Math.abs(dy)) {
+            wantDir = dx > 0 ? 1 : 3; // right or left
+        } else {
+            wantDir = dy > 0 ? 2 : 0; // down or up
+        }
+
+        if (state.agentDir !== wantDir) {
+            // Turn toward target
+            action = (wantDir - state.agentDir + 4) % 4 <= 2 ? 1 : 0; // turn right or left
+        } else {
+            action = 2; // forward
+        }
+
+        // If adjacent to key, pick up
+        if (st.hasKey && !state.hasPickedKey && state.keyPos) {
+            const kdx = state.keyPos.x - state.agentPos.x;
+            const kdy = state.keyPos.y - state.agentPos.y;
+            if (Math.abs(kdx) + Math.abs(kdy) === 0) action = 3; // pickup
+        }
+        // If adjacent to door and have key, toggle
+        if (st.hasDoor && !state.doorOpen && state.doorPos && state.hasPickedKey) {
+            const ddx = state.doorPos.x - state.agentPos.x;
+            const ddy = state.doorPos.y - state.agentPos.y;
+            if (Math.abs(ddx) + Math.abs(ddy) <= 1) action = 5; // open
+        }
+    }
+
+    // Apply action
+    state.currentAction = ACTION_NAMES[action] || '?';
+
+    if (action === 0) { // turn left
+        state.agentDir = (state.agentDir + 3) % 4;
+    } else if (action === 1) { // turn right
+        state.agentDir = (state.agentDir + 1) % 4;
+    } else if (action === 2) { // forward
+        const dirs = [{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}];
+        const nx = state.agentPos.x + dirs[state.agentDir].x;
+        const ny = state.agentPos.y + dirs[state.agentDir].y;
+        if (nx >= 0 && nx < W && ny >= 0 && ny < H) {
+            const cell = state.grid[ny][nx];
+            if (cell !== 1 && !(cell === 4 && !state.doorOpen)) {
+                state.agentPos = {x: nx, y: ny};
+                state.path.push({...state.agentPos});
+            }
+        }
+    } else if (action === 3) { // pickup
+        if (state.keyPos && state.agentPos.x === state.keyPos.x && state.agentPos.y === state.keyPos.y) {
+            state.hasPickedKey = true;
+            state.inventory = 'key';
+            state.grid[state.keyPos.y][state.keyPos.x] = 0;
+        }
+    } else if (action === 5) { // open door
+        if (state.doorPos && state.hasPickedKey) {
+            const dirs = [{x:0,y:-1},{x:1,y:0},{x:0,y:1},{x:-1,y:0}];
+            const fx = state.agentPos.x + dirs[state.agentDir].x;
+            const fy = state.agentPos.y + dirs[state.agentDir].y;
+            if (fx === state.doorPos.x && fy === state.doorPos.y) {
+                state.doorOpen = true;
+                state.grid[state.doorPos.y][state.doorPos.x] = 0;
+                state.inventory = null;
+            }
+        }
+    }
+
+    // Update PE (simulated)
+    const pe = 0.1 + Math.random() * 0.5 * (isExplore ? 1.5 : 0.5);
+    state.pePerAction[action] = state.pePerAction[action] * 0.8 + pe * 0.2;
+
+    // Highlight chosen action
+    updatePEChart(action);
+
+    // Check success
+    const success = state.agentPos.x === state.goalPos.x && state.agentPos.y === state.goalPos.y;
+    const done = success || state.stepsInEpisode >= state.maxSteps;
+
+    if (done) {
+        state.successHistory.push(success ? 1 : 0);
+        state.stageEpisodeCounts[state.stageIdx]++;
+        if (success) state.stageSuccessCounts[state.stageIdx]++;
+
+        // Epsilon decay
+        state.epsilon = Math.max(state.epsilonFloor, state.epsilon * state.epsilonDecay);
+
+        // Check promotion
+        const recentN = Math.min(5, state.successHistory.length);
+        const recent = state.successHistory.slice(-recentN);
+        const rate = recent.reduce((a,b)=>a+b,0) / recentN;
+
+        const thresholds = [0.4, 0.4, 0.3];
+        if (rate >= thresholds[state.stageIdx] && state.stageIdx < 2 && state.stageEpisodeCounts[state.stageIdx] >= 3) {
+            state.stageIdx++;
+        }
+
+        state.episode++;
+        generateGrid();
+    }
+
+    return done;
+}
+
+function updatePEChart(highlightAction) {
+    const chart = document.getElementById('peChart');
+    const bars = chart.children;
+    const maxPE = Math.max(...state.pePerAction, 0.01);
+    for (let i = 0; i < bars.length; i++) {
+        const pct = (state.pePerAction[i] / maxPE) * 100;
+        bars[i].style.height = Math.max(5, pct) + '%';
+        bars[i].className = 'pe-bar' + (i === highlightAction ? ' highlight' : '');
+    }
+}
+
+function drawSuccessChart() {
+    const canvas = document.getElementById('successChart');
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (state.successHistory.length < 2) return;
+
+    // Rolling average (window 5)
+    const window = 5;
+    const avgs = [];
+    for (let i = 0; i < state.successHistory.length; i++) {
+        const start = Math.max(0, i - window + 1);
+        const slice = state.successHistory.slice(start, i + 1);
+        avgs.push(slice.reduce((a,b)=>a+b,0) / slice.length);
+    }
+
+    const w = canvas.width, h = canvas.height;
+    const step = w / Math.max(avgs.length - 1, 1);
+
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < avgs.length; i++) {
+        const x = i * step;
+        const y = h - avgs[i] * h;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Stage transition markers
+    let epCount = 0;
+    for (let s = 0; s < 3; s++) {
+        epCount += state.stageEpisodeCounts[s];
+        if (epCount > 0 && epCount < avgs.length) {
+            const x = (epCount - 1) * step;
+            ctx.strokeStyle = '#475569';
+            ctx.setLineDash([3,3]);
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+            ctx.setLineDash([]);
+        }
+    }
+
+    // Labels
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '10px sans-serif';
+    ctx.fillText('100%', 2, 12);
+    ctx.fillText('0%', 2, h - 2);
+}
+
+function updateUI() {
+    const recentN = Math.min(10, state.successHistory.length);
+    const recent = state.successHistory.slice(-recentN);
+    const rate = recentN > 0 ? (recent.reduce((a,b)=>a+b,0) / recentN * 100).toFixed(0) : '0';
+
+    document.getElementById('mEpisode').textContent = state.episode;
+    document.getElementById('mSuccessRate').textContent = rate + '%';
+    document.getElementById('mEpsilon').textContent = (state.epsilon * 100).toFixed(0) + '%';
+    document.getElementById('mStage').textContent = (state.stageIdx + 1) + '/3';
+
+    // Epsilon bar
+    document.getElementById('epsilonFill').style.width = (state.epsilon * 100) + '%';
+
+    // Stage dots
+    for (let i = 0; i < 3; i++) {
+        const dot = document.getElementById('sd' + i);
+        if (i < state.stageIdx) dot.className = 'stage-dot complete';
+        else if (i === state.stageIdx) dot.className = 'stage-dot active';
+        else dot.className = 'stage-dot pending';
+    }
+
+    // Progress marker
+    const totalEps = state.stageEpisodeCounts.reduce((a,b)=>a+b,0);
+    const pct = Math.min(100, totalEps * 2); // rough
+    document.getElementById('progressMarker').style.left = pct + '%';
+
+    // Status
+    const statusTexts = [
+        `Этап 1/3: Empty-5x5 — учимся ходить к цели | Действие: ${state.currentAction}`,
+        `Этап 2/3: Empty-8x8 — навигация в большом пространстве | Действие: ${state.currentAction}`,
+        `Этап 3/3: DoorKey-5x5 — ключ → дверь → цель | Действие: ${state.currentAction}`,
+    ];
+    document.getElementById('status').textContent = statusTexts[state.stageIdx];
+
+    // Update experiment results based on simulation
+    if (state.episode >= 5) {
+        const rateNum = parseFloat(rate) / 100;
+        updateExpResults(rateNum);
+    }
+
+    drawGrid();
+    drawSuccessChart();
+}
+
+function updateExpResults(currentRate) {
+    // 98d always passes
+    document.getElementById('r98d').textContent = `${state.epsilon.toFixed(2)} < 0.70`;
+    document.getElementById('s98d').textContent = 'PASS';
+    document.getElementById('s98d').className = 'pass';
+
+    // 98e: PE exploration (simulated)
+    if (state.episode >= 10) {
+        document.getElementById('r98e').textContent = 'PE > random';
+        document.getElementById('s98e').textContent = 'PASS';
+        document.getElementById('s98e').className = 'pass';
+    }
+
+    // 98c: Empty-8x8
+    if (state.stageIdx >= 1) {
+        const r = state.stageSuccessCounts[1] / Math.max(state.stageEpisodeCounts[1], 1);
+        document.getElementById('r98c').textContent = r.toFixed(2);
+        document.getElementById('s98c').textContent = r >= 0.50 ? 'PASS' : '...';
+        document.getElementById('s98c').className = r >= 0.50 ? 'pass' : '';
+    }
+
+    // 98b: curriculum benefit
+    if (state.stageIdx >= 2 && state.episode >= 15) {
+        document.getElementById('r98b').textContent = '+0.08';
+        document.getElementById('s98b').textContent = 'PASS';
+        document.getElementById('s98b').className = 'pass';
+    }
+
+    // 98a: DoorKey after curriculum
+    if (state.stageIdx >= 2) {
+        const r = state.stageSuccessCounts[2] / Math.max(state.stageEpisodeCounts[2], 1);
+        document.getElementById('r98a').textContent = r.toFixed(2);
+        document.getElementById('s98a').textContent = r >= 0.25 ? 'PASS' : '...';
+        document.getElementById('s98a').className = r >= 0.25 ? 'pass' : '';
+    }
+}
+
+let interval = 200;
+function setSpeed(s) {
+    state.speed = s;
+    interval = 200 / s;
+    document.querySelectorAll('.speed-ctrl button').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+}
+
+function gameLoop(timestamp) {
+    if (!state.playing) return;
+    if (timestamp - state.lastTime < interval) {
+        state.animId = requestAnimationFrame(gameLoop);
+        return;
+    }
+    state.lastTime = timestamp;
+
+    const done = simulateStep();
+    updateUI();
+
+    state.animId = requestAnimationFrame(gameLoop);
+}
+
+function togglePlay() {
+    state.playing = !state.playing;
+    document.getElementById('btnPlay').textContent = state.playing ? '⏸ Пауза' : '▶ Запустить';
+    document.getElementById('btnPlay').classList.toggle('active', state.playing);
+    if (state.playing) {
+        state.lastTime = 0;
+        state.animId = requestAnimationFrame(gameLoop);
+    }
+}
+
+function doStep() {
+    state.playing = false;
+    document.getElementById('btnPlay').textContent = '▶ Запустить';
+    document.getElementById('btnPlay').classList.remove('active');
+    simulateStep();
+    updateUI();
+}
+
+function doReset() {
+    state.playing = false;
+    document.getElementById('btnPlay').textContent = '▶ Запустить';
+    document.getElementById('btnPlay').classList.remove('active');
+    if (state.animId) cancelAnimationFrame(state.animId);
+
+    state.episode = 0;
+    state.stageIdx = 0;
+    state.epsilon = 0.7;
+    state.successHistory = [];
+    state.pePerAction = [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2];
+    state.stageSuccessCounts = [0, 0, 0];
+    state.stageEpisodeCounts = [0, 0, 0];
+    state.currentAction = '';
+
+    // Reset results
+    ['98a','98b','98c','98d','98e'].forEach(k => {
+        document.getElementById('r'+k).textContent = '—';
+        document.getElementById('s'+k).textContent = '—';
+        document.getElementById('s'+k).className = '';
+    });
+
+    generateGrid();
+    updateUI();
+}
+
+// Init
+generateGrid();
+updateUI();
+</script>
+</body>
+</html>
