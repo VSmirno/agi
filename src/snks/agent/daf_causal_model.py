@@ -18,6 +18,9 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor
 
+from snks.daf.eligibility import EligibilityTrace
+from snks.daf.stdp import STDPResult
+
 
 @dataclass
 class CausalTrace:
@@ -47,6 +50,8 @@ class DafCausalModel:
         reward_scale: float = 2.0,
         trace_length: int = 5,
         negative_scale: float = 0.5,
+        trace_decay: float = 0.92,
+        trace_reward_lr: float = 0.5,
     ) -> None:
         self.engine = engine
         self.reward_scale = reward_scale
@@ -55,6 +60,8 @@ class DafCausalModel:
         self._step_idx: int = 0
         self._total_reward_received: float = 0.0
         self._total_modulations: int = 0
+        # Stage 41: eligibility trace for long-range credit assignment
+        self._eligibility = EligibilityTrace(decay=trace_decay, reward_lr=trace_reward_lr)
 
     def before_action(self, action: int, current_sks: set[int],
                       current_embedding: Tensor | None = None) -> None:
@@ -69,14 +76,22 @@ class DafCausalModel:
         ))
         self._step_idx += 1
 
+    def accumulate_stdp(self, stdp_result: STDPResult) -> None:
+        """Accumulate STDP weight changes into eligibility trace (Stage 41).
+
+        Called after each perception cycle to build up the trace.
+        """
+        if stdp_result.dw is not None:
+            self._eligibility.accumulate(stdp_result.dw)
+
     def after_action(self, reward: float) -> None:
-        """Modulate recent STDP weight changes based on reward.
+        """Modulate STDP weights based on reward.
 
-        Reward > 0: amplify weight changes (reinforce the causal link)
-        Reward < 0: dampen weight changes (weaken the causal link)
+        Uses two complementary mechanisms:
+        1. Eligibility trace (Stage 41): long-range credit (20+ steps)
+        2. Legacy snapshot trace: short-range precision (5 steps)
+
         Reward == 0: no modulation (STDP runs normally)
-
-        Uses eligibility trace: recent transitions get stronger modulation.
         """
         if abs(reward) < 1e-8 or not self._trace:
             return
@@ -84,14 +99,21 @@ class DafCausalModel:
         self._total_reward_received += abs(reward)
         self._total_modulations += 1
 
+        # Stage 41: eligibility trace — long-range credit assignment
+        effective_reward = reward * self.reward_scale if reward > 0 \
+            else reward * self.negative_scale
+        self._eligibility.apply_reward(
+            effective_reward, self.engine.graph,
+            self.engine.stdp.w_min, self.engine.stdp.w_max,
+        )
+
+        # Legacy snapshot trace — short-range precision
         current_weights = self.engine.graph.edge_attr[:, 0]
         applied = False
 
         for i, trace in enumerate(reversed(self._trace)):
-            # Skip if edge count changed (structural pruning)
             if current_weights.shape[0] != trace.weight_snapshot.shape[0]:
                 continue
-            # Exponential decay: most recent gets strongest modulation
             decay = 0.8 ** i
             delta_w = current_weights - trace.weight_snapshot
 
@@ -188,4 +210,5 @@ class DafCausalModel:
             "total_modulations": self._total_modulations,
             "trace_length": len(self._trace),
             "step_idx": self._step_idx,
+            "eligibility": self._eligibility.stats,
         }

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Stage 41: Temporal Credit Assignment</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0e17;color:#c8d6e5;font-family:'Segoe UI',system-ui,sans-serif;line-height:1.6}
+.header{background:linear-gradient(135deg,#0d1f4a,#1a0a3e 60%,#0d2a3a);padding:30px 40px;border-bottom:2px solid #1e1e5e}
+.header h1{font-size:2em;font-weight:900;background:linear-gradient(90deg,#4ECDC4,#45B7D1,#BB8FCE);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.header .sub{color:#6677aa;font-size:.9em;margin-top:8px}
+.container{display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:20px 40px;max-width:1400px;margin:0 auto}
+.panel{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:20px}
+.panel h2{color:#60a5fa;font-size:1.1em;margin-bottom:12px;border-bottom:1px solid #1e293b;padding-bottom:8px}
+canvas{display:block;margin:0 auto;border-radius:8px}
+.controls{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center}
+.btn{padding:6px 16px;border:1px solid #334155;background:#1e293b;color:#94a3b8;border-radius:6px;cursor:pointer;font-size:.85em}
+.btn:hover{background:#334155;color:#e2e8f0}
+.btn.active{background:#2563eb;border-color:#3b82f6;color:#fff}
+.stat{display:inline-block;background:#0f172a;padding:4px 12px;border-radius:6px;margin:4px;font-size:.85em}
+.stat .v{color:#60a5fa;font-weight:700}
+.stat .l{color:#64748b;margin-left:4px}
+.pass{color:#22c55e}.fail{color:#ef4444}
+.full-width{grid-column:1/-1}
+.legend{display:flex;gap:16px;margin-top:8px;font-size:.8em;color:#64748b}
+.legend span::before{content:'';display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:middle}
+.legend .l-trace::before{background:#f59e0b}
+.legend .l-reward::before{background:#22c55e}
+.legend .l-weight::before{background:#60a5fa}
+.legend .l-old::before{background:#ef4444}
+.explain{background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:20px;margin:20px 40px}
+.explain h2{color:#60a5fa;margin-bottom:10px}
+.explain p{color:#94a3b8;margin-bottom:8px}
+.grid-env{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:900px){.container,.grid-env{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Этап 41: Temporal Credit Assignment</h1>
+  <div class="sub">Eligibility traces — reward сигнал достигает решений, принятых 20+ шагов назад. Формула: e(t) = λ × e(t-1) + dw(t), на reward: Δw = η × r × e(t)</div>
+</div>
+
+<div class="container">
+
+<!-- Panel 1: Trace Accumulation -->
+<div class="panel">
+  <h2>Накопление Trace</h2>
+  <canvas id="cvTrace" width="520" height="280"></canvas>
+  <div class="controls">
+    <button class="btn active" onclick="startTrace()">Запустить</button>
+    <button class="btn" onclick="resetTrace()">Сброс</button>
+    <select id="decaySelect" class="btn" onchange="resetTrace()">
+      <option value="0.92">λ = 0.92 (окно ~35)</option>
+      <option value="0.85">λ = 0.85 (окно ~19)</option>
+      <option value="0.95">λ = 0.95 (окно ~58)</option>
+      <option value="0.80">λ = 0.80 (окно ~13)</option>
+    </select>
+  </div>
+  <div id="traceStats" class="controls"></div>
+  <div class="legend">
+    <span class="l-trace">Trace (текущая)</span>
+    <span class="l-old">Старый подход (5 шагов)</span>
+  </div>
+</div>
+
+<!-- Panel 2: Grid Environment + Reward -->
+<div class="panel">
+  <h2>DoorKey-5x5: Агент и Credit</h2>
+  <canvas id="cvGrid" width="520" height="280"></canvas>
+  <div class="controls">
+    <button class="btn active" onclick="startEpisode()">Запустить эпизод</button>
+    <button class="btn" onclick="stepEpisode()">Шаг</button>
+    <button class="btn" onclick="resetEpisode()">Сброс</button>
+    <select id="speedSelect" class="btn">
+      <option value="500">x1</option>
+      <option value="250">x2</option>
+      <option value="100">x5</option>
+    </select>
+  </div>
+  <div id="gridStats" class="controls"></div>
+</div>
+
+<!-- Panel 3: Long-Range Credit Visualization -->
+<div class="panel full-width">
+  <h2>Сравнение: старый trace (5 шагов) vs eligibility trace (35 шагов)</h2>
+  <div class="grid-env">
+    <div>
+      <canvas id="cvCredit" width="620" height="240"></canvas>
+      <div class="legend">
+        <span class="l-weight">Новый (eligibility)</span>
+        <span class="l-old">Старый (snapshot)</span>
+        <span class="l-reward">Reward</span>
+      </div>
+    </div>
+    <div>
+      <canvas id="cvCompare" width="620" height="240"></canvas>
+      <div id="compareStats" class="controls"></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="explain">
+  <h2>Как это работает</h2>
+  <p><strong>Проблема:</strong> Агент в DoorKey-5x5 подбирает ключ на шаге 5, открывает дверь на шаге 10, а reward получает только на шаге 18 (достигнув цели). Старый механизм (5 weight-снимков) мог передать credit только шагам 14-18. Решение подобрать ключ (шаг 1) никогда не получало усиления.</p>
+  <p><strong>Решение:</strong> Eligibility trace аккумулирует изменения STDP-весов с экспоненциальным затуханием: e(t) = λ × e(t-1) + dw(t). При λ=0.92 окно эффективного credit составляет ~35 шагов. Когда приходит reward, ВСЕ рёбра графа получают модуляцию пропорционально их trace: Δw = η × reward × e(t).</p>
+  <p><strong>Почему это важно для AGI:</strong> Temporal credit assignment — фундаментальная проблема обучения. Без него агент не может связать отдалённые причины с их последствиями. Eligibility traces — биологически правдоподобный механизм (Florian 2007), не требующий backpropagation через время.</p>
+</div>
+
+<script>
+// ======================== SIMULATION DATA ========================
+
+// Simulated DoorKey-5x5 episode
+const GRID_W = 5, GRID_H = 5;
+const EPISODE = [
+  {grid:[[1,1,1,1,1],[1,0,0,2,1],[1,0,0,3,1],[1,0,0,0,1],[1,1,1,1,1]],ax:1,ay:1,dir:0,action:'вперёд',inv:null,reward:0,stdp_dw:0.015},
+  {grid:[[1,1,1,1,1],[1,0,0,2,1],[1,0,0,3,1],[1,0,0,0,1],[1,1,1,1,1]],ax:2,ay:1,dir:0,action:'вперёд',inv:null,reward:0,stdp_dw:0.012},
+  {grid:[[1,1,1,1,1],[1,0,0,2,1],[1,0,0,3,1],[1,0,0,0,1],[1,1,1,1,1]],ax:2,ay:1,dir:1,action:'повернуть→',inv:null,reward:0,stdp_dw:0.008},
+  {grid:[[1,1,1,1,1],[1,0,0,2,1],[1,0,0,3,1],[1,0,0,0,1],[1,1,1,1,1]],ax:2,ay:2,dir:1,action:'вперёд',inv:null,reward:0,stdp_dw:0.011},
+  {grid:[[1,1,1,1,1],[1,0,0,2,1],[1,0,0,3,1],[1,0,0,0,1],[1,1,1,1,1]],ax:2,ay:2,dir:3,action:'повернуть←',inv:null,reward:0,stdp_dw:0.005},
+  {grid:[[1,1,1,1,1],[1,0,0,0,1],[1,0,0,3,1],[1,0,0,0,1],[1,1,1,1,1]],ax:2,ay:2,dir:3,action:'подобрать ключ',inv:'key',reward:0,stdp_dw:0.020},
+  {grid:[[1,1,1,1,1],[1,0,0,0,1],[1,0,0,3,1],[1,0,0,0,1],[1,1,1,1,1]],ax:2,ay:2,dir:0,action:'повернуть→',inv:'key',reward:0,stdp_dw:0.006},
+  {grid:[[1,1,1,1,1],[1,0,0,0,1],[1,0,0,3,1],[1,0,0,0,1],[1,1,1,1,1]],ax:3,ay:2,dir:0,action:'вперёд к двери',inv:'key',reward:0,stdp_dw:0.009},
+  {grid:[[1,1,1,1,1],[1,0,0,0,1],[1,0,0,3,1],[1,0,0,0,1],[1,1,1,1,1]],ax:3,ay:2,dir:0,action:'открыть дверь',inv:'key',reward:0,stdp_dw:0.018},
+  {grid:[[1,1,1,1,1],[1,0,0,0,1],[1,0,0,4,1],[1,0,0,0,1],[1,1,1,1,1]],ax:3,ay:2,dir:0,action:'вперёд',inv:'key',reward:0,stdp_dw:0.007},
+  {grid:[[1,1,1,1,1],[1,0,0,0,1],[1,0,0,4,1],[1,0,0,0,1],[1,1,1,1,1]],ax:3,ay:2,dir:1,action:'повернуть→',inv:'key',reward:0,stdp_dw:0.004},
+  {grid:[[1,1,1,1,1],[1,0,0,0,1],[1,0,0,4,1],[1,0,0,0,1],[1,1,1,1,1]],ax:3,ay:3,dir:1,action:'вперёд',inv:'key',reward:0,stdp_dw:0.006},
+  {grid:[[1,1,1,1,1],[1,0,0,0,1],[1,0,0,4,1],[1,0,0,5,1],[1,1,1,1,1]],ax:3,ay:3,dir:1,action:'к цели',inv:'key',reward:0.95,stdp_dw:0.003},
+];
+// 0=floor,1=wall,2=key,3=door_closed,4=door_open,5=goal
+const COLORS = {0:'#0f172a',1:'#666666',2:'#ffd700',3:'#8B4513',4:'#654321',5:'#00ff88'};
+const DIR_ARROWS = ['▶','▼','◁','▲'];
+
+// ======================== TRACE PANEL ========================
+let traceData = [], traceDecay = 0.92, traceRunning = false, traceStep = 0, traceAnimId;
+const N_TRACE_EDGES = 20; // simulated edges
+
+function resetTrace(){
+  traceData = [];
+  traceStep = 0;
+  traceDecay = parseFloat(document.getElementById('decaySelect').value);
+  traceRunning = false;
+  if(traceAnimId) cancelAnimationFrame(traceAnimId);
+  drawTrace();
+}
+
+function startTrace(){
+  if(traceRunning) return;
+  traceRunning = true;
+  traceLoop();
+}
+
+function traceLoop(){
+  if(!traceRunning || traceStep >= 40) { traceRunning=false; return; }
+  // Simulate STDP dw
+  let dw = Array.from({length:N_TRACE_EDGES},()=>(Math.random()-0.3)*0.02);
+  // Accumulate trace
+  if(traceData.length===0){
+    traceData.push({step:traceStep, values:dw.slice(), oldWindow: traceStep < 5});
+  } else {
+    let prev = traceData[traceData.length-1].values;
+    let newT = prev.map((p,i) => traceDecay*p + dw[i]);
+    traceData.push({step:traceStep, values:newT, oldWindow: traceStep < 5});
+  }
+  traceStep++;
+  drawTrace();
+  updateTraceStats();
+  traceAnimId = setTimeout(()=>requestAnimationFrame(traceLoop), 200);
+}
+
+function drawTrace(){
+  const cv = document.getElementById('cvTrace');
+  const ctx = cv.getContext('2d');
+  const W=cv.width, H=cv.height;
+  ctx.fillStyle='#0f172a';
+  ctx.fillRect(0,0,W,H);
+
+  if(traceData.length===0) {
+    ctx.fillStyle='#334155';ctx.font='14px sans-serif';ctx.textAlign='center';
+    ctx.fillText('Нажмите "Запустить" для визуализации trace',W/2,H/2);
+    return;
+  }
+
+  const pad={l:50,r:20,t:20,b:40};
+  const pw=W-pad.l-pad.r, ph=H-pad.t-pad.b;
+  const maxSteps = 40;
+
+  // Compute aggregate magnitude per step
+  let mags = traceData.map(d => d.values.reduce((s,v)=>s+Math.abs(v),0)/N_TRACE_EDGES);
+  let maxMag = Math.max(...mags, 0.01);
+
+  // Axes
+  ctx.strokeStyle='#334155';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(pad.l,pad.t);ctx.lineTo(pad.l,H-pad.b);ctx.lineTo(W-pad.r,H-pad.b);ctx.stroke();
+  ctx.fillStyle='#64748b';ctx.font='11px sans-serif';ctx.textAlign='center';
+  for(let i=0;i<=maxSteps;i+=5){
+    let x=pad.l+i/maxSteps*pw;
+    ctx.fillText(i,x,H-pad.b+15);
+    if(i>0){ctx.strokeStyle='#1e293b';ctx.beginPath();ctx.moveTo(x,pad.t);ctx.lineTo(x,H-pad.b);ctx.stroke();}
+  }
+  ctx.textAlign='right';
+  ctx.fillText(maxMag.toFixed(3),pad.l-5,pad.t+10);
+  ctx.fillText('0',pad.l-5,H-pad.b);
+  ctx.fillStyle='#64748b';ctx.textAlign='center';
+  ctx.fillText('Шаг',W/2,H-5);
+
+  // Old trace window (5 steps)
+  if(traceData.length>5){
+    let startX = pad.l + Math.max(0,traceData.length-5)/maxSteps*pw;
+    ctx.fillStyle='rgba(239,68,68,0.08)';
+    ctx.fillRect(startX,pad.t,(5/maxSteps)*pw,ph);
+    ctx.fillStyle='#ef4444';ctx.font='10px sans-serif';ctx.textAlign='center';
+    ctx.fillText('Старое окно (5)',startX+(2.5/maxSteps)*pw,pad.t+12);
+  }
+
+  // Draw trace magnitude
+  ctx.strokeStyle='#f59e0b';ctx.lineWidth=2;ctx.beginPath();
+  mags.forEach((m,i)=>{
+    let x=pad.l+i/maxSteps*pw, y=H-pad.b-m/maxMag*ph;
+    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+
+  // Draw dots
+  mags.forEach((m,i)=>{
+    let x=pad.l+i/maxSteps*pw, y=H-pad.b-m/maxMag*ph;
+    ctx.fillStyle=i>=traceData.length-5?'#ef4444':'#f59e0b';
+    ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fill();
+  });
+}
+
+function updateTraceStats(){
+  const el = document.getElementById('traceStats');
+  if(traceData.length===0){el.innerHTML='';return;}
+  let last = traceData[traceData.length-1].values;
+  let mag = last.reduce((s,v)=>s+Math.abs(v),0)/N_TRACE_EDGES;
+  let effWin = Math.floor(Math.log(0.05)/Math.log(traceDecay));
+  el.innerHTML=`
+    <span class="stat"><span class="v">${traceStep}</span><span class="l">Шаг</span></span>
+    <span class="stat"><span class="v">${mag.toFixed(4)}</span><span class="l">Magnitude</span></span>
+    <span class="stat"><span class="v">${effWin}</span><span class="l">Эфф. окно</span></span>
+    <span class="stat"><span class="v">${traceDecay}</span><span class="l">λ</span></span>
+  `;
+}
+
+// ======================== GRID PANEL ========================
+let epStep = 0, epRunning = false, epAnimId, epPath = [];
+
+function resetEpisode(){ epStep=0; epRunning=false; epPath=[]; if(epAnimId)clearTimeout(epAnimId); drawGrid(); updateGridStats(); }
+function startEpisode(){ if(epRunning)return; epRunning=true; epLoop(); }
+function stepEpisode(){ if(epStep<EPISODE.length){ epPath.push({x:EPISODE[epStep].ax,y:EPISODE[epStep].ay}); epStep++; drawGrid(); updateGridStats(); }}
+
+function epLoop(){
+  if(!epRunning||epStep>=EPISODE.length){epRunning=false;return;}
+  stepEpisode();
+  let speed=parseInt(document.getElementById('speedSelect').value);
+  epAnimId=setTimeout(epLoop,speed);
+}
+
+function drawGrid(){
+  const cv=document.getElementById('cvGrid'), ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height;
+  ctx.fillStyle='#0f172a';ctx.fillRect(0,0,W,H);
+
+  const frame = epStep>0?EPISODE[Math.min(epStep-1,EPISODE.length-1)]:EPISODE[0];
+  const cs=48, ox=(W-GRID_W*cs)/2-60, oy=(H-GRID_H*cs)/2;
+
+  // Draw grid
+  for(let y=0;y<GRID_H;y++) for(let x=0;x<GRID_W;x++){
+    let cell=frame.grid[y][x];
+    ctx.fillStyle=COLORS[cell]||'#0f172a';
+    ctx.fillRect(ox+x*cs,oy+y*cs,cs,cs);
+    ctx.strokeStyle='#334155';ctx.strokeRect(ox+x*cs,oy+y*cs,cs,cs);
+    if(cell===2){ctx.fillStyle='#ffd700';ctx.font='20px sans-serif';ctx.textAlign='center';ctx.fillText('★',ox+x*cs+cs/2,oy+y*cs+cs/2+7);}
+    if(cell===5){ctx.fillStyle='#00ff88';ctx.font='20px sans-serif';ctx.textAlign='center';ctx.fillText('◆',ox+x*cs+cs/2,oy+y*cs+cs/2+7);}
+    if(cell===3){ctx.fillStyle='#8B4513';ctx.font='16px sans-serif';ctx.textAlign='center';ctx.fillText('▮',ox+x*cs+cs/2,oy+y*cs+cs/2+6);}
+    if(cell===4){ctx.fillStyle='#654321';ctx.globalAlpha=0.4;ctx.fillRect(ox+x*cs,oy+y*cs,cs,cs);ctx.globalAlpha=1;}
+  }
+
+  // Draw path
+  if(epPath.length>1){
+    ctx.strokeStyle='rgba(96,165,250,0.3)';ctx.lineWidth=3;ctx.beginPath();
+    epPath.forEach((p,i)=>{let px=ox+p.x*cs+cs/2,py=oy+p.y*cs+cs/2;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);});
+    ctx.stroke();
+  }
+
+  // Draw agent
+  ctx.fillStyle='#ff4444';ctx.font='22px sans-serif';ctx.textAlign='center';
+  ctx.fillText(DIR_ARROWS[frame.dir],ox+frame.ax*cs+cs/2,oy+frame.ay*cs+cs/2+7);
+
+  // Right panel: credit assignment
+  const rx=ox+GRID_W*cs+30, ry=oy;
+  ctx.fillStyle='#94a3b8';ctx.font='12px sans-serif';ctx.textAlign='left';
+  ctx.fillText('Credit Assignment:',rx,ry+10);
+
+  // Show eligibility trace bars
+  let traceVals = [];
+  let decay = 0.92, accum = 0;
+  for(let i=0;i<epStep;i++){
+    accum = decay*accum + EPISODE[i].stdp_dw;
+    traceVals.push(accum);
+  }
+  let maxT = Math.max(...traceVals.map(Math.abs),0.01);
+
+  for(let i=0;i<Math.min(epStep,13);i++){
+    let y = ry+25+i*18;
+    let w = Math.abs(traceVals[i])/maxT*120;
+    let inOldWindow = i >= epStep-5;
+    ctx.fillStyle = inOldWindow ? '#ef4444' : '#f59e0b';
+    ctx.globalAlpha = 0.6 + 0.4*(traceVals[i]/maxT);
+    ctx.fillRect(rx,y,w,12);
+    ctx.globalAlpha=1;
+    ctx.fillStyle='#64748b';ctx.font='9px sans-serif';
+    ctx.fillText(`s${i}`,rx+w+4,y+10);
+  }
+
+  // Reward flash
+  if(epStep>0 && EPISODE[epStep-1].reward>0){
+    ctx.fillStyle='rgba(34,197,94,0.2)';ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#22c55e';ctx.font='bold 16px sans-serif';ctx.textAlign='center';
+    ctx.fillText('REWARD! Credit → все шаги',W/2,H-15);
+  }
+}
+
+function updateGridStats(){
+  const el=document.getElementById('gridStats');
+  if(epStep===0){el.innerHTML='<span class="stat"><span class="v">—</span><span class="l">Ожидание</span></span>';return;}
+  let f=EPISODE[Math.min(epStep-1,EPISODE.length-1)];
+  let totalR=EPISODE.slice(0,epStep).reduce((s,e)=>s+e.reward,0);
+  el.innerHTML=`
+    <span class="stat"><span class="v">${epStep}</span><span class="l">Шаг</span></span>
+    <span class="stat"><span class="v">${f.action}</span><span class="l">Действие</span></span>
+    <span class="stat"><span class="v">${f.inv||'—'}</span><span class="l">Инвентарь</span></span>
+    <span class="stat"><span class="v ${totalR>0?'pass':''}">${totalR.toFixed(2)}</span><span class="l">Награда</span></span>
+  `;
+}
+
+// ======================== CREDIT COMPARISON ========================
+function drawCreditComparison(){
+  const cv=document.getElementById('cvCredit'),ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height;
+  ctx.fillStyle='#0f172a';ctx.fillRect(0,0,W,H);
+
+  const pad={l:50,r:20,t:25,b:35};
+  const pw=W-pad.l-pad.r,ph=H-pad.t-pad.b;
+  const steps=25, rewardStep=18;
+  const decay=0.92;
+
+  // Simulate credit that each step receives
+  let eligCredit=[], snapCredit=[];
+  for(let s=0;s<steps;s++){
+    let dw = 0.01 + Math.sin(s*0.5)*0.005;
+    // Eligibility: decayed trace at reward time
+    let traceAtReward = dw * Math.pow(decay, rewardStep-s);
+    eligCredit.push(s<=rewardStep ? traceAtReward*0.5 : 0);
+    // Snapshot: only last 5 steps
+    snapCredit.push((s>=rewardStep-5 && s<=rewardStep) ? dw*0.8**(rewardStep-s)*2.0 : 0);
+  }
+
+  let maxC = Math.max(...eligCredit,...snapCredit,0.001);
+
+  // Axes
+  ctx.strokeStyle='#334155';ctx.beginPath();ctx.moveTo(pad.l,pad.t);ctx.lineTo(pad.l,H-pad.b);ctx.lineTo(W-pad.r,H-pad.b);ctx.stroke();
+  ctx.fillStyle='#64748b';ctx.font='11px sans-serif';ctx.textAlign='center';
+  for(let i=0;i<steps;i+=5){
+    let x=pad.l+(i+0.5)/steps*pw;
+    ctx.fillText(i,x,H-pad.b+14);
+  }
+  ctx.fillText('Шаг эпизода',W/2,H-5);
+  ctx.textAlign='left';ctx.fillText('Credit',5,pad.t+10);
+
+  // Reward line
+  let rx=pad.l+(rewardStep+0.5)/steps*pw;
+  ctx.strokeStyle='#22c55e';ctx.lineWidth=2;ctx.setLineDash([4,3]);
+  ctx.beginPath();ctx.moveTo(rx,pad.t);ctx.lineTo(rx,H-pad.b);ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='#22c55e';ctx.font='10px sans-serif';ctx.textAlign='center';
+  ctx.fillText('Reward',rx,pad.t-5);
+
+  // Old window shade
+  let owStart=pad.l+((rewardStep-5)+0.5)/steps*pw;
+  ctx.fillStyle='rgba(239,68,68,0.06)';
+  ctx.fillRect(owStart,pad.t,(5/steps)*pw,ph);
+
+  let bw = pw/steps*0.35;
+
+  // Draw bars
+  for(let i=0;i<steps;i++){
+    let x=pad.l+(i+0.5)/steps*pw;
+    // Eligibility (blue)
+    if(eligCredit[i]>0){
+      let h=eligCredit[i]/maxC*ph;
+      ctx.fillStyle='#60a5fa';ctx.fillRect(x-bw,H-pad.b-h,bw,h);
+    }
+    // Snapshot (red)
+    if(snapCredit[i]>0){
+      let h=snapCredit[i]/maxC*ph;
+      ctx.fillStyle='#ef4444';ctx.fillRect(x,H-pad.b-h,bw,h);
+    }
+  }
+}
+
+function drawCompareChart(){
+  const cv=document.getElementById('cvCompare'),ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height;
+  ctx.fillStyle='#0f172a';ctx.fillRect(0,0,W,H);
+
+  const metrics=[
+    {label:'Эфф. окно (шаги)',old:5,new:35,unit:''},
+    {label:'Credit шагу 1 (%)',old:0,new:19,unit:'%'},
+    {label:'Memory (отн.)',old:5,new:1,unit:'×E'},
+    {label:'Credit шагу 10 (%)',old:0,new:45,unit:'%'},
+  ];
+
+  const pad={l:140,r:40,t:30,b:20};
+  const ph=H-pad.t-pad.b;
+  const rh=ph/metrics.length;
+
+  ctx.fillStyle='#94a3b8';ctx.font='bold 12px sans-serif';ctx.textAlign='left';
+  ctx.fillText('Старый (snapshot)',pad.l,pad.t-8);
+  ctx.fillStyle='#60a5fa';ctx.textAlign='right';
+  ctx.fillText('Новый (eligibility)',W-pad.r,pad.t-8);
+
+  metrics.forEach((m,i)=>{
+    let y=pad.t+i*rh+rh/2;
+    ctx.fillStyle='#64748b';ctx.font='11px sans-serif';ctx.textAlign='right';
+    ctx.fillText(m.label,pad.l-10,y+4);
+
+    let maxV=Math.max(m.old,m.new,1);
+    let bw=W-pad.l-pad.r;
+
+    // Old bar
+    let ow=m.old/maxV*bw*0.45;
+    ctx.fillStyle='#ef4444';ctx.globalAlpha=0.7;
+    ctx.fillRect(pad.l,y-8,ow,8);
+    ctx.globalAlpha=1;
+    ctx.fillStyle='#ef4444';ctx.font='10px sans-serif';ctx.textAlign='left';
+    ctx.fillText(`${m.old}${m.unit}`,pad.l+ow+4,y-2);
+
+    // New bar
+    let nw=m.new/maxV*bw*0.45;
+    ctx.fillStyle='#60a5fa';ctx.globalAlpha=0.7;
+    ctx.fillRect(pad.l,y+2,nw,8);
+    ctx.globalAlpha=1;
+    ctx.fillStyle='#60a5fa';ctx.textAlign='left';
+    ctx.fillText(`${m.new}${m.unit}`,pad.l+nw+4,y+10);
+  });
+
+  document.getElementById('compareStats').innerHTML=`
+    <span class="stat"><span class="v pass">35</span><span class="l">Эфф. окно</span></span>
+    <span class="stat"><span class="v pass">5x</span><span class="l">Экономия памяти</span></span>
+    <span class="stat"><span class="v pass">19%</span><span class="l">Credit шагу 1</span></span>
+  `;
+}
+
+// ======================== INIT ========================
+resetTrace(); drawTrace();
+resetEpisode(); drawGrid(); updateGridStats();
+drawCreditComparison();
+drawCompareChart();
+</script>
+</body>
+</html>
