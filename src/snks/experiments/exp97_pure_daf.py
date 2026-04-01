@@ -68,9 +68,9 @@ def _make_config(n_actions: int = 7, small: bool | None = None) -> PureDafConfig
         # Full GPU config: 50K nodes
         cfg.causal.pipeline.daf.device = "auto"
         cfg.causal.pipeline.daf.disable_csr = True  # avoid HIP issues on AMD
-        # dt=0.001, 500 steps → 0.5s model time (enough for FHN spiking)
-        cfg.causal.pipeline.daf.dt = 0.001
-        cfg.causal.pipeline.steps_per_cycle = 500
+        # dt=0.002, 200 steps → 0.4s model time (enough for FHN spiking, ~1s/cycle)
+        cfg.causal.pipeline.daf.dt = 0.002
+        cfg.causal.pipeline.steps_per_cycle = 200
         cfg.causal.pipeline.sks.coherence_mode = "cofiring"
         cfg.causal.pipeline.sks.top_k = 2000
         cfg.causal.pipeline.daf.fhn_I_base = 0.3
@@ -116,8 +116,8 @@ def exp97a_doorkey():
 
     cfg = _make_config(n_actions=env.n_actions)
     is_cpu = cfg.causal.pipeline.daf.device == "cpu" or not __import__('torch').cuda.is_available()
-    n_episodes = 10 if is_cpu else 50
-    max_steps = 100 if is_cpu else 500
+    n_episodes = 10 if is_cpu else 30
+    max_steps = 100 if is_cpu else 300
     cfg.max_episode_steps = max_steps
     agent = PureDafAgent(cfg)
 
@@ -165,8 +165,8 @@ def exp97b_causal_learning():
 
     cfg = _make_config(n_actions=env.n_actions)
     is_cpu = cfg.causal.pipeline.daf.device == "cpu" or not __import__('torch').cuda.is_available()
-    n_episodes = 10 if is_cpu else 30
-    max_steps = 100 if is_cpu else 500
+    n_episodes = 10 if is_cpu else 20
+    max_steps = 100 if is_cpu else 200
     cfg.max_episode_steps = max_steps
     agent = PureDafAgent(cfg)
 
