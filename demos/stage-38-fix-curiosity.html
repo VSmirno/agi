@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 38_fix: Любопытство вместо случайности</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e17;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-serif}
+.container{max-width:1400px;margin:0 auto;padding:20px}
+h1{color:#60a5fa;font-size:1.8em;margin-bottom:6px}
+h2{color:#60a5fa;font-size:1.2em;margin:14px 0 8px}
+.subtitle{color:#94a3b8;font-size:1em;margin-bottom:16px}
+.grid-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.panel{background:#1e293b;border-radius:12px;padding:16px;flex:1;min-width:280px}
+.metric{display:inline-block;background:#0f172a;padding:8px 14px;border-radius:8px;margin:4px;text-align:center}
+.metric .value{font-size:1.5em;font-weight:bold}
+.metric .label{font-size:0.8em;color:#94a3b8}
+.metric .value.green{color:#10b981}
+.metric .value.yellow{color:#fbbf24}
+.metric .value.red{color:#ef4444}
+.metric .value.blue{color:#60a5fa}
+canvas{border-radius:8px;display:block}
+.btn{background:#3b82f6;color:white;border:none;padding:7px 15px;border-radius:6px;cursor:pointer;font-size:0.85em;margin:3px}
+.btn:hover{background:#2563eb}
+.btn.active{background:#10b981}
+.controls{text-align:center;margin:10px 0}
+.explanation{background:#1e293b;border-left:3px solid #60a5fa;padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0;line-height:1.5;font-size:0.95em}
+.explanation.fix{border-left-color:#10b981}
+#status{text-align:center;margin:8px 0;color:#94a3b8;font-size:0.9em;min-height:1.4em}
+.speed-ctrl{display:inline-flex;align-items:center;gap:6px;margin-left:12px;color:#94a3b8;font-size:0.85em}
+.speed-ctrl button{background:#334155;color:#e2e8f0;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:0.8em}
+.speed-ctrl button.active{background:#3b82f6}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0;font-size:0.8em;color:#94a3b8}
+.legend-item{display:flex;align-items:center;gap:4px}
+.legend-swatch{width:14px;height:14px;border-radius:3px;display:inline-block}
+.compare-row{display:flex;gap:16px;flex-wrap:wrap}
+.compare-col{flex:1;min-width:300px}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75em;font-weight:bold;margin-left:6px}
+.tag.old{background:#ef4444;color:white}
+.tag.fix{background:#10b981;color:white}
+.pe-bar{height:18px;border-radius:3px;margin:2px 0;transition:width 0.3s;display:flex;align-items:center;padding-left:4px;font-size:0.7em;color:white}
+.action-row{display:flex;align-items:center;gap:8px;margin:2px 0;font-size:0.85em}
+.action-label{width:80px;color:#94a3b8}
+table{width:100%;border-collapse:collapse;margin:8px 0}
+th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #334155;font-size:0.9em}
+th{color:#94a3b8;text-transform:uppercase;font-size:0.8em}
+td.pass{color:#10b981;font-weight:bold}
+td.fail{color:#ef4444;font-weight:bold}
+.epsilon-track{height:6px;background:#334155;border-radius:3px;margin:4px 0;position:relative}
+.epsilon-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#10b981,#fbbf24,#ef4444);transition:width 0.3s}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Этап 38_fix: Любопытство вместо случайности</h1>
+<p class="subtitle">TD-001 fix: PE-driven exploration, action space fix, epsilon decay</p>
+
+<div class="grid-row">
+<div class="panel compare-col">
+<h2>Было <span class="tag old">Stage 38</span></h2>
+<canvas id="canvasOld" width="240" height="240"></canvas>
+<div id="statusOld" style="text-align:center;color:#94a3b8;font-size:0.85em;margin-top:4px">---</div>
+</div>
+<div class="panel compare-col">
+<h2>Стало <span class="tag fix">Stage 38_fix</span></h2>
+<canvas id="canvasFix" width="240" height="240"></canvas>
+<div id="statusFix" style="text-align:center;color:#94a3b8;font-size:0.85em;margin-top:4px">---</div>
+</div>
+<div class="panel" style="min-width:340px">
+<h2>PE-профиль действий</h2>
+<div id="peProfile"></div>
+<div style="margin-top:12px">
+<h2>Epsilon (затухание)</h2>
+<div class="epsilon-track"><div class="epsilon-fill" id="epsFill" style="width:70%"></div></div>
+<div style="display:flex;justify-content:space-between;font-size:0.75em;color:#94a3b8"><span>0.1 (floor)</span><span id="epsValue">0.70</span><span>0.7 (start)</span></div>
+</div>
+</div>
+</div>
+
+<div class="controls">
+<button class="btn active" id="btnPlay" onclick="togglePlay()">Запустить</button>
+<button class="btn" onclick="resetSim()">Сброс</button>
+<button class="btn" onclick="stepSim()">Шаг</button>
+<span class="speed-ctrl">
+Скорость:
+<button onclick="setSpeed(0.5)" id="sp05">x0.5</button>
+<button onclick="setSpeed(1)" id="sp1" class="active">x1</button>
+<button onclick="setSpeed(2)" id="sp2">x2</button>
+<button onclick="setSpeed(5)" id="sp5">x5</button>
+</span>
+</div>
+<div id="status">Шаг: 0 / 100 | Эпизод: 1</div>
+
+<div class="grid-row">
+<div class="panel">
+<h2>Сравнение метрик</h2>
+<div style="display:flex;gap:12px;flex-wrap:wrap">
+<div class="metric"><div class="value red" id="mOldSuccess">0%</div><div class="label">Успех (было)</div></div>
+<div class="metric"><div class="value green" id="mFixSuccess">0%</div><div class="label">Успех (стало)</div></div>
+<div class="metric"><div class="value yellow" id="mOldCoverage">0</div><div class="label">Покрытие (было)</div></div>
+<div class="metric"><div class="value blue" id="mFixCoverage">0</div><div class="label">Покрытие (стало)</div></div>
+<div class="metric"><div class="value red" id="mOldModulations">0</div><div class="label">Модуляции (было)</div></div>
+<div class="metric"><div class="value green" id="mFixModulations">0</div><div class="label">Модуляции (стало)</div></div>
+</div>
+</div>
+</div>
+
+<div class="grid-row">
+<div class="panel">
+<h2>3 бага, 3 исправления</h2>
+<table>
+<tr><th>Баг</th><th>Было</th><th>Стало</th></tr>
+<tr><td>goal_embedding</td><td class="fail">Не устанавливается, навигатор отключен</td><td class="pass">PE-exploration как основной механизм</td></tr>
+<tr><td>Action space</td><td class="fail">n_actions=7 vs motor=5 (toggle недоступен)</td><td class="pass">MotorEncoder пересоздаётся с правильным n_actions</td></tr>
+<tr><td>Epsilon</td><td class="fail">Фиксированный 0.3 (мало exploration)</td><td class="pass">0.7 → 0.1 через EpsilonScheduler</td></tr>
+</table>
+</div>
+</div>
+
+<div class="explanation fix">
+<strong>Как это работает:</strong> Вместо того чтобы ждать внешнюю цель (goal_embedding), агент исследует мир через <em>prediction error</em> — предпочитает действия, результат которых наименее предсказуем. Это PE-driven curiosity: высокая ошибка предсказания = высокий интерес = больше попыток этого действия. По мере обучения epsilon снижается (0.7 → 0.1), и агент всё чаще использует накопленные каузальные знания.
+</div>
+
+<div class="explanation">
+<strong>Почему это важно для AGI:</strong> Настоящий интеллект не нуждается в явных целях для обучения. Ребёнок исследует мир из любопытства — ему интересно то, что удивляет. PE-driven exploration — это тот же принцип: агент сам находит интересные паттерны и подкрепляет успешные действия через STDP. Без учителя, без scaffold, без hardcoded целей.
+</div>
+</div>
+
+<script>
+// === DoorKey-5x5 grid simulation ===
+const CELL = 46, GRID = 5;
+const WALL='#666', FLOOR='#0f172a', AGENT_COLOR='#ff4444', KEY_COLOR='#ffd700',
+      DOOR_CLOSED='#8B4513', DOOR_OPEN='#654321', GOAL_COLOR='#00ff88', LINE_COLOR='#334155';
+
+const ACTIONS = ['left','right','forward','pickup','drop','toggle','done'];
+const ACTION_LABELS = ['Влево','Вправо','Вперёд','Подобрать','Бросить','Открыть','Стоп'];
+const DIR_DX = [1,0,-1,0], DIR_DY = [0,1,0,-1]; // right,down,left,up
+
+function makeGrid(){
+  // Fixed DoorKey-5x5 layout
+  const g = Array.from({length:GRID},()=>Array(GRID).fill(0));
+  // Walls (border)
+  for(let i=0;i<GRID;i++){g[0][i]=1;g[GRID-1][i]=1;g[i][0]=1;g[i][GRID-1]=1;}
+  // Vertical wall with door at row 2
+  g[1][2]=1; g[3][2]=1;
+  return g;
+}
+
+class Agent{
+  constructor(usePE){
+    this.usePE = usePE;
+    this.reset();
+  }
+  reset(){
+    this.x=1;this.y=1;this.dir=0;
+    this.hasKey=false;this.doorOpen=false;
+    this.keyX=1;this.keyY=3;this.doorX=2;this.doorY=2;this.goalX=3;this.goalY=3;
+    this.path=[];this.steps=0;this.reward=0;this.success=false;
+    this.visitCount={};this.peHistory=Array(7).fill(null).map(()=>[]);
+    this.epsilon=0.7;this.modulations=0;
+  }
+  _visitKey(){return `${this.x},${this.y}`;}
+  _updateVisits(){
+    const k=this._visitKey();
+    this.visitCount[k]=(this.visitCount[k]||0)+1;
+  }
+  coverage(){return Object.keys(this.visitCount).length;}
+  selectAction(){
+    if(this.usePE){
+      // PE-biased exploration
+      if(Math.random()<this.epsilon){
+        // Softmax over PE means
+        const means=this.peHistory.map(h=>h.length?h.reduce((a,b)=>a+b)/h.length:1.0);
+        const maxM=Math.max(...means);
+        const exps=means.map(m=>Math.exp((m-maxM)*2));
+        const total=exps.reduce((a,b)=>a+b);
+        const probs=exps.map(e=>e/total);
+        let r=Math.random(),cum=0;
+        for(let i=0;i<7;i++){cum+=probs[i];if(r<cum)return i;}
+        return 6;
+      }
+      // Count-based curiosity fallback
+      const ctx=this._visitKey();
+      let bestA=0,bestI=-1;
+      for(let a=0;a<7;a++){
+        const k=`${ctx}_${a}`;
+        const vc=this.visitCount[k]||0;
+        const interest=1/(1+vc);
+        if(interest>bestI){bestI=interest;bestA=a;}
+      }
+      return bestA;
+    } else {
+      // Old: pure random (goal_embedding was never set)
+      return Math.floor(Math.random()*7);
+    }
+  }
+  step(grid){
+    const action=this.selectAction();
+    this.path.push({x:this.x,y:this.y});
+    this._updateVisits();
+    const ctx=this._visitKey();
+    this.visitCount[`${ctx}_${action}`]=(this.visitCount[`${ctx}_${action}`]||0)+1;
+
+    const oldX=this.x,oldY=this.y;
+    // Execute action
+    if(action===0){this.dir=(this.dir+3)%4;} // left
+    else if(action===1){this.dir=(this.dir+1)%4;} // right
+    else if(action===2){ // forward
+      const nx=this.x+DIR_DX[this.dir],ny=this.y+DIR_DY[this.dir];
+      if(nx>=0&&nx<GRID&&ny>=0&&ny<GRID&&grid[ny][nx]!==1){
+        if(!(nx===this.doorX&&ny===this.doorY&&!this.doorOpen)){
+          this.x=nx;this.y=ny;
+        }
+      }
+    }
+    else if(action===3){ // pickup
+      if(this.x===this.keyX&&this.y===this.keyY&&!this.hasKey){
+        this.hasKey=true;
+      }
+    }
+    else if(action===5){ // toggle
+      const fx=this.x+DIR_DX[this.dir],fy=this.y+DIR_DY[this.dir];
+      if(fx===this.doorX&&fy===this.doorY&&this.hasKey&&!this.doorOpen){
+        this.doorOpen=true;
+        if(this.usePE)this.modulations++;
+      }
+    }
+
+    // Check goal
+    let reward=0;
+    if(this.x===this.goalX&&this.y===this.goalY){
+      reward=1;this.success=true;
+      if(this.usePE)this.modulations+=2;
+    }
+    this.reward+=reward;
+
+    // PE: how much state changed
+    const pe=(this.x!==oldX||this.y!==oldY)?1.0:0.2;
+    if(this.usePE){
+      this.peHistory[action].push(pe);
+      if(this.peHistory[action].length>10)this.peHistory[action].shift();
+    }
+
+    this.steps++;
+    if(reward>0&&this.usePE){
+      // Epsilon decay on success (simulated per-episode)
+      this.epsilon=Math.max(0.1,this.epsilon*0.95);
+    }
+    return{action,reward,pe};
+  }
+}
+
+const grid=makeGrid();
+let agentOld=new Agent(false), agentFix=new Agent(true);
+let playing=false, speed=1, stepCount=0, episode=1, maxSteps=100;
+let intervalId=null;
+let totalOldSuccess=0, totalFixSuccess=0, totalEpisodes=0;
+
+function drawGrid(ctx,agent,canvasId){
+  const c=document.getElementById(canvasId);
+  ctx=c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+
+  for(let y=0;y<GRID;y++)for(let x=0;x<GRID;x++){
+    ctx.fillStyle=grid[y][x]===1?WALL:FLOOR;
+    ctx.fillRect(x*CELL,y*CELL,CELL,CELL);
+    ctx.strokeStyle=LINE_COLOR;ctx.strokeRect(x*CELL,y*CELL,CELL,CELL);
+  }
+
+  // Key
+  if(!agent.hasKey){
+    ctx.fillStyle=KEY_COLOR;
+    ctx.font='24px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('\u2605',agent.keyX*CELL+CELL/2,agent.keyY*CELL+CELL/2);
+  }
+
+  // Door
+  if(!agent.doorOpen){
+    ctx.fillStyle=DOOR_CLOSED;
+    ctx.fillRect(agent.doorX*CELL+4,agent.doorY*CELL+4,CELL-8,CELL-8);
+  } else {
+    ctx.fillStyle=DOOR_OPEN;ctx.globalAlpha=0.4;
+    ctx.fillRect(agent.doorX*CELL+4,agent.doorY*CELL+4,CELL-8,CELL-8);
+    ctx.globalAlpha=1;
+  }
+
+  // Goal
+  ctx.fillStyle=GOAL_COLOR;ctx.font='22px sans-serif';
+  ctx.fillText('\u25C6',agent.goalX*CELL+CELL/2,agent.goalY*CELL+CELL/2);
+
+  // Path
+  if(agent.path.length>1){
+    ctx.strokeStyle='rgba(96,165,250,0.3)';ctx.lineWidth=2;ctx.beginPath();
+    ctx.moveTo(agent.path[0].x*CELL+CELL/2,agent.path[0].y*CELL+CELL/2);
+    for(let p of agent.path)ctx.lineTo(p.x*CELL+CELL/2,p.y*CELL+CELL/2);
+    ctx.stroke();
+  }
+
+  // Agent (triangle)
+  const ax=agent.x*CELL+CELL/2, ay=agent.y*CELL+CELL/2;
+  ctx.fillStyle=AGENT_COLOR;ctx.beginPath();
+  const angle=[0,Math.PI/2,Math.PI,3*Math.PI/2][agent.dir];
+  ctx.moveTo(ax+14*Math.cos(angle),ay+14*Math.sin(angle));
+  ctx.lineTo(ax+10*Math.cos(angle+2.5),ay+10*Math.sin(angle+2.5));
+  ctx.lineTo(ax+10*Math.cos(angle-2.5),ay+10*Math.sin(angle-2.5));
+  ctx.closePath();ctx.fill();
+
+  // Inventory
+  if(agent.hasKey){
+    ctx.fillStyle=KEY_COLOR;ctx.font='12px sans-serif';ctx.textAlign='left';
+    ctx.fillText('\u2605 ключ',4,c.height-4);
+  }
+}
+
+function updatePEProfile(){
+  const el=document.getElementById('peProfile');
+  let html='';
+  for(let a=0;a<7;a++){
+    const h=agentFix.peHistory[a];
+    const mean=h.length?h.reduce((s,v)=>s+v)/h.length:0.5;
+    const pct=Math.round(mean*100);
+    const color=pct>60?'#10b981':pct>30?'#fbbf24':'#334155';
+    html+=`<div class="action-row"><span class="action-label">${ACTION_LABELS[a]}</span>
+      <div style="flex:1;background:#0f172a;border-radius:3px;overflow:hidden">
+        <div class="pe-bar" style="width:${pct}%;background:${color}">${pct>15?pct+'%':''}</div>
+      </div></div>`;
+  }
+  el.innerHTML=html;
+}
+
+function updateMetrics(){
+  const oc=agentOld.coverage(), fc=agentFix.coverage();
+  document.getElementById('mOldCoverage').textContent=oc;
+  document.getElementById('mFixCoverage').textContent=fc;
+  document.getElementById('mOldModulations').textContent=agentOld.modulations;
+  document.getElementById('mFixModulations').textContent=agentFix.modulations;
+
+  if(totalEpisodes>0){
+    document.getElementById('mOldSuccess').textContent=Math.round(totalOldSuccess/totalEpisodes*100)+'%';
+    document.getElementById('mFixSuccess').textContent=Math.round(totalFixSuccess/totalEpisodes*100)+'%';
+  }
+
+  const epsFill=document.getElementById('epsFill');
+  const pct=((agentFix.epsilon-0.1)/0.6)*100;
+  epsFill.style.width=pct+'%';
+  document.getElementById('epsValue').textContent=agentFix.epsilon.toFixed(2);
+}
+
+function doStep(){
+  if(stepCount>=maxSteps||agentOld.success||agentFix.success){
+    // End episode
+    if(agentOld.success)totalOldSuccess++;
+    if(agentFix.success)totalFixSuccess++;
+    totalEpisodes++;
+    agentOld.reset();agentFix.reset();
+    stepCount=0;episode++;
+    // Carry epsilon forward for fix agent
+    agentFix.epsilon=Math.max(0.1,0.7*Math.pow(0.95,totalEpisodes));
+  }
+  const rOld=agentOld.step(grid);
+  const rFix=agentFix.step(grid);
+  stepCount++;
+
+  drawGrid(null,agentOld,'canvasOld');
+  drawGrid(null,agentFix,'canvasFix');
+  updatePEProfile();
+  updateMetrics();
+
+  document.getElementById('statusOld').textContent=`${ACTION_LABELS[rOld.action]} | награда: ${agentOld.reward.toFixed(1)}`;
+  document.getElementById('statusFix').textContent=`${ACTION_LABELS[rFix.action]} | награда: ${agentFix.reward.toFixed(1)}`;
+  document.getElementById('status').textContent=`Шаг: ${stepCount} / ${maxSteps} | Эпизод: ${episode}`;
+}
+
+function togglePlay(){
+  playing=!playing;
+  document.getElementById('btnPlay').textContent=playing?'Пауза':'Запустить';
+  document.getElementById('btnPlay').className=playing?'btn active':'btn';
+  if(playing){intervalId=setInterval(doStep,200/speed);}
+  else{clearInterval(intervalId);}
+}
+
+function resetSim(){
+  playing=false;clearInterval(intervalId);
+  agentOld=new Agent(false);agentFix=new Agent(true);
+  stepCount=0;episode=1;totalOldSuccess=0;totalFixSuccess=0;totalEpisodes=0;
+  document.getElementById('btnPlay').textContent='Запустить';
+  document.getElementById('btnPlay').className='btn';
+  drawGrid(null,agentOld,'canvasOld');drawGrid(null,agentFix,'canvasFix');
+  updatePEProfile();updateMetrics();
+  document.getElementById('status').textContent='Шаг: 0 / 100 | Эпизод: 1';
+  document.getElementById('statusOld').textContent='---';
+  document.getElementById('statusFix').textContent='---';
+}
+
+function stepSim(){if(!playing)doStep();}
+
+function setSpeed(s){
+  speed=s;
+  ['sp05','sp1','sp2','sp5'].forEach(id=>{
+    document.getElementById(id).className=parseFloat(document.getElementById(id).textContent.slice(1))===s?'active':'';
+  });
+  if(playing){clearInterval(intervalId);intervalId=setInterval(doStep,200/speed);}
+}
+
+// Init
+drawGrid(null,agentOld,'canvasOld');
+drawGrid(null,agentFix,'canvasFix');
+updatePEProfile();
+updateMetrics();
+</script>
+</body>
+</html>
