@@ -365,32 +365,35 @@ class TestCoupling:
     """Verify spike propagation through coupling matrix."""
 
     def test_spike_propagation(self):
-        """Coupled oscillators: spike in A should cause response in B."""
+        """Coupled oscillators: activity should propagate via coupling over time.
+
+        Uses default coupling K=0.1 and sufficient time (5000 steps = 0.5 model sec).
+        FHN dynamics are slow (tau=12.5) so propagation needs time.
+        """
         from snks.daf.engine import DafEngine
         cfg = _small_daf_config(
-            num_nodes=10, coupling_strength=0.5, noise_sigma=0.0,
-            fhn_I_base=0.3,  # below oscillation threshold
+            num_nodes=50, coupling_strength=0.1, noise_sigma=0.01,
+            fhn_I_base=0.5,
         )
         engine = DafEngine(cfg, enable_learning=False)
 
-        # Inject strong current into node 0 only
-        currents = torch.zeros(10)
-        currents[0] = 5.0
+        # Inject strong current into first 10 nodes
+        currents = torch.zeros(50)
+        currents[:10] = 5.0
         engine.set_input(currents)
 
-        result = engine.step(n_steps=200)
+        result = engine.step(n_steps=5000)
         fired = result.fired_history
 
-        # Node 0 should fire (received current)
-        node0_fires = fired[:, 0].sum().item()
-        assert node0_fires > 0, "Node 0 should fire with injected current"
+        # Stimulated nodes should fire
+        stim_fires = fired[:, :10].sum().item()
+        assert stim_fires > 0, "Stimulated nodes didn't fire"
 
-        # Check that at least some connected nodes also fired
-        # (coupling should propagate activity)
-        other_fires = fired[:, 1:].sum().item()
-        # With coupling=0.5, we expect some propagation
-        # This is a weak test — just checking that coupling exists
-        assert other_fires >= 0, "Coupling propagation check"
+        # Non-stimulated nodes should also fire (coupling + noise propagation)
+        other_fires = fired[:, 10:].sum().item()
+        assert other_fires > 0, (
+            f"No propagation: stimulated={stim_fires} spikes, others=0"
+        )
 
     def test_edge_weights_updated_by_stdp(self):
         """After STDP, edge weights in coupling matrix should actually change."""
@@ -667,12 +670,12 @@ class TestActionSelection:
     def test_epsilon_1_uniform_actions(self):
         """At epsilon=1.0, actions should be roughly uniform."""
         from snks.agent.pure_daf_agent import PureDafAgent, PureDafConfig
-        from snks.daf.types import DafConfig, PipelineConfig
 
         cfg = PureDafConfig()
-        cfg.causal.pipeline.daf.num_nodes = 200
+        cfg.causal.pipeline.daf.num_nodes = 3000
         cfg.causal.pipeline.daf.device = "cpu"
         cfg.causal.pipeline.daf.disable_csr = True
+        cfg.causal.pipeline.device = "cpu"
         cfg.epsilon_initial = 1.0
         cfg.epsilon_decay = 1.0  # no decay
         cfg.epsilon_floor = 1.0
@@ -701,9 +704,10 @@ class TestActionSelection:
         from snks.agent.pure_daf_agent import PureDafAgent, PureDafConfig
 
         cfg = PureDafConfig()
-        cfg.causal.pipeline.daf.num_nodes = 200
+        cfg.causal.pipeline.daf.num_nodes = 5000
         cfg.causal.pipeline.daf.device = "cpu"
         cfg.causal.pipeline.daf.disable_csr = True
+        cfg.causal.pipeline.device = "cpu"
         cfg.n_actions = 7  # MiniGrid default
 
         agent = PureDafAgent(cfg)
