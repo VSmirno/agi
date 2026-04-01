@@ -40,7 +40,7 @@
 | Audit (26 тестов) | all pass | 26/26 PASS | all pass | PASS |
 | 103 Golden Path | success rate | 56.7% (17/30) | > 50% | PASS |
 | 103 weight delta | mean delta | 0.098 | > 0 | PASS |
-| 104 Naked DAF | success rate | — | ≥ 15% | ⏳ RUNNING |
+| 104 Naked DAF | success rate | 0/12 = 0% (partial, running) | ≥ 15% | ⏳ RUNNING → likely FAIL |
 
 ## Запланированные эксперименты (tech debt)
 
