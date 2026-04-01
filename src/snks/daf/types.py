@@ -82,6 +82,10 @@ class EncoderConfig:
     sdr_current_strength: float = 1.0  # current injected into DAF nodes per active SDR bit
     pool_h: int = 4                # AdaptiveAvgPool2d height: n_filters * pool_h * pool_w = sdr_size
     pool_w: int = 8                # AdaptiveAvgPool2d width
+    # --- Stage 40: Hebbian encoder ---
+    hebbian: bool = False          # use HebbianEncoder instead of frozen VisualEncoder
+    hebbian_lr: float = 0.001      # Oja rule learning rate
+    hebbian_update_interval: int = 5  # update weights every N perception cycles
 
 
 @dataclass
