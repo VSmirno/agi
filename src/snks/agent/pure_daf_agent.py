@@ -61,6 +61,8 @@ class PureDafConfig:
     # Stage 41: Eligibility trace
     trace_decay: float = 0.92
     trace_reward_lr: float = 0.5
+    # Stage 42: Encoder type
+    encoder_type: str = "gabor"  # "gabor" | "symbolic" | "cnn"
 
 
 @dataclass
@@ -106,7 +108,23 @@ class PureDafAgent:
 
         # Core DAF agent (owns Pipeline, DafEngine, STDP)
         self._agent = CausalAgent(config.causal)
-        self._obs_adapter = ObsAdapter(target_size=config.causal.pipeline.encoder.image_size)
+
+        # Stage 42: encoder type determines obs adapter mode
+        if config.encoder_type == "cnn":
+            self._obs_adapter = ObsAdapter(
+                target_size=config.causal.pipeline.encoder.image_size, mode="rgb")
+            # Replace pipeline encoder with RGBConvEncoder
+            from snks.encoder.rgb_conv import RGBConvEncoder
+            self._agent.pipeline.encoder = RGBConvEncoder(config.causal.pipeline.encoder)
+        elif config.encoder_type == "symbolic":
+            self._obs_adapter = ObsAdapter(
+                target_size=config.causal.pipeline.encoder.image_size, mode="grayscale")
+            from snks.encoder.symbolic import SymbolicEncoder
+            self._symbolic_encoder = SymbolicEncoder(
+                sdr_size=config.causal.pipeline.encoder.sdr_size)
+        else:
+            self._obs_adapter = ObsAdapter(
+                target_size=config.causal.pipeline.encoder.image_size)
 
         # Stage 38_fix: override motor encoder to match config.n_actions
         # CausalAgent hardcodes N_ACTIONS=5 but MiniGrid needs 7
@@ -209,7 +227,15 @@ class PureDafAgent:
 
         # 1. Perception via DAF pipeline
         image = self._obs_adapter.convert(obs)
-        result = self._agent.pipeline.perception_cycle(image)
+        if self.config.encoder_type == "symbolic" and hasattr(self, '_current_env'):
+            # Stage 42: symbolic encoder — bypass pixel encoding
+            sym_obs = self._current_env.get_symbolic_obs()
+            import torch as _torch
+            sym_tensor = _torch.tensor(sym_obs, dtype=_torch.float32)
+            pre_sdr = self._symbolic_encoder.encode(sym_tensor)
+            result = self._agent.pipeline.perception_cycle(pre_sdr=pre_sdr)
+        else:
+            result = self._agent.pipeline.perception_cycle(image)
         self._current_sks = set(result.sks_clusters.keys())
         self._current_sks |= _perceptual_hash(image)
 
@@ -268,7 +294,14 @@ class PureDafAgent:
         """
         # 1. Perceive new state
         image = self._obs_adapter.convert(obs)
-        result = self._agent.pipeline.perception_cycle(image)
+        if self.config.encoder_type == "symbolic" and hasattr(self, '_current_env'):
+            sym_obs = self._current_env.get_symbolic_obs()
+            import torch as _torch
+            sym_tensor = _torch.tensor(sym_obs, dtype=_torch.float32)
+            pre_sdr = self._symbolic_encoder.encode(sym_tensor)
+            result = self._agent.pipeline.perception_cycle(pre_sdr=pre_sdr)
+        else:
+            result = self._agent.pipeline.perception_cycle(image)
         post_sks = set(result.sks_clusters.keys())
         post_sks |= _perceptual_hash(image)
 
@@ -322,6 +355,7 @@ class PureDafAgent:
         self._episode_rewards.clear()
         self._episode_pes.clear()
         self._causal._eligibility.reset()  # Stage 41: reset trace per episode
+        self._current_env = env  # Stage 42: needed for symbolic encoder
         obs = env.reset()
 
         total_reward = 0.0
