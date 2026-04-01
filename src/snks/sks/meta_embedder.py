@@ -49,6 +49,9 @@ class MetaEmbedder:
         if self._meta is None:
             self._meta = cycle_embed
         else:
+            # Ensure same device (Stage 43: symbolic encoder may produce CPU tensors)
+            if self._meta.device != cycle_embed.device:
+                cycle_embed = cycle_embed.to(self._meta.device)
             raw = self._decay * self._meta + (1.0 - self._decay) * cycle_embed
             norm = raw.norm().clamp(min=1e-8)
             self._meta = raw / norm
