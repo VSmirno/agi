@@ -63,6 +63,8 @@ class CycleResult:
     configurator_action: "ConfiguratorAction | None" = None
     # Stage 41: STDP result for eligibility trace
     stdp_result: "object | None" = None
+    # Stage 43: Working Memory activation
+    wm_activation: float = 0.0
 
 
 @dataclass
@@ -202,12 +204,25 @@ class Pipeline:
 
         # 0. Reset dynamic state to resting (prevents carryover between stimuli)
         #    Preserves: col 2 (freq), col 3 (threshold), col 5-7 (aux)
+        #    Stage 43: WM zone is NOT fully reset — sustained activation
         cfg = self.engine.config
+        n_wm = int(cfg.num_nodes * cfg.wm_fraction)
+        n_percept = cfg.num_nodes - n_wm
+
         if cfg.oscillator_model == "kuramoto":
-            self.engine.states[:, 0] = torch.rand(cfg.num_nodes, device=self.engine.device) * 2.0 * torch.pi
+            self.engine.states[:n_percept, 0] = torch.rand(
+                n_percept, device=self.engine.device) * 2.0 * torch.pi
         else:
-            self.engine.states[:, 0] = torch.randn(cfg.num_nodes, device=self.engine.device) * 0.1
-            self.engine.states[:, 4] = 0.0  # w_recovery
+            self.engine.states[:n_percept, 0] = torch.randn(
+                n_percept, device=self.engine.device) * 0.1
+            self.engine.states[:n_percept, 4] = 0.0  # w_recovery
+
+        # Stage 43: WM decay — relax toward resting potential (v=0 for FHN)
+        if n_wm > 0:
+            wm_slice = slice(n_percept, None)
+            v_rest = 0.0 if cfg.oscillator_model != "kuramoto" else 0.0
+            v_wm = self.engine.states[wm_slice, 0]
+            self.engine.states[wm_slice, 0] = v_wm + (v_rest - v_wm) * (1.0 - cfg.wm_decay)
 
         # 1. Encode inputs → currents
         n_nodes = self.engine.config.num_nodes
@@ -434,6 +449,7 @@ class Pipeline:
             mean_firing_rate=mean_firing_rate,
             configurator_action=configurator_action,
             stdp_result=step_result.stdp_result,
+            wm_activation=float(self.engine.states[n_percept:, 0].abs().mean().item()) if n_wm > 0 else 0.0,
         )
         # Stage 40: Hebbian encoder learning — update after PE is computed
         if isinstance(self.encoder, HebbianEncoder) and image is not None:
