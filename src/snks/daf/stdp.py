@@ -20,6 +20,7 @@ class STDPResult:
     edges_potentiated: int
     edges_depressed: int
     mean_weight_change: float
+    dw: torch.Tensor | None = None  # Stage 41: raw STDP dw (before homeostasis)
 
 
 class STDP:
@@ -87,6 +88,9 @@ class STDP:
             lr_dst = lr_modulation[dst_idx]
             dw *= (lr_src + lr_dst) / 2.0
 
+        # Stage 41: snapshot raw STDP dw before homeostasis
+        raw_dw = dw.clone()
+
         # Homeostatic regularization: λ * (w_target - w)
         w = graph.get_strength()
         dw += self.lambda_reg * (self.w_target - w)
@@ -98,6 +102,7 @@ class STDP:
             edges_potentiated=int((dw > 0).sum()),
             edges_depressed=int((dw < 0).sum()),
             mean_weight_change=float(dw.abs().mean()),
+            dw=raw_dw,
         )
 
     def _apply_timing(
@@ -152,6 +157,9 @@ class STDP:
             lr_dst = lr_modulation[dst_idx]
             dw *= (lr_src + lr_dst) / 2.0
 
+        # Stage 41: snapshot raw STDP dw before homeostasis
+        raw_dw = dw.clone()
+
         # Homeostatic regularization: λ * (w_target - w)
         w = graph.get_strength()
         dw += self.lambda_reg * (self.w_target - w)
@@ -163,4 +171,5 @@ class STDP:
             edges_potentiated=int(potentiation_mask.sum()),
             edges_depressed=int(depression_mask.sum()),
             mean_weight_change=float(dw.abs().mean()),
+            dw=raw_dw,
         )
