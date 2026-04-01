@@ -284,3 +284,110 @@ class TestMiniGridIntegration:
         result = agent.run_episode(minigrid_env)
         assert result.steps > 0
         assert isinstance(result.reward, float)
+
+
+# ---------------------------------------------------------------------------
+# Stage 38_fix: Curiosity-driven action selection tests
+# ---------------------------------------------------------------------------
+
+class TestActionSpaceFix:
+    """Bug #2: motor encoder must match PureDafConfig.n_actions."""
+
+    def test_motor_matches_config_n_actions(self, small_config):
+        small_config.n_actions = 7
+        agent = PureDafAgent(small_config)
+        assert agent._agent.motor.n_actions == 7
+
+    def test_motor_default_5_actions(self, small_config):
+        small_config.n_actions = 5
+        agent = PureDafAgent(small_config)
+        assert agent._agent.motor.n_actions == 5
+
+    def test_all_actions_encodable(self, small_config):
+        """All actions 0..n_actions-1 must encode without error."""
+        small_config.n_actions = 7
+        agent = PureDafAgent(small_config)
+        for a in range(7):
+            currents = agent._agent.motor.encode(a, device=agent.engine.device)
+            assert currents.shape[0] == small_config.causal.pipeline.daf.num_nodes
+
+    def test_step_returns_valid_action_7(self, small_config):
+        """step() returns actions in [0, n_actions) even with 7 actions."""
+        small_config.n_actions = 7
+        agent = PureDafAgent(small_config)
+        obs = np.random.randint(0, 255, (8, 8, 3), dtype=np.uint8)
+        for _ in range(20):
+            action = agent.step(obs)
+            assert 0 <= action < 7
+
+
+class TestPEExploration:
+    """Bug #1 fix: PE-driven exploration without goal_embedding."""
+
+    def test_pe_explorer_exists(self, small_config):
+        agent = PureDafAgent(small_config)
+        assert hasattr(agent, '_pe_explorer')
+
+    def test_pe_explorer_records_pe(self, small_config):
+        agent = PureDafAgent(small_config)
+        env = DummyEnv(n_actions=5)
+        obs = env.reset()
+        action = agent.step(obs)
+        obs2, reward, _, _, _ = env.step(action)
+        pe = agent.observe_result(obs2, reward)
+        # PE should be recorded in pe_explorer
+        total = sum(len(h) for h in agent._pe_explorer._pe_history)
+        assert total > 0
+
+    def test_episode_without_goal_no_crash(self, small_config):
+        """Agent runs full episode without set_goal_from_obs — no crash."""
+        small_config.n_actions = 7
+        agent = PureDafAgent(small_config)
+        env = DummyEnv(n_actions=7)
+        result = agent.run_episode(env)
+        assert result.steps > 0
+        # No goal_embedding was set — agent used curiosity
+        assert agent._goal_embedding is None
+
+    def test_motivation_updated_during_episode(self, small_config):
+        """IntrinsicMotivation.update() called during observe_result."""
+        agent = PureDafAgent(small_config)
+        env = DummyEnv(n_actions=5)
+        agent.run_episode(env)
+        # After episode, motivation should have visit counts
+        assert agent._agent.motivation._total_steps > 0
+
+
+class TestEpsilonDecay:
+    """Bug #3 fix: epsilon decays across episodes."""
+
+    def test_epsilon_scheduler_exists(self, small_config):
+        agent = PureDafAgent(small_config)
+        assert hasattr(agent, '_epsilon_scheduler')
+
+    def test_epsilon_decays_during_training(self, small_config):
+        small_config.max_episode_steps = 10
+        agent = PureDafAgent(small_config)
+        env = DummyEnv(n_actions=5)
+
+        initial_eps = agent._epsilon_scheduler.value
+        agent.run_training(env, n_episodes=5, max_steps=10)
+        final_eps = agent._epsilon_scheduler.value
+
+        assert final_eps < initial_eps
+
+    def test_epsilon_respects_floor(self, small_config):
+        small_config.epsilon_floor = 0.1
+        small_config.max_episode_steps = 10
+        agent = PureDafAgent(small_config)
+        env = DummyEnv(n_actions=5)
+
+        # Run many episodes to drive epsilon down
+        agent.run_training(env, n_episodes=100, max_steps=10)
+        assert agent._epsilon_scheduler.value >= small_config.epsilon_floor
+
+    def test_nav_stats_include_pe_exploration(self, small_config):
+        agent = PureDafAgent(small_config)
+        env = DummyEnv(n_actions=5)
+        result = agent.run_episode(env)
+        assert "pe_exploration_ratio" in result.nav_stats

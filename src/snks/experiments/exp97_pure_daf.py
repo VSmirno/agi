@@ -32,8 +32,12 @@ def _make_config(n_actions: int = 7, small: bool | None = None) -> PureDafConfig
     """Create config for experiments.
 
     small=None: auto-detect (GPU → full, CPU → small)
-    small=True: 1000 nodes, CPU
+    small=True: 2000 nodes, CPU
     small=False: 50K nodes, GPU
+
+    Stage 38_fix: n_actions defaults to 7 (full MiniGrid action space).
+    Motor encoder is automatically resized to match n_actions.
+    PE exploration + epsilon decay enabled by default.
     """
     cfg = PureDafConfig()
     cfg.n_actions = n_actions
@@ -76,7 +80,11 @@ def _make_config(n_actions: int = 7, small: bool | None = None) -> PureDafConfig
         cfg.causal.pipeline.daf.fhn_I_base = 0.3
         cfg.causal.pipeline.daf.coupling_strength = 0.05
 
-    cfg.exploration_epsilon = 0.7 if small else 0.3
+    # Stage 38_fix: PE exploration with epsilon decay (replaces fixed epsilon)
+    cfg.epsilon_initial = 0.7
+    cfg.epsilon_decay = 0.95 if small else 0.98  # slower decay for longer GPU runs
+    cfg.epsilon_floor = 0.1
+    cfg.exploration_epsilon = 0.7  # initial (overridden by scheduler during training)
     cfg.reward_scale = 3.0
     cfg.trace_length = 5
     cfg.n_sim_steps = 3 if small else 10
