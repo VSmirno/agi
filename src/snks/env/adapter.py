@@ -40,15 +40,23 @@ class EnvAdapter(Protocol):
 class MiniGridAdapter:
     """Wraps any MiniGrid gymnasium environment into EnvAdapter.
 
-    Returns partial observations (agent's view) as RGB arrays.
-    No access to unwrapped grid state — agent sees only what it observes.
+    Uses RGBImgPartialObsWrapper to get actual RGB pixel observations
+    instead of MiniGrid's symbolic encoding (object_type, color, state).
+    Agent sees only its partial view rendered as pixels.
     """
 
-    def __init__(self, env_name: str, render_mode: str = "rgb_array") -> None:
+    def __init__(self, env_name: str, tile_size: int = 8) -> None:
         import gymnasium
 
+        try:
+            import minigrid  # noqa: F401 — registers MiniGrid envs
+            from minigrid.wrappers import RGBImgPartialObsWrapper
+        except ImportError:
+            raise ImportError("minigrid package required for MiniGridAdapter")
+
+        base_env = gymnasium.make(env_name, render_mode="rgb_array")
+        self._env = RGBImgPartialObsWrapper(base_env, tile_size=tile_size)
         self._env_name = env_name
-        self._env = gymnasium.make(env_name, render_mode=render_mode)
 
     def reset(self, seed: int | None = None) -> np.ndarray:
         obs, _ = self._env.reset(seed=seed)
@@ -73,7 +81,7 @@ class MiniGridAdapter:
 
     @staticmethod
     def _extract_image(obs) -> np.ndarray:
-        """Extract image from observation (dict or array)."""
+        """Extract RGB image from observation."""
         if isinstance(obs, dict):
             return obs.get("image", obs.get("observation", obs))
         return obs
