@@ -1,7 +1,7 @@
 # СНКС — Roadmap к AGI
 
 **Последнее обновление:** 2026-04-01
-**Статус:** Stages 0-38 COMPLETE, Block 6 IN PROGRESS
+**Статус:** Фаза 1 IN PROGRESS (Stages 0-40 COMPLETE)
 
 ---
 
@@ -63,12 +63,21 @@
 | 37 | Multi-Room Navigation | COMPLETE (2026-03-31) | Closed door handling, 96% MultiRoom-N4, backward chaining scales |
 | 38 | Pure DAF Agent | COMPLETE (2026-04-01) | Убран scaffolding, чистый DAF pipeline, reward-modulated STDP, env-agnostic |
 | 39 | Curriculum Learning | COMPLETE (2026-04-01) | CurriculumScheduler, EpsilonDecay, PE exploration, 15 tests + 5 exps PASS |
+| 40 | Learnable Encoding | COMPLETE (2026-04-01) | HebbianEncoder: Sanger's GHA, SDR discrimination +14%, 17 tests + 5 exps PASS |
+
+### Следующие stages (Фаза 1)
+
+| Stage | Название | Статус | Что нужно |
+|-------|----------|--------|-----------|
+| 41 | Temporal Credit Assignment | PLANNED | Eligibility trace на десятки шагов |
+| 42 | Spatial Representation | PLANNED | Grid/place cells в аттракторах |
+| 43 | Working Memory | PLANNED | Sustained oscillation между шагами |
 
 ---
 
 ## Статус: Блок 6 в разработке
 
-**Stages 0-39: COMPLETE** (103 экспериментов ALL PASS)
+**Stages 0-40: COMPLETE** (108 экспериментов ALL PASS)
 **Exp 92 GPU Scaling: DONE** (N=200K, 34/34 exps PASS on AMD ROCm)
 **Stage 38: Pure DAF** — убран scaffolding, чистый DAF pipeline, 12% DoorKey-5x5
 
