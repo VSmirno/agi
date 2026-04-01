@@ -341,8 +341,11 @@ class Pipeline:
                 for cluster in local_clusters
             ]
         else:
+            # Stage 43 fix: exclude WM zone from SKS detection
+            fired_for_sks = step_result.fired_history[:, :n_percept] if n_wm > 0 \
+                else step_result.fired_history
             coherence, active_idx = cofiring_coherence_matrix(
-                step_result.fired_history, top_k=sks_config.top_k
+                fired_for_sks, top_k=sks_config.top_k
             )
             local_clusters = detect_sks(
                 coherence, eps=sks_config.dbscan_eps,

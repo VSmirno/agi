@@ -66,6 +66,7 @@ class PureDafConfig:
     # Stage 43: Working Memory
     wm_fraction: float = 0.0   # 0 = disabled, 0.2 = 20% of nodes
     wm_decay: float = 0.95
+    wm_coupling_scale: float = 0.1  # coupling into WM = 10% of normal
 
 
 @dataclass
@@ -113,6 +114,7 @@ class PureDafAgent:
         if config.wm_fraction > 0:
             config.causal.pipeline.daf.wm_fraction = config.wm_fraction
             config.causal.pipeline.daf.wm_decay = config.wm_decay
+            config.causal.pipeline.daf.wm_coupling_scale = config.wm_coupling_scale
 
         # Core DAF agent (owns Pipeline, DafEngine, STDP)
         self._agent = CausalAgent(config.causal)
