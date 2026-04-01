@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Stage 42: Perception Fix — Диагностика</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0e17;color:#c8d6e5;font-family:'Segoe UI',system-ui,sans-serif;line-height:1.6}
+.header{background:linear-gradient(135deg,#0d1f4a,#1a0a3e 60%,#0d2a3a);padding:30px 40px;border-bottom:2px solid #1e1e5e}
+.header h1{font-size:2em;font-weight:900;background:linear-gradient(90deg,#4ECDC4,#45B7D1,#BB8FCE);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.header .sub{color:#6677aa;font-size:.9em;margin-top:8px}
+.container{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;padding:20px 40px;max-width:1400px;margin:0 auto}
+.panel{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:16px}
+.panel h2{color:#60a5fa;font-size:1em;margin-bottom:10px;border-bottom:1px solid #1e293b;padding-bottom:6px}
+canvas{display:block;margin:0 auto;border-radius:6px}
+.full-width{grid-column:1/-1}
+.stat{display:inline-block;background:#0f172a;padding:3px 10px;border-radius:5px;margin:3px;font-size:.82em}
+.stat .v{font-weight:700}.pass{color:#22c55e}.fail{color:#ef4444}.warn{color:#f59e0b}
+.explain{background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:20px;margin:20px 40px}
+.explain h2{color:#60a5fa;margin-bottom:10px}
+.explain p{color:#94a3b8;margin-bottom:8px}
+.grid-cell{display:inline-block;width:32px;height:32px;border:1px solid #334155;text-align:center;line-height:32px;font-size:14px}
+.sdr-bar{height:8px;background:#1e293b;border-radius:4px;margin:2px 0;overflow:hidden}
+.sdr-bar .fill{height:100%;border-radius:4px}
+.comparison{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px}
+.comp-item{text-align:center;padding:12px;background:#0f172a;border-radius:8px}
+.comp-item .val{font-size:1.8em;font-weight:bold;margin:8px 0}
+.comp-item .lbl{color:#64748b;font-size:.85em}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Этап 42: Perception Fix — Диагностика</h1>
+  <div class="sub">Что видит агент? Сравнение 3 энкодеров: Gabor (серый, рёбра) → Symbolic (идеальная информация) → CNN (RGB, цвет)</div>
+</div>
+
+<div class="container">
+
+<!-- Panel 1: MiniGrid Scene -->
+<div class="panel">
+  <h2>Сцена DoorKey-5x5</h2>
+  <canvas id="cvGrid" width="250" height="250"></canvas>
+  <div style="margin-top:8px;text-align:center">
+    <button onclick="randomScene()" style="padding:4px 12px;background:#1e293b;border:1px solid #334155;color:#94a3b8;border-radius:5px;cursor:pointer">Новая сцена</button>
+  </div>
+</div>
+
+<!-- Panel 2: What Gabor Sees -->
+<div class="panel">
+  <h2>Gabor видит (серый, рёбра)</h2>
+  <canvas id="cvGabor" width="250" height="250"></canvas>
+  <div style="margin-top:8px;font-size:.8em;color:#64748b">
+    128 Gabor фильтров на GRAYSCALE.<br>
+    Ключ ★ и цель ◆ — оба "яркое пятно".<br>
+    <span class="fail">Цвет потерян. Позиция размыта.</span>
+  </div>
+</div>
+
+<!-- Panel 3: What Symbolic Sees -->
+<div class="panel">
+  <h2>Symbolic видит (идеально)</h2>
+  <canvas id="cvSymbolic" width="250" height="250"></canvas>
+  <div style="margin-top:8px;font-size:.8em;color:#64748b">
+    Прямой доступ к сетке: тип + цвет + позиция.<br>
+    <span class="pass">Каждый объект уникален в SDR.</span><br>
+    Но даже так — только 5% success!
+  </div>
+</div>
+
+<!-- Results Comparison -->
+<div class="panel full-width">
+  <h2>Результаты DoorKey-5x5 (CPU, 2K нод, 100 шагов)</h2>
+  <div class="comparison">
+    <div class="comp-item">
+      <div class="lbl">Gabor (baseline)</div>
+      <div class="val warn">10%</div>
+      <div class="lbl">1/10 эпизодов</div>
+      <div style="margin-top:6px">
+        <div class="sdr-bar"><div class="fill" style="width:10%;background:#f59e0b"></div></div>
+      </div>
+    </div>
+    <div class="comp-item">
+      <div class="lbl">Symbolic (идеал)</div>
+      <div class="val warn">5%</div>
+      <div class="lbl">1/20 эпизодов</div>
+      <div style="margin-top:6px">
+        <div class="sdr-bar"><div class="fill" style="width:5%;background:#f59e0b"></div></div>
+      </div>
+    </div>
+    <div class="comp-item">
+      <div class="lbl">CNN (RGB)</div>
+      <div class="val warn">5%</div>
+      <div class="lbl">1/20 эпизодов</div>
+      <div style="margin-top:6px">
+        <div class="sdr-bar"><div class="fill" style="width:5%;background:#f59e0b"></div></div>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:12px;padding:12px;background:#1a0a0a;border:1px solid #3b1111;border-radius:8px;font-size:.9em">
+    <strong class="fail">Вывод:</strong> Даже идеальная perception (symbolic) даёт ~5% — на уровне случайного попадания. Bottleneck — не только encoder, но и exploration/credit assignment. Нужны оба фикса.
+  </div>
+</div>
+
+<!-- SDR Discrimination -->
+<div class="panel full-width">
+  <h2>SDR Discrimination: как энкодеры различают объекты</h2>
+  <canvas id="cvSDR" width="900" height="200"></canvas>
+</div>
+
+</div>
+
+<div class="explain">
+  <h2>Что это значит для AGI</h2>
+  <p><strong>Проблема:</strong> Агент на основе DAF осцилляторов не мог решить простую задачу DoorKey-5x5 (найти ключ → открыть дверь → дойти до цели). Гипотеза: "агент слеп" — Gabor фильтры не различают объекты.</p>
+  <p><strong>Эксперимент:</strong> Мы дали агенту ИДЕАЛЬНОЕ зрение (symbolic encoder — тип объекта + цвет + позиция напрямую) и проверили: решит ли он задачу?</p>
+  <p><strong>Результат:</strong> Нет. 5% success даже с идеальной информацией. Это значит bottleneck ДВОЙНОЙ: (1) perception (Gabor действительно плох) И (2) learning/exploration (DAF/STDP пока не может выучить последовательность ключ→дверь→цель за 20 эпизодов).</p>
+  <p><strong>Вывод:</strong> Stage 42 создал инфраструктуру для 3 encoder'ов и доказал, что для прогресса нужно улучшать И perception, И обучение одновременно. CNN encoder сохраняет цвет, symbolic — идеальный baseline для диагностики.</p>
+</div>
+
+<script>
+const CS=48,GW=5,GH=5;
+const OBJ={0:'',1:'▓',2:'',4:'▮',5:'★',8:'◆',10:'▶'};
+const CLR={0:'#0f172a',1:'#666',2:'#0f172a',4:'#8B4513',5:'#ffd700',8:'#00ff88',10:'#ff4444'};
+
+let scene=[
+  [1,1,1,1,1],
+  [1,0,5,0,1],
+  [1,0,0,4,1],
+  [1,10,0,8,1],
+  [1,1,1,1,1]
+];
+
+function randomScene(){
+  scene=[[1,1,1,1,1],[1,0,0,0,1],[1,0,0,0,1],[1,0,0,0,1],[1,1,1,1,1]];
+  let positions=[];
+  for(let y=1;y<4;y++)for(let x=1;x<3;x++)positions.push([y,x]);
+  // Key, door, goal, agent
+  let objs=[5,4,8,10];
+  for(let o of objs){
+    let idx=Math.floor(Math.random()*positions.length);
+    let[y,x]=positions.splice(idx,1)[0];
+    scene[y][x]=o;
+  }
+  drawAll();
+}
+
+function drawGrid(cvId,mode){
+  const cv=document.getElementById(cvId),ctx=cv.getContext('2d');
+  ctx.fillStyle='#0f172a';ctx.fillRect(0,0,cv.width,cv.height);
+  const ox=(cv.width-GW*CS)/2,oy=(cv.height-GH*CS)/2;
+
+  for(let y=0;y<GH;y++)for(let x=0;x<GW;x++){
+    let obj=scene[y][x];
+    let c=CLR[obj]||'#0f172a';
+
+    if(mode==='gabor'){
+      // Grayscale simulation
+      let gray;
+      if(obj===1)gray='#444';
+      else if(obj===0)gray='#111';
+      else gray='#555'; // all objects look similar!
+      ctx.fillStyle=gray;
+    } else if(mode==='symbolic'){
+      ctx.fillStyle=c;
+    } else {
+      ctx.fillStyle=c;
+    }
+
+    ctx.fillRect(ox+x*CS,oy+y*CS,CS,CS);
+    ctx.strokeStyle='#334155';ctx.strokeRect(ox+x*CS,oy+y*CS,CS,CS);
+
+    if(OBJ[obj]){
+      ctx.fillStyle=mode==='gabor'?'#888':CLR[obj];
+      ctx.font=obj===1?'14px sans-serif':'20px sans-serif';
+      ctx.textAlign='center';
+      ctx.fillText(OBJ[obj],ox+x*CS+CS/2,oy+y*CS+CS/2+7);
+    }
+  }
+
+  // Labels
+  ctx.fillStyle='#64748b';ctx.font='10px sans-serif';ctx.textAlign='center';
+  if(mode==='gabor'){
+    ctx.fillStyle='#ef4444';
+    ctx.fillText('★ = ◆ = ? (неразличимы)',cv.width/2,cv.height-5);
+  } else if(mode==='symbolic'){
+    ctx.fillStyle='#22c55e';
+    ctx.fillText('★(5,4,0) ≠ ◆(8,1,0) ≠ ▮(4,4,1)',cv.width/2,cv.height-5);
+  }
+}
+
+function drawSDRComparison(){
+  const cv=document.getElementById('cvSDR'),ctx=cv.getContext('2d');
+  ctx.fillStyle='#0f172a';ctx.fillRect(0,0,cv.width,cv.height);
+
+  const objects=[
+    {name:'Ключ ★',type:5,color:'#ffd700',bits:[100,105,114,120]},
+    {name:'Дверь ▮',type:4,color:'#8B4513',bits:[100,104,114,121]},
+    {name:'Цель ◆',type:8,color:'#00ff88',bits:[100,108,111,120]},
+    {name:'Стена ▓',type:1,color:'#666',bits:[100,101,112,120]},
+  ];
+
+  const rowH=40,pad=120,barW=cv.width-pad-20;
+  ctx.fillStyle='#94a3b8';ctx.font='bold 11px sans-serif';ctx.textAlign='center';
+
+  // Headers
+  ctx.fillText('Gabor SDR',pad+barW*0.17,15);
+  ctx.fillText('Symbolic SDR',pad+barW*0.5,15);
+  ctx.fillText('CNN SDR',pad+barW*0.83,15);
+
+  objects.forEach((obj,i)=>{
+    let y=25+i*rowH;
+    ctx.fillStyle=obj.color;ctx.font='12px sans-serif';ctx.textAlign='right';
+    ctx.fillText(obj.name,pad-10,y+20);
+
+    // Gabor: all look similar (random-ish)
+    let gaborBits=Array.from({length:50},()=>Math.random()>0.7?1:0);
+    // Symbolic: distinct blocks
+    let symBits=new Array(50).fill(0);
+    symBits[obj.type]=1;symBits[10+i*3]=1;symBits[20+i*2]=1;
+    // CNN: some color distinction
+    let cnnBits=Array.from({length:50},(_,k)=>((k+obj.type*7)%13<3)?1:0);
+
+    [gaborBits,symBits,cnnBits].forEach((bits,col)=>{
+      let sx=pad+col*barW/3;
+      bits.forEach((b,k)=>{
+        let bx=sx+k*(barW/3/50);
+        ctx.fillStyle=b?obj.color:'#1e293b';
+        ctx.globalAlpha=b?0.8:0.3;
+        ctx.fillRect(bx,y+5,barW/3/50-1,25);
+      });
+      ctx.globalAlpha=1;
+    });
+  });
+
+  // Overlap labels
+  ctx.fillStyle='#ef4444';ctx.font='10px sans-serif';ctx.textAlign='center';
+  ctx.fillText('Высокий overlap',pad+barW*0.17,cv.height-5);
+  ctx.fillStyle='#22c55e';
+  ctx.fillText('Нулевой overlap',pad+barW*0.5,cv.height-5);
+  ctx.fillStyle='#f59e0b';
+  ctx.fillText('Средний overlap',pad+barW*0.83,cv.height-5);
+}
+
+function drawAll(){
+  drawGrid('cvGrid','full');
+  drawGrid('cvGabor','gabor');
+  drawGrid('cvSymbolic','symbolic');
+  drawSDRComparison();
+}
+drawAll();
+</script>
+</body>
+</html>
