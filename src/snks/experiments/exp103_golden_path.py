@@ -114,7 +114,8 @@ def run_golden_path(n_episodes=30, num_nodes=500, device="cpu"):
     env = SimpleGridEnv(size=3)
 
     # Track STDP weight stats for learning signal analysis
-    initial_weights = pipeline.engine.graph.get_strength().clone()
+    initial_weight_mean = pipeline.engine.graph.get_strength().mean().item()
+    initial_n_edges = pipeline.engine.graph.num_edges
 
     results = []
     t_start = time.monotonic()
@@ -178,9 +179,9 @@ def run_golden_path(n_episodes=30, num_nodes=500, device="cpu"):
     successes = sum(1 for r in results if r["success"])
     success_rate = successes / n_episodes
 
-    # Weight change analysis
-    final_weights = pipeline.engine.graph.get_strength()
-    weight_delta = (final_weights - initial_weights).abs().mean().item()
+    # Weight change analysis (handle structural pruning)
+    final_weight_mean = pipeline.engine.graph.get_strength().mean().item()
+    weight_delta = abs(final_weight_mean - initial_weight_mean)
 
     print()
     print(f"=== RESULTS ===")
