@@ -181,19 +181,22 @@ class Pipeline:
         self,
         image: torch.Tensor | None = None,
         text: str | None = None,
+        pre_sdr: torch.Tensor | None = None,
     ) -> CycleResult:
         """Process one image and/or text through the full pipeline.
 
         Args:
-            image: (H, W) float32 grayscale image. Optional.
+            image: (H, W) float32 grayscale or (3, H, W) RGB. Optional.
             text: input string. Optional.
-            At least one of image or text must be provided.
+            pre_sdr: (sdr_size,) pre-computed SDR (Stage 42: symbolic encoder).
+                     Bypasses visual encoding, injected directly as currents.
+            At least one of image, text, or pre_sdr must be provided.
 
         Returns:
             CycleResult with detected SKS and metrics.
         """
-        if image is None and text is None:
-            raise ValueError("perception_cycle: укажите image или text")
+        if image is None and text is None and pre_sdr is None:
+            raise ValueError("perception_cycle: укажите image, text, или pre_sdr")
 
         t0 = time.perf_counter()
 
@@ -214,7 +217,12 @@ class Pipeline:
             # Stage 19: zone-based injection — each modality writes to its own zone
             self.engine._external_currents.zero_()
 
-            if image is not None:
+            if pre_sdr is not None:
+                sdr = pre_sdr
+                vis_zone = zones["visual"]
+                vis_currents = self.encoder.sdr_to_currents(sdr, n_nodes, zone=vis_zone).to(self.engine.device)
+                self.engine.set_input_zone(vis_currents, "visual")
+            elif image is not None:
                 sdr = self.encoder.encode(image)
                 vis_zone = zones["visual"]
                 vis_currents = self.encoder.sdr_to_currents(sdr, n_nodes, zone=vis_zone).to(self.engine.device)
@@ -251,7 +259,10 @@ class Pipeline:
             # Legacy path: flat DAF, average modalities
             currents = None
 
-            if image is not None:
+            if pre_sdr is not None:
+                sdr = pre_sdr
+                currents = self.encoder.sdr_to_currents(sdr, n_nodes).to(self.engine.device)
+            elif image is not None:
                 sdr = self.encoder.encode(image)
                 currents = self.encoder.sdr_to_currents(sdr, n_nodes).to(self.engine.device)
 
