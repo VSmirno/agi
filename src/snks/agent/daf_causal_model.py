@@ -85,30 +85,32 @@ class DafCausalModel:
         self._total_modulations += 1
 
         current_weights = self.engine.graph.edge_attr[:, 0]
+        applied = False
 
         for i, trace in enumerate(reversed(self._trace)):
+            # Skip if edge count changed (structural pruning)
+            if current_weights.shape[0] != trace.weight_snapshot.shape[0]:
+                continue
             # Exponential decay: most recent gets strongest modulation
             decay = 0.8 ** i
             delta_w = current_weights - trace.weight_snapshot
 
             if reward > 0:
-                # Positive reward: amplify STDP changes
                 modulation = decay * reward * self.reward_scale
                 modulated_delta = delta_w * (1.0 + modulation)
             else:
-                # Negative reward: partially reverse STDP changes
                 modulation = decay * abs(reward) * self.negative_scale
                 modulated_delta = delta_w * (1.0 - modulation)
 
-            # Apply modulated weights
             new_weights = trace.weight_snapshot + modulated_delta
             new_weights.clamp_(
                 self.engine.stdp.w_min,
                 self.engine.stdp.w_max,
             )
+            applied = True
 
-        # Apply final modulated weights (from most recent trace)
-        self.engine.graph.edge_attr[:, 0] = new_weights
+        if applied:
+            self.engine.graph.edge_attr[:, 0] = new_weights
 
     def predict_effect(
         self,

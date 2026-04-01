@@ -24,6 +24,8 @@ def small_config() -> PureDafConfig:
     cfg.causal.pipeline.daf.avg_degree = 10
     cfg.causal.pipeline.daf.device = "cpu"
     cfg.causal.pipeline.daf.disable_csr = True
+    cfg.causal.pipeline.daf.dt = 0.005  # faster for CPU tests
+    cfg.causal.pipeline.steps_per_cycle = 50  # minimal for unit tests
     cfg.causal.pipeline.encoder.image_size = 16
     cfg.causal.pipeline.encoder.sdr_size = 500
     cfg.causal.pipeline.encoder.pool_h = 5

@@ -20,30 +20,54 @@ import numpy as np
 from snks.agent.pure_daf_agent import PureDafAgent, PureDafConfig
 
 
-def _make_config(n_actions: int = 7, small: bool = True) -> PureDafConfig:
-    """Create config for experiments. small=True for CPU-friendly size."""
+def _detect_device() -> str:
+    """Auto-detect best device."""
+    import torch
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+
+def _make_config(n_actions: int = 7, small: bool | None = None) -> PureDafConfig:
+    """Create config for experiments.
+
+    small=None: auto-detect (GPU → full, CPU → small)
+    small=True: 1000 nodes, CPU
+    small=False: 50K nodes, GPU
+    """
     cfg = PureDafConfig()
     cfg.n_actions = n_actions
     cfg.max_episode_steps = 100
 
+    if small is None:
+        small = _detect_device() == "cpu"
+
     if small:
-        cfg.causal.pipeline.daf.num_nodes = 1000
+        cfg.causal.pipeline.daf.num_nodes = 2000
         cfg.causal.pipeline.daf.avg_degree = 15
         cfg.causal.pipeline.daf.device = "cpu"
         cfg.causal.pipeline.daf.disable_csr = True
+        # Faster dt for CPU: 50x speedup, FHN still stable
+        cfg.causal.pipeline.daf.dt = 0.005
+        cfg.causal.pipeline.steps_per_cycle = 200
         cfg.causal.pipeline.encoder.image_size = 32
-        cfg.causal.pipeline.encoder.sdr_size = 1000
         cfg.causal.pipeline.encoder.pool_h = 5
         cfg.causal.pipeline.encoder.pool_w = 5
         cfg.causal.pipeline.encoder.n_orientations = 4
         cfg.causal.pipeline.encoder.n_frequencies = 2
+        # n_filters = 64, actual sdr = 64 * 5 * 5 = 1600
+        cfg.causal.pipeline.encoder.sdr_size = 1600
         cfg.causal.pipeline.sks.min_cluster_size = 3
-        cfg.causal.motor_sdr_size = 100
+        cfg.causal.motor_sdr_size = 200
+    else:
+        # Full GPU config: 50K nodes
+        cfg.causal.pipeline.daf.device = "auto"
+        cfg.causal.pipeline.daf.disable_csr = True  # avoid HIP issues on AMD
 
-    cfg.exploration_epsilon = 0.3
+    cfg.exploration_epsilon = 0.7 if small else 0.3
     cfg.reward_scale = 3.0
     cfg.trace_length = 5
-    cfg.n_sim_steps = 5
+    cfg.n_sim_steps = 3 if small else 10
     return cfg
 
 
@@ -79,11 +103,11 @@ def exp97a_doorkey():
         return {"status": "SKIP", "reason": "MiniGrid not installed"}
 
     cfg = _make_config(n_actions=env.n_actions)
-    cfg.max_episode_steps = 100
+    cfg.max_episode_steps = 500
     agent = PureDafAgent(cfg)
 
     n_episodes = 50
-    results = agent.run_training(env, n_episodes=n_episodes, max_steps=100)
+    results = agent.run_training(env, n_episodes=n_episodes, max_steps=500)
 
     successes = sum(1 for r in results if r.success)
     success_rate = successes / n_episodes
@@ -92,7 +116,7 @@ def exp97a_doorkey():
     causal_stats = results[-1].causal_stats if results else {}
 
     # Random baseline
-    random_rate = _run_random_baseline(env, 50, 100)
+    random_rate = _run_random_baseline(env, 50, 500)
 
     print(f"  Pure DAF:  success={success_rate:.3f} ({successes}/{n_episodes})")
     print(f"  Random:    success={random_rate:.3f}")
@@ -126,11 +150,11 @@ def exp97b_causal_learning():
         return {"status": "SKIP", "reason": "MiniGrid not installed"}
 
     cfg = _make_config(n_actions=env.n_actions)
-    cfg.max_episode_steps = 50
+    cfg.max_episode_steps = 500
     agent = PureDafAgent(cfg)
 
     # Run episodes until we get at least one reward
-    results = agent.run_training(env, n_episodes=30, max_steps=50)
+    results = agent.run_training(env, n_episodes=30, max_steps=500)
     causal_stats = agent._causal.stats
 
     modulations = causal_stats.get("total_modulations", 0)
@@ -162,15 +186,15 @@ def exp97c_empty_navigation():
         return {"status": "SKIP", "reason": "MiniGrid not installed"}
 
     cfg = _make_config(n_actions=env.n_actions)
-    cfg.max_episode_steps = 80
+    cfg.max_episode_steps = 200
     agent = PureDafAgent(cfg)
 
     n_episodes = 50
-    results = agent.run_training(env, n_episodes=n_episodes, max_steps=80)
+    results = agent.run_training(env, n_episodes=n_episodes, max_steps=200)
 
     successes = sum(1 for r in results if r.success)
     success_rate = successes / n_episodes
-    random_rate = _run_random_baseline(env, 50, 80)
+    random_rate = _run_random_baseline(env, 50, 200)
 
     print(f"  Pure DAF:  success={success_rate:.3f} ({successes}/{n_episodes})")
     print(f"  Random:    success={random_rate:.3f}")
@@ -228,12 +252,11 @@ def exp97d_env_agnostic():
         agent2 = PureDafAgent(cfg2)
         result2 = agent2.run_episode(env2, max_steps=20)
         print(f"  MiniGrid:   steps={result2.steps} reward={result2.reward:.1f} OK")
-    except (ImportError, Exception) as e:
-        if "doesn't exist" in str(e) or "ImportError" in type(e).__name__:
-            print(f"  MiniGrid:   SKIP ({e})")
-        else:
-            errors.append(f"MiniGrid: {e}")
-            print(f"  MiniGrid:   ERROR {e}")
+    except ImportError as e:
+        print(f"  MiniGrid:   SKIP (not installed: {e})")
+    except Exception as e:
+        errors.append(f"MiniGrid: {e}")
+        print(f"  MiniGrid:   ERROR {e}")
 
     gate_pass = len(errors) == 0
     print(f"  Gate (no errors): {'PASS' if gate_pass else 'FAIL'}")
