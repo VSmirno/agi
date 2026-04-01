@@ -96,9 +96,12 @@ class DafEngine:
         # Compiled step: chunk-based FHN kernel reduces HIP dispatch overhead.
         # make_compiled_integrate() compiles a CHUNK_SIZE-step function; engine
         # calls it n_steps // chunk_size times per cycle.
+        # Set SNKS_NO_COMPILE=1 to disable (useful when inductor hangs on ROCm).
+        import os
         self._compiled_step_fn = None
         self._compiled_chunk_size: int = 0
-        if config.oscillator_model == "fhn" and self.device.type == "cuda":
+        no_compile = os.environ.get("SNKS_NO_COMPILE", "0") == "1"
+        if config.oscillator_model == "fhn" and self.device.type == "cuda" and not no_compile:
             from snks.daf.compiled_step import _COMPILE_CHUNK
             # Pass actual N/E as hints so warmup compiles for the real graph size,
             # avoiding a slow re-trace on the first real call (critical on AMD ROCm).

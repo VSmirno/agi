@@ -140,15 +140,24 @@ def make_compiled_integrate(
         return _compiled_cache[cache_key]
 
     try:
+        import os
         is_hip = hasattr(torch.version, "hip") and torch.version.hip is not None
-        # dynamic=True: symbolic N/E shapes — no re-tracing when node/edge count changes
-        compile_opts: dict = {"backend": backend, "dynamic": True}
         if is_hip:
-            # PyTorch 2.6+: mode and options are mutually exclusive — use options only.
-            # triton.cudagraphs=False: HIP doesn't support CUDA Graphs reliably.
-            compile_opts["options"] = {"triton.cudagraphs": False}
+            # HIP/ROCm: dynamic=True causes retrace on every new shape → 32 compile
+            # workers × 290MB each, hangs for hours. Use dynamic=False + exact warmup.
+            # Limit inductor workers to avoid RAM explosion (default 32 is too many).
+            os.environ.setdefault("TORCH_COMPILE_THREADS", "4")
+            compile_opts: dict = {
+                "backend": backend,
+                "dynamic": False,
+                "options": {"triton.cudagraphs": False},
+            }
         else:
-            compile_opts["mode"] = "max-autotune"
+            compile_opts = {
+                "backend": backend,
+                "dynamic": True,
+                "mode": "max-autotune",
+            }
 
         chunk_fn = _make_fhn_chunk(chunk_size)
         compiled = torch.compile(chunk_fn, **compile_opts)
