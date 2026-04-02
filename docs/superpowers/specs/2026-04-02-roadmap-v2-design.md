@@ -63,15 +63,16 @@
 
 | Stage | Название | Gate | Что делает |
 |-------|----------|------|------------|
-| 47 | Wall-aware навигация | ≥80% DoorKey-5x5 с walls в разных позициях | BFS/A* через SDM world model |
+| 47 | Wall-aware навигация | ≥80% DoorKey-5x5 с walls в разных позициях | Сначала валидация: SDM transitions пригодны для BFS? Если да — BFS через SDM. Если нет — grid-based world model из observations. |
 | 48 | Random layouts | ≥80% на 200 рандомных карт | random_layout=True, explore на незнакомых картах |
 | 49 | Multi-room | ≥60% MultiRoom-N3 | Длинные subgoal chains, SDM scaling |
 
 **Переиспользуется:** VSA encoder, SDM, SubgoalExtractor из Stages 45-46
 
 **Риски:**
+- SDM данные могут быть слишком шумные/разреженные для pathfinding → fallback: grid-based world model из наблюдений
 - SDM capacity на random layouts → увеличить hard locations или добавить забывание
-- BFS через SDM может быть медленным → ограничить глубину, fallback на heuristic
+- Exploration bottleneck на сложных random layouts: нужен хотя бы 1 successful trace, на некоторых картах это может потребовать 1000+ эпизодов → mitigation: directed exploration или curiosity-модуль
 
 ---
 
@@ -82,7 +83,9 @@
 - ≥70% success на DoorKey-5x5 с языковой инструкцией вместо встроенного reward
 - Языковая инструкция задаёт порядок subgoals
 
-**Зависимости:** M1 Stage 47 (wall-aware навигация)
+**Зависимости:** M1 Stage 48 (random layouts) — Stage 51 требует random layout handling
+
+**Порядок выполнения:** M1 → M2 последовательно (один разработчик). Stage 50 (аудит language pipeline) можно начать параллельно с M1 Stage 49.
 
 **Stages:**
 
@@ -104,7 +107,7 @@
 **Gate-критерий:**
 - M1 gates выполнены
 - M2 gates выполнены
-- **Интеграционный тест:** языковая инструкция + random карта + multi-room — ≥50% success
+- **Интеграционный тест:** языковая инструкция + random карта + multi-room — ≥50% success (словарь инструкций ограничен M2: "pick up key", "open door", "reach goal")
 - **Осцилляторный вердикт:** документ с выводами R1
 
 **Stages:**
@@ -122,7 +125,7 @@
 
 **Gate-критерий:**
 - Новый env существенно сложнее DoorKey/MultiRoom (5+ типов объектов)
-- 100K+ осцилляторов в DAF на GPU
+- GPU scaling: если R1 положительный — 100K+ осцилляторов DAF с измеримым benefit для pipeline. Если R1 отрицательный — документировать решение о упрощении/замене DAF сенсорного модуля
 - Архитектура из M3 работает без структурных изменений
 
 **Направления:**
@@ -133,12 +136,9 @@
 
 ---
 
-### M5: Автономия (детализация после M4)
+### M5: Автономия (vision, детализация после M4)
 
-**Gate-критерий:**
-- Агент сам ставит цели (curiosity / intrinsic motivation)
-- Novel tasks без переобучения (zero-shot через комбинацию subgoals)
-- Self-model: агент "знает" что умеет
+**Направление** (не gate — это open research problems, конкретные критерии определятся после M4):
 
 **Направления:**
 - Curiosity module (новая реализация)
@@ -160,6 +160,8 @@
 | R1.5 | GPU tech debt (TD-002, TD-003) | 50K nodes success rate |
 
 **Принцип:** результаты вливаются в M3 (architecture report). Если oscillatory DAF значительно лучше — переключаемся в M4.
+
+**Checkpoint:** R1 должен достичь минимум R1.3 **или завершиться с отрицательным выводом** до начала M3 Stage 53. Если R1.1 даёт отрицательный результат (oscillatory regime не улучшает SKS) — R1 завершается с негативным выводом, M3 продолжается.
 
 ---
 
@@ -187,6 +189,10 @@
 | GPU pipeline на minipc | Tech debt | R1 + M4 |
 
 ---
+
+## Переход от старого роадмапа
+
+Milestones M1-M5 заменяют Блоки 6+ из старого ROADMAP.md. Блоки 1-5 (Stages 0-35) остаются в истории как exploration phase. При обновлении ROADMAP.md — заменить секцию "Следующие stages" на milestone-структуру.
 
 ## Нумерация stages
 
