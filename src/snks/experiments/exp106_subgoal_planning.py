@@ -115,11 +115,7 @@ class DoorKeyEnv:
         # Interior walls (inner→obs: +1)
         for wr, wc in self.wall_positions:
             obs[wr + 1, wc + 1, 0] = 2
-        # Agent
-        ar, ac = self.agent_pos[0] + 1, self.agent_pos[1] + 1
-        obs[ar, ac, 0] = 10
-        obs[ar, ac, 2] = self.agent_dir
-        # Key
+        # Key (before agent — agent overwrites if co-located)
         if not self.key_picked:
             kr, kc = self.key_pos[0] + 1, self.key_pos[1] + 1
             obs[kr, kc, 0] = 5; obs[kr, kc, 1] = 1
@@ -130,7 +126,10 @@ class DoorKeyEnv:
         # Goal
         gr, gc = self.goal_pos[0] + 1, self.goal_pos[1] + 1
         obs[gr, gc, 0] = 8
-        # Has key indicator
+        # Agent LAST — always visible even when overlapping objects
+        ar, ac = self.agent_pos[0] + 1, self.agent_pos[1] + 1
+        obs[ar, ac, 0] = 10
+        obs[ar, ac, 2] = self.agent_dir
         if self.has_key:
             obs[ar, ac, 1] = 5
         return obs
