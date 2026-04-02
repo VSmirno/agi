@@ -1,7 +1,7 @@
 # СНКС — Roadmap v2 (Milestone-Driven)
 
 **Последнее обновление:** 2026-04-02
-**Статус:** M1 COMPLETE → M2 IN PROGRESS
+**Статус:** M1 COMPLETE → M2 COMPLETE → M3 IN PROGRESS
 **Полная спецификация:** [docs/superpowers/specs/2026-04-02-roadmap-v2-design.md](docs/superpowers/specs/2026-04-02-roadmap-v2-design.md)
 
 ---
@@ -34,7 +34,7 @@
 | Stage | Название | Статус | Gate |
 |-------|----------|--------|------|
 | 50 | Reconnect language pipeline | COMPLETE (2026-04-02) | 100% encode/decode accuracy (30 instructions) |
-| 51 | Language-guided planning | | ≥70% random DoorKey-5x5 с инструкцией |
+| 51 | Language-guided planning | COMPLETE (2026-04-02) | 100% на 200 random DoorKey-5x5 с инструкцией |
 
 ### M3: Концепция доказана
 **Gate:** M1 + M2 + интеграция ≥50% random MultiRoom-N3 с инструкцией + R1 вердикт
