@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 55: Exploration Strategy — СНКС</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0e17; color: #e2e8f0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh; padding: 20px;
+}
+h1 { color: #60a5fa; font-size: 1.8em; margin-bottom: 4px; }
+h2 { color: #60a5fa; font-size: 1.2em; margin: 16px 0 8px; }
+.subtitle { color: #94a3b8; font-size: 0.95em; margin-bottom: 16px; }
+.container { max-width: 1100px; margin: 0 auto; }
+.panel {
+  background: #111827; border: 1px solid #1e293b;
+  border-radius: 8px; padding: 16px; margin-bottom: 16px;
+}
+canvas { border: 1px solid #334155; border-radius: 4px; display: block; margin: 0 auto; }
+.controls {
+  display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; align-items: center;
+}
+.controls button {
+  background: #1e293b; color: #60a5fa; border: 1px solid #334155;
+  padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;
+}
+.controls button:hover { background: #334155; }
+.controls button.active { background: #1e40af; border-color: #60a5fa; }
+.stat { display: inline-block; margin-right: 16px; margin-bottom: 4px; }
+.stat-label { color: #94a3b8; font-size: 0.85em; }
+.stat-value { color: #e2e8f0; font-size: 1.1em; font-weight: 600; }
+.stat-value.pass { color: #34d399; }
+.explain {
+  background: #0f172a; border-left: 3px solid #60a5fa;
+  padding: 12px 16px; margin: 12px 0; border-radius: 0 4px 4px 0;
+  font-size: 0.9em; line-height: 1.5;
+}
+.metrics-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px; margin: 12px 0;
+}
+.metric-card {
+  background: #0f172a; border: 1px solid #1e293b; border-radius: 8px;
+  padding: 16px; text-align: center;
+}
+.metric-value { font-size: 2em; font-weight: 700; }
+.metric-label { font-size: 0.8em; color: #94a3b8; margin-top: 4px; }
+select {
+  background: #1e293b; color: #60a5fa; border: 1px solid #334155;
+  padding: 4px 8px; border-radius: 4px; font-size: 0.9em;
+}
+.action-log {
+  background: #0f172a; border: 1px solid #1e293b; border-radius: 4px;
+  padding: 8px; font-family: monospace; font-size: 0.75em; color: #94a3b8;
+  height: 100px; overflow-y: auto; margin-top: 8px;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Этап 55: Exploration Strategy</h1>
+  <p class="subtitle">Агент исследует MultiRoom-N3 (25x25) с обзором 7x7 — находит путь через двери к цели</p>
+
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-value pass">100%</div>
+      <div class="metric-label">Успех (200 раскладок)</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value" style="color:#60a5fa">22.1</div>
+      <div class="metric-label">Среднее шагов</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value pass">&ge;60%</div>
+      <div class="metric-label">Gate PASS</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value" style="color:#fbbf24">25x25</div>
+      <div class="metric-label">Размер карты</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Карта с пространственной памятью агента</h2>
+    <canvas id="gridCanvas" width="500" height="500"></canvas>
+    <div class="controls">
+      <button id="btnPlay" onclick="togglePlay()">Запустить</button>
+      <button onclick="stepForward()">Шаг</button>
+      <button onclick="resetEpisode()">Сброс</button>
+      <select id="speedSelect" onchange="changeSpeed()">
+        <option value="600">x0.5</option>
+        <option value="300" selected>x1</option>
+        <option value="150">x2</option>
+        <option value="60">x5</option>
+      </select>
+      <label style="color:#94a3b8;font-size:0.85em;margin-left:12px">Эпизод:</label>
+      <button onclick="switchEp(0)" id="ep0" class="active">seed=0</button>
+      <button onclick="switchEp(1)" id="ep1">seed=42</button>
+    </div>
+    <div>
+      <span class="stat"><span class="stat-label">Шаг: </span><span class="stat-value" id="stepNum">0</span></span>
+      <span class="stat"><span class="stat-label">Действие: </span><span class="stat-value" id="actionName">-</span></span>
+      <span class="stat"><span class="stat-label">Исследовано: </span><span class="stat-value" id="exploredCount">0</span></span>
+      <span class="stat"><span class="stat-label">Статус: </span><span class="stat-value" id="statusText">-</span></span>
+    </div>
+    <div class="action-log" id="actionLog"></div>
+  </div>
+
+  <div class="explain">
+    <strong>Как это работает:</strong> Агент видит только 7x7 клеток (менее 2% карты 25x25).
+    Он строит <em>пространственную карту</em> из частичных наблюдений.
+    <strong>Frontier exploration</strong> — BFS к ближайшей неизвестной клетке на границе исследованной области.
+    Двери (коричневые) открываются toggle-действием. После обнаружения цели (зелёный ромб) — BFS-навигация.<br><br>
+    <strong>Легенда:</strong>
+    <span style="color:#666">&#9632; стена</span> &nbsp;
+    <span style="color:#8B4513">&#9632; дверь</span> &nbsp;
+    <span style="color:#00ff88">&#9670; цель</span> &nbsp;
+    <span style="color:#ff4444">&#9654; агент</span> &nbsp;
+    <span style="color:#1a3a5c">&#9632; исследовано</span> &nbsp;
+    <span style="color:#0f172a">&#9632; неизвестно</span>
+  </div>
+</div>
+
+<script>
+const EPS = [{"s":0,"w":25,"h":25,"o":[[170,2],[171,2],[172,2],[173,2],[174,2],[195,2],[199,2],[220,2],[224,2],[245,2],[247,8],[249,2],[269,2],[270,2],[271,2],[272,4],[273,2],[274,2],[294,2],[299,2],[319,2],[324,2],[344,2],[349,2],[369,2],[370,2],[371,4],[372,2],[373,2],[374,2],[394,2],[398,2],[419,2],[423,2],[444,2],[445,2],[446,2],[447,2],[448,2]],"f":[[20,15,1,"l",[394,395,396,397,398,419,420,421,422,423,444,445,446,447,448]],[20,15,0,"f",[370,371,372,373]],[21,15,0,"l",[]],[21,15,3,"t",[369]],[21,15,3,"f",[269,270,271,272,273,274,294,295,296,297,298,299,319,320,321,322,323,324,344,345,346,347,348,349]],[21,14,3,"f",[]],[21,13,3,"r",[]],[21,13,0,"f",[374]],[22,13,0,"l",[]],[22,13,3,"f",[]],[22,12,3,"f",[]],[22,11,3,"t",[]],[22,11,3,"f",[170,171,172,173,174,195,196,197,198,199,220,221,222,223,224,245,246,247,248,249]],[22,10,3,"f",[]],[22,9,3,"G",[]]]},{"s":42,"w":25,"h":25,"o":[[384,2],[385,2],[386,2],[387,2],[388,2],[409,2],[411,8],[413,2],[427,2],[428,2],[429,2],[430,2],[431,2],[434,2],[438,2],[452,2],[456,2],[457,2],[458,2],[459,2],[460,4],[461,2],[462,2],[463,2],[477,2],[481,4],[486,2],[502,2],[506,2],[511,2],[527,2],[528,2],[529,2],[530,2],[531,2],[536,2],[556,2],[561,2],[581,2],[582,2],[583,2],[584,2],[585,2],[586,2]],"f":[[5,19,3,"l",[427,428,429,430,431,452,453,454,455,456,477,478,479,480,481]],[5,19,2,"l",[502,503,504,505,527,528,529,530]],[5,19,1,"r",[506,531]],[5,19,2,"l",[]],[5,19,1,"r",[]],[5,19,2,"l",[]],[5,19,1,"r",[]],[5,19,2,"r",[]],[5,19,3,"l",[]],[5,19,2,"r",[]],[5,19,3,"r",[]],[5,19,0,"t",[]],[5,19,0,"f",[457,458,459,460,461,482,483,484,485,486,507,508,509,510,511,532,533,534,535,536,557,558,559,560,561]],[6,19,0,"f",[]],[7,19,0,"r",[]],[7,19,1,"l",[556,581,582,583,584,585]],[7,19,0,"f",[]],[8,19,0,"f",[]],[9,19,0,"f",[]],[10,19,0,"l",[]],[10,19,3,"t",[]],[10,19,3,"f",[384,385,386,387,388,409,410,411,412,413,434,435,436,437,438]],[10,18,3,"f",[]],[10,17,3,"r",[]],[10,17,0,"f",[462,463]],[11,17,0,"l",[]],[11,17,3,"f",[]],[11,16,3,"G",[]]]}];
+
+const ACT_RU = {'l':'налево','r':'направо','f':'вперёд','p':'подобрать','t':'открыть','G':'цель!','X':'неудача','s':'старт'};
+const DIR_ARR = ['\u25B6','\u25BC','\u25C0','\u25B2'];
+
+let curEp = 0, curFrame = 0, playing = false, timer = null, speed = 300;
+let explored = new Set();
+
+function buildGrid(ep) {
+  const g = new Array(ep.w * ep.h).fill(0);
+  for (const [i, v] of ep.o) g[i] = v;
+  return g;
+}
+
+function draw() {
+  const ep = EPS[curEp];
+  const W = ep.w, H = ep.h;
+  const grid = buildGrid(ep);
+  const cv = document.getElementById('gridCanvas');
+  const ctx = cv.getContext('2d');
+  const cell = Math.floor(Math.min(500/W, 500/H));
+  cv.width = W * cell; cv.height = H * cell;
+
+  // Rebuild explored set up to current frame
+  explored.clear();
+  for (let i = 0; i <= curFrame && i < ep.f.length; i++) {
+    for (const idx of ep.f[i][4]) explored.add(idx);
+  }
+
+  const frame = ep.f[Math.min(curFrame, ep.f.length-1)];
+  const ac = frame[0], ar = frame[1], ad = frame[2];
+
+  for (let r = 0; r < H; r++) {
+    for (let c = 0; c < W; c++) {
+      const idx = r * W + c;
+      const x = c * cell, y = r * cell;
+      const obj = grid[idx];
+      const isExplored = explored.has(idx);
+
+      if (!isExplored) {
+        ctx.fillStyle = '#0a0e17';
+        ctx.fillRect(x, y, cell, cell);
+        continue;
+      }
+
+      // Draw explored cells
+      if (obj === 2) ctx.fillStyle = '#555555';
+      else if (obj === 4) ctx.fillStyle = '#654321';
+      else ctx.fillStyle = '#0f2140';
+      ctx.fillRect(x, y, cell, cell);
+      ctx.strokeStyle = '#1a2a40';
+      ctx.strokeRect(x, y, cell, cell);
+
+      if (obj === 8) {
+        ctx.fillStyle = '#00ff88';
+        ctx.font = (cell*0.7)+'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('\u25C6', x+cell/2, y+cell*0.75);
+      } else if (obj === 4) {
+        ctx.fillStyle = '#deb887';
+        ctx.font = (cell*0.6)+'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('\u25A0', x+cell/2, y+cell*0.7);
+      }
+    }
+  }
+
+  // Agent
+  ctx.fillStyle = '#ff4444';
+  ctx.font = (cell*0.8)+'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(DIR_ARR[ad], ac*cell+cell/2, ar*cell+cell*0.8);
+
+  // Trail
+  ctx.fillStyle = 'rgba(255,68,68,0.15)';
+  for (let i = 0; i < curFrame && i < ep.f.length; i++) {
+    const fc = ep.f[i][0], fr = ep.f[i][1];
+    ctx.fillRect(fc*cell+2, fr*cell+2, cell-4, cell-4);
+  }
+
+  // Stats
+  const act = frame[3];
+  document.getElementById('stepNum').textContent = curFrame + '/' + (ep.f.length-1);
+  document.getElementById('actionName').textContent = ACT_RU[act] || act;
+  document.getElementById('exploredCount').textContent = explored.size + '/' + (W*H);
+  document.getElementById('statusText').textContent = act === 'G' ? 'цель достигнута!' : 'исследование';
+
+  const log = document.getElementById('actionLog');
+  if (curFrame === 0) log.innerHTML = '';
+  const color = act === 'G' ? '#34d399' : '#94a3b8';
+  log.innerHTML += '<div style="color:'+color+'">['+curFrame+'] ('+ac+','+ar+') d='+ad+' '+String.fromCodePoint(8594)+' '+(ACT_RU[act]||act)+'</div>';
+  log.scrollTop = log.scrollHeight;
+}
+
+function stepForward() {
+  const ep = EPS[curEp];
+  if (curFrame < ep.f.length - 1) { curFrame++; draw(); }
+  else stopPlay();
+}
+
+function togglePlay() {
+  if (playing) stopPlay();
+  else {
+    playing = true;
+    document.getElementById('btnPlay').textContent = 'Пауза';
+    document.getElementById('btnPlay').classList.add('active');
+    timer = setInterval(() => {
+      if (curFrame < EPS[curEp].f.length - 1) { curFrame++; draw(); }
+      else stopPlay();
+    }, speed);
+  }
+}
+
+function stopPlay() {
+  playing = false;
+  if (timer) clearInterval(timer);
+  timer = null;
+  document.getElementById('btnPlay').textContent = 'Запустить';
+  document.getElementById('btnPlay').classList.remove('active');
+}
+
+function resetEpisode() {
+  stopPlay(); curFrame = 0;
+  document.getElementById('actionLog').innerHTML = '';
+  draw();
+}
+
+function switchEp(i) {
+  stopPlay(); curEp = i; curFrame = 0;
+  document.getElementById('actionLog').innerHTML = '';
+  document.querySelectorAll('[id^=ep]').forEach((b,j) => b.classList.toggle('active', j===i));
+  draw();
+}
+
+function changeSpeed() { speed = parseInt(document.getElementById('speedSelect').value); if(playing){stopPlay();togglePlay();} }
+
+draw();
+</script>
+</body>
+</html>
