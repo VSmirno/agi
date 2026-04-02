@@ -128,3 +128,46 @@ DoorKey = detour task. Forward planning (beam search, reward lookahead) не р�
 - TD-005 CLOSED: plan phase ≥ 15% (got 92.5%)
 - Report written
 - ROADMAP updated
+
+---
+
+## Stage 47: Wall-aware навигация
+
+### [auto] Фаза 0: Git setup
+- Ветка: stage47-wall-aware-nav от main (commit 1f86cc2)
+- Tech debt проверен: 3 open (TD-001 IN_PROGRESS, TD-002/003 OPEN, TD-004 OPEN), 1 closed (TD-005)
+- minipc: нет активных tmux sessions
+- TD-002/003: GPU_EXP, не запущены — Stage 47 приоритетнее
+
+### [auto] Фаза 1: Спецификация
+- Подход A: BFS pathfinding на observed grid (простой, оптимальный, zero-failure)
+- Подход B: A* (нет выигрыша на 5x5)
+- Подход C: SDM-based navigation (bio-plausible, но 0.85 prediction unreliable)
+- **Выбран: A** — навигация = инфраструктура, не когнитивная функция
+
+### [auto] Фаза 2: Реализация
+- GridPathfinder: BFS pathfinding, wall extraction, path-to-actions — 16 тестов PASS
+- RandomDoorKeyEnv: случайные раскладки (wall_row, door, key, agent, goal) — 5 тестов PASS
+- SubgoalNavigator: интеграция BFS (fallback на heuristic) — 3 теста PASS
+- Все 24 теста PASS, Stage 46 (21 тест) не сломан
+
+### [auto] Фаза 3: Эксперименты (на minipc)
+- **107a**: BFS pathfinding = 200/200 layouts solvable, mean path 9.6 — **PASS**
+- **107b (v1)**: Random DoorKey-5x5, explore_eps=100 — FAIL (0/20, random walk не находит traces)
+- Fix: build_plan_from_obs — строит план прямо из observation (key/door/goal positions)
+- Fix: rebuild plan every episode (random layout per reset)
+- Fix: epsilon 0.1→0.05
+- **107b (v2)**: Random DoorKey-5x5, obs-based planning — **100% (200/200), mean 16 steps — PASS**
+
+### [auto] Фаза 4: Веб-демо
+- demos/stage-47-wall-aware-nav.html — Canvas с 8+ раскладками, BFS overlay, trail
+
+### [auto] Фаза 5: Merge
+- Report written: PASS (100% на 200 random layouts)
+- ROADMAP updated: Stage 47 COMPLETE, Stage 48 merged (covered by 47)
+- Stage 47 фактически закрывает и Stage 48 (gate ≥80% на 200 random layouts)
+
+### Решения
+- Obs-based planning вместо explore-then-plan: random walk ~1% success → unreliable
+- BFS = infrastructure, не cognitive claim → допустимо для СНКС
+- Stage 48 merged с 47 т.к. 100% на 200 random layouts уже выполняет gate 48
