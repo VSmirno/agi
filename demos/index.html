@@ -672,6 +672,163 @@ body {
     <span class="btn">Открыть отчёт →</span>
   </a>
 
+  <!-- Stage 44: Foundation Audit -->
+  <a class="demo-card" href="stage-44-foundation-audit.html">
+    <div class="icon">🔍</div>
+    <h2>Stage 44: Foundation Audit
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      Полный аудит фундамента: 26 тестов, все PASS. Naked DAF 0% — world model необходим.
+      FHN excitable (не oscillatory), coupling timescale mismatch.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">26/26</div>
+        <div class="lbl">Тестов PASS</div>
+      </div>
+    </div>
+    <span class="btn">Открыть демо →</span>
+  </a>
+
+  <!-- Stage 45: VSA World Model -->
+  <a class="demo-card" href="stage-45-vsa-world-model.html">
+    <div class="icon">🌐</div>
+    <h2>Stage 45: VSA World Model
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      VSA (Binary Spatter Code) + SDM (Sparse Distributed Memory).
+      97% encoding accuracy. Planning FAIL на detour tasks → Stage 46.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">97%</div>
+        <div class="lbl">Encoding</div>
+      </div>
+    </div>
+    <span class="btn">Открыть демо →</span>
+  </a>
+
+  <!-- Stage 46: Subgoal Planning -->
+  <a class="demo-card" href="stage-46-subgoal-planning.html">
+    <div class="icon">🎯</div>
+    <h2>Stage 46: Subgoal Planning
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      Subgoal extraction + PlanGraph + BFS навигация.
+      92.5% DoorKey-5x5 с каузальным планированием через подцели.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">92.5%</div>
+        <div class="lbl">DoorKey-5x5</div>
+      </div>
+    </div>
+    <span class="btn">Открыть демо →</span>
+  </a>
+
+  <!-- Stage 47: Wall-Aware Navigation -->
+  <a class="demo-card" href="stage-47-wall-aware-nav.html">
+    <div class="icon">🧱</div>
+    <h2>Stage 47: Wall-Aware Navigation
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      BFS pathfinding на observed grid. 100% на 200 random DoorKey-5x5.
+      M1 (генерализация) COMPLETE.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">100%</div>
+        <div class="lbl">200 random</div>
+      </div>
+    </div>
+    <span class="btn">Открыть демо →</span>
+  </a>
+
+  <!-- Stage 49: Multi-Room -->
+  <a class="demo-card" href="stage-49-multi-room.html">
+    <div class="icon">🚪</div>
+    <h2>Stage 49: MultiRoom-N3
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      BFS + reactive door toggle. 100% на 200 random MultiRoom-N3.
+      Реактивный подход: BFS через закрытые двери, toggle при подходе.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">100%</div>
+        <div class="lbl">MultiRoom-N3</div>
+      </div>
+    </div>
+    <span class="btn">Открыть демо →</span>
+  </a>
+
+  <!-- Stage 50: Language Reconnect -->
+  <a class="demo-card" href="stage-50-language-reconnect.html">
+    <div class="icon">💬</div>
+    <h2>Stage 50: Language Pipeline
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      LanguageGrounder: text → VSA vector → decode → subgoals.
+      100% encode/decode accuracy на 30 инструкциях.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">100%</div>
+        <div class="lbl">Accuracy</div>
+      </div>
+    </div>
+    <span class="btn">Открыть демо →</span>
+  </a>
+
+  <!-- Stage 51: Language-Guided Planning -->
+  <a class="demo-card" href="stage-51-language-guided.html">
+    <div class="icon">🗣</div>
+    <h2>Stage 51: Language-Guided
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      InstructedAgent: текстовая инструкция → подцели → BFS навигация.
+      100% на 200 random DoorKey-5x5 с языковым управлением. M2 COMPLETE.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">100%</div>
+        <div class="lbl">200 random</div>
+      </div>
+    </div>
+    <span class="btn">Открыть демо →</span>
+  </a>
+
+  <!-- Stage 52: Integration Test -->
+  <a class="demo-card" href="stage-52-integration.html" style="border: 2px solid #f59e0b;">
+    <div class="icon">🏆</div>
+    <h2>Stage 52: Integration Test
+      <span class="badge badge-pass">PASS</span>
+    </h2>
+    <div class="desc">
+      Единый IntegrationAgent: язык + MultiRoom-N3 + DoorKey-5x5.
+      100% success на обоих типах задач с текстовой инструкцией.
+      Milestone M3: концепция доказана.
+    </div>
+    <div class="metrics">
+      <div class="metric pass">
+        <div class="val">100%</div>
+        <div class="lbl">MultiRoom</div>
+      </div>
+      <div class="metric pass">
+        <div class="val">100%</div>
+        <div class="lbl">DoorKey</div>
+      </div>
+    </div>
+    <span class="btn">Открыть демо →</span>
+  </a>
+
 </div>
 
 <div class="info-section">
@@ -703,8 +860,8 @@ body {
 </div>
 
 <div class="footer">
-  СНКС v0.5.0 · Этапы 0–32 завершены · 85 экспериментов PASS ·
-  FHN+STDP · No backpropagation · 2026-03-31
+  СНКС v0.6.0 · Этапы 0–52 завершены · M1+M2 COMPLETE, M3 IN PROGRESS ·
+  FHN+STDP+VSA+SDM · No backpropagation · 2026-04-02
 </div>
 </body>
 </html>
