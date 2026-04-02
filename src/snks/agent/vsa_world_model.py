@@ -422,8 +422,15 @@ class WorldModelAgent:
             min_confidence=config.min_confidence,
             epsilon=config.epsilon,
         )
+        self.sdm_planner = SDMPlanner(
+            sdm=self.sdm,
+            codebook=self.codebook,
+            n_actions=config.n_actions,
+            min_confidence=config.min_confidence,
+            epsilon=config.epsilon,
+        )
         # Keep SDMPlanner for backward compat with tests
-        self.planner = self.causal_planner
+        self.planner = self.sdm_planner
         self._prev_state: torch.Tensor | None = None
         self._prev_action: int | None = None
         self._episode_count: int = 0
@@ -462,7 +469,8 @@ class WorldModelAgent:
         if self._exploring:
             action = int(torch.randint(0, self.config.n_actions, (1,)).item())
         else:
-            action = self.causal_planner.select(state)
+            # Use 1-step SDM planner: leverages recorded rewards from explore phase
+            action = self.sdm_planner.select(state)
 
         self._prev_state = state
         self._prev_action = action
