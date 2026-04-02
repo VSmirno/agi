@@ -1,7 +1,7 @@
 # СНКС — Roadmap v2 (Milestone-Driven)
 
 **Последнее обновление:** 2026-04-02
-**Статус:** M1 IN PROGRESS
+**Статус:** M1 COMPLETE → M2 IN PROGRESS
 **Полная спецификация:** [docs/superpowers/specs/2026-04-02-roadmap-v2-design.md](docs/superpowers/specs/2026-04-02-roadmap-v2-design.md)
 
 ---
@@ -25,7 +25,7 @@
 |-------|----------|--------|------|
 | 47 | Wall-aware навигация | COMPLETE (2026-04-02) | 100% на 200 random DoorKey-5x5, mean 16 steps |
 | 48 | Random layouts | COMPLETE (merged with 47) | 100% на 200 рандомных карт (covered by Stage 47) |
-| 49 | Multi-room | | ≥60% MultiRoom-N3 |
+| 49 | Multi-room | COMPLETE (2026-04-02) | 100% на 200 random MultiRoom-N3, mean 16 steps |
 
 ### M2: Языковой контроль
 **Gate:** ≥70% success с языковой инструкцией
