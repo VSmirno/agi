@@ -33,7 +33,7 @@
 
 | Stage | Название | Статус | Gate |
 |-------|----------|--------|------|
-| 50 | Reconnect language pipeline | | Парсинг → VSA-вектор, ≥90% |
+| 50 | Reconnect language pipeline | COMPLETE (2026-04-02) | 100% encode/decode accuracy (30 instructions) |
 | 51 | Language-guided planning | | ≥70% random DoorKey-5x5 с инструкцией |
 
 ### M3: Концепция доказана
