@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Этап 52: Интеграционный тест — Язык + MultiRoom + DoorKey</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0e17; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; }
+.header { text-align: center; padding: 24px 16px 8px; }
+.header h1 { color: #60a5fa; font-size: 24px; margin-bottom: 8px; }
+.header p { color: #94a3b8; font-size: 14px; max-width: 700px; margin: 0 auto; }
+.results-bar { display: flex; justify-content: center; gap: 24px; padding: 12px; flex-wrap: wrap; }
+.result-card { background: #1e293b; border-radius: 8px; padding: 12px 20px; text-align: center; }
+.result-card .label { color: #94a3b8; font-size: 12px; }
+.result-card .value { font-size: 22px; font-weight: bold; margin: 4px 0; }
+.result-card .gate { font-size: 11px; }
+.pass { color: #4ade80; }
+.container { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; padding: 16px; }
+.episode-card { background: #1e293b; border-radius: 12px; padding: 16px; width: 420px; }
+.episode-card h3 { color: #60a5fa; font-size: 14px; margin-bottom: 4px; }
+.instruction { color: #fbbf24; font-size: 13px; font-style: italic; margin-bottom: 4px; }
+.subgoals { color: #94a3b8; font-size: 12px; margin-bottom: 8px; }
+.subgoal-tag { display: inline-block; background: #334155; border-radius: 4px; padding: 2px 6px; margin: 1px; font-size: 11px; }
+.subgoal-tag.active { background: #2563eb; color: white; }
+.subgoal-tag.done { background: #166534; color: #4ade80; }
+canvas { border-radius: 6px; display: block; margin: 0 auto; }
+.controls { display: flex; align-items: center; gap: 8px; margin-top: 8px; justify-content: center; }
+.controls button { background: #334155; color: #e2e8f0; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; }
+.controls button:hover { background: #475569; }
+.controls button.active { background: #2563eb; }
+.step-info { color: #94a3b8; font-size: 12px; text-align: center; margin-top: 6px; }
+.action-label { color: #fbbf24; font-size: 12px; text-align: center; }
+.explain { max-width: 860px; margin: 16px auto; padding: 16px; background: #1e293b; border-radius: 12px; }
+.explain h3 { color: #60a5fa; margin-bottom: 8px; }
+.explain p { color: #94a3b8; font-size: 13px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Этап 52: Интеграционный тест</h1>
+  <p>Единый агент управляется текстовой инструкцией и решает как MultiRoom-N3 (3 комнаты с дверями), так и DoorKey-5x5 (ключ + дверь + цель). Milestone M3: концепция доказана.</p>
+</div>
+
+<div class="results-bar">
+  <div class="result-card">
+    <div class="label">MultiRoom-N3 + инструкция</div>
+    <div class="value pass">100%</div>
+    <div class="gate pass">gate ≥50% — PASS</div>
+  </div>
+  <div class="result-card">
+    <div class="label">Варианты инструкций</div>
+    <div class="value pass">100%</div>
+    <div class="gate pass">gate ≥50% — PASS</div>
+  </div>
+  <div class="result-card">
+    <div class="label">DoorKey-5x5 (регрессия)</div>
+    <div class="value pass">100%</div>
+    <div class="gate pass">gate ≥90% — PASS</div>
+  </div>
+</div>
+
+<div class="container" id="episodes"></div>
+
+<div class="explain">
+  <h3>Как это работает</h3>
+  <p>IntegrationAgent получает текстовую инструкцию на английском языке, парсит её через LanguageGrounder в последовательность подцелей (subgoals), анализирует среду из наблюдения, и выбирает стратегию навигации:</p>
+  <p style="margin-top:8px"><b>MultiRoom</b> (нет ключа): BFS-поиск пути через закрытые двери + реактивное открытие дверей при подходе.<br>
+  <b>DoorKey</b> (есть ключ): цепочка подцелей — подобрать ключ → открыть дверь → дойти до цели, каждая решается BFS.</p>
+  <h3 style="margin-top:12px">Почему это важно для AGI</h3>
+  <p>Это первый этап, где все три компонента (язык, планирование, навигация) работают вместе на разных типах задач. Агент не перетренирован на один env — единый pipeline масштабируется от DoorKey к MultiRoom без изменения кода. Milestone M3 (концепция доказана) требует именно такой интеграции.</p>
+</div>
+
+<script>
+const ACTIONS = ['влево', 'вправо', 'вперёд', 'подобрать', 'положить', 'открыть', 'стоп'];
+const DIR_ARROWS = ['▶', '▼', '◀', '▲'];
+
+const EPISODES = [{"instruction":"go to the goal","subgoals":["reach_goal"],"success":true,"n_steps":13,"grid_h":25,"grid_w":25,"initial_grid":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,1,1,8,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,4,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,4,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,10,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"initial_state":[[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"goal_pos":null,"env_type":"multiroom","steps":[{"pos":[15,6],"dir":0,"action":-1,"doors":[[9,6,1],[14,6,1]]},{"pos":[15,6],"dir":3,"action":0,"doors":[[9,6,1],[14,6,1]]},{"pos":[15,6],"dir":3,"action":5,"doors":[[9,6,1],[14,6,0]]},{"pos":[14,6],"dir":3,"action":2,"doors":[[9,6,1]]},{"pos":[13,6],"dir":3,"action":2,"doors":[[9,6,1],[14,6,0]]},{"pos":[12,6],"dir":3,"action":2,"doors":[[9,6,1],[14,6,0]]},{"pos":[11,6],"dir":3,"action":2,"doors":[[9,6,1],[14,6,0]]},{"pos":[10,6],"dir":3,"action":2,"doors":[[9,6,1],[14,6,0]]},{"pos":[10,6],"dir":3,"action":5,"doors":[[9,6,0],[14,6,0]]},{"pos":[9,6],"dir":3,"action":2,"doors":[[14,6,0]]},{"pos":[8,6],"dir":3,"action":2,"doors":[[9,6,0],[14,6,0]]},{"pos":[8,6],"dir":0,"action":1,"doors":[[9,6,0],[14,6,0]]},{"pos":[8,7],"dir":0,"action":2,"doors":[[9,6,0],[14,6,0]]},{"pos":[8,8],"dir":0,"action":2,"doors":[[9,6,0],[14,6,0]]}]},{"instruction":"open the door then go to the goal","subgoals":["open_door","reach_goal"],"success":true,"n_steps":12,"grid_h":25,"grid_w":25,"initial_grid":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,2,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,2,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,2,2,2,2,2,2,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,10,1,4,1,1,1,1,2,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,2,1,1,1,1,2,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,2,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,2,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,4,2,2,2,2,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,8,1,2,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"initial_state":[[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,0,1,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"goal_pos":null,"env_type":"multiroom","steps":[{"pos":[7,16],"dir":3,"action":-1,"doors":[[7,18,1],[11,19,1]]},{"pos":[7,16],"dir":0,"action":1,"doors":[[7,18,1],[11,19,1]]},{"pos":[7,17],"dir":0,"action":2,"doors":[[7,18,1],[11,19,1]]},{"pos":[7,17],"dir":0,"action":5,"doors":[[7,18,0],[11,19,1]]},{"pos":[7,18],"dir":0,"action":2,"doors":[[11,19,1]]},{"pos":[7,19],"dir":0,"action":2,"doors":[[7,18,0],[11,19,1]]},{"pos":[7,19],"dir":1,"action":1,"doors":[[7,18,0],[11,19,1]]},{"pos":[8,19],"dir":1,"action":2,"doors":[[7,18,0],[11,19,1]]},{"pos":[9,19],"dir":1,"action":2,"doors":[[7,18,0],[11,19,1]]},{"pos":[10,19],"dir":1,"action":2,"doors":[[7,18,0],[11,19,1]]},{"pos":[10,19],"dir":1,"action":5,"doors":[[7,18,0],[11,19,0]]},{"pos":[11,19],"dir":1,"action":2,"doors":[[7,18,0]]},{"pos":[12,19],"dir":1,"action":2,"doors":[[7,18,0],[11,19,0]]}]},{"instruction":"toggle the door then go to the goal","subgoals":["open_door","reach_goal"],"success":true,"n_steps":21,"grid_h":25,"grid_w":25,"initial_grid":[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,2,2,2,2,2,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,2,1,1,1,4,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,2,10,1,1,2,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,2,1,1,1,2,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,2,2,2,2,2,2,2,4,2,2,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,2,1,8,2,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]],"initial_state":[[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"goal_pos":null,"env_type":"multiroom","steps":[{"pos":[9,5],"dir":3,"action":-1,"doors":[[8,8,1],[11,11,1]]},{"pos":[9,5],"dir":0,"action":1,"doors":[[8,8,1],[11,11,1]]},{"pos":[9,6],"dir":0,"action":2,"doors":[[8,8,1],[11,11,1]]},{"pos":[9,7],"dir":0,"action":2,"doors":[[8,8,1],[11,11,1]]},{"pos":[9,7],"dir":3,"action":0,"doors":[[8,8,1],[11,11,1]]},{"pos":[8,7],"dir":3,"action":2,"doors":[[8,8,1],[11,11,1]]},{"pos":[8,7],"dir":0,"action":1,"doors":[[8,8,1],[11,11,1]]},{"pos":[8,7],"dir":0,"action":5,"doors":[[8,8,0],[11,11,1]]},{"pos":[8,8],"dir":0,"action":2,"doors":[[11,11,1]]},{"pos":[8,9],"dir":0,"action":2,"doors":[[8,8,0],[11,11,1]]},{"pos":[8,10],"dir":0,"action":2,"doors":[[8,8,0],[11,11,1]]},{"pos":[8,11],"dir":0,"action":2,"doors":[[8,8,0],[11,11,1]]},{"pos":[8,11],"dir":1,"action":1,"doors":[[8,8,0],[11,11,1]]},{"pos":[9,11],"dir":1,"action":2,"doors":[[8,8,0],[11,11,1]]},{"pos":[10,11],"dir":1,"action":2,"doors":[[8,8,0],[11,11,1]]},{"pos":[10,11],"dir":1,"action":5,"doors":[[8,8,0],[11,11,0]]},{"pos":[11,11],"dir":1,"action":2,"doors":[[8,8,0]]},{"pos":[12,11],"dir":1,"action":2,"doors":[[8,8,0],[11,11,0]]},{"pos":[12,11],"dir":0,"action":0,"doors":[[8,8,0],[11,11,0]]},{"pos":[12,12],"dir":0,"action":2,"doors":[[8,8,0],[11,11,0]]},{"pos":[12,12],"dir":1,"action":1,"doors":[[8,8,0],[11,11,0]]},{"pos":[13,12],"dir":1,"action":2,"doors":[[8,8,0],[11,11,0]]}]},{"instruction":"pick up the key then open the door then go to the goal","subgoals":["pickup_key","open_door","reach_goal"],"success":true,"n_steps":16,"grid_h":7,"grid_w":7,"initial_grid":[[2,2,2,2,2,2,2],[2,5,0,0,0,10,2],[2,0,0,0,0,0,2],[2,2,2,4,2,2,2],[2,0,8,0,0,0,2],[2,0,0,0,0,0,2],[2,2,2,2,2,2,2]],"initial_state":[[0,0,0,0,0,0,0],[0,0,0,0,0,2,0],[0,0,0,0,0,0,0],[0,0,0,2,0,0,0],[0,0,0,0,0,0,0],[0,0,0,0,0,0,0],[0,0,0,0,0,0,0]],"env_type":"doorkey","steps":[{"pos":[1,5],"dir":2,"action":-1,"has_key":false,"door_open":false},{"pos":[1,4],"dir":2,"action":2,"has_key":false,"door_open":false},{"pos":[1,3],"dir":2,"action":2,"has_key":false,"door_open":false},{"pos":[1,2],"dir":2,"action":2,"has_key":false,"door_open":false},{"pos":[1,1],"dir":2,"action":2,"has_key":false,"door_open":false},{"pos":[1,1],"dir":2,"action":3,"has_key":true,"door_open":false},{"pos":[1,1],"dir":3,"action":1,"has_key":true,"door_open":false},{"pos":[1,1],"dir":0,"action":1,"has_key":true,"door_open":false},{"pos":[1,2],"dir":0,"action":2,"has_key":true,"door_open":false},{"pos":[1,3],"dir":0,"action":2,"has_key":true,"door_open":false},{"pos":[1,3],"dir":1,"action":1,"has_key":true,"door_open":false},{"pos":[2,3],"dir":1,"action":2,"has_key":true,"door_open":false},{"pos":[2,3],"dir":1,"action":5,"has_key":true,"door_open":true},{"pos":[3,3],"dir":1,"action":2,"has_key":true,"door_open":false},{"pos":[4,3],"dir":1,"action":2,"has_key":true,"door_open":true},{"pos":[4,3],"dir":2,"action":1,"has_key":true,"door_open":true},{"pos":[4,2],"dir":2,"action":2,"has_key":true,"door_open":true}]},{"instruction":"pick up the key then open the door then go to the goal","subgoals":["pickup_key","open_door","reach_goal"],"success":true,"n_steps":17,"grid_h":7,"grid_w":7,"initial_grid":[[2,2,2,2,2,2,2],[2,0,0,0,0,5,2],[2,0,0,10,0,0,2],[2,0,0,0,0,0,2],[2,2,2,2,4,2,2],[2,0,0,8,0,0,2],[2,2,2,2,2,2,2]],"initial_state":[[0,0,0,0,0,0,0],[0,0,0,0,0,0,0],[0,0,0,0,0,0,0],[0,0,0,0,0,0,0],[0,0,0,0,2,0,0],[0,0,0,0,0,0,0],[0,0,0,0,0,0,0]],"env_type":"doorkey","steps":[{"pos":[2,3],"dir":0,"action":-1,"has_key":false,"door_open":false},{"pos":[2,4],"dir":0,"action":2,"has_key":false,"door_open":false},{"pos":[2,5],"dir":0,"action":2,"has_key":false,"door_open":false},{"pos":[2,5],"dir":3,"action":0,"has_key":false,"door_open":false},{"pos":[1,5],"dir":3,"action":2,"has_key":false,"door_open":false},{"pos":[1,5],"dir":3,"action":3,"has_key":true,"door_open":false},{"pos":[1,5],"dir":0,"action":1,"has_key":true,"door_open":false},{"pos":[1,5],"dir":1,"action":1,"has_key":true,"door_open":false},{"pos":[2,5],"dir":1,"action":2,"has_key":true,"door_open":false},{"pos":[3,5],"dir":1,"action":2,"has_key":true,"door_open":false},{"pos":[3,5],"dir":2,"action":1,"has_key":true,"door_open":false},{"pos":[3,4],"dir":2,"action":2,"has_key":true,"door_open":false},{"pos":[3,4],"dir":1,"action":0,"has_key":true,"door_open":false},{"pos":[3,4],"dir":1,"action":5,"has_key":true,"door_open":true},{"pos":[4,4],"dir":1,"action":2,"has_key":true,"door_open":false},{"pos":[5,4],"dir":1,"action":2,"has_key":true,"door_open":true},{"pos":[5,4],"dir":2,"action":1,"has_key":true,"door_open":true},{"pos":[5,3],"dir":2,"action":2,"has_key":true,"door_open":true}]}];
+
+function createEpisodeCard(ep, idx) {
+  const card = document.createElement('div');
+  card.className = 'episode-card';
+  const envLabel = ep.env_type === 'doorkey' ? 'DoorKey-5x5' : 'MultiRoom-N3';
+
+  card.innerHTML = `
+    <h3>${envLabel} — ${ep.n_steps} шагов ${ep.success ? '✓' : '✗'}</h3>
+    <div class="instruction">"${ep.instruction}"</div>
+    <div class="subgoals" id="sg-${idx}">${ep.subgoals.map(s => `<span class="subgoal-tag">${s}</span>`).join(' → ')}</div>
+    <canvas id="cv-${idx}" width="390" height="390"></canvas>
+    <div class="action-label" id="act-${idx}">—</div>
+    <div class="step-info" id="info-${idx}">Шаг: 0 / ${ep.n_steps}</div>
+    <div class="controls">
+      <button onclick="stepBack(${idx})">◀</button>
+      <button id="play-${idx}" onclick="togglePlay(${idx})">▶ Играть</button>
+      <button onclick="stepForward(${idx})">▶▶</button>
+      <button onclick="resetEp(${idx})">Сброс</button>
+      <select id="speed-${idx}" onchange="setSpeed(${idx})">
+        <option value="500">x0.5</option>
+        <option value="250" selected>x1</option>
+        <option value="125">x2</option>
+        <option value="50">x5</option>
+      </select>
+    </div>
+  `;
+  return card;
+}
+
+const state = [];
+const timers = [];
+
+function initEpisode(idx) {
+  state[idx] = { frame: 0, playing: false };
+  timers[idx] = null;
+  drawFrame(idx);
+}
+
+function drawFrame(idx) {
+  const ep = EPISODES[idx];
+  const cv = document.getElementById(`cv-${idx}`);
+  const ctx = cv.getContext('2d');
+  const f = state[idx].frame;
+  const step = ep.steps[f];
+  const grid = ep.initial_grid;
+  const H = ep.grid_h, W = ep.grid_w;
+
+  // Find bounding box of non-empty cells
+  let minR=H, maxR=0, minC=W, maxC=0;
+  for (let r=0;r<H;r++) for (let c=0;c<W;c++) {
+    if (grid[r][c] !== 1) { minR=Math.min(minR,r); maxR=Math.max(maxR,r); minC=Math.min(minC,c); maxC=Math.max(maxC,c); }
+  }
+  // Include agent and goal positions
+  if (step.pos) { minR=Math.min(minR,step.pos[0]-1); maxR=Math.max(maxR,step.pos[0]+1); minC=Math.min(minC,step.pos[1]-1); maxC=Math.max(maxC,step.pos[1]+1); }
+
+  const rows = maxR - minR + 1;
+  const cols = maxC - minC + 1;
+  const cellSize = Math.min(Math.floor(390/cols), Math.floor(390/rows), 55);
+  const offX = Math.floor((390 - cols*cellSize)/2);
+  const offY = Math.floor((390 - rows*cellSize)/2);
+
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(0, 0, 390, 390);
+
+  // Build door state map from current step
+  const doorMap = {};
+  if (step.doors) {
+    step.doors.forEach(d => { doorMap[d[0]+','+d[1]] = d[2]; });
+  }
+
+  // Draw grid
+  for (let r=minR; r<=maxR; r++) {
+    for (let c=minC; c<=maxC; c++) {
+      const x = offX + (c-minC)*cellSize;
+      const y = offY + (r-minR)*cellSize;
+      const obj = grid[r][c];
+
+      if (obj === 2) { ctx.fillStyle='#666666'; ctx.fillRect(x,y,cellSize,cellSize); }
+      else if (obj === 4) {
+        // Door — check current state
+        const dk = r+','+c;
+        const dState = doorMap[dk] !== undefined ? doorMap[dk] : ep.initial_state[r][c];
+        if (dState === 0) { ctx.fillStyle='#654321'; ctx.globalAlpha=0.4; ctx.fillRect(x,y,cellSize,cellSize); ctx.globalAlpha=1; }
+        else { ctx.fillStyle='#8B4513'; ctx.fillRect(x,y,cellSize,cellSize); }
+        ctx.strokeStyle='#a0522d'; ctx.lineWidth=2; ctx.strokeRect(x+2,y+2,cellSize-4,cellSize-4);
+      }
+      else if (obj === 8) {
+        ctx.fillStyle='#0f172a'; ctx.fillRect(x,y,cellSize,cellSize);
+        ctx.fillStyle='#00ff88'; ctx.font=`${cellSize*0.6}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText('◆', x+cellSize/2, y+cellSize/2);
+      }
+      else if (obj === 5) {
+        // Key — only show if not picked up
+        const picked = step.has_key !== undefined ? step.has_key : false;
+        ctx.fillStyle='#0f172a'; ctx.fillRect(x,y,cellSize,cellSize);
+        if (!picked) {
+          ctx.fillStyle='#ffd700'; ctx.font=`${cellSize*0.5}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText('★', x+cellSize/2, y+cellSize/2);
+        }
+      }
+      else { ctx.fillStyle='#0f172a'; ctx.fillRect(x,y,cellSize,cellSize); }
+
+      // Grid lines
+      ctx.strokeStyle='#334155'; ctx.lineWidth=0.5;
+      ctx.strokeRect(x,y,cellSize,cellSize);
+    }
+  }
+
+  // Draw trail
+  ctx.strokeStyle='rgba(96,165,250,0.3)'; ctx.lineWidth=2; ctx.beginPath();
+  for (let i=0; i<=f; i++) {
+    const p = ep.steps[i].pos;
+    const px = offX + (p[1]-minC)*cellSize + cellSize/2;
+    const py = offY + (p[0]-minR)*cellSize + cellSize/2;
+    if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.stroke();
+
+  // Draw agent
+  const ap = step.pos;
+  const ax = offX + (ap[1]-minC)*cellSize + cellSize/2;
+  const ay = offY + (ap[0]-minR)*cellSize + cellSize/2;
+  const sz = cellSize * 0.35;
+  const dir = step.dir;
+
+  ctx.fillStyle='#ff4444';
+  ctx.beginPath();
+  const angles = [0, Math.PI/2, Math.PI, -Math.PI/2]; // right, down, left, up
+  const a = angles[dir];
+  ctx.moveTo(ax + sz*Math.cos(a), ay + sz*Math.sin(a));
+  ctx.lineTo(ax + sz*Math.cos(a+2.4), ay + sz*Math.sin(a+2.4));
+  ctx.lineTo(ax + sz*Math.cos(a-2.4), ay + sz*Math.sin(a-2.4));
+  ctx.closePath(); ctx.fill();
+
+  // Inventory
+  if (step.has_key) {
+    ctx.fillStyle='#ffd700'; ctx.font='11px sans-serif'; ctx.textAlign='left';
+    ctx.fillText('★ ключ', offX+4, offY + rows*cellSize + 14);
+  }
+
+  // Action label
+  const actEl = document.getElementById(`act-${idx}`);
+  actEl.textContent = f > 0 && step.action >= 0 ? ACTIONS[step.action] : '—';
+
+  // Step info
+  document.getElementById(`info-${idx}`).textContent = `Шаг: ${f} / ${ep.n_steps}`;
+
+  // Update subgoal highlights
+  updateSubgoals(idx, f);
+}
+
+function updateSubgoals(idx, frame) {
+  const ep = EPISODES[idx];
+  const tags = document.querySelectorAll(`#sg-${idx} .subgoal-tag`);
+  if (ep.env_type === 'doorkey') {
+    const step = ep.steps[frame];
+    let completed = 0;
+    if (step.has_key) completed = 1;
+    if (step.door_open) completed = 2;
+    if (frame === ep.steps.length - 1 && ep.success) completed = 3;
+    tags.forEach((t, i) => {
+      t.className = 'subgoal-tag' + (i < completed ? ' done' : i === completed ? ' active' : '');
+    });
+  } else {
+    // MultiRoom: just mark reach_goal as active/done
+    const done = frame === ep.steps.length - 1 && ep.success;
+    tags.forEach((t, i) => {
+      t.className = 'subgoal-tag' + (done ? ' done' : (i === tags.length-1 ? ' active' : ' done'));
+    });
+  }
+}
+
+function stepForward(idx) {
+  const ep = EPISODES[idx];
+  if (state[idx].frame < ep.steps.length - 1) { state[idx].frame++; drawFrame(idx); }
+}
+function stepBack(idx) {
+  if (state[idx].frame > 0) { state[idx].frame--; drawFrame(idx); }
+}
+function resetEp(idx) {
+  stopPlay(idx); state[idx].frame = 0; drawFrame(idx);
+}
+function togglePlay(idx) {
+  if (state[idx].playing) { stopPlay(idx); } else { startPlay(idx); }
+}
+function startPlay(idx) {
+  state[idx].playing = true;
+  document.getElementById(`play-${idx}`).textContent = '⏸ Пауза';
+  document.getElementById(`play-${idx}`).classList.add('active');
+  const speed = parseInt(document.getElementById(`speed-${idx}`).value);
+  timers[idx] = setInterval(() => {
+    const ep = EPISODES[idx];
+    if (state[idx].frame < ep.steps.length - 1) { state[idx].frame++; drawFrame(idx); }
+    else { stopPlay(idx); }
+  }, speed);
+}
+function stopPlay(idx) {
+  state[idx].playing = false;
+  document.getElementById(`play-${idx}`).textContent = '▶ Играть';
+  document.getElementById(`play-${idx}`).classList.remove('active');
+  if (timers[idx]) { clearInterval(timers[idx]); timers[idx] = null; }
+}
+function setSpeed(idx) {
+  if (state[idx].playing) { stopPlay(idx); startPlay(idx); }
+}
+
+// Init
+const container = document.getElementById('episodes');
+EPISODES.forEach((ep, i) => {
+  container.appendChild(createEpisodeCard(ep, i));
+  initEpisode(i);
+});
+</script>
+</body>
+</html>
