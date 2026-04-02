@@ -1,0 +1,14 @@
+{
+  "109a": {
+    "mean_explored": 64.86,
+    "mean_steps": 20.88,
+    "cells_per_step": 3.2555595430191433
+  },
+  "109b": {
+    "successes": 200,
+    "total": 200,
+    "success_rate": 1.0,
+    "mean_steps": 22.08,
+    "gate_pass": true
+  }
+}
