@@ -424,6 +424,68 @@ class SubgoalPlanningAgent(WorldModelAgent):
         self._successful_traces: list[list[TraceStep]] = []
         self._current_trace: list[TraceStep] = []
 
+    def build_plan_from_obs(self, obs: np.ndarray) -> bool:
+        """Build plan directly from observation by scanning for key objects.
+
+        Skips explore phase — constructs subgoals and target positions from
+        the visible objects in the grid. Returns True if plan built successfully.
+        """
+        OBJ_KEY = 5
+        OBJ_DOOR = 4
+        OBJ_GOAL = 8
+
+        key_pos = None
+        door_pos = None
+        goal_pos = None
+
+        for r in range(obs.shape[0]):
+            for c in range(obs.shape[1]):
+                obj = int(obs[r, c, 0])
+                if obj == OBJ_KEY:
+                    key_pos = (r, c)
+                elif obj == OBJ_DOOR:
+                    door_pos = (r, c)
+                elif obj == OBJ_GOAL:
+                    goal_pos = (r, c)
+
+        if not all([key_pos, door_pos, goal_pos]):
+            return False
+
+        # Build subgoals with dummy VSA vectors (not used for BFS navigation)
+        dummy = torch.zeros(self.sg_config.dim)
+        subgoals = [
+            Subgoal("pickup_key", dummy, dummy, "symbolic"),
+            Subgoal("open_door", dummy, dummy, "symbolic"),
+            Subgoal("reach_goal", dummy, dummy, "symbolic"),
+        ]
+        self.plan = PlanGraph(subgoals)
+
+        # Find door-adjacent cell for toggle position
+        pf = GridPathfinder()
+        agent_sym = _extract_symbolic(obs)
+        best_door_adj = None
+        best_dist = float('inf')
+        for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+            ar, ac = door_pos[0] + dr, door_pos[1] + dc
+            if 0 <= ar < obs.shape[0] and 0 <= ac < obs.shape[1]:
+                if int(obs[ar, ac, 0]) not in (2,):  # not a wall
+                    path = pf.find_path(obs, (agent_sym.agent_row, agent_sym.agent_col),
+                                        (ar, ac))
+                    if path and len(path) < best_dist:
+                        best_dist = len(path)
+                        best_door_adj = (ar, ac)
+
+        if best_door_adj is None:
+            best_door_adj = (door_pos[0] - 1, door_pos[1])  # fallback: above door
+
+        targets = {
+            "pickup_key": (key_pos[0], key_pos[1], 3),
+            "open_door": (best_door_adj[0], best_door_adj[1], 5),
+            "reach_goal": (goal_pos[0], goal_pos[1], None),
+        }
+        self.navigator.set_target_positions(targets)
+        return True
+
     def run_episode(self, env, max_steps: int = 200) -> tuple[bool, int, float]:
         self._exploring = self._episode_count < self.config.explore_episodes
         self._current_trace = []
@@ -437,6 +499,10 @@ class SubgoalPlanningAgent(WorldModelAgent):
         # Set goal from initial observation
         if self._episode_count == 0:
             self.set_goal_from_obs(obs)
+
+        # Build plan from observation if no successful traces yet (Stage 47: obs-based planning)
+        if self.plan is None and self._episode_count >= self.config.explore_episodes:
+            self.build_plan_from_obs(obs)
 
         if self._exploring:
             return self._run_explore_episode(env, obs, max_steps)

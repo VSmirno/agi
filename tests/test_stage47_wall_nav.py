@@ -277,3 +277,44 @@ class TestBFSNavigation:
         assert path is not None
         # Manhattan distance = 4+4 = 8, BFS path length = 8+1 positions
         assert len(path) == 9
+
+
+class TestBuildPlanFromObs:
+    """Test obs-based plan building (Stage 47)."""
+
+    def test_build_plan_from_obs(self):
+        RandomDoorKeyEnv = _load_exp107().RandomDoorKeyEnv
+        from snks.agent.subgoal_planning import SubgoalConfig, SubgoalPlanningAgent
+
+        env = RandomDoorKeyEnv(seed=42)
+        obs = env.reset()
+
+        config = SubgoalConfig(dim=512, n_locations=100, n_actions=7, explore_episodes=0)
+        agent = SubgoalPlanningAgent(config)
+        ok = agent.build_plan_from_obs(obs)
+        assert ok
+        assert agent.plan is not None
+        assert len(agent.plan.subgoals) == 3
+        names = [s.name for s in agent.plan.subgoals]
+        assert names == ["pickup_key", "open_door", "reach_goal"]
+
+    def test_agent_solves_random_layouts(self):
+        """Agent with obs-based plan solves multiple random layouts."""
+        RandomDoorKeyEnv = _load_exp107().RandomDoorKeyEnv
+        from snks.agent.subgoal_planning import SubgoalConfig, SubgoalPlanningAgent
+
+        solved = 0
+        n_layouts = 10
+        for seed in range(n_layouts):
+            env = RandomDoorKeyEnv(seed=seed)
+            config = SubgoalConfig(
+                dim=512, n_locations=100, n_actions=7,
+                epsilon=0.1, explore_episodes=0,
+            )
+            agent = SubgoalPlanningAgent(config)
+            success, steps, reward = agent.run_episode(env, max_steps=200)
+            if success:
+                solved += 1
+
+        # Should solve most layouts (BFS is deterministic modulo epsilon)
+        assert solved >= 5, f"Only solved {solved}/{n_layouts}"
