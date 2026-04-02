@@ -1,0 +1,20 @@
+{
+  "107a": {
+    "paths_found": 200,
+    "total": 200,
+    "rate": 1.0,
+    "mean_path_length": 9.645,
+    "gate": true
+  },
+  "107b": {
+    "n_layouts": 200,
+    "solved_80": 200,
+    "solved_50": 200,
+    "solved_any": 200,
+    "no_plan": 0,
+    "mean_plan_rate": 1.0,
+    "mean_steps": 15.978600000000002,
+    "gate": true,
+    "elapsed_s": 97.48493099212646
+  }
+}
