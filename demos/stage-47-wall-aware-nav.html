@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 47: Wall-aware навигация — СНКС</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0e17;
+  color: #e2e8f0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+  padding: 20px;
+}
+h1 { color: #60a5fa; font-size: 1.8em; margin-bottom: 4px; }
+h2 { color: #60a5fa; font-size: 1.2em; margin: 16px 0 8px; }
+.subtitle { color: #94a3b8; font-size: 0.95em; margin-bottom: 16px; }
+.container { max-width: 1300px; margin: 0 auto; }
+.row { display: flex; gap: 20px; flex-wrap: wrap; }
+.col { flex: 1; min-width: 320px; }
+.panel {
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+canvas { border: 1px solid #334155; border-radius: 4px; display: block; }
+.controls {
+  display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; align-items: center;
+}
+.controls button {
+  background: #1e293b; color: #60a5fa; border: 1px solid #334155;
+  padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;
+}
+.controls button:hover { background: #334155; }
+.controls button.active { background: #1e40af; border-color: #60a5fa; }
+.stat { display: inline-block; margin-right: 16px; margin-bottom: 4px; }
+.stat-label { color: #94a3b8; font-size: 0.85em; }
+.stat-value { color: #e2e8f0; font-size: 1.1em; font-weight: 600; }
+.stat-value.pass { color: #34d399; }
+.stat-value.fail { color: #f87171; }
+.subgoal-chain {
+  display: flex; gap: 4px; align-items: center; margin: 12px 0; flex-wrap: wrap;
+}
+.sg-node {
+  background: #1e293b; border: 2px solid #334155; border-radius: 6px;
+  padding: 6px 12px; font-size: 0.85em; color: #94a3b8; transition: all 0.3s;
+}
+.sg-node.active { border-color: #fbbf24; color: #fbbf24; background: #1c1917; }
+.sg-node.done { border-color: #34d399; color: #34d399; background: #052e16; }
+.sg-arrow { color: #475569; font-size: 1.2em; }
+.action-log {
+  background: #0f172a; border: 1px solid #1e293b; border-radius: 4px;
+  padding: 8px; font-family: monospace; font-size: 0.8em; color: #94a3b8;
+  height: 120px; overflow-y: auto; margin-top: 8px;
+}
+.explain {
+  background: #0f172a; border-left: 3px solid #60a5fa;
+  padding: 12px; margin: 12px 0; font-size: 0.9em; line-height: 1.5;
+}
+.speed-control { display: flex; align-items: center; gap: 6px; }
+.speed-control label { color: #94a3b8; font-size: 0.85em; }
+table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #1e293b; font-size: 0.85em; }
+th { color: #94a3b8; }
+.metric-bar {
+  height: 20px; background: #1e293b; border-radius: 4px; overflow: hidden;
+  margin: 4px 0 8px; position: relative;
+}
+.metric-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+.gate-line { position: absolute; height: 100%; width: 2px; background: #fbbf24; top: 0; }
+.path-legend { display: flex; gap: 12px; margin: 6px 0; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 4px; font-size: 0.8em; color: #94a3b8; }
+.legend-dot { width: 12px; height: 12px; border-radius: 2px; }
+.layout-btn {
+  background: #1e293b; color: #60a5fa; border: 1px solid #334155;
+  padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.85em;
+  min-width: 36px; text-align: center;
+}
+.layout-btn:hover { background: #334155; }
+.layout-btn.active { background: #1e40af; border-color: #60a5fa; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Этап 47: Wall-aware навигация</h1>
+<p class="subtitle">BFS pathfinding обходит стены &mdash; агент решает DoorKey-5x5 на случайных раскладках</p>
+
+<div class="row">
+<div class="col">
+<div class="panel">
+<h2>Среда DoorKey-5x5 (случайная раскладка)</h2>
+<div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;">
+  <span style="color: #94a3b8; font-size: 0.85em;">Раскладка:</span>
+  <div id="layoutBtns"></div>
+  <button class="layout-btn" onclick="randomLayout()" title="Случайная">&#127922;</button>
+</div>
+<canvas id="gridCanvas" width="350" height="350"></canvas>
+<div id="actionText" style="color: #94a3b8; font-size: 0.9em; margin-top: 6px;">Нажмите &laquo;Запустить&raquo;</div>
+
+<div class="path-legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#ff4444;"></div>Агент</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ffd700;"></div>Ключ</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#8B4513;"></div>Дверь</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#00ff88;"></div>Цель</div>
+  <div class="legend-item"><div class="legend-dot" style="background:rgba(96,165,250,0.3);"></div>BFS путь</div>
+  <div class="legend-item"><div class="legend-dot" style="background:rgba(251,191,36,0.3);"></div>Пройденный путь</div>
+</div>
+
+<div class="controls">
+  <button id="btnPlay" onclick="togglePlay()">&#9654; Запустить</button>
+  <button id="btnStep" onclick="stepOnce()">&#9193; Шаг</button>
+  <button id="btnReset" onclick="resetDemo()">&#8634; Сброс</button>
+  <div class="speed-control">
+    <label>Скорость:</label>
+    <button onclick="setSpeed(0.5)" id="sp05">&times;0.5</button>
+    <button onclick="setSpeed(1)" id="sp1" class="active">&times;1</button>
+    <button onclick="setSpeed(2)" id="sp2">&times;2</button>
+    <button onclick="setSpeed(5)" id="sp5">&times;5</button>
+  </div>
+</div>
+
+<div style="display: flex; gap: 12px; flex-wrap: wrap;">
+  <div class="stat"><span class="stat-label">Шаг</span><br><span class="stat-value" id="stepNum">0</span></div>
+  <div class="stat"><span class="stat-label">Фаза</span><br><span class="stat-value" id="phaseText">план</span></div>
+  <div class="stat"><span class="stat-label">Статус</span><br><span class="stat-value" id="statusText">готов</span></div>
+  <div class="stat"><span class="stat-label">Инвентарь</span><br><span class="stat-value" id="inventory">пусто</span></div>
+</div>
+</div>
+
+<div class="panel">
+<h2>План (subgoal chain)</h2>
+<div class="subgoal-chain" id="subgoalChain">
+  <div class="sg-node" id="sg0">Взять ключ</div>
+  <div class="sg-arrow">&rarr;</div>
+  <div class="sg-node" id="sg1">Открыть дверь</div>
+  <div class="sg-arrow">&rarr;</div>
+  <div class="sg-node" id="sg2">Дойти до цели</div>
+</div>
+<div id="planStatus" style="color: #94a3b8; font-size: 0.85em;">BFS строит оптимальный путь к каждой подцели</div>
+</div>
+
+<div class="action-log" id="actionLog"></div>
+</div>
+
+<div class="col">
+<div class="panel">
+<h2>Результаты экспериментов</h2>
+<table>
+<tr><th>Тест</th><th>Метрика</th><th>Результат</th><th>Gate</th><th>Статус</th></tr>
+<tr><td>107a</td><td>BFS Pathfinding</td><td>100%</td><td>100%</td><td class="pass" style="color:#34d399;">PASS</td></tr>
+<tr><td>107b</td><td>Random layouts (200)</td><td id="r107b">&mdash;</td><td>&ge;80%</td><td id="s107b">&mdash;</td></tr>
+</table>
+<div style="color:#94a3b8; font-size:0.8em; margin-top:4px;">107b &mdash; результаты с minipc</div>
+
+<h2 style="margin-top: 16px;">Успех BFS навигации</h2>
+<div style="color: #94a3b8; font-size: 0.85em;">Средняя длина пути: 9.6 шагов</div>
+<div class="metric-bar">
+  <div class="metric-fill" style="width: 100%; background: #34d399;"></div>
+  <div class="gate-line" style="left: 80%;"></div>
+</div>
+<div style="display:flex; justify-content:space-between; font-size:0.8em; color:#94a3b8;">
+  <span>0%</span><span style="color:#fbbf24;">gate 80%</span><span>100%</span>
+</div>
+</div>
+
+<div class="panel">
+<h2>Как это работает</h2>
+<div class="explain">
+<strong>Проблема:</strong> В Stage 46 агент навигировал к целям простым правилом &laquo;повернись к цели и иди вперёд&raquo;.
+Это ломалось на раскладках, где стены преграждали прямой путь.<br><br>
+<strong>Решение:</strong> BFS (поиск в ширину) на наблюдаемой сетке 7&times;7:
+<ol style="margin: 8px 0 8px 20px;">
+  <li>Извлечь карту стен из наблюдения (тип объекта = 2)</li>
+  <li>BFS от текущей позиции до цели, обходя стены</li>
+  <li>Конвертировать путь в действия: повороты + шаг вперёд</li>
+</ol>
+BFS на 5&times;5 сетке мгновенный (&lt;1мс) и гарантирует оптимальный путь.
+</div>
+
+<div class="explain">
+<strong>Почему это важно для AGI:</strong><br>
+Навигация &mdash; инфраструктура для когнитивных функций. Без wall-aware pathfinding
+агент не может работать на произвольных средах. BFS позволяет изолированно тестировать
+высокоуровневое планирование (subgoal extraction, plan graph) без шума от плохой навигации.
+Это первый шаг к генерализации (Milestone M1).
+</div>
+</div>
+
+<div class="panel">
+<h2>Сравнение: Stage 46 vs Stage 47</h2>
+<table>
+<tr><th></th><th>Stage 46</th><th>Stage 47</th></tr>
+<tr><td>Навигация</td><td>Heuristic (прямо к цели)</td><td style="color:#34d399;">BFS (обход стен)</td></tr>
+<tr><td>Раскладка</td><td>Фиксированная</td><td style="color:#34d399;">Случайная</td></tr>
+<tr><td>Учёт стен</td><td style="color:#f87171;">Нет</td><td style="color:#34d399;">Да</td></tr>
+<tr><td>Оптимальность</td><td>Нет (может застрять)</td><td style="color:#34d399;">Да (кратчайший путь)</td></tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// DoorKey-5x5 Environment (randomized)
+// ═══════════════════════════════════════════════
+const SIZE = 5;
+const OBS = 7; // 5 + 2 border
+const CELL = 50;
+const DIRS = [[0,1],[1,0],[0,-1],[-1,0]]; // R,D,L,U
+const DIR_NAMES = ['вправо','вниз','влево','вверх'];
+const ACTION_NAMES = ['повернуть влево','повернуть вправо','вперёд','подобрать','','открыть'];
+
+let env = {};
+let agentTrail = [];
+let bfsPath = [];
+let currentSubgoal = 0;
+let playing = false;
+let playInterval = null;
+let speed = 1;
+let stepCount = 0;
+let solved = false;
+
+function seededRandom(seed) {
+  let s = seed;
+  return function() {
+    s = (s * 1664525 + 1013904223) & 0xFFFFFFFF;
+    return (s >>> 0) / 0xFFFFFFFF;
+  };
+}
+
+function generateLayout(seed) {
+  const rng = seededRandom(seed);
+  const randInt = (a,b) => a + Math.floor(rng() * (b - a));
+
+  const wallRow = randInt(1, SIZE - 1);
+  const doorCol = randInt(0, SIZE);
+  const walls = [];
+  for (let c = 0; c < SIZE; c++) {
+    if (c !== doorCol) walls.push([wallRow, c]);
+  }
+
+  // Positions above wall
+  const above = [];
+  for (let r = 0; r < wallRow; r++)
+    for (let c = 0; c < SIZE; c++) above.push([r, c]);
+
+  // Below wall
+  const below = [];
+  for (let r = wallRow + 1; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++) below.push([r, c]);
+
+  const keyIdx = randInt(0, above.length);
+  const keyPos = above[keyIdx];
+
+  const availAbove = above.filter(p => p[0] !== keyPos[0] || p[1] !== keyPos[1]);
+  const agentIdx = randInt(0, availAbove.length);
+  const agentPos = availAbove[agentIdx];
+  const agentDir = randInt(0, 4);
+
+  const goalIdx = randInt(0, below.length);
+  const goalPos = below[goalIdx];
+
+  return {
+    wallRow, doorCol, walls,
+    agentPos: [...agentPos], agentDir,
+    keyPos: [...keyPos], goalPos: [...goalPos],
+    doorPos: [wallRow, doorCol],
+    hasKey: false, keyPicked: false, doorOpen: false,
+    steps: 0
+  };
+}
+
+function resetEnv(seed) {
+  env = generateLayout(seed || 0);
+  agentTrail = [[...env.agentPos]];
+  bfsPath = [];
+  currentSubgoal = 0;
+  stepCount = 0;
+  solved = false;
+  computeBFSPath();
+  updateUI();
+  drawGrid();
+}
+
+function isWall(r, c) {
+  return env.walls.some(w => w[0] === r && w[1] === c);
+}
+
+function stepEnv(action) {
+  env.steps++;
+  stepCount++;
+  if (action === 0) env.agentDir = (env.agentDir + 3) % 4;
+  else if (action === 1) env.agentDir = (env.agentDir + 1) % 4;
+  else if (action === 2) {
+    const [dr,dc] = DIRS[env.agentDir];
+    const nr = env.agentPos[0]+dr, nc = env.agentPos[1]+dc;
+    if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
+      if (isWall(nr, nc)) { /* blocked */ }
+      else if (nr === env.doorPos[0] && nc === env.doorPos[1] && !env.doorOpen) { /* blocked */ }
+      else { env.agentPos = [nr, nc]; agentTrail.push([nr, nc]); }
+    }
+  }
+  else if (action === 3) {
+    if (env.agentPos[0]===env.keyPos[0] && env.agentPos[1]===env.keyPos[1] && !env.hasKey) {
+      env.hasKey = true; env.keyPicked = true;
+    }
+  }
+  else if (action === 5) {
+    const [dr,dc] = DIRS[env.agentDir];
+    const fr = env.agentPos[0]+dr, fc = env.agentPos[1]+dc;
+    if (fr===env.doorPos[0] && fc===env.doorPos[1] && env.hasKey && !env.doorOpen) {
+      env.doorOpen = true;
+    }
+  }
+
+  let done = false;
+  if (env.agentPos[0]===env.goalPos[0] && env.agentPos[1]===env.goalPos[1]) {
+    done = true; solved = true;
+  }
+  if (env.steps >= 200) done = true;
+
+  // Check subgoal advancement
+  if (currentSubgoal === 0 && env.hasKey) { currentSubgoal = 1; computeBFSPath(); }
+  if (currentSubgoal === 1 && env.doorOpen) { currentSubgoal = 2; computeBFSPath(); }
+  if (currentSubgoal === 2 && solved) currentSubgoal = 3;
+
+  return done;
+}
+
+// ═══════════════════════════════════════════════
+// BFS Pathfinding
+// ═══════════════════════════════════════════════
+function bfs(startR, startC, goalR, goalC, allowDoor) {
+  const visited = new Set();
+  const queue = [[startR, startC]];
+  const parent = {};
+  const key = (r,c) => r*100+c;
+  visited.add(key(startR, startC));
+
+  while (queue.length > 0) {
+    const [r,c] = queue.shift();
+    if (r === goalR && c === goalC) {
+      const path = [];
+      let node = [goalR, goalC];
+      while (node) { path.unshift(node); node = parent[key(node[0],node[1])]; }
+      return path;
+    }
+    for (const [dr,dc] of [[0,1],[1,0],[0,-1],[-1,0]]) {
+      const nr = r+dr, nc = c+dc;
+      if (nr<0||nr>=SIZE||nc<0||nc>=SIZE) continue;
+      if (visited.has(key(nr,nc))) continue;
+      if (isWall(nr, nc)) continue;
+      if (nr===env.doorPos[0] && nc===env.doorPos[1] && !env.doorOpen && !allowDoor) continue;
+      visited.add(key(nr,nc));
+      parent[key(nr,nc)] = [r,c];
+      queue.push([nr,nc]);
+    }
+  }
+  return null;
+}
+
+function computeBFSPath() {
+  let target;
+  let allowDoor = false;
+  if (currentSubgoal === 0) target = env.keyPos;
+  else if (currentSubgoal === 1) { target = env.doorPos; allowDoor = true; }
+  else if (currentSubgoal === 2) { target = env.goalPos; allowDoor = true; }
+  else { bfsPath = []; return; }
+
+  // For door: go to cell adjacent to door facing it
+  if (currentSubgoal === 1) {
+    // Find an adjacent cell to door that's reachable
+    let bestPath = null;
+    for (const [dr,dc] of [[0,1],[1,0],[0,-1],[-1,0]]) {
+      const ar = env.doorPos[0]+dr, ac = env.doorPos[1]+dc;
+      if (ar<0||ar>=SIZE||ac<0||ac>=SIZE) continue;
+      if (isWall(ar,ac)) continue;
+      const p = bfs(env.agentPos[0], env.agentPos[1], ar, ac, false);
+      if (p && (!bestPath || p.length < bestPath.length)) bestPath = p;
+    }
+    bfsPath = bestPath || [];
+  } else {
+    bfsPath = bfs(env.agentPos[0], env.agentPos[1], target[0], target[1], allowDoor) || [];
+  }
+}
+
+function getNextBFSAction() {
+  // Special actions at target
+  if (currentSubgoal === 0) {
+    if (env.agentPos[0]===env.keyPos[0] && env.agentPos[1]===env.keyPos[1]) return 3; // pickup
+  }
+  if (currentSubgoal === 1) {
+    // At door-adjacent: face door and toggle
+    const dr = env.doorPos[0]-env.agentPos[0], dc = env.doorPos[1]-env.agentPos[1];
+    if (Math.abs(dr)+Math.abs(dc) === 1) {
+      let needDir;
+      if (dc>0) needDir=0; else if (dr>0) needDir=1; else if (dc<0) needDir=2; else needDir=3;
+      if (env.agentDir !== needDir) {
+        const diff = (needDir - env.agentDir + 4) % 4;
+        return diff <= 2 ? 1 : 0;
+      }
+      return 5; // toggle
+    }
+  }
+
+  // Follow BFS path
+  computeBFSPath();
+  if (bfsPath.length < 2) return 2; // fallback forward
+
+  const nextCell = bfsPath[1];
+  const dr = nextCell[0] - env.agentPos[0];
+  const dc = nextCell[1] - env.agentPos[1];
+
+  let needDir;
+  if (dc>0) needDir=0; else if (dr>0) needDir=1; else if (dc<0) needDir=2; else needDir=3;
+
+  if (env.agentDir !== needDir) {
+    const diff = (needDir - env.agentDir + 4) % 4;
+    return diff <= 2 ? 1 : 0;
+  }
+  return 2; // forward
+}
+
+// ═══════════════════════════════════════════════
+// Rendering
+// ═══════════════════════════════════════════════
+const canvas = document.getElementById('gridCanvas');
+const ctx = canvas.getContext('2d');
+
+function drawGrid() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw cells
+  for (let r = 0; r < OBS; r++) {
+    for (let c = 0; c < OBS; c++) {
+      const x = c * CELL, y = r * CELL;
+      // Border walls
+      if (r === 0 || r === OBS-1 || c === 0 || c === OBS-1) {
+        ctx.fillStyle = '#666666';
+        ctx.fillRect(x, y, CELL, CELL);
+      } else {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(x, y, CELL, CELL);
+      }
+      // Grid lines
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(x, y, CELL, CELL);
+    }
+  }
+
+  // Interior walls
+  for (const [wr, wc] of env.walls) {
+    ctx.fillStyle = '#666666';
+    ctx.fillRect((wc+1)*CELL, (wr+1)*CELL, CELL, CELL);
+  }
+
+  // BFS path overlay
+  if (bfsPath.length > 1) {
+    ctx.fillStyle = 'rgba(96, 165, 250, 0.15)';
+    for (const [pr, pc] of bfsPath) {
+      ctx.fillRect((pc+1)*CELL+2, (pr+1)*CELL+2, CELL-4, CELL-4);
+    }
+    // Path line
+    ctx.strokeStyle = 'rgba(96, 165, 250, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    for (let i = 0; i < bfsPath.length; i++) {
+      const px = (bfsPath[i][1]+1)*CELL + CELL/2;
+      const py = (bfsPath[i][0]+1)*CELL + CELL/2;
+      if (i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Agent trail
+  if (agentTrail.length > 1) {
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.3)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let i = 0; i < agentTrail.length; i++) {
+      const px = (agentTrail[i][1]+1)*CELL + CELL/2;
+      const py = (agentTrail[i][0]+1)*CELL + CELL/2;
+      if (i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  // Key
+  if (!env.keyPicked) {
+    const kx = (env.keyPos[1]+1)*CELL + CELL/2;
+    const ky = (env.keyPos[0]+1)*CELL + CELL/2;
+    ctx.fillStyle = '#ffd700';
+    ctx.font = `${CELL*0.6}px serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('★', kx, ky);
+  }
+
+  // Door
+  const dx = (env.doorPos[1]+1)*CELL, dy = (env.doorPos[0]+1)*CELL;
+  if (env.doorOpen) {
+    ctx.fillStyle = 'rgba(101, 67, 33, 0.3)';
+    ctx.fillRect(dx+2, dy+2, CELL-4, CELL-4);
+    ctx.strokeStyle = '#654321';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(dx+4, dy+4, CELL-8, CELL-8);
+  } else {
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(dx, dy, CELL, CELL);
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.arc(dx+CELL*0.75, dy+CELL/2, 3, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Goal
+  const gx = (env.goalPos[1]+1)*CELL + CELL/2;
+  const gy = (env.goalPos[0]+1)*CELL + CELL/2;
+  ctx.fillStyle = '#00ff88';
+  ctx.font = `${CELL*0.5}px serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('◆', gx, gy);
+
+  // Agent (triangle with direction)
+  const ax = (env.agentPos[1]+1)*CELL + CELL/2;
+  const ay = (env.agentPos[0]+1)*CELL + CELL/2;
+  const s = CELL * 0.35;
+  ctx.fillStyle = '#ff4444';
+  ctx.beginPath();
+  const angle = [0, Math.PI/2, Math.PI, -Math.PI/2][env.agentDir];
+  ctx.moveTo(ax + s*Math.cos(angle), ay + s*Math.sin(angle));
+  ctx.lineTo(ax + s*0.7*Math.cos(angle + 2.4), ay + s*0.7*Math.sin(angle + 2.4));
+  ctx.lineTo(ax + s*0.7*Math.cos(angle - 2.4), ay + s*0.7*Math.sin(angle - 2.4));
+  ctx.closePath();
+  ctx.fill();
+
+  // Carrying indicator
+  if (env.hasKey) {
+    ctx.fillStyle = '#ffd700';
+    ctx.font = '12px serif';
+    ctx.fillText('★', ax+s, ay-s);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// UI Controls
+// ═══════════════════════════════════════════════
+let currentSeed = 0;
+
+function updateUI() {
+  document.getElementById('stepNum').textContent = stepCount;
+  document.getElementById('phaseText').textContent = 'план (BFS)';
+  document.getElementById('inventory').textContent = env.hasKey ? 'ключ ★' : 'пусто';
+
+  const subgoalNames = ['идёт к ключу', 'идёт к двери', 'идёт к цели', 'решено!'];
+  document.getElementById('statusText').textContent = subgoalNames[currentSubgoal] || 'готов';
+  if (solved) document.getElementById('statusText').className = 'stat-value pass';
+  else document.getElementById('statusText').className = 'stat-value';
+
+  for (let i = 0; i < 3; i++) {
+    const el = document.getElementById('sg' + i);
+    el.className = 'sg-node';
+    if (i < currentSubgoal) el.className = 'sg-node done';
+    else if (i === currentSubgoal) el.className = 'sg-node active';
+  }
+}
+
+function addLog(msg) {
+  const log = document.getElementById('actionLog');
+  log.innerHTML += msg + '\n';
+  log.scrollTop = log.scrollHeight;
+}
+
+function stepOnce() {
+  if (solved || stepCount >= 200) return;
+  const action = getNextBFSAction();
+  const done = stepEnv(action);
+  addLog(`[${stepCount}] ${ACTION_NAMES[action]} (направление: ${DIR_NAMES[env.agentDir]})`);
+  updateUI();
+  drawGrid();
+  if (done) {
+    stopPlay();
+    if (solved) addLog(`=== РЕШЕНО за ${stepCount} шагов! ===`);
+    else addLog(`=== ТАЙМАУТ ===`);
+  }
+}
+
+function togglePlay() {
+  if (playing) stopPlay();
+  else startPlay();
+}
+
+function startPlay() {
+  playing = true;
+  document.getElementById('btnPlay').innerHTML = '&#9646;&#9646; Пауза';
+  document.getElementById('btnPlay').classList.add('active');
+  playInterval = setInterval(stepOnce, 300 / speed);
+}
+
+function stopPlay() {
+  playing = false;
+  document.getElementById('btnPlay').innerHTML = '&#9654; Запустить';
+  document.getElementById('btnPlay').classList.remove('active');
+  if (playInterval) clearInterval(playInterval);
+}
+
+function setSpeed(s) {
+  speed = s;
+  document.querySelectorAll('.speed-control button').forEach(b => b.classList.remove('active'));
+  document.getElementById('sp' + String(s).replace('.', '')).classList.add('active');
+  if (playing) { stopPlay(); startPlay(); }
+}
+
+function resetDemo() {
+  stopPlay();
+  resetEnv(currentSeed);
+  document.getElementById('actionLog').innerHTML = '';
+  addLog(`Раскладка #${currentSeed} загружена`);
+}
+
+function selectLayout(seed) {
+  currentSeed = seed;
+  document.querySelectorAll('#layoutBtns .layout-btn').forEach(b => b.classList.remove('active'));
+  const btns = document.querySelectorAll('#layoutBtns .layout-btn');
+  if (btns[seed]) btns[seed].classList.add('active');
+  resetDemo();
+}
+
+function randomLayout() {
+  currentSeed = Math.floor(Math.random() * 10000);
+  resetDemo();
+  addLog(`Случайная раскладка #${currentSeed}`);
+}
+
+// Init layout buttons
+const btnContainer = document.getElementById('layoutBtns');
+for (let i = 0; i < 8; i++) {
+  const btn = document.createElement('button');
+  btn.className = 'layout-btn' + (i === 0 ? ' active' : '');
+  btn.textContent = i;
+  btn.onclick = () => selectLayout(i);
+  btnContainer.appendChild(btn);
+}
+
+// Boot
+resetEnv(0);
+addLog('Раскладка #0 загружена');
+addLog('BFS pathfinding — агент обходит стены');
+</script>
+</body>
+</html>

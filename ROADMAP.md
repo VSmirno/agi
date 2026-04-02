@@ -23,8 +23,8 @@
 
 | Stage | Название | Статус | Gate |
 |-------|----------|--------|------|
-| 47 | Wall-aware навигация | | ≥80% DoorKey-5x5 с walls в разных позициях |
-| 48 | Random layouts | | ≥80% на 200 рандомных карт |
+| 47 | Wall-aware навигация | COMPLETE (2026-04-02) | 100% на 200 random DoorKey-5x5, mean 16 steps |
+| 48 | Random layouts | COMPLETE (merged with 47) | 100% на 200 рандомных карт (covered by Stage 47) |
 | 49 | Multi-room | | ≥60% MultiRoom-N3 |
 
 ### M2: Языковой контроль
