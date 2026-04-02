@@ -38,6 +38,10 @@
 - `demos/stage-49-multi-room.html` — NEW: Canvas веб-демо
 - `docs/superpowers/specs/2026-04-02-stage49-multi-room-nav-design.md` — спецификация
 
+## Известные ограничения
+
+- **Full observability**: агент использует `FullyObsWrapper` (полная карта 25x25). С полной наблюдаемостью + BFS задача тривиальна — агент всегда знает, где цель и двери. Настоящая генерализация требует partial observability (7x7 view), exploration, и world model для запоминания карты. Отложено → TD-006.
+
 ## Следующий этап
 
 **M1 COMPLETE.** Переход к **M2: Языковой контроль** — Stage 50: Reconnect language pipeline (парсинг → VSA-вектор, ≥90%).

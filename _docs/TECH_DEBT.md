@@ -16,6 +16,7 @@ Maintained automatically by the `autonomous-dev` skill.
 | TD-002 | 39 | GPU_EXP | exp98e CurriculumTrainer DoorKey-5x5 на 50K нод. CPU-гейты механизмов PASS, абсолютная производительность не проверена. | success_rate ≥ 0.25 | `main` @ `c875a82` | OPEN | 2026-04-01 | — |
 | TD-003 | 40 | GPU_EXP | exp99 HebbianEncoder + PureDafAgent на 50K нод. CPU показал SDR overlap improvement 14%, реальное влияние на success_rate неизвестно. | success_rate ≥ 0.15 (лучше Stage 38 baseline) | `main` @ `c875a82` | OPEN | 2026-04-01 | — |
 | TD-004 | 43 | INTEGRATION | WM gating: sustained oscillation confirmed, coupling damping 0.1x applied, SKS excluded. But FHN **self-sustains** (intrinsic dynamics, not coupling). Need bistable FHN tuning or explicit gating for WM to actually help. | WM DoorKey success > no-WM success | `main` | OPEN | 2026-04-01 | — |
+| TD-006 | 49 | PERF | Full observability shortcut: Stages 47-49 используют FullyObsWrapper / see_through_walls=True. Агент видит всю карту → BFS тривиально решает задачу. Настоящая генерализация требует partial obs (7x7 view) + exploration + world model (SDM) для карты. | ≥60% MultiRoom-N3 с partial obs (7x7 view) | `main` | OPEN | 2026-04-02 | — |
 | TD-005 | 45 | INTEGRATION | VSA World Model planning: forward beam search fails on detour tasks (DoorKey). Fixed in Stage 46 with subgoal extraction + position-based navigation. Plan success 92.5%. | plan phase success_rate ≥ 15% DoorKey-5x5 | `main` | CLOSED | 2026-04-02 | 2026-04-02 |
 
 ---
