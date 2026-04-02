@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 54: Partial Observability — СНКС</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0e17;
+  color: #e2e8f0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+  padding: 20px;
+}
+h1 { color: #60a5fa; font-size: 1.8em; margin-bottom: 4px; }
+h2 { color: #60a5fa; font-size: 1.2em; margin: 16px 0 8px; }
+.subtitle { color: #94a3b8; font-size: 0.95em; margin-bottom: 16px; }
+.container { max-width: 1400px; margin: 0 auto; }
+.row { display: flex; gap: 20px; flex-wrap: wrap; }
+.col { flex: 1; min-width: 320px; }
+.panel {
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+canvas { border: 1px solid #334155; border-radius: 4px; display: block; }
+.controls {
+  display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; align-items: center;
+}
+.controls button {
+  background: #1e293b; color: #60a5fa; border: 1px solid #334155;
+  padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;
+}
+.controls button:hover { background: #334155; }
+.controls button.active { background: #1e40af; border-color: #60a5fa; }
+.stat { display: inline-block; margin-right: 16px; margin-bottom: 4px; }
+.stat-label { color: #94a3b8; font-size: 0.85em; }
+.stat-value { color: #e2e8f0; font-size: 1.1em; font-weight: 600; }
+.stat-value.pass { color: #34d399; }
+.stat-value.fail { color: #f87171; }
+.subgoal-chain {
+  display: flex; gap: 4px; align-items: center; margin: 12px 0; flex-wrap: wrap;
+}
+.sg-node {
+  background: #1e293b; border: 2px solid #334155; border-radius: 6px;
+  padding: 6px 12px; font-size: 0.85em; color: #94a3b8; transition: all 0.3s;
+}
+.sg-node.active { border-color: #fbbf24; color: #fbbf24; background: #1c1917; }
+.sg-node.done { border-color: #34d399; color: #34d399; background: #052e16; }
+.sg-arrow { color: #475569; font-size: 1.2em; }
+.action-log {
+  background: #0f172a; border: 1px solid #1e293b; border-radius: 4px;
+  padding: 8px; font-family: monospace; font-size: 0.8em; color: #94a3b8;
+  height: 120px; overflow-y: auto; margin-top: 8px;
+}
+.explain {
+  background: #0f172a; border-left: 3px solid #60a5fa;
+  padding: 12px 16px; margin: 12px 0; border-radius: 0 4px 4px 0;
+  font-size: 0.9em; line-height: 1.5;
+}
+.metrics-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px; margin: 12px 0;
+}
+.metric-card {
+  background: #0f172a; border: 1px solid #1e293b; border-radius: 8px;
+  padding: 16px; text-align: center;
+}
+.metric-value { font-size: 2em; font-weight: 700; }
+.metric-label { font-size: 0.8em; color: #94a3b8; margin-top: 4px; }
+.speed-control { display: flex; align-items: center; gap: 6px; }
+.speed-control label { color: #94a3b8; font-size: 0.85em; }
+select {
+  background: #1e293b; color: #60a5fa; border: 1px solid #334155;
+  padding: 4px 8px; border-radius: 4px; font-size: 0.9em;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Этап 54: Partial Observability</h1>
+  <p class="subtitle">Агент решает DoorKey-5x5 с ограниченным обзором 7x7 — видит только часть карты</p>
+
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-value pass">100%</div>
+      <div class="metric-label">Успех (200 раскладок)</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value" style="color:#60a5fa">23.5</div>
+      <div class="metric-label">Среднее шагов</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value pass">&ge;80%</div>
+      <div class="metric-label">Gate PASS</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value" style="color:#fbbf24">7x7</div>
+      <div class="metric-label">Обзор агента</div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <div class="panel">
+        <h2>Реальная карта</h2>
+        <canvas id="gridCanvas" width="300" height="300"></canvas>
+        <div class="controls">
+          <button id="btnPlay" onclick="togglePlay()">Запустить</button>
+          <button onclick="stepForward()">Шаг</button>
+          <button onclick="resetEpisode()">Сброс</button>
+          <div class="speed-control">
+            <label>Скорость:</label>
+            <select id="speedSelect" onchange="changeSpeed()">
+              <option value="1000">x0.5</option>
+              <option value="500" selected>x1</option>
+              <option value="250">x2</option>
+              <option value="100">x5</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <span class="stat"><span class="stat-label">Шаг: </span><span class="stat-value" id="stepNum">0</span></span>
+          <span class="stat"><span class="stat-label">Действие: </span><span class="stat-value" id="actionName">-</span></span>
+          <span class="stat"><span class="stat-label">Статус: </span><span class="stat-value" id="statusText">-</span></span>
+        </div>
+        <div class="subgoal-chain" id="subgoalChain">
+          <span class="sg-node" id="sg-explore">Исследование</span>
+          <span class="sg-arrow">&rarr;</span>
+          <span class="sg-node" id="sg-key">Подобрать ключ</span>
+          <span class="sg-arrow">&rarr;</span>
+          <span class="sg-node" id="sg-door">Открыть дверь</span>
+          <span class="sg-arrow">&rarr;</span>
+          <span class="sg-node" id="sg-goal">Дойти до цели</span>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="panel">
+        <h2>Карта в памяти агента</h2>
+        <canvas id="mapCanvas" width="300" height="300"></canvas>
+        <div style="margin-top:8px">
+          <span class="stat"><span class="stat-label">Исследовано: </span><span class="stat-value" id="exploredCount">0/25</span></span>
+          <span class="stat"><span class="stat-label">Ключ: </span><span class="stat-value" id="hasKey">нет</span></span>
+          <span class="stat"><span class="stat-label">Дверь: </span><span class="stat-value" id="doorState">закрыта</span></span>
+        </div>
+        <div class="action-log" id="actionLog"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <label style="color:#94a3b8; font-size:0.85em">Эпизод:</label>
+    <button onclick="switchEpisode(0)" id="ep0" class="active">seed=42</button>
+    <button onclick="switchEpisode(1)" id="ep1">seed=7</button>
+    <button onclick="switchEpisode(2)" id="ep2">seed=123</button>
+  </div>
+
+  <div class="explain">
+    <strong>Как это работает:</strong> Агент видит только 7x7 клеток перед собой (не всю карту!).
+    При каждом шаге он обновляет свою <em>пространственную карту</em> (справа) из частичного наблюдения.
+    Если все объекты (ключ, дверь, цель) найдены — BFS-навигация к текущей подцели.
+    Если нет — исследование ближайших неизвестных клеток (frontier exploration).<br><br>
+    <strong>Почему это важно:</strong> Stages 47-52 использовали полную видимость карты (cheating).
+    Stage 54 убирает этот shortcut — агент должен <em>исследовать</em> мир и <em>запоминать</em> увиденное.
+    Это фундамент для partial observability в M4.
+  </div>
+</div>
+
+<script>
+const EPISODES = [{"seed":42,"grid":[[2,2,2,2,2],[2,0,2,0,2],[2,0,4,0,2],[2,5,2,8,2],[2,2,2,2,2]],"frames":[{"agent_col":1,"agent_row":2,"agent_dir":1,"action":"start","has_key":false,"door_open":false,"explored":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"spatial_grid":[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]},{"agent_col":1,"agent_row":2,"agent_dir":1,"action":"pickup","has_key":false,"door_open":false,"explored":[0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,2,1,4,-1,-1,2,5,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":2,"agent_dir":1,"action":"forward","has_key":true,"door_open":false,"explored":[0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,2,5,4,-1,-1,2,1,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":3,"agent_dir":1,"action":"right","has_key":true,"door_open":false,"explored":[0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,2,5,4,-1,-1,2,5,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":3,"agent_dir":2,"action":"right","has_key":true,"door_open":false,"explored":[1,1,0,0,0,1,1,0,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[2,2,-1,-1,-1,2,1,-1,-1,-1,2,1,4,-1,-1,2,5,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":3,"agent_dir":3,"action":"forward","has_key":true,"door_open":false,"explored":[1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[2,2,2,-1,-1,2,1,2,-1,-1,2,1,4,-1,-1,2,5,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":2,"agent_dir":3,"action":"right","has_key":true,"door_open":false,"explored":[1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[2,2,2,-1,-1,2,1,2,-1,-1,2,5,4,-1,-1,2,5,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":2,"agent_dir":0,"action":"toggle","has_key":true,"door_open":false,"explored":[1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[2,2,2,-1,-1,2,1,2,-1,-1,2,5,4,-1,-1,2,1,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":2,"agent_dir":0,"action":"forward","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,2,1,2,2,5,4,1,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":2,"agent_row":2,"agent_dir":0,"action":"forward","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,2,1,2,2,5,5,1,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":3,"agent_row":2,"agent_dir":0,"action":"right","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,2,1,2,2,5,5,5,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":3,"agent_row":2,"agent_dir":1,"action":"forward","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,2,1,2,2,1,4,5,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":3,"agent_row":3,"agent_dir":1,"action":"goal!","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,2,1,2,2,1,4,5,2,2,1,2,5,2,2,2,2,2,2]}]},{"seed":7,"grid":[[2,2,2,2,2],[2,5,2,0,2],[2,0,4,0,2],[2,0,2,8,2],[2,2,2,2,2]],"frames":[{"agent_col":1,"agent_row":3,"agent_dir":2,"action":"start","has_key":false,"door_open":false,"explored":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"spatial_grid":[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]},{"agent_col":1,"agent_row":3,"agent_dir":2,"action":"right","has_key":false,"door_open":false,"explored":[1,1,0,0,0,1,1,0,0,0,1,1,0,0,0,1,1,0,0,0,1,1,0,0,0],"spatial_grid":[2,2,-1,-1,-1,2,5,-1,-1,-1,2,1,-1,-1,-1,2,1,-1,-1,-1,2,2,-1,-1,-1]},{"agent_col":1,"agent_row":3,"agent_dir":3,"action":"forward","has_key":false,"door_open":false,"explored":[1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,0,0,0],"spatial_grid":[2,2,2,-1,-1,2,5,2,-1,-1,2,1,4,-1,-1,2,1,2,-1,-1,2,2,-1,-1,-1]},{"agent_col":1,"agent_row":2,"agent_dir":3,"action":"pickup","has_key":false,"door_open":false,"explored":[1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,0,0,0],"spatial_grid":[2,2,2,-1,-1,2,5,2,-1,-1,2,1,4,-1,-1,2,1,2,-1,-1,2,2,-1,-1,-1]},{"agent_col":1,"agent_row":2,"agent_dir":3,"action":"right","has_key":true,"door_open":false,"explored":[1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,0,0,0],"spatial_grid":[2,2,2,-1,-1,2,1,2,-1,-1,2,5,4,-1,-1,2,1,2,-1,-1,2,2,-1,-1,-1]},{"agent_col":1,"agent_row":2,"agent_dir":0,"action":"toggle","has_key":true,"door_open":false,"explored":[1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[2,2,2,-1,-1,2,1,2,-1,-1,2,5,4,-1,-1,2,1,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":2,"agent_dir":0,"action":"forward","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,2,1,2,2,5,4,1,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":2,"agent_row":2,"agent_dir":0,"action":"forward","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,2,1,2,2,5,5,1,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":3,"agent_row":2,"agent_dir":0,"action":"right","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,2,1,2,2,5,5,5,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":3,"agent_row":2,"agent_dir":1,"action":"forward","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,2,1,2,2,1,4,5,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":3,"agent_row":3,"agent_dir":1,"action":"goal!","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,2,1,2,2,1,4,5,2,2,1,2,5,2,2,2,2,2,2]}]},{"seed":123,"grid":[[2,2,2,2,2],[2,0,4,0,2],[2,0,2,0,2],[2,5,2,8,2],[2,2,2,2,2]],"frames":[{"agent_col":1,"agent_row":1,"agent_dir":1,"action":"start","has_key":false,"door_open":false,"explored":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"spatial_grid":[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]},{"agent_col":1,"agent_row":1,"agent_dir":1,"action":"forward","has_key":false,"door_open":false,"explored":[0,0,0,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[-1,-1,-1,-1,-1,2,1,4,-1,-1,2,1,2,-1,-1,2,5,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":2,"agent_dir":1,"action":"pickup","has_key":false,"door_open":false,"explored":[0,0,0,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[-1,-1,-1,-1,-1,2,1,4,-1,-1,2,1,2,-1,-1,2,5,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":2,"agent_dir":1,"action":"forward","has_key":true,"door_open":false,"explored":[0,0,0,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[-1,-1,-1,-1,-1,2,1,4,-1,-1,2,5,2,-1,-1,2,1,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":3,"agent_dir":1,"action":"right","has_key":true,"door_open":false,"explored":[0,0,0,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[-1,-1,-1,-1,-1,2,1,4,-1,-1,2,5,2,-1,-1,2,5,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":3,"agent_dir":2,"action":"right","has_key":true,"door_open":false,"explored":[1,1,0,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[2,2,-1,-1,-1,2,1,4,-1,-1,2,1,2,-1,-1,2,5,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":3,"agent_dir":3,"action":"forward","has_key":true,"door_open":false,"explored":[1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[2,2,2,-1,-1,2,1,4,-1,-1,2,1,2,-1,-1,2,5,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":2,"agent_dir":3,"action":"forward","has_key":true,"door_open":false,"explored":[1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[2,2,2,-1,-1,2,1,4,-1,-1,2,5,2,-1,-1,2,5,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":1,"agent_dir":3,"action":"right","has_key":true,"door_open":false,"explored":[1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[2,2,2,-1,-1,2,5,4,-1,-1,2,5,2,-1,-1,2,5,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":1,"agent_dir":0,"action":"toggle","has_key":true,"door_open":false,"explored":[1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],"spatial_grid":[2,2,2,-1,-1,2,5,4,-1,-1,2,1,2,-1,-1,2,1,2,-1,-1,2,2,2,-1,-1]},{"agent_col":1,"agent_row":1,"agent_dir":0,"action":"forward","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,5,4,1,2,2,1,2,1,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":2,"agent_row":1,"agent_dir":0,"action":"forward","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,5,5,1,2,2,1,2,1,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":3,"agent_row":1,"agent_dir":0,"action":"right","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,5,5,5,2,2,1,2,1,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":3,"agent_row":1,"agent_dir":1,"action":"forward","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,4,5,2,2,1,2,1,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":3,"agent_row":2,"agent_dir":1,"action":"forward","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,4,5,2,2,1,2,5,2,2,1,2,8,2,2,2,2,2,2]},{"agent_col":3,"agent_row":3,"agent_dir":1,"action":"goal!","has_key":true,"door_open":true,"explored":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"spatial_grid":[2,2,2,2,2,2,1,4,5,2,2,1,2,5,2,2,1,2,5,2,2,2,2,2,2]}]}];
+
+const CELL = 60;
+const GRID = 5;
+const ACTION_RU = {
+  'start': 'старт', 'left': 'налево', 'right': 'направо', 'forward': 'вперёд',
+  'pickup': 'подобрать', 'toggle': 'открыть', 'goal!': 'цель!', 'fail': 'неудача'
+};
+const DIR_ARROWS = ['\u25B6', '\u25BC', '\u25C0', '\u25B2']; // right, down, left, up
+
+let currentEp = 0;
+let currentFrame = 0;
+let playing = false;
+let playTimer = null;
+let speed = 500;
+
+function drawGrid(canvasId, gridData, frame, showExplored) {
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      const x = c * CELL;
+      const y = r * CELL;
+      let obj;
+
+      if (showExplored) {
+        const explored = frame.explored[r * GRID + c];
+        const sg = frame.spatial_grid[r * GRID + c];
+        if (!explored) {
+          ctx.fillStyle = '#1a1a2e';
+          ctx.fillRect(x, y, CELL, CELL);
+          ctx.fillStyle = '#334155';
+          ctx.font = '20px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('?', x + CELL/2, y + CELL/2 + 7);
+          ctx.strokeStyle = '#1e293b';
+          ctx.strokeRect(x, y, CELL, CELL);
+          continue;
+        }
+        obj = sg;
+      } else {
+        obj = gridData[r][c];
+      }
+
+      // Draw cell
+      if (obj === 2) { // wall
+        ctx.fillStyle = '#666666';
+      } else if (obj === 4) { // door
+        ctx.fillStyle = frame && frame.door_open ? '#654321' : '#8B4513';
+      } else if (obj === 5) { // key
+        ctx.fillStyle = '#0f172a';
+      } else if (obj === 8) { // goal
+        ctx.fillStyle = '#0f172a';
+      } else {
+        ctx.fillStyle = '#0f172a';
+      }
+      ctx.fillRect(x, y, CELL, CELL);
+      ctx.strokeStyle = '#334155';
+      ctx.strokeRect(x, y, CELL, CELL);
+
+      // Draw objects
+      if (obj === 5) { // key
+        ctx.fillStyle = '#ffd700';
+        ctx.font = '28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('\u2605', x + CELL/2, y + CELL/2 + 9);
+      } else if (obj === 8) { // goal
+        ctx.fillStyle = '#00ff88';
+        ctx.font = '28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('\u25C6', x + CELL/2, y + CELL/2 + 9);
+      } else if (obj === 4) { // door
+        ctx.fillStyle = frame && frame.door_open ? '#a0522d' : '#deb887';
+        ctx.font = '20px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(frame && frame.door_open ? '\u25A1' : '\u25A0', x + CELL/2, y + CELL/2 + 7);
+      }
+    }
+  }
+
+  // Draw agent
+  if (frame) {
+    const ax = frame.agent_col * CELL;
+    const ay = frame.agent_row * CELL;
+    ctx.fillStyle = '#ff4444';
+    ctx.font = '30px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(DIR_ARROWS[frame.agent_dir], ax + CELL/2, ay + CELL/2 + 10);
+
+    // Inventory indicator
+    if (frame.has_key) {
+      ctx.fillStyle = '#ffd700';
+      ctx.font = '14px sans-serif';
+      ctx.fillText('\u2605', ax + CELL - 10, ay + 14);
+    }
+  }
+}
+
+function updateDisplay() {
+  const ep = EPISODES[currentEp];
+  const frame = ep.frames[currentFrame];
+
+  drawGrid('gridCanvas', ep.grid, frame, false);
+  drawGrid('mapCanvas', ep.grid, frame, true);
+
+  document.getElementById('stepNum').textContent = currentFrame + '/' + (ep.frames.length - 1);
+  document.getElementById('actionName').textContent = ACTION_RU[frame.action] || frame.action;
+  document.getElementById('hasKey').textContent = frame.has_key ? 'есть' : 'нет';
+  document.getElementById('hasKey').className = 'stat-value' + (frame.has_key ? ' pass' : '');
+  document.getElementById('doorState').textContent = frame.door_open ? 'открыта' : 'закрыта';
+  document.getElementById('doorState').className = 'stat-value' + (frame.door_open ? ' pass' : '');
+
+  const exploredCount = frame.explored.reduce((a, b) => a + b, 0);
+  document.getElementById('exploredCount').textContent = exploredCount + '/25';
+
+  // Status
+  let status = 'исследование';
+  if (frame.action === 'goal!') status = 'цель достигнута!';
+  else if (frame.door_open) status = 'идёт к цели';
+  else if (frame.has_key) status = 'идёт к двери';
+  else if (exploredCount > 0) status = 'ищет ключ';
+  document.getElementById('statusText').textContent = status;
+
+  // Subgoal chain
+  const sgExplore = document.getElementById('sg-explore');
+  const sgKey = document.getElementById('sg-key');
+  const sgDoor = document.getElementById('sg-door');
+  const sgGoal = document.getElementById('sg-goal');
+
+  sgExplore.className = 'sg-node' + (exploredCount < 25 && !frame.has_key ? ' active' : (exploredCount > 0 ? ' done' : ''));
+  sgKey.className = 'sg-node' + (!frame.has_key && exploredCount > 0 ? ' active' : (frame.has_key ? ' done' : ''));
+  sgDoor.className = 'sg-node' + (frame.has_key && !frame.door_open ? ' active' : (frame.door_open ? ' done' : ''));
+  sgGoal.className = 'sg-node' + (frame.door_open && frame.action !== 'goal!' ? ' active' : (frame.action === 'goal!' ? ' done' : ''));
+
+  // Action log
+  const log = document.getElementById('actionLog');
+  if (currentFrame === 0) log.innerHTML = '';
+  const color = frame.action === 'goal!' ? '#34d399' : '#94a3b8';
+  log.innerHTML += `<div style="color:${color}">[${currentFrame}] (${frame.agent_col},${frame.agent_row}) d=${frame.agent_dir} → ${ACTION_RU[frame.action]}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function stepForward() {
+  const ep = EPISODES[currentEp];
+  if (currentFrame < ep.frames.length - 1) {
+    currentFrame++;
+    updateDisplay();
+  } else {
+    stopPlay();
+  }
+}
+
+function togglePlay() {
+  if (playing) {
+    stopPlay();
+  } else {
+    playing = true;
+    document.getElementById('btnPlay').textContent = 'Пауза';
+    document.getElementById('btnPlay').classList.add('active');
+    playTimer = setInterval(() => {
+      const ep = EPISODES[currentEp];
+      if (currentFrame < ep.frames.length - 1) {
+        currentFrame++;
+        updateDisplay();
+      } else {
+        stopPlay();
+      }
+    }, speed);
+  }
+}
+
+function stopPlay() {
+  playing = false;
+  if (playTimer) clearInterval(playTimer);
+  playTimer = null;
+  document.getElementById('btnPlay').textContent = 'Запустить';
+  document.getElementById('btnPlay').classList.remove('active');
+}
+
+function resetEpisode() {
+  stopPlay();
+  currentFrame = 0;
+  document.getElementById('actionLog').innerHTML = '';
+  updateDisplay();
+}
+
+function switchEpisode(idx) {
+  stopPlay();
+  currentEp = idx;
+  currentFrame = 0;
+  document.getElementById('actionLog').innerHTML = '';
+  for (let i = 0; i < 3; i++) {
+    document.getElementById('ep' + i).classList.toggle('active', i === idx);
+  }
+  updateDisplay();
+}
+
+function changeSpeed() {
+  speed = parseInt(document.getElementById('speedSelect').value);
+  if (playing) {
+    stopPlay();
+    togglePlay();
+  }
+}
+
+// Init
+updateDisplay();
+</script>
+</body>
+</html>
