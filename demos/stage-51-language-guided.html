@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 51: Языковое управление — СНКС</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0e17;
+  color: #e2e8f0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+  padding: 20px;
+}
+h1 { color: #60a5fa; font-size: 1.8em; margin-bottom: 4px; }
+h2 { color: #60a5fa; font-size: 1.2em; margin: 16px 0 8px; }
+.subtitle { color: #94a3b8; font-size: 0.95em; margin-bottom: 16px; }
+
+.container { max-width: 1200px; margin: 0 auto; }
+.row { display: flex; gap: 20px; flex-wrap: wrap; }
+.col { flex: 1; min-width: 320px; }
+
+.panel {
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+canvas { border: 1px solid #334155; border-radius: 4px; display: block; }
+
+.controls {
+  display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; align-items: center;
+}
+.controls button {
+  background: #1e293b; color: #60a5fa; border: 1px solid #334155;
+  padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;
+}
+.controls button:hover { background: #334155; }
+.controls button.active { background: #1e40af; border-color: #60a5fa; }
+
+.stat { display: inline-block; margin-right: 16px; margin-bottom: 4px; }
+.stat-label { color: #94a3b8; font-size: 0.85em; }
+.stat-value { color: #e2e8f0; font-size: 1.1em; font-weight: 600; }
+.stat-value.pass { color: #34d399; }
+.stat-value.fail { color: #f87171; }
+
+.subgoal-chain { display: flex; gap: 4px; flex-wrap: wrap; margin: 8px 0; }
+.subgoal {
+  background: #1e293b; border: 1px solid #334155; border-radius: 20px;
+  padding: 4px 14px; color: #94a3b8; font-size: 0.9em;
+}
+.subgoal.active { border-color: #f59e0b; color: #f59e0b; background: #1c1917; }
+.subgoal.done { border-color: #34d399; color: #34d399; background: #064e3b; }
+
+.preset-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.preset-btns button {
+  background: #0f172a; color: #94a3b8; border: 1px solid #1e293b;
+  padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em;
+}
+.preset-btns button:hover { color: #60a5fa; border-color: #334155; }
+
+select {
+  background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
+  padding: 4px 8px; border-radius: 4px; font-size: 0.9em;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Этап 51: Языковое управление агентом</h1>
+  <p class="subtitle">
+    Агент получает текстовую инструкцию и выполняет её в среде DoorKey-5x5.
+    Инструкция → подцели → BFS навигация → действия.
+    Результат: 100% на 200 случайных карт.
+  </p>
+
+  <div class="panel">
+    <h2>Инструкция</h2>
+    <div class="preset-btns">
+      <button onclick="setInstruction('pick up the key then open the door then go to the goal')">Полная задача</button>
+      <button onclick="setInstruction('pick up the key')">Только ключ</button>
+      <button onclick="setInstruction('pick up the key then open the door')">Ключ → дверь</button>
+      <button onclick="setInstruction('pick up the red key then toggle the door then go to the goal')">Красный ключ (toggle)</button>
+    </div>
+    <div id="instrText" style="color:#60a5fa;font-size:1.1em;font-weight:600;margin:8px 0">
+      pick up the key then open the door then go to the goal
+    </div>
+    <div id="subgoalChain" class="subgoal-chain"></div>
+  </div>
+
+  <div class="row">
+    <div class="col" style="max-width:440px">
+      <div class="panel">
+        <h2>Среда DoorKey-5x5</h2>
+        <canvas id="gridCanvas" width="350" height="350"></canvas>
+        <div class="controls">
+          <button onclick="playPause()" id="playBtn">Запустить</button>
+          <button onclick="stepOnce()">Шаг</button>
+          <button onclick="resetEpisode()">Сброс</button>
+          <button onclick="randomLayout()">Новая карта</button>
+          <label style="color:#94a3b8;font-size:0.85em;margin-left:8px">Скорость:</label>
+          <select id="speedSel" onchange="updateSpeed()">
+            <option value="500">x0.5</option>
+            <option value="250" selected>x1</option>
+            <option value="125">x2</option>
+            <option value="50">x5</option>
+          </select>
+        </div>
+        <div>
+          <div class="stat">
+            <div class="stat-label">Шаг</div>
+            <div class="stat-value" id="stepVal">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Действие</div>
+            <div class="stat-value" id="actionVal">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Статус</div>
+            <div class="stat-value" id="statusVal">ожидание</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Инвентарь</div>
+            <div class="stat-value" id="invVal">пусто</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="panel">
+        <h2>Результаты эксперимента</h2>
+        <div>
+          <div class="stat">
+            <div class="stat-label">Полная инструкция (200 карт)</div>
+            <div class="stat-value pass">100%</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Gate ≥70%</div>
+            <div class="stat-value pass">PASS</div>
+          </div>
+        </div>
+        <div style="margin-top:8px">
+          <div class="stat">
+            <div class="stat-label">Частичная инструкция (50 карт)</div>
+            <div class="stat-value pass">100%</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Варианты формулировок</div>
+            <div class="stat-value pass">100%</div>
+          </div>
+        </div>
+        <div style="margin-top:8px">
+          <div class="stat">
+            <div class="stat-label">Среднее шагов</div>
+            <div class="stat-value">16.1</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Время (200 эп.)</div>
+            <div class="stat-value">1.1с</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Пайплайн</h2>
+        <div style="color:#94a3b8;font-size:0.9em;line-height:1.8">
+          <div>1. <span style="color:#60a5fa">Текст</span> → RuleBasedChunker → chunks (ACTION, OBJECT, ATTR)</div>
+          <div>2. Chunks → <span style="color:#60a5fa">VSA кодирование</span> (512-bit вектор)</div>
+          <div>3. VSA → <span style="color:#60a5fa">Подцели</span> (pickup_key, open_door, reach_goal)</div>
+          <div>4. Observation → <span style="color:#60a5fa">Целевые позиции</span> (ключ, дверь, цель)</div>
+          <div>5. BFS → <span style="color:#60a5fa">Оптимальный путь</span> → действия агента</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Почему это важно</h2>
+        <p style="color:#94a3b8;font-size:0.85em;line-height:1.5">
+          Агент впервые управляется <b style="color:#e2e8f0">текстовой инструкцией</b>, а не встроенным reward.
+          Это закрывает M2 (Языковой контроль) — язык стал интерфейсом управления планировщиком.<br><br>
+          Инструкция определяет <b style="color:#e2e8f0">какие подцели</b> выполнять и <b style="color:#e2e8f0">в каком порядке</b>.
+          "pick up the key" → агент подбирает ключ и останавливается.
+          Полная инструкция → агент решает всю задачу DoorKey.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// === DoorKey Environment ===
+
+const SIZE = 5, GRID = 7, CELL = 50;
+const canvas = document.getElementById('gridCanvas');
+const ctx = canvas.getContext('2d');
+
+let state = {
+  wallRow: 2, wallCols: [], doorPos: [2,2], keyPos: [0,2], goalPos: [3,2],
+  agentPos: [0,0], agentDir: 0, hasKey: false, keyPicked: false, doorOpen: false,
+  steps: 0, trail: [], currentSubgoal: 0, subgoals: [], done: false, success: false
+};
+
+let playing = false, timer = null, speed = 250, layoutSeed = 42;
+
+// Simple RNG
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+function generateLayout(seed) {
+  const rng = mulberry32(seed);
+  const wallRow = 1 + Math.floor(rng() * (SIZE - 2));
+  const doorCol = Math.floor(rng() * SIZE);
+
+  const wallCols = [];
+  for (let c = 0; c < SIZE; c++) if (c !== doorCol) wallCols.push(c);
+
+  const above = [];
+  for (let r = 0; r < wallRow; r++) for (let c = 0; c < SIZE; c++) above.push([r,c]);
+  const below = [];
+  for (let r = wallRow+1; r < SIZE; r++) for (let c = 0; c < SIZE; c++) below.push([r,c]);
+
+  const ki = Math.floor(rng() * above.length);
+  const keyPos = above[ki];
+  const avail = above.filter((_,i) => i !== ki);
+  const ai = Math.floor(rng() * avail.length);
+  const agentPos = avail[ai];
+  const agentDir = Math.floor(rng() * 4);
+  const gi = Math.floor(rng() * below.length);
+  const goalPos = below[gi];
+
+  return { wallRow, wallCols, doorPos: [wallRow, doorCol], keyPos, goalPos, agentPos, agentDir };
+}
+
+function resetState() {
+  const layout = generateLayout(layoutSeed);
+  Object.assign(state, layout);
+  state.hasKey = false; state.keyPicked = false; state.doorOpen = false;
+  state.steps = 0; state.trail = [[...state.agentPos]]; state.done = false; state.success = false;
+  state.currentSubgoal = 0;
+  parseInstruction();
+  updateUI(); draw();
+}
+
+// === Instruction parsing ===
+
+const SUBGOAL_MAP = {
+  "pick up|key": "pickup_key", "open|door": "open_door", "toggle|door": "open_door",
+  "go to|goal": "reach_goal", "go to|key": "goto_key", "go to|door": "goto_door",
+  "drop|key": "drop_key", "pick up|ball": "pickup_ball", "pick up|box": "pickup_box"
+};
+
+const SUBGOAL_NAMES = {
+  pickup_key: "Подобрать ключ", open_door: "Открыть дверь", reach_goal: "Достичь цели",
+  goto_key: "К ключу", goto_door: "К двери"
+};
+
+function parseInstruction() {
+  const text = document.getElementById('instrText').textContent.toLowerCase().trim();
+  const parts = text.replace(/ and then /g, ' then ').split(' then ');
+  const subgoals = [];
+
+  for (const part of parts) {
+    const p = part.trim();
+    let action = null, object = null;
+    if (p.startsWith('pick up')) { action = 'pick up'; object = p.replace(/pick up\s+(the\s+)?(red\s+|blue\s+|green\s+)?/, '').trim(); }
+    else if (p.startsWith('go to')) { action = 'go to'; object = p.replace(/go to\s+(the\s+)?/, '').trim(); }
+    else if (p.startsWith('open')) { action = 'open'; object = p.replace(/open\s+(the\s+)?(red\s+)?/, '').trim(); }
+    else if (p.startsWith('toggle')) { action = 'toggle'; object = p.replace(/toggle\s+(the\s+)?/, '').trim(); }
+
+    if (action && object) {
+      const sg = SUBGOAL_MAP[action + '|' + object];
+      if (sg) subgoals.push(sg);
+    }
+  }
+  state.subgoals = subgoals;
+  renderSubgoals();
+}
+
+function renderSubgoals() {
+  const el = document.getElementById('subgoalChain');
+  let html = '';
+  for (let i = 0; i < state.subgoals.length; i++) {
+    const cls = i < state.currentSubgoal ? 'done' : i === state.currentSubgoal ? 'active' : '';
+    const name = SUBGOAL_NAMES[state.subgoals[i]] || state.subgoals[i];
+    if (i > 0) html += '<span style="color:#475569;display:flex;align-items:center">→</span>';
+    html += `<div class="subgoal ${cls}">${name}</div>`;
+  }
+  el.innerHTML = html;
+}
+
+// === Agent logic (BFS) ===
+
+function isWall(r, c) {
+  if (r === state.wallRow && state.wallCols.includes(c)) return true;
+  if (r === state.doorPos[0] && c === state.doorPos[1] && !state.doorOpen) return true;
+  return false;
+}
+
+function bfs(start, goal, allowDoor) {
+  if (start[0]===goal[0] && start[1]===goal[1]) return [start];
+  const key = (r,c) => r*SIZE+c;
+  const visited = new Set([key(start[0],start[1])]);
+  const queue = [[start, [start]]];
+  while (queue.length) {
+    const [pos, path] = queue.shift();
+    for (const [dr,dc] of [[0,1],[1,0],[0,-1],[-1,0]]) {
+      const nr = pos[0]+dr, nc = pos[1]+dc;
+      if (nr<0||nr>=SIZE||nc<0||nc>=SIZE) continue;
+      const k = key(nr,nc);
+      if (visited.has(k)) continue;
+      if (nr===state.wallRow && state.wallCols.includes(nc)) continue;
+      if (nr===state.doorPos[0] && nc===state.doorPos[1] && !state.doorOpen && !allowDoor) continue;
+      visited.add(k);
+      const newPath = [...path, [nr,nc]];
+      if (nr===goal[0] && nc===goal[1]) return newPath;
+      queue.push([[nr,nc], newPath]);
+    }
+  }
+  return null;
+}
+
+function getTargetForSubgoal(sg) {
+  if (sg === 'pickup_key' || sg === 'goto_key') return { pos: [...state.keyPos], action: sg === 'pickup_key' ? 3 : null };
+  if (sg === 'reach_goal') return { pos: [...state.goalPos], action: null };
+  if (sg === 'open_door' || sg === 'goto_door') {
+    // Find adjacent to door
+    for (const [dr,dc] of [[0,1],[1,0],[0,-1],[-1,0]]) {
+      const ar = state.doorPos[0]+dr, ac = state.doorPos[1]+dc;
+      if (ar>=0&&ar<SIZE&&ac>=0&&ac<SIZE && !(ar===state.wallRow && state.wallCols.includes(ac))) {
+        return { pos: [ar,ac], action: sg === 'open_door' ? 5 : null, doorDir: [-dr,-dc] };
+      }
+    }
+  }
+  return null;
+}
+
+function dirFromDelta(dr, dc) {
+  if (dc>0) return 0; if (dr>0) return 1; if (dc<0) return 2; if (dr<0) return 3; return 0;
+}
+
+function selectAction() {
+  if (state.currentSubgoal >= state.subgoals.length) return 0;
+  const sgName = state.subgoals[state.currentSubgoal];
+  const target = getTargetForSubgoal(sgName);
+  if (!target) return 0;
+
+  const ap = state.agentPos;
+  // At target?
+  if (ap[0]===target.pos[0] && ap[1]===target.pos[1]) {
+    if (target.action === 5) {
+      // Face door first
+      const dr = state.doorPos[0]-ap[0], dc = state.doorPos[1]-ap[1];
+      const needDir = dirFromDelta(dr, dc);
+      if (state.agentDir !== needDir) {
+        const diff = (needDir - state.agentDir + 4) % 4;
+        return diff <= 2 ? 1 : 0;
+      }
+      return 5;
+    }
+    if (target.action !== null) return target.action;
+    return 0;
+  }
+
+  // BFS to target
+  const allowDoor = sgName === 'open_door';
+  const path = bfs(ap, target.pos, allowDoor) || bfs(ap, target.pos, true);
+  if (!path || path.length < 2) return 2;
+
+  const next = path[1];
+  const dr = next[0]-ap[0], dc = next[1]-ap[1];
+  const needDir = dirFromDelta(dr, dc);
+  if (state.agentDir !== needDir) {
+    const diff = (needDir - state.agentDir + 4) % 4;
+    return diff <= 2 ? 1 : 0;
+  }
+  return 2; // forward
+}
+
+function checkSubgoalDone() {
+  if (state.currentSubgoal >= state.subgoals.length) return;
+  const sg = state.subgoals[state.currentSubgoal];
+  let done = false;
+  if (sg === 'pickup_key' && state.hasKey) done = true;
+  if (sg === 'open_door' && state.doorOpen) done = true;
+  if (sg === 'reach_goal' && state.agentPos[0]===state.goalPos[0] && state.agentPos[1]===state.goalPos[1]) done = true;
+  if (sg === 'goto_key' && state.agentPos[0]===state.keyPos[0] && state.agentPos[1]===state.keyPos[1]) done = true;
+  if (sg === 'goto_door') {
+    const t = getTargetForSubgoal(sg);
+    if (t && state.agentPos[0]===t.pos[0] && state.agentPos[1]===t.pos[1]) done = true;
+  }
+  if (done) {
+    state.currentSubgoal++;
+    renderSubgoals();
+    if (state.currentSubgoal >= state.subgoals.length) {
+      state.done = true; state.success = true;
+    }
+  }
+}
+
+const ACTION_NAMES = ['повернуть←','повернуть→','вперёд','подобрать','—','открыть','—'];
+const DIR_ARROWS = ['→','↓','←','↑'];
+
+function doStep() {
+  if (state.done) return;
+  const action = selectAction();
+  // Execute
+  if (action === 0) state.agentDir = (state.agentDir+3)%4;
+  else if (action === 1) state.agentDir = (state.agentDir+1)%4;
+  else if (action === 2) {
+    const [dr,dc] = [[0,1],[1,0],[0,-1],[-1,0]][state.agentDir];
+    const nr=state.agentPos[0]+dr, nc=state.agentPos[1]+dc;
+    if (nr>=0&&nr<SIZE&&nc>=0&&nc<SIZE && !isWall(nr,nc)) {
+      state.agentPos = [nr,nc];
+    }
+  } else if (action === 3) {
+    if (state.agentPos[0]===state.keyPos[0]&&state.agentPos[1]===state.keyPos[1]&&!state.hasKey) {
+      state.hasKey = true; state.keyPicked = true;
+    }
+  } else if (action === 5) {
+    const [dr,dc] = [[0,1],[1,0],[0,-1],[-1,0]][state.agentDir];
+    const fr=state.agentPos[0]+dr, fc=state.agentPos[1]+dc;
+    if (fr===state.doorPos[0]&&fc===state.doorPos[1]&&state.hasKey&&!state.doorOpen) {
+      state.doorOpen = true;
+    }
+  }
+
+  state.steps++;
+  state.trail.push([...state.agentPos]);
+  document.getElementById('actionVal').textContent = ACTION_NAMES[action] || '—';
+  checkSubgoalDone();
+  if (state.steps >= 200) { state.done = true; }
+  updateUI(); draw();
+}
+
+// === Drawing ===
+
+const COLORS = {
+  bg: '#0f172a', wall: '#666666', floor: '#1a1a2e', grid: '#334155',
+  key: '#ffd700', doorLocked: '#8B4513', doorOpen: '#654321',
+  goal: '#00ff88', agent: '#ff4444', trail: 'rgba(96,165,250,0.15)'
+};
+
+function draw() {
+  ctx.fillStyle = COLORS.bg;
+  ctx.fillRect(0, 0, GRID*CELL, GRID*CELL);
+
+  // Grid lines
+  ctx.strokeStyle = COLORS.grid; ctx.lineWidth = 0.5;
+  for (let i = 0; i <= GRID; i++) {
+    ctx.beginPath(); ctx.moveTo(i*CELL,0); ctx.lineTo(i*CELL,GRID*CELL); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,i*CELL); ctx.lineTo(GRID*CELL,i*CELL); ctx.stroke();
+  }
+
+  // Floor (inner cells)
+  for (let r = 1; r < GRID-1; r++) for (let c = 1; c < GRID-1; c++) {
+    ctx.fillStyle = COLORS.floor;
+    ctx.fillRect(c*CELL+1, r*CELL+1, CELL-2, CELL-2);
+  }
+
+  // Border walls
+  for (let i = 0; i < GRID; i++) {
+    drawWall(0,i); drawWall(GRID-1,i); drawWall(i,0); drawWall(i,GRID-1);
+  }
+
+  // Inner walls
+  for (const wc of state.wallCols) drawWall(state.wallRow+1, wc+1);
+
+  // Trail
+  if (state.trail.length > 1) {
+    ctx.strokeStyle = 'rgba(96,165,250,0.3)'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo((state.trail[0][1]+1)*CELL+CELL/2, (state.trail[0][0]+1)*CELL+CELL/2);
+    for (let i = 1; i < state.trail.length; i++) {
+      ctx.lineTo((state.trail[i][1]+1)*CELL+CELL/2, (state.trail[i][0]+1)*CELL+CELL/2);
+    }
+    ctx.stroke();
+  }
+
+  // Goal
+  drawGoal(state.goalPos[0]+1, state.goalPos[1]+1);
+
+  // Door
+  drawDoor(state.doorPos[0]+1, state.doorPos[1]+1, state.doorOpen);
+
+  // Key
+  if (!state.keyPicked) drawKey(state.keyPos[0]+1, state.keyPos[1]+1);
+
+  // Agent
+  drawAgent(state.agentPos[0]+1, state.agentPos[1]+1, state.agentDir);
+}
+
+function drawWall(r,c) {
+  ctx.fillStyle = COLORS.wall;
+  ctx.fillRect(c*CELL+1, r*CELL+1, CELL-2, CELL-2);
+}
+
+function drawKey(r,c) {
+  const cx = c*CELL+CELL/2, cy = r*CELL+CELL/2;
+  ctx.fillStyle = COLORS.key; ctx.font = `${CELL*0.6}px sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('★', cx, cy);
+}
+
+function drawDoor(r,c,open) {
+  ctx.fillStyle = open ? COLORS.doorOpen : COLORS.doorLocked;
+  if (open) ctx.globalAlpha = 0.4;
+  ctx.fillRect(c*CELL+2, r*CELL+2, CELL-4, CELL-4);
+  ctx.globalAlpha = 1;
+  if (!open) {
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+    ctx.strokeRect(c*CELL+4, r*CELL+4, CELL-8, CELL-8);
+  }
+}
+
+function drawGoal(r,c) {
+  const cx = c*CELL+CELL/2, cy = r*CELL+CELL/2;
+  ctx.fillStyle = COLORS.goal; ctx.font = `${CELL*0.6}px sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('◆', cx, cy);
+}
+
+function drawAgent(r,c,dir) {
+  const cx = c*CELL+CELL/2, cy = r*CELL+CELL/2, s = CELL*0.35;
+  ctx.fillStyle = COLORS.agent;
+  ctx.beginPath();
+  const angles = [0, Math.PI/2, Math.PI, -Math.PI/2]; // right, down, left, up
+  const a = angles[dir];
+  ctx.moveTo(cx + Math.cos(a)*s, cy + Math.sin(a)*s);
+  ctx.lineTo(cx + Math.cos(a+2.4)*s*0.7, cy + Math.sin(a+2.4)*s*0.7);
+  ctx.lineTo(cx + Math.cos(a-2.4)*s*0.7, cy + Math.sin(a-2.4)*s*0.7);
+  ctx.closePath(); ctx.fill();
+
+  // Inventory
+  if (state.hasKey) {
+    ctx.fillStyle = COLORS.key; ctx.font = `${CELL*0.25}px sans-serif`;
+    ctx.fillText('★', cx+s*0.5, cy-s*0.5);
+  }
+}
+
+function updateUI() {
+  document.getElementById('stepVal').textContent = state.steps;
+  document.getElementById('invVal').textContent = state.hasKey ? 'ключ ★' : 'пусто';
+  const statusEl = document.getElementById('statusVal');
+  if (state.done) {
+    statusEl.textContent = state.success ? 'успех!' : 'не выполнено';
+    statusEl.className = 'stat-value ' + (state.success ? 'pass' : 'fail');
+  } else if (state.currentSubgoal < state.subgoals.length) {
+    const sg = state.subgoals[state.currentSubgoal];
+    statusEl.textContent = SUBGOAL_NAMES[sg] || sg;
+    statusEl.className = 'stat-value';
+  }
+  renderSubgoals();
+}
+
+// === Controls ===
+
+function playPause() {
+  playing = !playing;
+  document.getElementById('playBtn').textContent = playing ? 'Пауза' : 'Запустить';
+  if (playing) timer = setInterval(() => { if (!state.done) doStep(); else { playing=false; document.getElementById('playBtn').textContent='Запустить'; clearInterval(timer); } }, speed);
+  else clearInterval(timer);
+}
+
+function stepOnce() { if (!state.done) doStep(); }
+function resetEpisode() { playing=false; clearInterval(timer); document.getElementById('playBtn').textContent='Запустить'; resetState(); }
+function randomLayout() { layoutSeed = Math.floor(Math.random()*10000); resetEpisode(); }
+function updateSpeed() { speed = parseInt(document.getElementById('speedSel').value); if(playing){clearInterval(timer);timer=setInterval(()=>{if(!state.done)doStep();else{playing=false;clearInterval(timer);}},speed);} }
+
+function setInstruction(text) {
+  document.getElementById('instrText').textContent = text;
+  resetEpisode();
+}
+
+// Init
+resetState();
+</script>
+</body>
+</html>
