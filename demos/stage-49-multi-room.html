@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 49: Multi-Room навигация</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0e17; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; }
+.container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+h1 { color: #60a5fa; font-size: 1.8em; margin-bottom: 8px; }
+.subtitle { color: #94a3b8; font-size: 1.1em; margin-bottom: 24px; }
+.gate { display: inline-block; background: #065f46; color: #34d399; padding: 4px 12px;
+        border-radius: 4px; font-weight: bold; margin-left: 12px; }
+.main-area { display: flex; gap: 24px; flex-wrap: wrap; }
+.canvas-panel { flex: 1; min-width: 400px; }
+.info-panel { width: 320px; }
+canvas { background: #0f172a; border: 2px solid #1e293b; border-radius: 8px; display: block; }
+.controls { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+.btn { background: #1e293b; color: #60a5fa; border: 1px solid #334155; padding: 8px 16px;
+       border-radius: 6px; cursor: pointer; font-size: 0.95em; transition: all 0.15s; }
+.btn:hover { background: #334155; }
+.btn.active { background: #1e40af; border-color: #60a5fa; }
+.speed-label { color: #94a3b8; font-size: 0.9em; margin-left: 8px; }
+.card { background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+.card h3 { color: #60a5fa; font-size: 1.05em; margin-bottom: 8px; }
+.stat { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #1e293b; }
+.stat:last-child { border-bottom: none; }
+.stat-label { color: #94a3b8; }
+.stat-value { color: #e2e8f0; font-weight: 600; }
+.stat-value.pass { color: #34d399; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.85em; color: #94a3b8; }
+.legend-color { width: 16px; height: 16px; border-radius: 3px; }
+.episode-list { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.ep-btn { background: #1e293b; color: #94a3b8; border: 1px solid #334155; padding: 6px 10px;
+          border-radius: 4px; cursor: pointer; font-size: 0.85em; }
+.ep-btn.active { background: #1e40af; color: #60a5fa; border-color: #60a5fa; }
+.action-display { background: #1e293b; padding: 8px 12px; border-radius: 6px; margin-top: 8px;
+                  text-align: center; font-size: 1.1em; color: #fbbf24; min-height: 40px; }
+.explain { background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 16px;
+           margin-top: 24px; line-height: 1.6; }
+.explain h3 { color: #60a5fa; margin-bottom: 8px; }
+.explain p { color: #94a3b8; margin-bottom: 8px; }
+.results-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+.results-table th, .results-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #1e293b; }
+.results-table th { color: #60a5fa; font-size: 0.9em; }
+.results-table td { color: #e2e8f0; }
+.results-table .pass { color: #34d399; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Этап 49: Multi-Room навигация <span class="gate">PASS — 100%</span></h1>
+  <p class="subtitle">BFS-навигация через 3 комнаты с автоматическим открыванием дверей. Gate: ≥60% на 200 случайных раскладок.</p>
+
+  <div class="episode-list" id="episodeList"></div>
+
+  <div class="main-area">
+    <div class="canvas-panel">
+      <canvas id="grid" width="600" height="600"></canvas>
+      <div class="controls">
+        <button class="btn" id="btnPlay" onclick="togglePlay()">▶ Запустить</button>
+        <button class="btn" id="btnStep" onclick="stepForward()">▸ Шаг</button>
+        <button class="btn" id="btnReset" onclick="resetEpisode()">⟲ Сброс</button>
+        <span class="speed-label">Скорость:</span>
+        <button class="btn" onclick="setSpeed(0.5)">x0.5</button>
+        <button class="btn active" id="spd1" onclick="setSpeed(1)">x1</button>
+        <button class="btn" onclick="setSpeed(2)">x2</button>
+        <button class="btn" onclick="setSpeed(5)">x5</button>
+      </div>
+      <div class="action-display" id="actionDisplay">Нажмите "Запустить" для начала</div>
+    </div>
+
+    <div class="info-panel">
+      <div class="card">
+        <h3>Текущий эпизод</h3>
+        <div class="stat"><span class="stat-label">Шаг</span><span class="stat-value" id="stepNum">0 / 0</span></div>
+        <div class="stat"><span class="stat-label">Позиция</span><span class="stat-value" id="agentPos">—</span></div>
+        <div class="stat"><span class="stat-label">Награда</span><span class="stat-value" id="reward">0</span></div>
+        <div class="stat"><span class="stat-label">Статус</span><span class="stat-value" id="status">ожидание</span></div>
+        <div class="stat"><span class="stat-label">Дверей открыто</span><span class="stat-value" id="doorsOpened">0</span></div>
+      </div>
+
+      <div class="card">
+        <h3>Обозначения</h3>
+        <div class="legend">
+          <div class="legend-item"><div class="legend-color" style="background:#666"></div>Стена</div>
+          <div class="legend-item"><div class="legend-color" style="background:#8B4513"></div>Дверь</div>
+          <div class="legend-item"><div class="legend-color" style="background:#654321;opacity:0.6"></div>Открыта</div>
+          <div class="legend-item"><div class="legend-color" style="background:#00ff88"></div>Цель</div>
+          <div class="legend-item"><div class="legend-color" style="background:#ff4444"></div>Агент</div>
+          <div class="legend-item"><div class="legend-color" style="background:rgba(96,165,250,0.3)"></div>След</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Результаты (200 раскладок)</h3>
+        <table class="results-table">
+          <tr><th>Эксп.</th><th>Метрика</th><th>Результат</th><th>Gate</th></tr>
+          <tr><td>108a</td><td>BFS пути</td><td>100%</td><td class="pass">PASS</td></tr>
+          <tr><td>108b</td><td>Успех</td><td class="pass">100%</td><td class="pass">PASS</td></tr>
+          <tr><td>108c</td><td>Ср. шаги</td><td>16.3</td><td class="pass">PASS</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="explain">
+    <h3>Как это работает</h3>
+    <p><strong>Задача:</strong> агент находится в среде из 3 случайных комнат, соединённых закрытыми дверями. Нужно пройти через все комнаты и достичь цели (зелёный ромб).</p>
+    <p><strong>Алгоритм:</strong> BFS (поиск в ширину) строит кратчайший путь от агента до цели, считая закрытые двери проходимыми. Агент следует по пути. Когда перед ним закрытая дверь — он открывает её (toggle) и продолжает движение.</p>
+    <p><strong>Почему это важно:</strong> этот этап закрывает Milestone M1 «Генерализация» — агент навигирует в произвольных многокомнатных средах без обучения, используя только BFS-планирование и реактивное взаимодействие с объектами. 100% успех на 200 случайных раскладок.</p>
+  </div>
+</div>
+
+<script>
+const EPISODES = [{"seed":0,"w":25,"h":25,"walls":[[6,20],[6,21],[6,22],[6,23],[6,24],[7,20],[7,24],[8,20],[8,24],[9,20],[9,24],[10,19],[10,20],[10,21],[10,23],[10,24],[11,19],[11,24],[12,19],[12,24],[13,19],[13,24],[14,19],[14,20],[14,22],[14,23],[14,24],[15,19],[15,23],[16,19],[16,23],[17,19],[17,20],[17,21],[17,22],[17,23]],"doors":[[10,22,1],[14,21,1]],"goal":[9,22],"steps":[[15,20,1,-1],[15,20,0,0],[15,21,0,2],[15,21,3,0],[15,21,3,5],[14,21,3,2],[13,21,3,2],[13,21,0,1],[13,22,0,2],[13,22,3,0],[12,22,3,2],[11,22,3,2],[11,22,3,5],[10,22,3,2],[9,22,3,2]],"success":true},{"seed":3,"w":25,"h":25,"walls":[[1,18],[1,19],[1,20],[1,21],[2,18],[2,21],[3,18],[3,21],[4,11],[4,12],[4,13],[4,14],[4,15],[4,16],[4,17],[4,18],[4,20],[4,21],[5,11],[5,16],[5,20],[6,11],[6,16],[6,20],[7,11],[7,20],[8,11],[8,16],[8,17],[8,18],[8,19],[8,20],[9,11],[9,12],[9,13],[9,14],[9,15],[9,16]],"doors":[[4,19,1],[7,16,1]],"goal":[5,14],"steps":[[3,20,3,-1],[3,20,2,0],[3,19,2,2],[3,19,1,0],[3,19,1,5],[4,19,1,2],[5,19,1,2],[6,19,1,2],[7,19,1,2],[7,19,2,1],[7,18,2,2],[7,17,2,2],[7,17,2,5],[7,16,2,2],[7,15,2,2],[7,14,2,2],[7,14,3,1],[6,14,3,2],[5,14,3,2]],"success":true},{"seed":7,"w":25,"h":25,"walls":[[17,13],[17,14],[17,15],[17,16],[17,17],[17,18],[17,19],[17,20],[17,21],[17,22],[17,23],[17,24],[18,13],[18,21],[18,24],[19,13],[19,18],[19,21],[19,24],[20,13],[20,14],[20,15],[20,16],[20,17],[20,18],[20,24],[21,18],[21,21],[21,24],[22,18],[22,19],[22,20],[22,21],[22,22],[22,23],[22,24]],"doors":[[18,18,1],[20,21,1]],"goal":[19,23],"steps":[[19,16,2,-1],[19,16,3,1],[19,16,0,1],[19,17,0,2],[19,17,3,0],[18,17,3,2],[18,17,0,1],[18,17,0,5],[18,18,0,2],[18,19,0,2],[18,20,0,2],[18,20,1,1],[19,20,1,2],[20,20,1,2],[20,20,0,0],[20,20,0,5],[20,21,0,2],[20,22,0,2],[20,23,0,2],[20,23,3,0],[19,23,3,2]],"success":true},{"seed":15,"w":25,"h":25,"walls":[[7,5],[7,6],[7,7],[7,8],[8,5],[8,8],[8,11],[8,12],[8,13],[8,14],[9,5],[9,8],[9,11],[9,14],[10,5],[10,6],[10,8],[10,9],[10,10],[10,11],[10,14],[11,6],[11,11],[11,14],[12,6],[12,14],[13,6],[13,7],[13,8],[13,9],[13,10],[13,11],[13,12],[13,13],[13,14]],"doors":[[10,7,1],[12,11,1]],"goal":[10,12],"steps":[[9,7,3,-1],[9,7,0,1],[9,7,1,1],[9,7,1,5],[10,7,1,2],[11,7,1,2],[11,7,0,0],[11,8,0,2],[11,9,0,2],[11,10,0,2],[11,10,1,1],[12,10,1,2],[12,10,0,0],[12,10,0,5],[12,11,0,2],[12,12,0,2],[12,12,3,0],[11,12,3,2],[10,12,3,2]],"success":true},{"seed":42,"w":25,"h":25,"walls":[[15,9],[15,10],[15,11],[15,12],[15,13],[16,9],[16,13],[17,2],[17,3],[17,4],[17,5],[17,6],[17,9],[17,13],[18,2],[18,6],[18,7],[18,8],[18,9],[18,11],[18,12],[18,13],[19,2],[19,11],[20,2],[20,6],[20,11],[21,2],[21,3],[21,4],[21,5],[21,6],[21,11],[22,6],[22,11],[23,6],[23,7],[23,8],[23,9],[23,10],[23,11]],"doors":[[18,10,1],[19,6,1]],"goal":[16,11],"steps":[[19,5,3,-1],[19,5,0,1],[19,5,0,5],[19,6,0,2],[19,7,0,2],[19,8,0,2],[19,9,0,2],[19,10,0,2],[19,10,3,0],[19,10,3,5],[18,10,3,2],[17,10,3,2],[17,10,0,1],[17,11,0,2],[17,11,3,0],[16,11,3,2]],"success":true},{"seed":99,"w":25,"h":25,"walls":[[3,6],[3,7],[3,8],[3,9],[3,10],[3,11],[4,6],[4,11],[5,6],[5,11],[6,6],[6,11],[7,6],[7,8],[7,9],[7,10],[7,11],[8,6],[8,9],[9,6],[9,9],[10,6],[10,9],[11,4],[11,5],[11,6],[11,8],[11,9],[12,4],[12,9],[13,4],[13,9],[14,4],[14,9],[15,4],[15,9],[16,4],[16,5],[16,6],[16,7],[16,8],[16,9]],"doors":[[7,7,1],[11,7,1]],"goal":[6,8],"steps":[[15,6,3,-1],[15,6,0,1],[15,7,0,2],[15,7,3,0],[14,7,3,2],[13,7,3,2],[12,7,3,2],[12,7,3,5],[11,7,3,2],[10,7,3,2],[9,7,3,2],[8,7,3,2],[8,7,3,5],[7,7,3,2],[6,7,3,2],[6,7,0,1],[6,8,0,2]],"success":true}];
+
+const ACT_NAMES = ['повернуть влево', 'повернуть вправо', 'вперёд', 'подобрать', 'бросить', 'открыть дверь', 'стоп'];
+const DIR_ARROWS = ['▶', '▼', '◀', '▲'];
+const DIR_ANGLES = [0, Math.PI/2, Math.PI, -Math.PI/2];
+
+let currentEp = 0;
+let currentStep = 0;
+let playing = false;
+let speed = 1;
+let animId = null;
+let lastTime = 0;
+let trail = [];
+let openedDoors = new Set();
+
+const canvas = document.getElementById('grid');
+const ctx = canvas.getContext('2d');
+
+function initEpisodeButtons() {
+  const list = document.getElementById('episodeList');
+  EPISODES.forEach((ep, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'ep-btn' + (i === 0 ? ' active' : '');
+    btn.textContent = `Раскладка ${ep.seed} (${ep.steps.length - 1} шагов)`;
+    btn.onclick = () => selectEpisode(i);
+    list.appendChild(btn);
+  });
+}
+
+function selectEpisode(idx) {
+  currentEp = idx;
+  document.querySelectorAll('.ep-btn').forEach((b, i) => b.className = 'ep-btn' + (i === idx ? ' active' : ''));
+  resetEpisode();
+}
+
+function resetEpisode() {
+  stopPlay();
+  currentStep = 0;
+  trail = [];
+  openedDoors = new Set();
+  draw();
+  updateInfo();
+  document.getElementById('actionDisplay').textContent = 'Нажмите "Запустить" для начала';
+}
+
+function togglePlay() {
+  if (playing) { stopPlay(); } else { startPlay(); }
+}
+
+function startPlay() {
+  playing = true;
+  document.getElementById('btnPlay').textContent = '⏸ Пауза';
+  document.getElementById('btnPlay').classList.add('active');
+  lastTime = performance.now();
+  animLoop();
+}
+
+function stopPlay() {
+  playing = false;
+  document.getElementById('btnPlay').textContent = '▶ Запустить';
+  document.getElementById('btnPlay').classList.remove('active');
+  if (animId) { cancelAnimationFrame(animId); animId = null; }
+}
+
+function animLoop() {
+  if (!playing) return;
+  const now = performance.now();
+  const interval = 400 / speed;
+  if (now - lastTime >= interval) {
+    lastTime = now;
+    if (!stepForward()) { stopPlay(); return; }
+  }
+  animId = requestAnimationFrame(animLoop);
+}
+
+function stepForward() {
+  const ep = EPISODES[currentEp];
+  if (currentStep >= ep.steps.length - 1) return false;
+  const s = ep.steps[currentStep];
+  trail.push([s[0], s[1]]);
+  currentStep++;
+  // Track opened doors
+  const ns = ep.steps[currentStep];
+  if (ns[3] === 5) openedDoors.add(currentStep);
+  draw();
+  updateInfo();
+  return true;
+}
+
+function setSpeed(s) {
+  speed = s;
+  document.querySelectorAll('.controls .btn').forEach(b => {
+    if (b.textContent.startsWith('x')) b.classList.remove('active');
+  });
+  event.target.classList.add('active');
+}
+
+function updateInfo() {
+  const ep = EPISODES[currentEp];
+  const s = ep.steps[currentStep];
+  document.getElementById('stepNum').textContent = `${currentStep} / ${ep.steps.length - 1}`;
+  document.getElementById('agentPos').textContent = `(${s[0]}, ${s[1]})`;
+  const reward = currentStep === ep.steps.length - 1 && ep.success ? '✓ достигнута' : '0';
+  document.getElementById('reward').textContent = reward;
+  document.getElementById('doorsOpened').textContent = openedDoors.size;
+
+  let statusText = 'навигация';
+  if (currentStep === 0) statusText = 'начало';
+  else if (currentStep === ep.steps.length - 1 && ep.success) statusText = 'цель достигнута!';
+  else if (s[3] === 5) statusText = 'открывает дверь';
+  else if (s[3] === 0 || s[3] === 1) statusText = 'поворачивает';
+  else if (s[3] === 2) statusText = 'идёт вперёд';
+  document.getElementById('status').textContent = statusText;
+
+  if (currentStep > 0 && s[3] >= 0) {
+    document.getElementById('actionDisplay').textContent = `Шаг ${currentStep}: ${ACT_NAMES[s[3]]} ${DIR_ARROWS[s[2]]}`;
+  }
+}
+
+function getBounds(ep) {
+  let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+  ep.walls.forEach(([r, c]) => { minR = Math.min(minR, r); maxR = Math.max(maxR, r); minC = Math.min(minC, c); maxC = Math.max(maxC, c); });
+  ep.doors.forEach(([r, c]) => { minR = Math.min(minR, r); maxR = Math.max(maxR, r); minC = Math.min(minC, c); maxC = Math.max(maxC, c); });
+  minR = Math.min(minR, ep.goal[0]); maxR = Math.max(maxR, ep.goal[0]);
+  minC = Math.min(minC, ep.goal[1]); maxC = Math.max(maxC, ep.goal[1]);
+  ep.steps.forEach(([r, c]) => { minR = Math.min(minR, r); maxR = Math.max(maxR, r); minC = Math.min(minC, c); maxC = Math.max(maxC, c); });
+  return { minR: minR - 1, maxR: maxR + 1, minC: minC - 1, maxC: maxC + 1 };
+}
+
+function draw() {
+  const ep = EPISODES[currentEp];
+  const bounds = getBounds(ep);
+  const rows = bounds.maxR - bounds.minR + 1;
+  const cols = bounds.maxC - bounds.minC + 1;
+  const cellSize = Math.min(Math.floor(canvas.width / cols), Math.floor(canvas.height / rows), 50);
+  const offX = Math.floor((canvas.width - cols * cellSize) / 2);
+  const offY = Math.floor((canvas.height - rows * cellSize) / 2);
+
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  function toPixel(r, c) {
+    return [offX + (c - bounds.minC) * cellSize, offY + (r - bounds.minR) * cellSize];
+  }
+
+  // Draw grid lines
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 0.5;
+  for (let r = 0; r <= rows; r++) {
+    ctx.beginPath();
+    ctx.moveTo(offX, offY + r * cellSize);
+    ctx.lineTo(offX + cols * cellSize, offY + r * cellSize);
+    ctx.stroke();
+  }
+  for (let c = 0; c <= cols; c++) {
+    ctx.beginPath();
+    ctx.moveTo(offX + c * cellSize, offY);
+    ctx.lineTo(offX + c * cellSize, offY + rows * cellSize);
+    ctx.stroke();
+  }
+
+  // Floor cells
+  const wallSet = new Set(ep.walls.map(([r, c]) => `${r},${c}`));
+  for (let r = bounds.minR; r <= bounds.maxR; r++) {
+    for (let c = bounds.minC; c <= bounds.maxC; c++) {
+      if (!wallSet.has(`${r},${c}`)) {
+        const [x, y] = toPixel(r, c);
+        ctx.fillStyle = '#111827';
+        ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+      }
+    }
+  }
+
+  // Walls
+  ep.walls.forEach(([r, c]) => {
+    const [x, y] = toPixel(r, c);
+    ctx.fillStyle = '#666666';
+    ctx.fillRect(x, y, cellSize, cellSize);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, cellSize, cellSize);
+  });
+
+  // Trail
+  if (trail.length > 1) {
+    ctx.strokeStyle = 'rgba(96, 165, 250, 0.4)';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    const [tx0, ty0] = toPixel(trail[0][0], trail[0][1]);
+    ctx.moveTo(tx0 + cellSize / 2, ty0 + cellSize / 2);
+    trail.forEach(([r, c]) => {
+      const [tx, ty] = toPixel(r, c);
+      ctx.lineTo(tx + cellSize / 2, ty + cellSize / 2);
+    });
+    ctx.stroke();
+  }
+  trail.forEach(([r, c], i) => {
+    const [tx, ty] = toPixel(r, c);
+    ctx.fillStyle = `rgba(96, 165, 250, ${0.1 + 0.15 * (i / trail.length)})`;
+    ctx.beginPath();
+    ctx.arc(tx + cellSize / 2, ty + cellSize / 2, cellSize * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Doors
+  ep.doors.forEach(([r, c, state], di) => {
+    const [x, y] = toPixel(r, c);
+    // Check if door was toggled (opened) by checking steps up to currentStep
+    let isOpen = false;
+    for (let si = 1; si <= currentStep; si++) {
+      const s = ep.steps[si];
+      if (s[3] === 5) { // toggle action
+        const prev = ep.steps[si - 1];
+        // Check if agent was adjacent to this door facing it
+        const dr = r - prev[0], dc = c - prev[1];
+        const facingDir = prev[2];
+        if ((facingDir === 0 && dr === 0 && dc === 1) ||
+            (facingDir === 1 && dr === 1 && dc === 0) ||
+            (facingDir === 2 && dr === 0 && dc === -1) ||
+            (facingDir === 3 && dr === -1 && dc === 0)) {
+          isOpen = !isOpen;
+        }
+      }
+    }
+    if (isOpen) {
+      ctx.fillStyle = 'rgba(101, 67, 33, 0.3)';
+      ctx.fillRect(x + 2, y + 2, cellSize - 4, cellSize - 4);
+      ctx.strokeStyle = '#654321';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 3, y + 3, cellSize - 6, cellSize - 6);
+    } else {
+      ctx.fillStyle = '#8B4513';
+      ctx.fillRect(x + 1, y + 1, cellSize - 2, cellSize - 2);
+      ctx.strokeStyle = '#A0522D';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 2, y + 2, cellSize - 4, cellSize - 4);
+      // Door handle
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath();
+      ctx.arc(x + cellSize * 0.7, y + cellSize / 2, cellSize * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  // Goal
+  const [gx, gy] = toPixel(ep.goal[0], ep.goal[1]);
+  ctx.fillStyle = '#00ff88';
+  ctx.beginPath();
+  const cx = gx + cellSize / 2, cy = gy + cellSize / 2, sz = cellSize * 0.35;
+  ctx.moveTo(cx, cy - sz);
+  ctx.lineTo(cx + sz, cy);
+  ctx.lineTo(cx, cy + sz);
+  ctx.lineTo(cx - sz, cy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Agent
+  const s = ep.steps[currentStep];
+  const [ax, ay] = toPixel(s[0], s[1]);
+  const acx = ax + cellSize / 2, acy = ay + cellSize / 2;
+  const aSize = cellSize * 0.35;
+  const angle = DIR_ANGLES[s[2]];
+
+  ctx.save();
+  ctx.translate(acx, acy);
+  ctx.rotate(angle);
+  ctx.fillStyle = '#ff4444';
+  ctx.beginPath();
+  ctx.moveTo(aSize, 0);
+  ctx.lineTo(-aSize * 0.7, -aSize * 0.7);
+  ctx.lineTo(-aSize * 0.3, 0);
+  ctx.lineTo(-aSize * 0.7, aSize * 0.7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#ff6666';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+initEpisodeButtons();
+resetEpisode();
+</script>
+</body>
+</html>
