@@ -213,56 +213,117 @@ class SubgoalNavigator:
         self.n_actions = n_actions
         self.epsilon = epsilon
         self.min_confidence = min_confidence
-        # Trace segments per subgoal: list of (symbolic_state, action)
+        # Target positions per subgoal: (row, col, special_action_or_None)
+        self._target_positions: dict[str, tuple[int, int, int | None]] = {}
+        # Trace segments (kept for compatibility)
         self._trace_segments: dict[str, list[tuple[SymbolicState, int]]] = {}
 
     def set_trace_segments(self, segments: dict[str, list[tuple[SymbolicState, int]]]) -> None:
         """Set trace segments for each subgoal."""
         self._trace_segments = segments
 
+    def set_target_positions(self, targets: dict[str, tuple[int, int, int | None]]) -> None:
+        """Set target positions for subgoal navigation.
+
+        targets: dict mapping subgoal name → (target_row, target_col, special_action)
+        special_action: action to execute at target (3=pickup, 5=toggle, None=just arrive)
+        """
+        self._target_positions = targets
+
     def select(self, current_state: torch.Tensor, subgoal: Subgoal,
                current_obs: np.ndarray | None = None) -> int:
-        """Select action via symbolic trace matching or SDM fallback."""
+        """Select action via position-based navigation toward subgoal target."""
         # Epsilon exploration
         if self.epsilon > 0 and torch.rand(1).item() < self.epsilon:
             return int(torch.randint(0, self.n_actions, (1,)).item())
 
-        # Strategy 1: symbolic trace-based replay
+        # Strategy 1: position-based navigation using subgoal target
         if current_obs is not None:
-            segment = self._trace_segments.get(subgoal.name, [])
-            if segment:
+            target_info = self._target_positions.get(subgoal.name)
+            if target_info is not None:
                 current_sym = _extract_symbolic(current_obs)
-                best_dist = float('inf')
-                best_action = -1
-                for trace_sym, trace_action in segment:
-                    dist = current_sym.distance(trace_sym)
-                    if dist < best_dist:
-                        best_dist = dist
-                        best_action = trace_action
-                if best_action >= 0 and best_dist <= 4:
-                    return best_action
+                target_row, target_col, special_action = target_info
 
-        # Strategy 2: SDM prediction toward target state
+                # At target position — execute special action
+                if current_sym.agent_row == target_row and current_sym.agent_col == target_col:
+                    if special_action == 5:
+                        # Toggle: must face the door first
+                        door_pos = self._find_door(current_obs)
+                        if door_pos is not None:
+                            dr, dc = door_pos[0] - target_row, door_pos[1] - target_col
+                            need_dir = self._dir_from_delta(dr, dc)
+                            if need_dir is not None and current_sym.agent_dir != need_dir:
+                                diff = (need_dir - current_sym.agent_dir) % 4
+                                return 1 if diff <= 2 else 0
+                        return 5  # toggle
+                    if special_action is not None:
+                        return special_action
+                    return int(torch.randint(0, self.n_actions, (1,)).item())
+
+                # Navigate toward target: turn to face, then forward
+                return self._navigate_toward(current_sym, target_row, target_col)
+
+        # Strategy 2: SDM prediction (fallback)
         target = subgoal.target_state
         best_sim = -1.0
         best_action = -1
-        any_confident = False
 
         for a_idx in range(self.n_actions):
             action_vsa = self.cb.action(a_idx)
             pred_next, conf = self.sdm.read_next(current_state, action_vsa)
             if conf < self.min_confidence:
                 continue
-            any_confident = True
             sim = self.cb.similarity(pred_next, target)
             if sim > best_sim:
                 best_sim = sim
                 best_action = a_idx
 
-        if not any_confident or best_action < 0:
+        if best_action < 0:
             return int(torch.randint(0, self.n_actions, (1,)).item())
-
         return best_action
+
+    def _find_door(self, obs: np.ndarray) -> tuple[int, int] | None:
+        """Find door position in observation."""
+        for r in range(obs.shape[0]):
+            for c in range(obs.shape[1]):
+                if int(obs[r, c, 0]) == self.OBJ_DOOR:
+                    return (r, c)
+        return None
+
+    @staticmethod
+    def _dir_from_delta(dr: int, dc: int) -> int | None:
+        """Convert (dr, dc) delta to direction index."""
+        if dc > 0:
+            return 0  # right
+        if dr > 0:
+            return 1  # down
+        if dc < 0:
+            return 2  # left
+        if dr < 0:
+            return 3  # up
+        return None
+
+    def _navigate_toward(self, current: SymbolicState, target_r: int, target_c: int) -> int:
+        """Turn to face target, then move forward.
+
+        Direction mapping: 0=right(+col), 1=down(+row), 2=left(-col), 3=up(-row)
+        Actions: 0=turn_left, 1=turn_right, 2=forward
+        """
+        dr = target_r - current.agent_row
+        dc = target_c - current.agent_col
+
+        # Determine desired direction
+        if abs(dr) >= abs(dc):
+            want_dir = 1 if dr > 0 else 3  # down or up
+        else:
+            want_dir = 0 if dc > 0 else 2  # right or left
+
+        if current.agent_dir == want_dir:
+            return 2  # forward
+
+        # Turn shortest way
+        diff = (want_dir - current.agent_dir) % 4
+        return 1 if diff <= 2 else 0  # right or left turn
 
     def is_achieved(self, obs: np.ndarray, subgoal: Subgoal) -> bool:
         """Check if subgoal is achieved in current observation."""
@@ -371,9 +432,9 @@ class SubgoalPlanningAgent(WorldModelAgent):
             subgoals = self.extractor.extract(best_trace)
             if subgoals:
                 self.plan = PlanGraph(subgoals)
-                # Segment trace by subgoal boundaries
-                segments = self._segment_trace(best_trace, subgoals)
-                self.navigator.set_trace_segments(segments)
+                # Extract target positions for each subgoal
+                targets = self._extract_target_positions(best_trace, subgoals)
+                self.navigator.set_target_positions(targets)
 
         # Fallback if no plan available
         if self.plan is None:
@@ -425,34 +486,32 @@ class SubgoalPlanningAgent(WorldModelAgent):
             return min(self._successful_traces, key=len)
         return self._successful_traces[-1]
 
-    def _segment_trace(self, trace: list[TraceStep],
-                       subgoals: list[Subgoal]) -> dict[str, list[tuple[SymbolicState, int]]]:
-        """Split trace into segments per subgoal using symbolic state matching.
+    def _extract_target_positions(self, trace: list[TraceStep],
+                                  subgoals: list[Subgoal]) -> dict[str, tuple[int, int, int | None]]:
+        """Extract target position and action for each subgoal from trace.
 
-        For each subgoal, find the trace steps leading up to its achievement.
-        Returns dict mapping subgoal name → list of (SymbolicState, action).
+        For each subgoal, find the trace step where it was achieved and extract:
+        - Target position: where the agent was when the subgoal was achieved
+        - Special action: the action used to achieve it (pickup=3, toggle=5, None)
+
+        For "open_door": target is one cell before the door (agent must face door).
         """
-        segments: dict[str, list[tuple[SymbolicState, int]]] = {}
+        targets: dict[str, tuple[int, int, int | None]] = {}
 
-        # Find boundary indices in trace (where each subgoal is achieved)
-        boundaries: list[int] = []
         for sg in subgoals:
-            for i, step in enumerate(trace):
+            for step in trace:
                 if self.navigator.is_achieved(step.obs_after, sg):
-                    boundaries.append(i)
+                    sym_before = _extract_symbolic(step.obs_before)
+                    if sg.name == "pickup_key":
+                        # Target = key position (where agent was when picking up)
+                        targets[sg.name] = (sym_before.agent_row, sym_before.agent_col, 3)
+                    elif sg.name == "open_door":
+                        # Target = position before door (where agent was when toggling)
+                        targets[sg.name] = (sym_before.agent_row, sym_before.agent_col, 5)
+                    elif sg.name == "reach_goal":
+                        # Target = goal position (from obs_after)
+                        sym_after = _extract_symbolic(step.obs_after)
+                        targets[sg.name] = (sym_after.agent_row, sym_after.agent_col, None)
                     break
-            else:
-                boundaries.append(len(trace) - 1)
 
-        # Build segments with symbolic states
-        prev_boundary = 0
-        for sg_idx, sg in enumerate(subgoals):
-            end = boundaries[sg_idx]
-            segment_steps: list[tuple[SymbolicState, int]] = []
-            for i in range(prev_boundary, end + 1):
-                sym_state = _extract_symbolic(trace[i].obs_before)
-                segment_steps.append((sym_state, trace[i].action))
-            segments[sg.name] = segment_steps
-            prev_boundary = end + 1
-
-        return segments
+        return targets
