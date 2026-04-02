@@ -92,10 +92,10 @@ class SubgoalExtractor:
         """Detect symbolic events from observation changes."""
         events: list[tuple[str, str]] = []
 
-        # Pickup key: key present in obs_before, absent in obs_after
-        key_before = self._has_object(step.obs_before, self.OBJ_KEY)
-        key_after = self._has_object(step.obs_after, self.OBJ_KEY)
-        if key_before and not key_after:
+        # Pickup key: agent carrying key in obs_after but not in obs_before
+        carrying_before = self._agent_carrying(step.obs_before)
+        carrying_after = self._agent_carrying(step.obs_after)
+        if not carrying_before and carrying_after:
             events.append(("pickup_key", "symbolic"))
 
         # Open door: door locked in obs_before, open in obs_after
@@ -112,6 +112,14 @@ class SubgoalExtractor:
 
     def _has_object(self, obs: np.ndarray, obj_type: int) -> bool:
         return bool(np.any(obs[:, :, 0] == obj_type))
+
+    def _agent_carrying(self, obs: np.ndarray) -> bool:
+        """Check if agent is carrying an item (color channel = 5)."""
+        for r in range(obs.shape[0]):
+            for c in range(obs.shape[1]):
+                if int(obs[r, c, 0]) == self.OBJ_AGENT:
+                    return int(obs[r, c, 1]) == 5
+        return False
 
     def _door_locked(self, obs: np.ndarray) -> bool:
         door_mask = obs[:, :, 0] == self.OBJ_DOOR
@@ -328,7 +336,7 @@ class SubgoalNavigator:
     def is_achieved(self, obs: np.ndarray, subgoal: Subgoal) -> bool:
         """Check if subgoal is achieved in current observation."""
         if subgoal.name == "pickup_key":
-            return not self._key_visible(obs)
+            return self._agent_carrying_key(obs)
         elif subgoal.name == "open_door":
             return self._door_is_open(obs)
         elif subgoal.name == "reach_goal":
@@ -337,6 +345,14 @@ class SubgoalNavigator:
         # VSA fallback for unknown subgoals
         current_vsa = self.enc.encode(obs)
         return self.cb.similarity(current_vsa, subgoal.target_state) > 0.75
+
+    def _agent_carrying_key(self, obs: np.ndarray) -> bool:
+        """Check if agent is carrying a key (color channel = 5 at agent position)."""
+        for r in range(obs.shape[0]):
+            for c in range(obs.shape[1]):
+                if int(obs[r, c, 0]) == 10:  # agent
+                    return int(obs[r, c, 1]) == 5  # carrying indicator
+        return False
 
     def _key_visible(self, obs: np.ndarray) -> bool:
         return bool(np.any(obs[:, :, 0] == self.OBJ_KEY))
@@ -499,19 +515,31 @@ class SubgoalPlanningAgent(WorldModelAgent):
         targets: dict[str, tuple[int, int, int | None]] = {}
 
         for sg in subgoals:
+            if sg.name == "reach_goal":
+                # For reach_goal: find goal position from any trace step
+                for step in trace:
+                    goal_pos = self._find_goal_in_obs(step.obs_before)
+                    if goal_pos is not None:
+                        targets[sg.name] = (goal_pos[0], goal_pos[1], None)
+                        break
+                continue
+
             for step in trace:
                 if self.navigator.is_achieved(step.obs_after, sg):
                     sym_before = _extract_symbolic(step.obs_before)
                     if sg.name == "pickup_key":
-                        # Target = key position (where agent was when picking up)
                         targets[sg.name] = (sym_before.agent_row, sym_before.agent_col, 3)
                     elif sg.name == "open_door":
-                        # Target = position before door (where agent was when toggling)
                         targets[sg.name] = (sym_before.agent_row, sym_before.agent_col, 5)
-                    elif sg.name == "reach_goal":
-                        # Target = goal position (from obs_after)
-                        sym_after = _extract_symbolic(step.obs_after)
-                        targets[sg.name] = (sym_after.agent_row, sym_after.agent_col, None)
                     break
 
         return targets
+
+    @staticmethod
+    def _find_goal_in_obs(obs: np.ndarray) -> tuple[int, int] | None:
+        """Find goal position (type 8) in observation."""
+        for r in range(obs.shape[0]):
+            for c in range(obs.shape[1]):
+                if int(obs[r, c, 0]) == 8:
+                    return (r, c)
+        return None

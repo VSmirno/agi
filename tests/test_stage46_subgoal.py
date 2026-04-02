@@ -366,13 +366,16 @@ class TestSubgoalNavigator:
         assert action3 == 3, f"Expected pickup (3) at target, got {action3}"
 
     def test_is_achieved_pickup_key(self):
-        """Key not visible → pickup_key achieved."""
-        obs_with_key = _make_obs(agent_pos=(2, 2), key_pos=(2, 4))
-        obs_no_key = _make_obs(agent_pos=(2, 4), key_pos=None, has_key=True)
+        """Agent carrying key → pickup_key achieved."""
+        obs_no_carry = _make_obs(agent_pos=(2, 2), key_pos=(2, 4))
+        obs_carrying = _make_obs(agent_pos=(2, 4), key_pos=None, has_key=True)
+        obs_on_key_not_carrying = _make_obs(agent_pos=(2, 4), key_pos=(2, 4))
         dummy = torch.zeros(512)
         sg = Subgoal("pickup_key", dummy, dummy, "symbolic")
-        assert not self.nav.is_achieved(obs_with_key, sg)
-        assert self.nav.is_achieved(obs_no_key, sg)
+        assert not self.nav.is_achieved(obs_no_carry, sg)
+        assert self.nav.is_achieved(obs_carrying, sg)
+        # Standing on key but not carrying → NOT achieved
+        assert not self.nav.is_achieved(obs_on_key_not_carrying, sg)
 
     def test_is_achieved_open_door(self):
         """Door state=0 → open_door achieved."""
