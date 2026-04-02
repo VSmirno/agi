@@ -26,7 +26,6 @@ class WorldModelConfig:
     max_episode_steps: int = 200
     trace_decay: float = 0.9       # eligibility trace decay (lambda)
     trace_length: int = 30         # max trace length for backpropagation
-    novelty_bonus: float = 0.05    # intrinsic reward for novel states
 
 
 class VSACodebook:
@@ -337,11 +336,6 @@ class WorldModelAgent:
             return
         next_state = self.encoder.encode(obs)
         action_vsa = self.codebook.action(self._prev_action)
-
-        # Novelty bonus: if SDM has low confidence for this state, add intrinsic reward
-        _, conf = self.sdm.read_next(self._prev_state, action_vsa)
-        if conf < 0.05 and self.config.novelty_bonus > 0:
-            reward += self.config.novelty_bonus
 
         # Write immediate transition
         self.sdm.write(self._prev_state, action_vsa, next_state, reward)
