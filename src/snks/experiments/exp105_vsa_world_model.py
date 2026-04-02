@@ -250,8 +250,8 @@ def run_exp105c(n_episodes: int = 200, use_minigrid: bool = False) -> dict:
         epsilon=0.15,
         max_episode_steps=200,
         explore_episodes=explore_eps,
-        plan_depth=6,
-        beam_width=5,
+        plan_depth=3,
+        beam_width=3,
     )
     agent = WorldModelAgent(config)
     print(f"  Explore phase: {explore_eps} episodes (random)")
