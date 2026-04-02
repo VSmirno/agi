@@ -171,3 +171,42 @@ DoorKey = detour task. Forward planning (beam search, reward lookahead) не р�
 - Obs-based planning вместо explore-then-plan: random walk ~1% success → unreliable
 - BFS = infrastructure, не cognitive claim → допустимо для СНКС
 - Stage 48 merged с 47 т.к. 100% на 200 random layouts уже выполняет gate 48
+
+---
+
+## Stage 50: Reconnect language pipeline
+
+### [Phase 0] Git setup
+- Ветка: stage50-language-reconnect от main (commit 8b6f8a9)
+- Tech debt проверен: 4 open (TD-001 IN_PROGRESS/blocked, TD-002 OPEN, TD-003 OPEN, TD-004 OPEN, TD-006 OPEN), 1 закрыт (TD-005)
+- Нет завершённых GPU-экспериментов для сбора
+- TD-002, TD-003 не запущены — Stage 50 приоритетнее
+
+### [Phase 1] Спецификация
+- Подход A: Direct VSA encoding (единое пространство с world model)
+- Подход B: HAC→VSA conversion (два пространства, сложная конвертация)
+- Подход C: Dual encoding (HAC+VSA параллельно, избыточная сложность)
+- **Выбран: A** — единое VSA-пространство, простая архитектура, прямая совместимость с SubgoalNavigator
+
+### [Phase 2] Реализация
+- LanguageGrounder: text → chunks → VSA vector → decode + subgoals — 30 тестов PASS
+- 127 тестов (Stages 45-50) PASS, 0 регрессий
+
+### [Phase 3] Эксперименты
+- Exp 108: CPU-only (чистые векторные операции, без env)
+- Decode accuracy: 100% (30/30) — **PASS** (gate ≥90%)
+- Subgoal accuracy: 100% (30/30) — **PASS** (gate ≥90%)
+- Max off-diagonal similarity: 0.799
+- Encode time: 16ms (30 instructions)
+
+### [Phase 4] Веб-демо
+- demos/stage-50-language-reconnect.html — ввод → chunks → VSA bitmap → decode → subgoals
+
+### [Phase 5] Merge
+- Report: PASS
+- ROADMAP: Stage 50 COMPLETE
+
+### Решения
+- Direct VSA encoding вместо HAC→VSA conversion — нет потерь при конвертации
+- HAC pipeline сохранён для будущего использования, но не нужен для M2
+- Принцип "язык = интерфейс" подтверждён — encoding формат не принципиален
