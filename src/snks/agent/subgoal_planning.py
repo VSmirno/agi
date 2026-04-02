@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import torch
 
+from snks.agent.pathfinding import GridPathfinder
 from snks.agent.vsa_world_model import (
     SDMMemory,
     VSACodebook,
@@ -225,6 +226,11 @@ class SubgoalNavigator:
         self._target_positions: dict[str, tuple[int, int, int | None]] = {}
         # Trace segments (kept for compatibility)
         self._trace_segments: dict[str, list[tuple[SymbolicState, int]]] = {}
+        # BFS pathfinding (Stage 47)
+        self._pathfinder = GridPathfinder()
+        self._cached_path: list[int] | None = None
+        self._cached_target: tuple[int, int] | None = None
+        self._use_bfs: bool = True
 
     def set_trace_segments(self, segments: dict[str, list[tuple[SymbolicState, int]]]) -> None:
         """Set trace segments for each subgoal."""
@@ -268,7 +274,10 @@ class SubgoalNavigator:
                         return special_action
                     return int(torch.randint(0, self.n_actions, (1,)).item())
 
-                # Navigate toward target: turn to face, then forward
+                # Navigate toward target: BFS pathfinding (wall-aware)
+                if self._use_bfs:
+                    return self._navigate_bfs(current_obs, current_sym,
+                                              target_row, target_col, subgoal)
                 return self._navigate_toward(current_sym, target_row, target_col)
 
         # Strategy 2: SDM prediction (fallback)
@@ -333,6 +342,33 @@ class SubgoalNavigator:
         diff = (want_dir - current.agent_dir) % 4
         return 1 if diff <= 2 else 0  # right or left turn
 
+    def _navigate_bfs(self, obs: np.ndarray, current_sym: SymbolicState,
+                      target_row: int, target_col: int,
+                      subgoal: Subgoal) -> int:
+        """BFS-based wall-aware navigation toward target position.
+
+        Recomputes path each step (BFS on 7x7 is <1ms).
+        Returns first action of the optimal path.
+        """
+        start = (current_sym.agent_row, current_sym.agent_col)
+        goal = (target_row, target_col)
+
+        # For open_door subgoal: door might still be locked, use allow_door
+        allow_door = subgoal.name == "open_door"
+        path = self._pathfinder.find_path(obs, start, goal,
+                                          allow_door=allow_door)
+        if path is None:
+            path = self._pathfinder.find_path(obs, start, goal,
+                                              allow_door=True)
+        if path is None or len(path) <= 1:
+            return self._navigate_toward(current_sym, target_row, target_col)
+
+        actions = self._pathfinder.path_to_actions(path, current_sym.agent_dir)
+        if actions:
+            return actions[0]
+
+        return self._navigate_toward(current_sym, target_row, target_col)
+
     def is_achieved(self, obs: np.ndarray, subgoal: Subgoal) -> bool:
         """Check if subgoal is achieved in current observation."""
         if subgoal.name == "pickup_key":
@@ -388,6 +424,68 @@ class SubgoalPlanningAgent(WorldModelAgent):
         self._successful_traces: list[list[TraceStep]] = []
         self._current_trace: list[TraceStep] = []
 
+    def build_plan_from_obs(self, obs: np.ndarray) -> bool:
+        """Build plan directly from observation by scanning for key objects.
+
+        Skips explore phase — constructs subgoals and target positions from
+        the visible objects in the grid. Returns True if plan built successfully.
+        """
+        OBJ_KEY = 5
+        OBJ_DOOR = 4
+        OBJ_GOAL = 8
+
+        key_pos = None
+        door_pos = None
+        goal_pos = None
+
+        for r in range(obs.shape[0]):
+            for c in range(obs.shape[1]):
+                obj = int(obs[r, c, 0])
+                if obj == OBJ_KEY:
+                    key_pos = (r, c)
+                elif obj == OBJ_DOOR:
+                    door_pos = (r, c)
+                elif obj == OBJ_GOAL:
+                    goal_pos = (r, c)
+
+        if not all([key_pos, door_pos, goal_pos]):
+            return False
+
+        # Build subgoals with dummy VSA vectors (not used for BFS navigation)
+        dummy = torch.zeros(self.sg_config.dim)
+        subgoals = [
+            Subgoal("pickup_key", dummy, dummy, "symbolic"),
+            Subgoal("open_door", dummy, dummy, "symbolic"),
+            Subgoal("reach_goal", dummy, dummy, "symbolic"),
+        ]
+        self.plan = PlanGraph(subgoals)
+
+        # Find door-adjacent cell for toggle position
+        pf = GridPathfinder()
+        agent_sym = _extract_symbolic(obs)
+        best_door_adj = None
+        best_dist = float('inf')
+        for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+            ar, ac = door_pos[0] + dr, door_pos[1] + dc
+            if 0 <= ar < obs.shape[0] and 0 <= ac < obs.shape[1]:
+                if int(obs[ar, ac, 0]) not in (2,):  # not a wall
+                    path = pf.find_path(obs, (agent_sym.agent_row, agent_sym.agent_col),
+                                        (ar, ac))
+                    if path and len(path) < best_dist:
+                        best_dist = len(path)
+                        best_door_adj = (ar, ac)
+
+        if best_door_adj is None:
+            best_door_adj = (door_pos[0] - 1, door_pos[1])  # fallback: above door
+
+        targets = {
+            "pickup_key": (key_pos[0], key_pos[1], 3),
+            "open_door": (best_door_adj[0], best_door_adj[1], 5),
+            "reach_goal": (goal_pos[0], goal_pos[1], None),
+        }
+        self.navigator.set_target_positions(targets)
+        return True
+
     def run_episode(self, env, max_steps: int = 200) -> tuple[bool, int, float]:
         self._exploring = self._episode_count < self.config.explore_episodes
         self._current_trace = []
@@ -401,6 +499,10 @@ class SubgoalPlanningAgent(WorldModelAgent):
         # Set goal from initial observation
         if self._episode_count == 0:
             self.set_goal_from_obs(obs)
+
+        # Build/rebuild plan from observation (Stage 47: obs-based planning)
+        if self._episode_count >= self.config.explore_episodes:
+            self.build_plan_from_obs(obs)
 
         if self._exploring:
             return self._run_explore_episode(env, obs, max_steps)
