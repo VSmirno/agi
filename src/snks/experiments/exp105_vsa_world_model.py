@@ -85,14 +85,12 @@ class DoorKeyEnv:
             if self.agent_pos == self.key_pos and not self.has_key:
                 self.has_key = True
                 self.key_picked = True
-                reward = 0.3  # intermediate reward: key picked up
         elif action == 5:  # toggle (open door)
             # Check if facing door
             dr, dc = [(0, 1), (1, 0), (0, -1), (-1, 0)][self.agent_dir]
             fr, fc = self.agent_pos[0] + dr, self.agent_pos[1] + dc
             if [fr, fc] == self.door_pos and self.has_key and not self.door_open:
                 self.door_open = True
-                reward = 0.3  # intermediate reward: door opened
 
         # Check goal
         terminated = False
@@ -236,30 +234,30 @@ def run_exp105b(n_transitions: int = 500) -> dict:
 # ──────────────────────────────────────────────
 
 def run_exp105c(n_episodes: int = 200, use_minigrid: bool = False) -> dict:
-    """WorldModelAgent on DoorKey-5x5."""
+    """WorldModelAgent on DoorKey-5x5 with causal planning.
+
+    Phase 1 (explore): random actions, fill SDM with transitions
+    Phase 2 (plan): forward beam search through SDM world model
+    """
     print(f"\n=== Exp 105c: WorldModelAgent DoorKey-5x5 ({n_episodes} episodes) ===")
 
+    explore_eps = 50
     config = WorldModelConfig(
         dim=512,
         n_locations=10000,
         n_actions=7,
-        min_confidence=0.1,
-        epsilon=0.1,
+        min_confidence=0.05,
+        epsilon=0.15,
         max_episode_steps=200,
+        explore_episodes=explore_eps,
+        plan_depth=6,
+        beam_width=5,
     )
     agent = WorldModelAgent(config)
+    print(f"  Explore phase: {explore_eps} episodes (random)")
+    print(f"  Plan phase: {n_episodes - explore_eps} episodes (beam search depth={config.plan_depth})")
 
-    if use_minigrid:
-        try:
-            from snks.env.adapter import MiniGridAdapter
-            env_adapter = MiniGridAdapter("MiniGrid-DoorKey-5x5-v0")
-            # Need symbolic obs wrapper
-            print("  Using MiniGrid env")
-        except ImportError:
-            print("  MiniGrid not available, using DoorKeyEnv fallback")
-            use_minigrid = False
-
-    env = DoorKeyEnv(seed=42) if not use_minigrid else None
+    env = DoorKeyEnv(seed=42)
 
     results = []
     t0 = time.time()
@@ -267,57 +265,66 @@ def run_exp105c(n_episodes: int = 200, use_minigrid: bool = False) -> dict:
     for ep in range(n_episodes):
         ep_t0 = time.time()
 
-        if use_minigrid:
-            obs = env_adapter.get_symbolic_obs()
-            env_adapter.reset(seed=ep)
-            obs = env_adapter.get_symbolic_obs()
-        else:
-            obs = env.reset(seed=ep % 50)  # recycle seeds for learning
+        obs = env.reset(seed=ep % 50)  # recycle seeds for learning
 
         success, steps, reward = agent.run_episode(
-            env if not use_minigrid else _SymbolicEnvWrapper(env_adapter),
-            max_steps=config.max_episode_steps,
+            env, max_steps=config.max_episode_steps,
         )
         results.append({"success": success, "steps": steps, "reward": reward})
 
         ep_time = time.time() - ep_t0
-        if (ep + 1) % 20 == 0 or ep == 0:
-            recent = results[max(0, ep - 19):]
+        phase = "EXPLORE" if ep < explore_eps else "PLAN"
+        if (ep + 1) % 10 == 0 or ep == 0:
+            recent = results[max(0, ep - 9):]
             sr = sum(1 for r in recent if r["success"]) / len(recent)
             elapsed = time.time() - t0
             eta = elapsed / (ep + 1) * (n_episodes - ep - 1)
             print(
-                f"  Ep {ep + 1}/{n_episodes}: "
-                f"success_rate(20)={sr:.1%}, "
+                f"  Ep {ep + 1}/{n_episodes} [{phase}]: "
+                f"success_rate(10)={sr:.1%}, "
                 f"steps={steps}, reward={reward:.3f}, "
+                f"SDM writes={agent.sdm.n_writes}, "
                 f"time={ep_time:.1f}s | ETA {eta:.0f}s",
                 flush=True,
             )
 
     total_success = sum(1 for r in results if r["success"])
     success_rate = total_success / n_episodes
-    first_50 = sum(1 for r in results[:50] if r["success"]) / 50
-    last_50 = sum(1 for r in results[-50:] if r["success"]) / min(50, len(results[-50:]))
+    # Plan phase only (after explore)
+    plan_results = results[explore_eps:]
+    plan_success = sum(1 for r in plan_results if r["success"])
+    plan_rate = plan_success / len(plan_results) if plan_results else 0.0
+    explore_success = sum(1 for r in results[:explore_eps] if r["success"])
 
-    gate_primary = success_rate >= 0.15
-    gate_stretch = success_rate >= 0.30
-    gate_learning = last_50 > first_50
+    # Learning trend: first half of plan vs last half of plan
+    plan_first = plan_results[:len(plan_results) // 2]
+    plan_last = plan_results[len(plan_results) // 2:]
+    first_rate = sum(1 for r in plan_first if r["success"]) / max(len(plan_first), 1)
+    last_rate = sum(1 for r in plan_last if r["success"]) / max(len(plan_last), 1)
+
+    gate_primary = plan_rate >= 0.15
+    gate_stretch = plan_rate >= 0.30
+    gate_learning = last_rate > first_rate
 
     elapsed = time.time() - t0
-    print(f"\n  Total success: {total_success}/{n_episodes} = {success_rate:.1%}")
-    print(f"  First 50 ep: {first_50:.1%}")
-    print(f"  Last 50 ep: {last_50:.1%}")
+    print(f"\n  Explore phase: {explore_success}/{explore_eps} = {explore_success / explore_eps:.1%}")
+    print(f"  Plan phase: {plan_success}/{len(plan_results)} = {plan_rate:.1%}")
+    print(f"  Plan first half: {first_rate:.1%}")
+    print(f"  Plan last half: {last_rate:.1%}")
     print(f"  Learning trend: {'YES' if gate_learning else 'NO'}")
-    print(f"  Gate primary (≥15%): {'PASS' if gate_primary else 'FAIL'}")
-    print(f"  Gate stretch (≥30%): {'PASS' if gate_stretch else 'FAIL'}")
+    print(f"  Gate primary (≥15% plan phase): {'PASS' if gate_primary else 'FAIL'}")
+    print(f"  Gate stretch (≥30% plan phase): {'PASS' if gate_stretch else 'FAIL'}")
     print(f"  Time: {elapsed:.1f}s")
 
     return {
         "success_rate": success_rate,
+        "plan_rate": plan_rate,
         "total_success": total_success,
+        "plan_success": plan_success,
         "n_episodes": n_episodes,
-        "first_50_rate": first_50,
-        "last_50_rate": last_50,
+        "explore_success": explore_success,
+        "first_plan_rate": first_rate,
+        "last_plan_rate": last_rate,
         "gate_primary": gate_primary,
         "gate_stretch": gate_stretch,
         "gate_learning": gate_learning,
