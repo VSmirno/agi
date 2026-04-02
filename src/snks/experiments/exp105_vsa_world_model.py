@@ -85,12 +85,14 @@ class DoorKeyEnv:
             if self.agent_pos == self.key_pos and not self.has_key:
                 self.has_key = True
                 self.key_picked = True
+                reward = 0.3  # intermediate reward: key picked up
         elif action == 5:  # toggle (open door)
             # Check if facing door
             dr, dc = [(0, 1), (1, 0), (0, -1), (-1, 0)][self.agent_dir]
             fr, fc = self.agent_pos[0] + dr, self.agent_pos[1] + dc
             if [fr, fc] == self.door_pos and self.has_key and not self.door_open:
                 self.door_open = True
+                reward = 0.3  # intermediate reward: door opened
 
         # Check goal
         terminated = False
