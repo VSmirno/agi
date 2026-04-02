@@ -338,26 +338,32 @@ class TestSubgoalNavigator:
         action = self.nav.select(state, sg)
         assert 0 <= action < 7
 
-    def test_select_prefers_action_from_trace_segment(self):
-        """If trace segment has matching state, navigator should replay that action."""
-        from snks.agent.subgoal_planning import SymbolicState
-
-        # Set up trace segment: at position (2,3) facing down, do action 2
-        segment = [
-            (SymbolicState(2, 3, 1, False, False), 2),  # at (2,3), dir=down, action=forward
-            (SymbolicState(3, 3, 1, False, False), 2),  # at (3,3), dir=down, action=forward
-        ]
+    def test_select_navigates_toward_target_position(self):
+        """Navigator should turn and move toward subgoal target position."""
         nav = SubgoalNavigator(self.sdm, self.cb, self.enc, n_actions=7, epsilon=0.0)
-        nav.set_trace_segments({"test_sg": segment})
+        # Target: go to row=4, col=3 (pickup key there)
+        nav.set_target_positions({"test_sg": (4, 3, 3)})
 
-        # Current obs: agent at (2,3), same as trace
-        obs = _make_obs(agent_pos=(2, 3), agent_dir=1, key_pos=(1, 4), door_pos=(3, 3), goal_pos=(5, 4))
+        # Agent at (2, 3) facing down (dir=1) — should go forward (toward row=4)
+        obs = _make_obs(agent_pos=(2, 3), agent_dir=1, goal_pos=(5, 4))
         state = self.enc.encode(obs)
         dummy_target = torch.zeros(512)
         sg = Subgoal("test_sg", dummy_target, state, "symbolic")
 
-        actions = [nav.select(state, sg, current_obs=obs) for _ in range(10)]
-        assert actions.count(2) >= 9, f"Expected action 2 from trace, got {actions}"
+        action = nav.select(state, sg, current_obs=obs)
+        assert action == 2, f"Expected forward (2), got {action}"
+
+        # Agent at (2, 3) facing right (dir=0) — should turn right to face down
+        obs2 = _make_obs(agent_pos=(2, 3), agent_dir=0, goal_pos=(5, 4))
+        state2 = self.enc.encode(obs2)
+        action2 = nav.select(state2, sg, current_obs=obs2)
+        assert action2 == 1, f"Expected turn_right (1) to face down, got {action2}"
+
+        # Agent at target (4, 3) — should execute special action (pickup=3)
+        obs3 = _make_obs(agent_pos=(4, 3), agent_dir=1, goal_pos=(5, 4))
+        state3 = self.enc.encode(obs3)
+        action3 = nav.select(state3, sg, current_obs=obs3)
+        assert action3 == 3, f"Expected pickup (3) at target, got {action3}"
 
     def test_is_achieved_pickup_key(self):
         """Key not visible → pickup_key achieved."""
