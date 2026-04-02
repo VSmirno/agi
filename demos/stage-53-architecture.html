@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 53: Архитектурный отчёт M3</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0e17; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; }
+.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+h1 { color: #60a5fa; font-size: 28px; margin-bottom: 8px; }
+h2 { color: #60a5fa; font-size: 20px; margin: 24px 0 12px; }
+h3 { color: #93c5fd; font-size: 16px; margin: 16px 0 8px; }
+.subtitle { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+.card-accent { border-color: #60a5fa; }
+.card-success { border-color: #22c55e; }
+.card-warning { border-color: #f59e0b; }
+.card-danger { border-color: #ef4444; }
+
+/* Milestone cards */
+.milestone { display: flex; align-items: center; gap: 16px; padding: 16px; background: #1e293b; border-radius: 10px; margin-bottom: 12px; border-left: 4px solid #334155; transition: all 0.5s; }
+.milestone.complete { border-left-color: #22c55e; }
+.milestone.active { border-left-color: #60a5fa; }
+.milestone .icon { font-size: 28px; width: 40px; text-align: center; }
+.milestone .info { flex: 1; }
+.milestone .title { font-weight: 600; font-size: 16px; }
+.milestone .detail { color: #94a3b8; font-size: 13px; margin-top: 2px; }
+.milestone .result { font-size: 24px; font-weight: 700; }
+.milestone .result.pass { color: #22c55e; }
+.milestone .result.next { color: #60a5fa; }
+
+/* Architecture diagram */
+#archCanvas { width: 100%; border-radius: 12px; background: #0f172a; }
+
+/* Table */
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: #1e293b; color: #60a5fa; text-align: left; padding: 8px 12px; border-bottom: 2px solid #334155; }
+td { padding: 8px 12px; border-bottom: 1px solid #1e293b; }
+.pass { color: #22c55e; font-weight: 600; }
+.fail { color: #ef4444; font-weight: 600; }
+
+/* R1 Timeline */
+.r1-item { display: flex; gap: 12px; margin-bottom: 12px; padding: 12px; background: #0f172a; border-radius: 8px; }
+.r1-id { color: #60a5fa; font-weight: 700; min-width: 50px; }
+.r1-status { min-width: 30px; font-size: 18px; }
+.r1-text { flex: 1; font-size: 13px; }
+.r1-text .q { color: #e2e8f0; }
+.r1-text .a { color: #94a3b8; margin-top: 4px; }
+
+/* Bottleneck bars */
+.bottleneck { margin-bottom: 12px; }
+.bottleneck .label { font-size: 13px; margin-bottom: 4px; display: flex; justify-content: space-between; }
+.bottleneck .bar { height: 8px; background: #1e293b; border-radius: 4px; overflow: hidden; }
+.bottleneck .fill { height: 100%; border-radius: 4px; transition: width 1.5s ease; }
+.fill-critical { background: linear-gradient(90deg, #ef4444, #f59e0b); }
+.fill-high { background: linear-gradient(90deg, #f59e0b, #eab308); }
+.fill-medium { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+
+/* M4 stages */
+.m4-stage { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #0f172a; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid #334155; }
+.m4-stage .num { color: #60a5fa; font-weight: 700; font-size: 18px; min-width: 36px; }
+.m4-stage .name { font-weight: 600; }
+.m4-stage .gate { color: #94a3b8; font-size: 12px; }
+
+/* Animate */
+.fade-in { opacity: 0; transform: translateY(20px); transition: opacity 0.6s, transform 0.6s; }
+.fade-in.visible { opacity: 1; transform: translateY(0); }
+
+/* Controls */
+.controls { display: flex; gap: 8px; margin: 16px 0; }
+.btn { background: #1e293b; color: #60a5fa; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+.btn:hover { background: #334155; }
+.btn.active { background: #1e40af; border-color: #60a5fa; color: white; }
+
+/* Module nodes (for architecture) */
+.module-info { display: none; background: #0f172a; border: 1px solid #60a5fa; border-radius: 8px; padding: 12px; margin-top: 8px; font-size: 13px; }
+.module-info.show { display: block; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Этап 53: Архитектурный отчёт M3</h1>
+  <p class="subtitle">Checkpoint «go / no-go» — Концепция СНКС доказана. Готовность к масштабированию (M4).</p>
+
+  <!-- Milestones -->
+  <h2>Milestones</h2>
+  <div id="milestones">
+    <div class="milestone complete fade-in">
+      <div class="icon">M1</div>
+      <div class="info">
+        <div class="title">Генерализация</div>
+        <div class="detail">100% DoorKey-5x5 (200 random) · 100% MultiRoom-N3 (200 random) · Stages 47-49</div>
+      </div>
+      <div class="result pass">PASS</div>
+    </div>
+    <div class="milestone complete fade-in">
+      <div class="icon">M2</div>
+      <div class="info">
+        <div class="title">Языковой контроль</div>
+        <div class="detail">100% language-guided DoorKey-5x5 · 100% decode accuracy · Stages 50-51</div>
+      </div>
+      <div class="result pass">PASS</div>
+    </div>
+    <div class="milestone complete fade-in">
+      <div class="icon">M3</div>
+      <div class="info">
+        <div class="title">Интеграция</div>
+        <div class="detail">100% MultiRoom-N3 + инструкция · 100% DoorKey regression · Stage 52</div>
+      </div>
+      <div class="result pass">PASS</div>
+    </div>
+    <div class="milestone active fade-in">
+      <div class="icon">M4</div>
+      <div class="info">
+        <div class="title">Масштаб</div>
+        <div class="detail">5+ типов объектов · Partial observability · Subgoal chains 5+ · Stages 54-60</div>
+      </div>
+      <div class="result next">NEXT</div>
+    </div>
+  </div>
+
+  <!-- Architecture Diagram -->
+  <h2>Архитектура СНКС</h2>
+  <p class="subtitle">Нажмите на модуль для подробностей</p>
+  <div class="card">
+    <canvas id="archCanvas" width="1000" height="420"></canvas>
+  </div>
+  <div id="moduleInfo" class="module-info"></div>
+
+  <!-- Results Table -->
+  <div class="grid-2" style="margin-top: 24px;">
+    <div>
+      <h2>Эксперименты M1-M3</h2>
+      <div class="card">
+        <table>
+          <thead><tr><th>Stage</th><th>Эксперимент</th><th>Результат</th><th>Gate</th><th>Статус</th></tr></thead>
+          <tbody id="expTable"></tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <h2>R1: Осцилляторная динамика</h2>
+      <div class="card card-danger">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <span style="font-size:24px;color:#ef4444;">&#10007;</span>
+          <span style="font-size:18px;font-weight:700;color:#ef4444;">Вердикт: НЕГАТИВНЫЙ</span>
+        </div>
+        <p style="color:#94a3b8;font-size:13px;margin-bottom:16px;">FHN excitable, не oscillatory. Coupling timescale 50× mismatch. DAF = perception only.</p>
+        <div id="r1Timeline"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottlenecks -->
+  <h2>Bottlenecks для M4</h2>
+  <div class="card card-warning">
+    <div id="bottlenecks"></div>
+  </div>
+
+  <!-- M4 Plan -->
+  <h2>План M4: Масштаб</h2>
+  <div class="grid-2">
+    <div class="card card-accent">
+      <h3>Предложенные этапы</h3>
+      <div id="m4Stages"></div>
+    </div>
+    <div class="card">
+      <h3>Архитектурные изменения</h3>
+      <table>
+        <thead><tr><th>Изменение</th><th>Причина</th><th>Stage</th></tr></thead>
+        <tbody>
+          <tr><td>Убрать FullyObsWrapper</td><td>Реальная генерализация</td><td>54</td></tr>
+          <tr><td>Добавить SpatialMap</td><td>Карта из partial obs</td><td>54</td></tr>
+          <tr><td>FrontierExplorer</td><td>Систематическое исследование</td><td>55</td></tr>
+          <tr><td>Расширить SubgoalExtractor</td><td>Новые типы событий</td><td>56</td></tr>
+          <tr><td>Hierarchical SDM</td><td>Масштаб памяти >10K</td><td>58</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- What Works / What Doesn't -->
+  <h2>Модули: статус</h2>
+  <div class="controls">
+    <button class="btn active" onclick="filterModules('all')">Все</button>
+    <button class="btn" onclick="filterModules('works')">Работает</button>
+    <button class="btn" onclick="filterModules('broken')">Не работает</button>
+    <button class="btn" onclick="filterModules('partial')">Частично</button>
+  </div>
+  <div class="grid-3" id="moduleCards"></div>
+
+  <!-- Explanation -->
+  <h2>Почему это важно</h2>
+  <div class="card" style="margin-top: 12px;">
+    <p style="font-size: 14px; line-height: 1.7;">
+      СНКС доказала, что <b>bio-inspired модульная архитектура</b> может решать навигационные задачи
+      с языковыми инструкциями — без нейросетей, без backpropagation, без reward shaping.
+      Система мыслит в концептах (SKS), а не в токенах. Язык — интерфейс, а не основа мышления.
+    </p>
+    <p style="font-size: 14px; line-height: 1.7; margin-top: 12px; color: #94a3b8;">
+      Однако текущие результаты достигнуты при полной наблюдаемости (агент видит всю карту).
+      M4 проверит, работает ли архитектура при реалистичных условиях: partial observability,
+      5+ типов объектов, длинные цепочки подцелей. Это — настоящий тест генерализации.
+    </p>
+  </div>
+</div>
+
+<script>
+// Experiment data
+const experiments = [
+  { stage: 47, name: 'Random DoorKey-5x5', result: '100% (200/200)', gate: '≥80%', pass: true },
+  { stage: 49, name: 'Random MultiRoom-N3', result: '100% (200/200)', gate: '≥60%', pass: true },
+  { stage: 50, name: 'VSA encode/decode', result: '100% (30/30)', gate: '≥90%', pass: true },
+  { stage: 51, name: 'Language DoorKey', result: '100% (200/200)', gate: '≥70%', pass: true },
+  { stage: 51, name: 'Вариантные инструкции', result: '100%', gate: '—', pass: true },
+  { stage: 52, name: 'MultiRoom + язык', result: '100% (200/200)', gate: '≥50%', pass: true },
+  { stage: 52, name: 'DoorKey regression', result: '100% (200/200)', gate: '≥90%', pass: true },
+];
+
+const expTable = document.getElementById('expTable');
+experiments.forEach(e => {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${e.stage}</td><td>${e.name}</td><td>${e.result}</td><td>${e.gate}</td><td class="${e.pass?'pass':'fail'}">${e.pass?'PASS':'FAIL'}</td>`;
+  expTable.appendChild(tr);
+});
+
+// R1 Timeline
+const r1 = [
+  { id: 'R1.1', status: '&#10007;', q: 'Oscillatory FHN (I_base > 1.0)?', a: 'I_base=0.5 = excitable. Converges to v≈1.2, не осциллирует.' },
+  { id: 'R1.2', status: '&#10007;', q: 'Timescale fix (steps_per_cycle=5000)?', a: 'Не применено. 5000 steps = 0.5s — слишком медленно для real-time pipeline.' },
+  { id: 'R1.3', status: '—', q: 'SKS quality при oscillatory params?', a: 'Не измерено. SKS формируются через SDR injection, не coupling.' },
+  { id: 'R1.4', status: '—', q: 'Downstream impact на VSA+SDM?', a: 'VSA+SDM работают без DAF oscillations (Stages 45-52).' },
+  { id: 'R1.5', status: '—', q: 'GPU tech debt?', a: 'Pure DAF experiments superseded модульной архитектурой.' },
+];
+
+const r1Div = document.getElementById('r1Timeline');
+r1.forEach(item => {
+  const d = document.createElement('div');
+  d.className = 'r1-item';
+  d.innerHTML = `<div class="r1-id">${item.id}</div><div class="r1-status">${item.status}</div><div class="r1-text"><div class="q">${item.q}</div><div class="a">${item.a}</div></div>`;
+  r1Div.appendChild(d);
+});
+
+// Bottlenecks
+const bottlenecks = [
+  { label: 'P1: Full observability (TD-006)', severity: 95, cls: 'fill-critical', detail: 'Агент видит всю карту — BFS тривиален' },
+  { label: 'P2: Сложность среды', severity: 70, cls: 'fill-high', detail: 'DoorKey/MultiRoom — всего 2-3 типа объектов' },
+  { label: 'P3: Роль DAF', severity: 50, cls: 'fill-medium', detail: 'DAF не используется для планирования' },
+  { label: 'P4: Exploration strategy', severity: 60, cls: 'fill-high', detail: 'Random walk ~1% success на DoorKey' },
+];
+
+const bnDiv = document.getElementById('bottlenecks');
+bottlenecks.forEach(b => {
+  const d = document.createElement('div');
+  d.className = 'bottleneck';
+  d.innerHTML = `<div class="label"><span>${b.label}</span><span style="color:#94a3b8;font-size:12px;">${b.detail}</span></div><div class="bar"><div class="fill ${b.cls}" style="width:0%" data-width="${b.severity}%"></div></div>`;
+  bnDiv.appendChild(d);
+});
+
+// M4 Stages
+const m4Stages = [
+  { num: 54, name: 'Partial Observability', gate: '≥80% DoorKey с 7x7 view' },
+  { num: 55, name: 'Exploration Strategy', gate: '≥60% MultiRoom с partial obs' },
+  { num: 56, name: 'Complex Environment', gate: '≥50% BabyAI PutNext, 5+ objects' },
+  { num: 57, name: 'Long Subgoal Chains', gate: '≥40% на задачах с 5+ subgoals' },
+  { num: 58, name: 'SDM Scaling', gate: 'SDM capacity ≥1000 transitions' },
+  { num: 59, name: 'Transfer Learning', gate: '≥70% new env без re-exploration' },
+  { num: 60, name: 'M4 Integration', gate: '≥50% BabyAI BossLevel + язык' },
+];
+
+const m4Div = document.getElementById('m4Stages');
+m4Stages.forEach(s => {
+  const d = document.createElement('div');
+  d.className = 'm4-stage';
+  d.innerHTML = `<div class="num">${s.num}</div><div><div class="name">${s.name}</div><div class="gate">${s.gate}</div></div>`;
+  m4Div.appendChild(d);
+});
+
+// Module cards
+const modules = [
+  { name: 'VSA Codebook', status: 'works', metric: '97-99% accuracy', desc: 'Binary Spatter Code 512-bit' },
+  { name: 'SDM Memory', status: 'works', metric: '0.85 similarity', desc: 'Sparse Distributed Memory, 10K loc' },
+  { name: 'BFS Pathfinder', status: 'works', metric: '<1ms per call', desc: 'Grid pathfinding с walls' },
+  { name: 'SubgoalExtractor', status: 'works', metric: '100% accuracy', desc: 'Symbolic event detection' },
+  { name: 'LanguageGrounder', status: 'works', metric: '100% decode', desc: 'Text → VSA → subgoals' },
+  { name: 'MultiRoomNav', status: 'works', metric: '100% N3', desc: 'Reactive BFS + door toggle' },
+  { name: 'IntegrationAgent', status: 'works', metric: '100% unified', desc: 'Env detection + strategy' },
+  { name: 'DAF Perception', status: 'works', metric: '26/26 tests', desc: 'SKS formation via STDP' },
+  { name: 'Naked DAF Planning', status: 'broken', metric: '0% success', desc: 'Нет пути perception → action' },
+  { name: 'FHN Oscillations', status: 'broken', metric: 'excitable only', desc: 'I_base=0.5 не осциллирует' },
+  { name: 'Coupling Propagation', status: 'broken', metric: '50× mismatch', desc: '5000 steps vs 100/cycle' },
+  { name: 'VSA Planning', status: 'broken', metric: '0-20%', desc: 'Beam search fails detour' },
+  { name: 'Full Observability', status: 'partial', metric: 'TD-006', desc: 'Shortcut: видит всю карту' },
+  { name: 'WM Gating', status: 'partial', metric: 'TD-004', desc: 'FHN self-sustains, нет bistable' },
+];
+
+function renderModules(filter) {
+  const div = document.getElementById('moduleCards');
+  div.innerHTML = '';
+  const filtered = filter === 'all' ? modules : modules.filter(m => m.status === filter);
+  filtered.forEach(m => {
+    const cls = m.status === 'works' ? 'card-success' : m.status === 'broken' ? 'card-danger' : 'card-warning';
+    const icon = m.status === 'works' ? '&#10003;' : m.status === 'broken' ? '&#10007;' : '&#9888;';
+    const color = m.status === 'works' ? '#22c55e' : m.status === 'broken' ? '#ef4444' : '#f59e0b';
+    const d = document.createElement('div');
+    d.className = `card ${cls}`;
+    d.innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span style="color:${color};font-size:18px;">${icon}</span><strong>${m.name}</strong></div><div style="color:#60a5fa;font-size:14px;font-weight:600;">${m.metric}</div><div style="color:#94a3b8;font-size:12px;margin-top:4px;">${m.desc}</div>`;
+    div.appendChild(d);
+  });
+}
+
+function filterModules(f) {
+  document.querySelectorAll('.controls .btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  renderModules(f);
+}
+
+renderModules('all');
+
+// Architecture Canvas
+const canvas = document.getElementById('archCanvas');
+const ctx = canvas.getContext('2d');
+const dpr = window.devicePixelRatio || 1;
+canvas.width = 1000 * dpr;
+canvas.height = 420 * dpr;
+canvas.style.width = '1000px';
+canvas.style.height = '420px';
+ctx.scale(dpr, dpr);
+
+const archModules = [
+  { id: 'input', x: 50, y: 180, w: 100, h: 50, label: 'Вход', sub: 'Observation', color: '#475569' },
+  { id: 'encoder', x: 190, y: 110, w: 120, h: 50, label: 'Encoder', sub: 'Gabor/SDR', color: '#7c3aed' },
+  { id: 'daf', x: 190, y: 240, w: 120, h: 60, label: 'DAF Engine', sub: 'FHN + STDP', color: '#dc2626' },
+  { id: 'vsa', x: 370, y: 80, w: 120, h: 50, label: 'VSA Codebook', sub: '512-bit BSC', color: '#2563eb' },
+  { id: 'sdm', x: 370, y: 170, w: 120, h: 50, label: 'SDM Memory', sub: '10K locations', color: '#0891b2' },
+  { id: 'subgoal', x: 550, y: 120, w: 140, h: 55, label: 'SubgoalExtractor', sub: 'Symbolic events', color: '#059669' },
+  { id: 'pathfinder', x: 550, y: 220, w: 140, h: 50, label: 'BFS Pathfinder', sub: '<1ms per call', color: '#059669' },
+  { id: 'language', x: 370, y: 310, w: 120, h: 50, label: 'Language', sub: 'Grounder', color: '#d97706' },
+  { id: 'agent', x: 750, y: 160, w: 140, h: 60, label: 'Integration', sub: 'Agent', color: '#22c55e' },
+  { id: 'output', x: 930, y: 180, w: 60, h: 50, label: 'Act', sub: '', color: '#475569' },
+];
+
+const archLinks = [
+  ['input', 'encoder'], ['input', 'daf'],
+  ['encoder', 'vsa'], ['daf', 'vsa'],
+  ['vsa', 'sdm'], ['vsa', 'subgoal'],
+  ['sdm', 'subgoal'],
+  ['subgoal', 'agent'], ['pathfinder', 'agent'],
+  ['subgoal', 'pathfinder'],
+  ['language', 'subgoal'],
+  ['agent', 'output'],
+];
+
+let hoveredModule = null;
+let animPhase = 0;
+
+function drawArch() {
+  ctx.clearRect(0, 0, 1000, 420);
+
+  // Draw links
+  archLinks.forEach(([fromId, toId]) => {
+    const from = archModules.find(m => m.id === fromId);
+    const to = archModules.find(m => m.id === toId);
+    const fx = from.x + from.w;
+    const fy = from.y + from.h / 2;
+    const tx = to.x;
+    const ty = to.y + to.h / 2;
+
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    const cpx = (fx + tx) / 2;
+    ctx.bezierCurveTo(cpx, fy, cpx, ty, tx, ty);
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Animated dot
+    const t = (animPhase + archLinks.indexOf(arguments[1]) * 0.15) % 1;
+    // Actually use a different approach for the dot
+  });
+
+  // Draw data flow dots
+  const t = animPhase;
+  archLinks.forEach(([fromId, toId], i) => {
+    const from = archModules.find(m => m.id === fromId);
+    const to = archModules.find(m => m.id === toId);
+    const fx = from.x + from.w;
+    const fy = from.y + from.h / 2;
+    const tx = to.x;
+    const ty = to.y + to.h / 2;
+    const phase = (t + i * 0.12) % 1;
+    const dx = fx + (tx - fx) * phase;
+    const dy = fy + (ty - fy) * phase;
+    ctx.beginPath();
+    ctx.arc(dx, dy, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#60a5fa';
+    ctx.globalAlpha = 0.7;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+
+  // Draw modules
+  archModules.forEach(m => {
+    const isHovered = hoveredModule === m.id;
+    ctx.fillStyle = isHovered ? m.color : m.color + '88';
+    ctx.strokeStyle = m.color;
+    ctx.lineWidth = isHovered ? 3 : 1.5;
+
+    // Rounded rect
+    const r = 10;
+    ctx.beginPath();
+    ctx.moveTo(m.x + r, m.y);
+    ctx.lineTo(m.x + m.w - r, m.y);
+    ctx.quadraticCurveTo(m.x + m.w, m.y, m.x + m.w, m.y + r);
+    ctx.lineTo(m.x + m.w, m.y + m.h - r);
+    ctx.quadraticCurveTo(m.x + m.w, m.y + m.h, m.x + m.w - r, m.y + m.h);
+    ctx.lineTo(m.x + r, m.y + m.h);
+    ctx.quadraticCurveTo(m.x, m.y + m.h, m.x, m.y + m.h - r);
+    ctx.lineTo(m.x, m.y + r);
+    ctx.quadraticCurveTo(m.x, m.y, m.x + r, m.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Text
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 13px Segoe UI, system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(m.label, m.x + m.w / 2, m.y + m.h / 2 - (m.sub ? 4 : 2));
+    if (m.sub) {
+      ctx.font = '11px Segoe UI, system-ui';
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillText(m.sub, m.x + m.w / 2, m.y + m.h / 2 + 12);
+    }
+  });
+
+  // Title
+  ctx.font = '11px Segoe UI, system-ui';
+  ctx.fillStyle = '#64748b';
+  ctx.textAlign = 'left';
+  ctx.fillText('DAF = восприятие (сенсорная кора)  |  VSA+SDM = память (гиппокамп)  |  Subgoal = планирование (PFC)  |  Language = интерфейс (Брока)', 50, 400);
+
+  animPhase = (animPhase + 0.003) % 1;
+  requestAnimationFrame(drawArch);
+}
+
+// Canvas mouse interaction
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  hoveredModule = null;
+  for (const m of archModules) {
+    if (x >= m.x && x <= m.x + m.w && y >= m.y && y <= m.y + m.h) {
+      hoveredModule = m.id;
+      canvas.style.cursor = 'pointer';
+      break;
+    }
+  }
+  if (!hoveredModule) canvas.style.cursor = 'default';
+});
+
+const moduleDetails = {
+  input: '<b>Вход</b> — MiniGrid observation (7x7 или full grid). Содержит позиции объектов, стен, агента.',
+  encoder: '<b>Encoder</b> — Gabor фильтры (128 ядер, 8 ориентаций × 4 масштаба) → SDR 4096 бит, спарсность ~4%. Для grid-задач используется SymbolicEncoder.',
+  daf: '<b>DAF Engine</b> — FitzHugh-Nagumo осцилляторы + STDP + coupling. <span style="color:#ef4444">Excitable regime (I_base=0.5), НЕ oscillatory.</span> Формирует SKS через co-firing от SDR injection. 26/26 аудит-тестов PASS. Naked DAF = 0% success.',
+  vsa: '<b>VSA Codebook</b> — Binary Spatter Code, 512-dim. XOR bind, majority bundle. 97-99% unbinding accuracy. Кодирует объекты, позиции, типы.',
+  sdm: '<b>SDM Memory</b> — Sparse Distributed Memory, 10K locations, auto-calibrated radius. 0.85-0.87 prediction similarity. Хранит transitions (state, action, next_state).',
+  subgoal: '<b>SubgoalExtractor</b> — Символьное обнаружение событий (pickup_key, toggle_door, reach_goal). 100% accuracy. PlanGraph упорядочивает subgoals.',
+  pathfinder: '<b>BFS Pathfinder</b> — Breadth-first search на observed grid. Извлекает стены, строит граф, находит путь. <1ms на 25x25 grid. Преобразует путь в actions (forward, left, right).',
+  language: '<b>LanguageGrounder</b> — Text → RuleBasedChunker → chunks → VSA vector → decode → subgoals. 100% decode accuracy на 30 инструкций. 16ms encode time.',
+  agent: '<b>IntegrationAgent</b> — Определяет тип среды (ключ? → DoorKey : MultiRoom), выбирает стратегию. Composition InstructedAgent + MultiRoomNavigator. ~50 lines кода.',
+  output: '<b>Действие</b> — forward, turn_left, turn_right, toggle, pickup, drop. Выполняется в MiniGrid среде.',
+};
+
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const infoDiv = document.getElementById('moduleInfo');
+  for (const m of archModules) {
+    if (x >= m.x && x <= m.x + m.w && y >= m.y && y <= m.y + m.h) {
+      infoDiv.innerHTML = moduleDetails[m.id] || '';
+      infoDiv.classList.add('show');
+      return;
+    }
+  }
+  infoDiv.classList.remove('show');
+});
+
+drawArch();
+
+// Animate bottleneck bars
+setTimeout(() => {
+  document.querySelectorAll('.bottleneck .fill').forEach(el => {
+    el.style.width = el.dataset.width;
+  });
+}, 500);
+
+// Fade-in animation
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+}, { threshold: 0.1 });
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
