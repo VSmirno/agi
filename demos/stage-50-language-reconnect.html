@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 50: Языковой пайплайн → VSA — СНКС</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0e17;
+  color: #e2e8f0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+  padding: 20px;
+}
+h1 { color: #60a5fa; font-size: 1.8em; margin-bottom: 4px; }
+h2 { color: #60a5fa; font-size: 1.2em; margin: 16px 0 8px; }
+.subtitle { color: #94a3b8; font-size: 0.95em; margin-bottom: 16px; }
+
+.container { max-width: 1200px; margin: 0 auto; }
+.row { display: flex; gap: 20px; flex-wrap: wrap; }
+.col { flex: 1; min-width: 320px; }
+
+.panel {
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+canvas { border: 1px solid #334155; border-radius: 4px; display: block; }
+
+.controls {
+  display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; align-items: center;
+}
+.controls button {
+  background: #1e293b; color: #60a5fa; border: 1px solid #334155;
+  padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;
+}
+.controls button:hover { background: #334155; }
+.controls button.active { background: #1e40af; border-color: #60a5fa; }
+
+input[type="text"] {
+  background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
+  padding: 8px 14px; border-radius: 4px; font-size: 1em; width: 100%;
+}
+input[type="text"]:focus { outline: none; border-color: #60a5fa; }
+
+.stat { display: inline-block; margin-right: 16px; margin-bottom: 4px; }
+.stat-label { color: #94a3b8; font-size: 0.85em; }
+.stat-value { color: #e2e8f0; font-size: 1.1em; font-weight: 600; }
+.stat-value.pass { color: #34d399; }
+.stat-value.fail { color: #f87171; }
+
+.chunk-flow { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.chunk {
+  display: inline-flex; flex-direction: column; align-items: center;
+  background: #1e293b; border-radius: 6px; padding: 6px 12px;
+  border: 1px solid #334155;
+}
+.chunk-text { color: #e2e8f0; font-weight: 600; font-size: 0.95em; }
+.chunk-role { color: #94a3b8; font-size: 0.75em; text-transform: uppercase; }
+.chunk.action { border-color: #f59e0b; }
+.chunk.action .chunk-role { color: #f59e0b; }
+.chunk.object { border-color: #60a5fa; }
+.chunk.object .chunk-role { color: #60a5fa; }
+.chunk.attr { border-color: #a78bfa; }
+.chunk.attr .chunk-role { color: #a78bfa; }
+.chunk.seq { border-color: #f87171; background: #1c1117; }
+.chunk.seq .chunk-role { color: #f87171; }
+
+.arrow { color: #475569; font-size: 1.4em; display: flex; align-items: center; }
+
+.subgoal-chain { display: flex; gap: 4px; flex-wrap: wrap; margin: 8px 0; }
+.subgoal {
+  background: #064e3b; border: 1px solid #34d399; border-radius: 20px;
+  padding: 4px 14px; color: #34d399; font-weight: 600; font-size: 0.9em;
+}
+.subgoal-arrow { color: #475569; display: flex; align-items: center; }
+
+.decode-result {
+  display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0;
+}
+.decode-item {
+  background: #1e293b; border-radius: 6px; padding: 6px 12px;
+  border: 1px solid #334155;
+}
+.decode-key { color: #94a3b8; font-size: 0.8em; }
+.decode-val { color: #34d399; font-weight: 600; }
+
+.sim-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.sim-table td, .sim-table th {
+  padding: 3px 6px; text-align: center; font-size: 0.75em;
+  border: 1px solid #1e293b;
+}
+.sim-table th { color: #94a3b8; background: #111827; }
+
+.preset-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.preset-btns button {
+  background: #0f172a; color: #94a3b8; border: 1px solid #1e293b;
+  padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em;
+}
+.preset-btns button:hover { color: #60a5fa; border-color: #334155; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Этап 50: Язык → VSA вектор</h1>
+  <p class="subtitle">
+    Мост между естественным языком и системой планирования.
+    Инструкция разбирается на chunks, кодируется в VSA-вектор (512 бит),
+    декодируется обратно и преобразуется в цепочку подцелей (subgoals).
+  </p>
+
+  <!-- Input -->
+  <div class="panel">
+    <h2>Введите инструкцию</h2>
+    <div class="preset-btns">
+      <button onclick="setPreset('pick up the key')">pick up the key</button>
+      <button onclick="setPreset('open the red door')">open the red door</button>
+      <button onclick="setPreset('go to the goal')">go to the goal</button>
+      <button onclick="setPreset('pick up the key then open the door')">key → door</button>
+      <button onclick="setPreset('pick up the key then open the door then go to the goal')">key → door → goal</button>
+      <button onclick="setPreset('pick up the blue key')">blue key</button>
+      <button onclick="setPreset('toggle the door')">toggle door</button>
+      <button onclick="setPreset('drop the ball')">drop the ball</button>
+    </div>
+    <input type="text" id="instrInput" value="pick up the key then open the door"
+           placeholder="Например: pick up the red key then open the door"
+           oninput="processInstruction()">
+  </div>
+
+  <div class="row">
+    <!-- Left column: pipeline steps -->
+    <div class="col">
+      <!-- Step 1: Chunking -->
+      <div class="panel">
+        <h2>1. Разбор на chunks</h2>
+        <p style="color:#94a3b8;font-size:0.85em;margin-bottom:6px">RuleBasedChunker → роли: ACTION, OBJECT, ATTR, SEQ_BREAK</p>
+        <div id="chunksDisplay" class="chunk-flow"></div>
+      </div>
+
+      <!-- Step 2: VSA encoding -->
+      <div class="panel">
+        <h2>2. VSA кодирование (512 бит)</h2>
+        <p style="color:#94a3b8;font-size:0.85em;margin-bottom:6px">bind(role, filler) ⊕ bundle → бинарный вектор</p>
+        <canvas id="vsaCanvas" width="480" height="60"></canvas>
+        <div id="vsaInfo" style="color:#94a3b8;font-size:0.8em;margin-top:4px"></div>
+      </div>
+
+      <!-- Step 3: Decode -->
+      <div class="panel">
+        <h2>3. Декодирование (unbind + similarity)</h2>
+        <div id="decodeDisplay" class="decode-result"></div>
+      </div>
+
+      <!-- Step 4: Subgoals -->
+      <div class="panel">
+        <h2>4. Цепочка подцелей</h2>
+        <p style="color:#94a3b8;font-size:0.85em;margin-bottom:6px">Инструкция → упорядоченные subgoals для навигатора</p>
+        <div id="subgoalsDisplay" class="subgoal-chain"></div>
+      </div>
+    </div>
+
+    <!-- Right column: metrics + similarity -->
+    <div class="col" style="max-width:420px">
+      <!-- Gate results -->
+      <div class="panel">
+        <h2>Gate-критерии</h2>
+        <div>
+          <div class="stat">
+            <div class="stat-label">Decode точность</div>
+            <div class="stat-value pass" id="gateDecodeVal">100%</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Gate ≥90%</div>
+            <div class="stat-value pass" id="gateDecodeStatus">PASS</div>
+          </div>
+        </div>
+        <div style="margin-top:8px">
+          <div class="stat">
+            <div class="stat-label">Subgoal точность</div>
+            <div class="stat-value pass" id="gateSubgoalVal">100%</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Gate ≥90%</div>
+            <div class="stat-value pass" id="gateSubgoalStatus">PASS</div>
+          </div>
+        </div>
+        <div style="margin-top:8px">
+          <div class="stat">
+            <div class="stat-label">Тестов</div>
+            <div class="stat-value" id="testCount">30/30</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Время</div>
+            <div class="stat-value" id="timeVal">16ms</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Similarity matrix -->
+      <div class="panel">
+        <h2>Матрица схожести VSA</h2>
+        <p style="color:#94a3b8;font-size:0.8em;margin-bottom:4px">
+          Разные инструкции должны давать разные вектора (диагональ=1.0, остальное &lt;0.7)
+        </p>
+        <div id="simMatrixContainer" style="overflow-x:auto"></div>
+      </div>
+
+      <!-- Explanation -->
+      <div class="panel">
+        <h2>Как это работает</h2>
+        <p style="color:#94a3b8;font-size:0.85em;line-height:1.5">
+          <b style="color:#e2e8f0">Проблема:</b> языковой пайплайн (HAC, 2048-dim) и планировщик (VSA, 512-bit) используют разные векторные пространства. Нет моста.<br><br>
+          <b style="color:#e2e8f0">Решение:</b> LanguageGrounder кодирует инструкции напрямую в VSA-пространство через VSACodebook. Каждое слово маппится на VSA-филлер, bind связывает роль+филлер, bundle объединяет.<br><br>
+          <b style="color:#e2e8f0">Почему важно:</b> это первый шаг к языковому управлению агентом. На следующем этапе (Stage 51) агент будет выполнять текстовые инструкции в среде MiniGrid.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// === VSA Simulation (Binary Spatter Code, 512-dim) ===
+
+class SimpleRNG {
+  constructor(seed) { this.state = seed; }
+  next() {
+    this.state = (this.state * 1103515245 + 12345) & 0x7fffffff;
+    return this.state / 0x7fffffff;
+  }
+  randBit() { return this.next() > 0.5 ? 1 : 0; }
+}
+
+class VSACodebook {
+  constructor(dim = 512, seed = 42) {
+    this.dim = dim;
+    this.rng = new SimpleRNG(seed);
+    this._roles = {};
+    this._fillers = {};
+  }
+
+  _randomVec() {
+    const v = new Uint8Array(this.dim);
+    for (let i = 0; i < this.dim; i++) v[i] = this.rng.randBit();
+    return v;
+  }
+
+  role(name) {
+    if (!this._roles[name]) this._roles[name] = this._randomVec();
+    return this._roles[name];
+  }
+
+  filler(name) {
+    if (!this._fillers[name]) this._fillers[name] = this._randomVec();
+    return this._fillers[name];
+  }
+
+  bind(a, b) {
+    const r = new Uint8Array(this.dim);
+    for (let i = 0; i < this.dim; i++) r[i] = a[i] ^ b[i];
+    return r;
+  }
+
+  bundle(vecs) {
+    const sums = new Float32Array(this.dim);
+    for (const v of vecs) for (let i = 0; i < this.dim; i++) sums[i] += v[i];
+    const r = new Uint8Array(this.dim);
+    const half = vecs.length / 2;
+    for (let i = 0; i < this.dim; i++) r[i] = sums[i] > half ? 1 : 0;
+    return r;
+  }
+
+  similarity(a, b) {
+    let match = 0;
+    for (let i = 0; i < this.dim; i++) if (a[i] === b[i]) match++;
+    return match / this.dim;
+  }
+}
+
+// === Chunker (simplified RuleBasedChunker) ===
+
+const ACTION_PHRASES = ["pick up", "go to", "open", "toggle", "put", "drop"];
+const ADJECTIVES = new Set(["red","green","blue","purple","yellow","grey","gray"]);
+const ARTICLES = new Set(["the","a","an"]);
+
+function chunk(sentence) {
+  const lower = sentence.toLowerCase().trim();
+
+  // Sequential
+  if (lower.includes(" then ")) {
+    const parts = lower.replace(/ and then /g, " then ").split(" then ");
+    const chunks = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (i > 0) chunks.push({ text: "", role: "SEQ_BREAK" });
+      chunks.push(...chunkSingle(parts[i].trim()));
+    }
+    return chunks;
+  }
+  return chunkSingle(lower);
+}
+
+function chunkSingle(lower) {
+  const chunks = [];
+  let remaining = lower;
+  let actionText = "";
+
+  for (const phrase of ACTION_PHRASES) {
+    if (lower.startsWith(phrase)) {
+      actionText = phrase;
+      remaining = lower.slice(phrase.length).trim();
+      break;
+    }
+  }
+
+  if (actionText) chunks.push({ text: actionText, role: "ACTION" });
+
+  const words = remaining.split(/\s+/).filter(w => !ARTICLES.has(w) && w);
+  for (const w of words) {
+    if (ADJECTIVES.has(w)) chunks.push({ text: w, role: "ATTR" });
+    else chunks.push({ text: w, role: "OBJECT" });
+  }
+  return chunks;
+}
+
+// === Language Grounder ===
+
+const ACTION_MAP = {
+  "pick up": "action_pickup", "go to": "action_goto",
+  "open": "action_open", "toggle": "action_toggle",
+  "put": "action_put", "drop": "action_drop"
+};
+
+const OBJECT_MAP = {
+  "key": "object_key", "door": "object_door", "goal": "object_goal",
+  "ball": "object_ball", "box": "object_box"
+};
+
+const ATTR_MAP = {
+  "red": "color_red", "green": "color_green", "blue": "color_blue",
+  "purple": "color_purple", "yellow": "color_yellow", "grey": "color_grey", "gray": "color_grey"
+};
+
+const SUBGOAL_MAP = {
+  "action_pickup|object_key": "pickup_key",
+  "action_pickup|object_ball": "pickup_ball",
+  "action_pickup|object_box": "pickup_box",
+  "action_open|object_door": "open_door",
+  "action_toggle|object_door": "open_door",
+  "action_goto|object_goal": "reach_goal",
+  "action_goto|object_door": "goto_door",
+  "action_goto|object_key": "goto_key",
+  "action_drop|object_key": "drop_key",
+  "action_drop|object_ball": "drop_ball",
+  "action_put|object_box": "put_box",
+  "action_put|object_ball": "put_ball"
+};
+
+const cb = new VSACodebook(512, 42);
+
+function encodeChunks(chunks) {
+  const bindings = [];
+  for (const c of chunks) {
+    if (c.role === "ACTION" && ACTION_MAP[c.text]) {
+      bindings.push(cb.bind(cb.role("instr_action"), cb.filler(ACTION_MAP[c.text])));
+    } else if (c.role === "OBJECT" && OBJECT_MAP[c.text]) {
+      bindings.push(cb.bind(cb.role("instr_object"), cb.filler(OBJECT_MAP[c.text])));
+    } else if (c.role === "ATTR" && ATTR_MAP[c.text]) {
+      bindings.push(cb.bind(cb.role("instr_attr"), cb.filler(ATTR_MAP[c.text])));
+    }
+  }
+  if (bindings.length === 0) return new Uint8Array(512);
+  return cb.bundle(bindings);
+}
+
+function decodeVSA(vsa) {
+  const result = {};
+  // Action
+  const ac = cb.bind(cb.role("instr_action"), vsa);
+  let bestA = null, bestAS = -1;
+  for (const [, vn] of Object.entries(ACTION_MAP)) {
+    const s = cb.similarity(ac, cb.filler(vn));
+    if (s > bestAS) { bestAS = s; bestA = vn; }
+  }
+  if (bestA && bestAS >= 0.55) result.action = bestA;
+
+  // Object
+  const oc = cb.bind(cb.role("instr_object"), vsa);
+  let bestO = null, bestOS = -1;
+  for (const [, vn] of Object.entries(OBJECT_MAP)) {
+    const s = cb.similarity(oc, cb.filler(vn));
+    if (s > bestOS) { bestOS = s; bestO = vn; }
+  }
+  if (bestO && bestOS >= 0.55) result.object = bestO;
+
+  // Attr
+  const atc = cb.bind(cb.role("instr_attr"), vsa);
+  let bestAt = null, bestAtS = -1;
+  for (const [, vn] of Object.entries(ATTR_MAP)) {
+    const s = cb.similarity(atc, cb.filler(vn));
+    if (s > bestAtS) { bestAtS = s; bestAt = vn; }
+  }
+  if (bestAt && bestAtS >= 0.55) result.attr = bestAt;
+
+  return result;
+}
+
+function toSubgoals(instruction) {
+  const chunks_all = chunk(instruction);
+  const segments = [[]];
+  for (const c of chunks_all) {
+    if (c.role === "SEQ_BREAK") segments.push([]);
+    else segments[segments.length - 1].push(c);
+  }
+  const subgoals = [];
+  for (const seg of segments) {
+    let act = null, obj = null;
+    for (const c of seg) {
+      if (c.role === "ACTION" && ACTION_MAP[c.text]) act = ACTION_MAP[c.text];
+      if (c.role === "OBJECT" && OBJECT_MAP[c.text]) obj = OBJECT_MAP[c.text];
+    }
+    if (act && obj) {
+      const sg = SUBGOAL_MAP[act + "|" + obj];
+      if (sg) subgoals.push(sg);
+    }
+  }
+  return subgoals;
+}
+
+// === Display functions ===
+
+const vsaCanvas = document.getElementById("vsaCanvas");
+const vsaCtx = vsaCanvas.getContext("2d");
+
+function drawVSA(vsa) {
+  const w = vsaCanvas.width, h = vsaCanvas.height;
+  vsaCtx.fillStyle = "#0f172a";
+  vsaCtx.fillRect(0, 0, w, h);
+
+  const bitW = w / 512;
+  for (let i = 0; i < 512; i++) {
+    vsaCtx.fillStyle = vsa[i] === 1 ? "#60a5fa" : "#1e293b";
+    vsaCtx.fillRect(i * bitW, 0, bitW - 0.2, h);
+  }
+}
+
+function renderChunks(chunks) {
+  const el = document.getElementById("chunksDisplay");
+  let html = "";
+  for (const c of chunks) {
+    const cls = c.role === "ACTION" ? "action" : c.role === "OBJECT" ? "object" :
+                c.role === "ATTR" ? "attr" : c.role === "SEQ_BREAK" ? "seq" : "";
+    const text = c.role === "SEQ_BREAK" ? "THEN" : c.text;
+    html += `<div class="chunk ${cls}">
+      <span class="chunk-text">${text}</span>
+      <span class="chunk-role">${c.role}</span>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderDecode(decoded) {
+  const el = document.getElementById("decodeDisplay");
+  const labels = { action: "Действие", object: "Объект", attr: "Атрибут" };
+  const readable = {
+    action_pickup: "pick up", action_open: "open", action_goto: "go to",
+    action_toggle: "toggle", action_put: "put", action_drop: "drop",
+    object_key: "key", object_door: "door", object_goal: "goal",
+    object_ball: "ball", object_box: "box",
+    color_red: "red", color_green: "green", color_blue: "blue",
+    color_purple: "purple", color_yellow: "yellow", color_grey: "grey"
+  };
+  let html = "";
+  for (const key of ["action", "object", "attr"]) {
+    if (decoded[key]) {
+      html += `<div class="decode-item">
+        <div class="decode-key">${labels[key]}</div>
+        <div class="decode-val">${readable[decoded[key]] || decoded[key]}</div>
+      </div>`;
+    }
+  }
+  if (!html) html = '<div style="color:#f87171">Не распознано</div>';
+  el.innerHTML = html;
+}
+
+function renderSubgoals(subgoals) {
+  const el = document.getElementById("subgoalsDisplay");
+  const readable = {
+    pickup_key: "Подобрать ключ", open_door: "Открыть дверь",
+    reach_goal: "Достичь цели", goto_door: "Подойти к двери",
+    goto_key: "Подойти к ключу", drop_key: "Бросить ключ",
+    pickup_ball: "Подобрать мяч", drop_ball: "Бросить мяч",
+    pickup_box: "Подобрать коробку", put_box: "Положить коробку",
+    put_ball: "Положить мяч"
+  };
+  let html = "";
+  for (let i = 0; i < subgoals.length; i++) {
+    if (i > 0) html += '<span class="subgoal-arrow">→</span>';
+    html += `<div class="subgoal">${readable[subgoals[i]] || subgoals[i]}</div>`;
+  }
+  if (!html) html = '<div style="color:#94a3b8;font-size:0.9em">Нет распознанных подцелей</div>';
+  el.innerHTML = html;
+}
+
+// === Similarity matrix ===
+
+const SIM_INSTRUCTIONS = [
+  "pick up the key", "open the door", "go to the goal",
+  "toggle the door", "pick up the red key", "go to the key",
+  "drop the ball", "pick up the box"
+];
+
+function buildSimMatrix() {
+  const vectors = SIM_INSTRUCTIONS.map(instr => {
+    const c = chunk(instr);
+    const first = [];
+    for (const ch of c) { if (ch.role === "SEQ_BREAK") break; first.push(ch); }
+    return encodeChunks(first);
+  });
+
+  const container = document.getElementById("simMatrixContainer");
+  let html = '<table class="sim-table"><tr><th></th>';
+  const short = SIM_INSTRUCTIONS.map(s => s.length > 14 ? s.slice(0, 12) + ".." : s);
+  for (const s of short) html += `<th>${s}</th>`;
+  html += "</tr>";
+
+  for (let i = 0; i < vectors.length; i++) {
+    html += `<tr><th>${short[i]}</th>`;
+    for (let j = 0; j < vectors.length; j++) {
+      const sim = cb.similarity(vectors[i], vectors[j]);
+      const color = i === j ? "#34d399" : sim > 0.7 ? "#f59e0b" : sim > 0.6 ? "#94a3b8" : "#475569";
+      html += `<td style="color:${color}">${sim.toFixed(2)}</td>`;
+    }
+    html += "</tr>";
+  }
+  html += "</table>";
+  container.innerHTML = html;
+}
+
+// === Main process ===
+
+function processInstruction() {
+  const instruction = document.getElementById("instrInput").value;
+  const chunks_all = chunk(instruction);
+
+  // Render chunks
+  renderChunks(chunks_all);
+
+  // Encode first part
+  const firstPart = [];
+  for (const c of chunks_all) { if (c.role === "SEQ_BREAK") break; firstPart.push(c); }
+  const vsa = encodeChunks(firstPart);
+  drawVSA(vsa);
+
+  const ones = Array.from(vsa).filter(b => b === 1).length;
+  document.getElementById("vsaInfo").textContent =
+    `512 бит, ${ones} единиц (${(ones/512*100).toFixed(0)}%)`;
+
+  // Decode
+  const decoded = decodeVSA(vsa);
+  renderDecode(decoded);
+
+  // Subgoals
+  const subgoals = toSubgoals(instruction);
+  renderSubgoals(subgoals);
+}
+
+function setPreset(text) {
+  document.getElementById("instrInput").value = text;
+  processInstruction();
+}
+
+// Init
+processInstruction();
+buildSimMatrix();
+</script>
+</body>
+</html>
