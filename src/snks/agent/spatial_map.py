@@ -111,6 +111,36 @@ class SpatialMap:
             "goal_pos": self.find_object(OBJ_GOAL),
         }
 
+    def find_object_by_type_color(self, type_id: int, color_id: int) -> tuple[int, int] | None:
+        """Find position of object matching both type and color.
+
+        Returns (row, col) or None.
+        """
+        type_match = self.grid[:, :, 0] == type_id
+        color_match = self.grid[:, :, 1] == color_id
+        mask = type_match & color_match
+        positions = np.argwhere(mask)
+        if len(positions) > 0:
+            return int(positions[0, 0]), int(positions[0, 1])
+        return None
+
+    def find_all_objects(self) -> list[tuple[int, int, int, int]]:
+        """Find all non-wall, non-empty objects.
+
+        Returns list of (type_id, color_id, row, col).
+        """
+        result: list[tuple[int, int, int, int]] = []
+        for r in range(self.height):
+            for c in range(self.width):
+                if not self.explored[r, c]:
+                    continue
+                t = int(self.grid[r, c, 0])
+                if t in (OBJ_UNSEEN, 1, OBJ_WALL, self.UNKNOWN):  # 1=empty
+                    continue
+                color = int(self.grid[r, c, 1])
+                result.append((t, color, r, c))
+        return result
+
     def frontiers(self) -> list[tuple[int, int]]:
         """Find frontier cells: explored empty/floor cells adjacent to unexplored.
 
