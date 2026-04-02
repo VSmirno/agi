@@ -14,6 +14,7 @@ from snks.agent.spatial_map import (
     SpatialMap,
     OBJ_DOOR,
     OBJ_EMPTY,
+    OBJ_GOAL,
     OBJ_KEY,
     OBJ_WALL,
 )
@@ -318,6 +319,114 @@ class PartialObsDoorKeyEnv:
     def carrying(self) -> bool:
         """Whether agent is carrying an object."""
         return self._env.carrying is not None
+
+    @property
+    def unwrapped(self):
+        return self._env
+
+
+class MultiRoomPartialObsAgent:
+    """Navigate MultiRoom environments with 7x7 partial observation.
+
+    Strategy:
+    1. Update spatial map with each observation
+    2. If facing closed door → toggle
+    3. If goal found → BFS navigate to goal
+    4. Else → frontier exploration (BFS to nearest unknown)
+    """
+
+    def __init__(self, grid_width: int = 25, grid_height: int = 25,
+                 epsilon: float = 0.05):
+        self.spatial_map = SpatialMap(grid_width, grid_height)
+        self.explorer = FrontierExplorer()
+        self.pathfinder = GridPathfinder()
+        self.epsilon = epsilon
+
+    def reset(self) -> None:
+        self.spatial_map.reset()
+
+    def select_action(self, obs_7x7: np.ndarray,
+                      agent_col: int, agent_row: int, agent_dir: int) -> int:
+        """Main action selection."""
+        self.spatial_map.update(obs_7x7, agent_col, agent_row, agent_dir)
+
+        # Epsilon exploration
+        if self.epsilon > 0 and np.random.random() < self.epsilon:
+            return int(np.random.randint(0, 3))
+
+        # If facing closed door → toggle
+        front_obj = int(obs_7x7[3, 5, 0])
+        front_state = int(obs_7x7[3, 5, 2])
+        if front_obj == OBJ_DOOR and front_state in (1, 2):
+            return ACT_TOGGLE
+
+        # If goal found → navigate to it
+        goal_pos = self.spatial_map.find_object(OBJ_GOAL)
+        if goal_pos is not None:
+            return self._navigate_to(goal_pos[0], goal_pos[1],
+                                     agent_row, agent_col, agent_dir)
+
+        # Explore: frontier navigation
+        return self.explorer.select_action(
+            self.spatial_map, agent_row, agent_col, agent_dir
+        )
+
+    def _navigate_to(self, target_row: int, target_col: int,
+                     agent_row: int, agent_col: int, agent_dir: int) -> int:
+        """BFS navigate to target, treating doors as passable."""
+        if agent_row == target_row and agent_col == target_col:
+            return int(np.random.randint(0, 3))
+
+        obs = self.spatial_map.to_obs()
+        path = self.pathfinder.find_path(obs, (agent_row, agent_col),
+                                         (target_row, target_col),
+                                         allow_door=True)
+        if path is None or len(path) <= 1:
+            return self.explorer.select_action(
+                self.spatial_map, agent_row, agent_col, agent_dir
+            )
+
+        actions = self.pathfinder.path_to_actions(path, agent_dir)
+        if actions:
+            return actions[0]
+        return ACT_FORWARD
+
+    def observe_result(self, obs_7x7: np.ndarray,
+                       agent_col: int, agent_row: int, agent_dir: int,
+                       reward: float) -> None:
+        """Update spatial map after action."""
+        self.spatial_map.update(obs_7x7, agent_col, agent_row, agent_dir)
+
+
+class PartialObsMultiRoomEnv:
+    """MultiRoom-N3 with standard 7x7 partial observation (no FullyObsWrapper)."""
+
+    def __init__(self, n_rooms: int = 3, max_room_size: int = 6,
+                 max_steps: int = 300):
+        from minigrid.envs.multiroom import MultiRoomEnv
+        self._env = MultiRoomEnv(
+            minNumRooms=n_rooms, maxNumRooms=n_rooms,
+            maxRoomSize=max_room_size, max_steps=max_steps,
+        )
+        self.grid_width = 25
+        self.grid_height = 25
+
+    def reset(self, seed: int | None = None) -> tuple[np.ndarray, int, int, int]:
+        """Reset and return (obs_7x7, agent_col, agent_row, agent_dir)."""
+        obs, info = self._env.reset(seed=seed)
+        img = obs["image"]
+        pos = self._env.agent_pos
+        d = self._env.agent_dir
+        self.grid_width = self._env.grid.width
+        self.grid_height = self._env.grid.height
+        return img, int(pos[0]), int(pos[1]), int(d)
+
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, int, int, int]:
+        obs, reward, term, trunc, info = self._env.step(action)
+        img = obs["image"]
+        pos = self._env.agent_pos
+        d = self._env.agent_dir
+        return img, float(reward), term, trunc, int(pos[0]), int(pos[1]), int(d)
 
     @property
     def unwrapped(self):

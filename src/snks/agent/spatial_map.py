@@ -122,8 +122,9 @@ class SpatialMap:
                 if not self.explored[r, c]:
                     continue
                 obj = int(self.grid[r, c, 0])
-                if obj in (OBJ_WALL, OBJ_DOOR):
+                if obj == OBJ_WALL:
                     continue
+                # Doors are valid frontiers — they lead to unexplored rooms
                 # Check if adjacent to unexplored
                 for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
                     nr, nc = r + dr, c + dc
@@ -140,46 +141,81 @@ class SpatialMap:
 
 
 class FrontierExplorer:
-    """Navigate to nearest frontier cell using BFS."""
+    """Navigate to nearest frontier cell using BFS.
+
+    Uses a single BFS from agent position, expanding outward until
+    hitting a frontier cell. O(n) instead of O(frontiers * n).
+    """
 
     def __init__(self):
         self._pathfinder = GridPathfinder()
 
     def nearest_frontier(self, spatial_map: SpatialMap,
                          agent_row: int, agent_col: int) -> tuple[int, int] | None:
-        """BFS from agent to nearest frontier cell."""
-        fronts = spatial_map.frontiers()
-        if not fronts:
+        """Single BFS from agent position to nearest frontier."""
+        frontier_set = set(spatial_map.frontiers())
+        if not frontier_set:
             return None
 
         obs = spatial_map.to_obs()
-        best_path = None
-        best_target = None
+        walls = self._pathfinder.extract_walls(obs, allow_door=True)
+        h, w = spatial_map.height, spatial_map.width
 
-        for fr, fc in fronts:
-            path = self._pathfinder.find_path(
-                obs, (agent_row, agent_col), (fr, fc), allow_door=True
-            )
-            if path is not None:
-                if best_path is None or len(path) < len(best_path):
-                    best_path = path
-                    best_target = (fr, fc)
+        queue = deque([(agent_row, agent_col)])
+        visited = {(agent_row, agent_col)}
 
-        return best_target
+        while queue:
+            r, c = queue.popleft()
+            if (r, c) in frontier_set and (r, c) != (agent_row, agent_col):
+                return (r, c)
+            for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < h and 0 <= nc < w and (nr, nc) not in visited:
+                    if (nr, nc) not in walls:
+                        visited.add((nr, nc))
+                        queue.append((nr, nc))
+
+        return None
 
     def select_action(self, spatial_map: SpatialMap,
                       agent_row: int, agent_col: int, agent_dir: int) -> int:
-        """BFS to nearest frontier, return first action."""
+        """BFS to nearest frontier, return first action.
+
+        If frontier is a door, navigates to adjacent cell (can't step on door).
+        """
         target = self.nearest_frontier(spatial_map, agent_row, agent_col)
         if target is None:
-            return 2  # forward (fallback)
+            # No frontiers — random turn to reveal new areas
+            return int(np.random.randint(0, 3))
 
+        # If target is a door, navigate to an adjacent non-wall cell
         obs = spatial_map.to_obs()
+        actual_target = target
+        if int(obs[target[0], target[1], 0]) == OBJ_DOOR:
+            # Find adjacent walkable cell closest to agent
+            best_adj = None
+            best_dist = float('inf')
+            for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                ar, ac = target[0] + dr, target[1] + dc
+                if 0 <= ar < spatial_map.height and 0 <= ac < spatial_map.width:
+                    obj = int(obs[ar, ac, 0])
+                    if obj not in (OBJ_WALL, OBJ_DOOR):
+                        d = abs(ar - agent_row) + abs(ac - agent_col)
+                        if d < best_dist:
+                            best_dist = d
+                            best_adj = (ar, ac)
+            if best_adj is not None:
+                actual_target = best_adj
+
+        if actual_target == (agent_row, agent_col):
+            # Already at target — turn randomly to trigger door toggle
+            return int(np.random.randint(0, 2))  # left or right
+
         path = self._pathfinder.find_path(
-            obs, (agent_row, agent_col), target, allow_door=True
+            obs, (agent_row, agent_col), actual_target, allow_door=True
         )
         if path is None or len(path) <= 1:
-            return 2  # forward
+            return int(np.random.randint(0, 3))
 
         actions = self._pathfinder.path_to_actions(path, agent_dir)
         if actions:
