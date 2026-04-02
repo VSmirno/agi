@@ -1,0 +1,451 @@
+"""Stage 46: Subgoal Planning — unit tests (TDD).
+
+Tests for SubgoalExtractor, PlanGraph, SubgoalNavigator, SubgoalPlanningAgent.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+import torch
+
+from snks.agent.vsa_world_model import (
+    SDMMemory,
+    VSACodebook,
+    VSAEncoder,
+    WorldModelConfig,
+)
+from snks.agent.subgoal_planning import (
+    PlanGraph,
+    Subgoal,
+    SubgoalConfig,
+    SubgoalExtractor,
+    SubgoalNavigator,
+    SubgoalPlanningAgent,
+    TraceStep,
+)
+
+
+# ──────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────
+
+class _DoorKeyEnv:
+    """Simplified DoorKey-5x5 for testing (copied from exp105)."""
+
+    def __init__(self, seed: int | None = None):
+        self.rng = np.random.RandomState(seed)
+        self.size = 5
+        self.n_actions = 7
+        self.max_steps = 200
+        self.reset()
+
+    def reset(self, seed: int | None = None) -> np.ndarray:
+        if seed is not None:
+            self.rng = np.random.RandomState(seed)
+        self.agent_pos = [1, 1]
+        self.agent_dir = 0
+        self.key_pos = [1, 3]
+        self.has_key = False
+        self.door_pos = [2, 2]
+        self.door_open = False
+        self.goal_pos = [3, 3]
+        self.steps = 0
+        self.key_picked = False
+        return self._obs()
+
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
+        self.steps += 1
+        reward = 0.0
+        if action == 0:
+            self.agent_dir = (self.agent_dir - 1) % 4
+        elif action == 1:
+            self.agent_dir = (self.agent_dir + 1) % 4
+        elif action == 2:
+            dr, dc = [(0, 1), (1, 0), (0, -1), (-1, 0)][self.agent_dir]
+            nr, nc = self.agent_pos[0] + dr, self.agent_pos[1] + dc
+            if 0 <= nr < self.size and 0 <= nc < self.size:
+                if [nr, nc] == self.door_pos and not self.door_open:
+                    pass
+                else:
+                    self.agent_pos = [nr, nc]
+        elif action == 3:
+            if self.agent_pos == self.key_pos and not self.has_key:
+                self.has_key = True
+                self.key_picked = True
+        elif action == 5:
+            dr, dc = [(0, 1), (1, 0), (0, -1), (-1, 0)][self.agent_dir]
+            fr, fc = self.agent_pos[0] + dr, self.agent_pos[1] + dc
+            if [fr, fc] == self.door_pos and self.has_key and not self.door_open:
+                self.door_open = True
+        terminated = False
+        if self.agent_pos == self.goal_pos:
+            reward = 1.0 - 0.9 * (self.steps / self.max_steps)
+            terminated = True
+        truncated = self.steps >= self.max_steps
+        return self._obs(), reward, terminated, truncated, {}
+
+    def _obs(self) -> np.ndarray:
+        obs = np.zeros((7, 7, 3), dtype=np.int64)
+        for i in range(7):
+            obs[0, i, 0] = 2; obs[6, i, 0] = 2
+            obs[i, 0, 0] = 2; obs[i, 6, 0] = 2
+        ar, ac = self.agent_pos[0] + 1, self.agent_pos[1] + 1
+        obs[ar, ac, 0] = 10
+        obs[ar, ac, 2] = self.agent_dir
+        if not self.key_picked:
+            kr, kc = self.key_pos[0] + 1, self.key_pos[1] + 1
+            obs[kr, kc, 0] = 5; obs[kr, kc, 1] = 1
+        dr, dc = self.door_pos[0] + 1, self.door_pos[1] + 1
+        obs[dr, dc, 0] = 4
+        obs[dr, dc, 2] = 0 if self.door_open else 2
+        gr, gc = self.goal_pos[0] + 1, self.goal_pos[1] + 1
+        obs[gr, gc, 0] = 8
+        if self.has_key:
+            obs[ar, ac, 1] = 5
+        return obs
+
+
+def _make_obs(agent_pos=(3, 3), agent_dir=0, key_pos=None, key_color=1,
+              door_pos=None, door_state=2, goal_pos=(4, 4),
+              has_key=False) -> np.ndarray:
+    """Create a MiniGrid-like symbolic obs (7x7x3)."""
+    obs = np.zeros((7, 7, 3), dtype=np.int64)
+    # Walls
+    for i in range(7):
+        obs[0, i, 0] = 2
+        obs[6, i, 0] = 2
+        obs[i, 0, 0] = 2
+        obs[i, 6, 0] = 2
+
+    ar, ac = agent_pos
+    obs[ar, ac, 0] = 10
+    obs[ar, ac, 2] = agent_dir
+    if has_key:
+        obs[ar, ac, 1] = 5  # carrying indicator
+
+    if key_pos is not None:
+        kr, kc = key_pos
+        obs[kr, kc, 0] = 5
+        obs[kr, kc, 1] = key_color
+
+    if door_pos is not None:
+        dr, dc = door_pos
+        obs[dr, dc, 0] = 4
+        obs[dr, dc, 2] = door_state
+
+    if goal_pos is not None:
+        gr, gc = goal_pos
+        obs[gr, gc, 0] = 8
+
+    return obs
+
+
+def _make_doorkey_trace() -> list[TraceStep]:
+    """Create a realistic successful DoorKey trace.
+
+    Sequence: start → navigate to key → pickup → navigate to door → toggle → navigate to goal.
+    """
+    trace = []
+
+    # Step 1: Agent at (2,2), moving toward key at (2,4)
+    obs_before = _make_obs(agent_pos=(2, 2), key_pos=(2, 4), door_pos=(3, 3), goal_pos=(4, 4))
+    obs_after = _make_obs(agent_pos=(2, 3), key_pos=(2, 4), door_pos=(3, 3), goal_pos=(4, 4))
+    trace.append(TraceStep(obs_before, 2, obs_after, 0.0))  # forward
+
+    # Step 2: Continue to key
+    obs_before = obs_after
+    obs_after = _make_obs(agent_pos=(2, 4), key_pos=(2, 4), door_pos=(3, 3), goal_pos=(4, 4))
+    trace.append(TraceStep(obs_before, 2, obs_after, 0.0))
+
+    # Step 3: Pickup key — key disappears from grid
+    obs_before = obs_after
+    obs_after = _make_obs(agent_pos=(2, 4), key_pos=None, door_pos=(3, 3), goal_pos=(4, 4), has_key=True)
+    trace.append(TraceStep(obs_before, 3, obs_after, 0.0))  # pickup
+
+    # Step 4: Navigate toward door
+    obs_before = obs_after
+    obs_after = _make_obs(agent_pos=(2, 3), key_pos=None, door_pos=(3, 3), goal_pos=(4, 4), has_key=True)
+    trace.append(TraceStep(obs_before, 2, obs_after, 0.0))
+
+    # Step 5: Face door and toggle — door opens
+    obs_before = obs_after
+    obs_after = _make_obs(agent_pos=(2, 3), key_pos=None, door_pos=(3, 3), door_state=0, goal_pos=(4, 4), has_key=True)
+    trace.append(TraceStep(obs_before, 5, obs_after, 0.0))  # toggle
+
+    # Step 6: Navigate through door to goal area
+    obs_before = obs_after
+    obs_after = _make_obs(agent_pos=(3, 3), key_pos=None, door_pos=(3, 3), door_state=0, goal_pos=(4, 4), has_key=True)
+    trace.append(TraceStep(obs_before, 2, obs_after, 0.0))
+
+    # Step 7: Reach goal
+    obs_before = obs_after
+    obs_after = _make_obs(agent_pos=(4, 4), key_pos=None, door_pos=(3, 3), door_state=0, goal_pos=(4, 4), has_key=True)
+    trace.append(TraceStep(obs_before, 2, obs_after, 1.0))  # reward!
+
+    return trace
+
+
+# ──────────────────────────────────────────────
+# SubgoalExtractor
+# ──────────────────────────────────────────────
+
+class TestSubgoalExtractor:
+    def setup_method(self):
+        self.cb = VSACodebook(dim=512, seed=42)
+        self.enc = VSAEncoder(self.cb)
+        self.extractor = SubgoalExtractor(self.cb, self.enc)
+
+    def test_extract_detects_pickup_key(self):
+        trace = _make_doorkey_trace()
+        subgoals = self.extractor.extract(trace)
+        names = [s.name for s in subgoals]
+        assert "pickup_key" in names
+
+    def test_extract_detects_open_door(self):
+        trace = _make_doorkey_trace()
+        subgoals = self.extractor.extract(trace)
+        names = [s.name for s in subgoals]
+        assert "open_door" in names
+
+    def test_extract_detects_reach_goal(self):
+        trace = _make_doorkey_trace()
+        subgoals = self.extractor.extract(trace)
+        names = [s.name for s in subgoals]
+        assert "reach_goal" in names
+
+    def test_extract_correct_order(self):
+        """Subgoals must be ordered: pickup_key → open_door → reach_goal."""
+        trace = _make_doorkey_trace()
+        subgoals = self.extractor.extract(trace)
+        names = [s.name for s in subgoals]
+        assert names.index("pickup_key") < names.index("open_door")
+        assert names.index("open_door") < names.index("reach_goal")
+
+    def test_extract_has_target_states(self):
+        trace = _make_doorkey_trace()
+        subgoals = self.extractor.extract(trace)
+        for sg in subgoals:
+            assert sg.target_state.shape == (512,)
+            assert sg.precondition_state.shape == (512,)
+
+    def test_extract_no_duplicates(self):
+        trace = _make_doorkey_trace()
+        subgoals = self.extractor.extract(trace)
+        names = [s.name for s in subgoals]
+        assert len(names) == len(set(names))
+
+    def test_extract_empty_trace(self):
+        subgoals = self.extractor.extract([])
+        assert subgoals == []
+
+    def test_extract_trace_no_key_event(self):
+        """Trace where agent goes straight to goal (no key/door) → only reach_goal."""
+        obs1 = _make_obs(agent_pos=(3, 3), goal_pos=(4, 4))
+        obs2 = _make_obs(agent_pos=(4, 4), goal_pos=(4, 4))
+        trace = [TraceStep(obs1, 2, obs2, 1.0)]
+        subgoals = self.extractor.extract(trace)
+        names = [s.name for s in subgoals]
+        assert "reach_goal" in names
+        assert "pickup_key" not in names
+
+
+# ──────────────────────────────────────────────
+# PlanGraph
+# ──────────────────────────────────────────────
+
+class TestPlanGraph:
+    def _make_subgoals(self) -> list[Subgoal]:
+        dummy = torch.zeros(512)
+        return [
+            Subgoal("pickup_key", dummy, dummy, "symbolic"),
+            Subgoal("open_door", dummy, dummy, "symbolic"),
+            Subgoal("reach_goal", dummy, dummy, "symbolic"),
+        ]
+
+    def test_current_subgoal_starts_at_first(self):
+        sg = self._make_subgoals()
+        plan = PlanGraph(sg)
+        assert plan.current_subgoal().name == "pickup_key"
+
+    def test_advance_moves_to_next(self):
+        sg = self._make_subgoals()
+        plan = PlanGraph(sg)
+        done = plan.advance()
+        assert not done
+        assert plan.current_subgoal().name == "open_door"
+
+    def test_advance_to_end(self):
+        sg = self._make_subgoals()
+        plan = PlanGraph(sg)
+        plan.advance()  # → open_door
+        plan.advance()  # → reach_goal
+        done = plan.advance()  # → done
+        assert done
+        assert plan.current_subgoal() is None
+
+    def test_reset(self):
+        sg = self._make_subgoals()
+        plan = PlanGraph(sg)
+        plan.advance()
+        plan.advance()
+        plan.reset()
+        assert plan.current_subgoal().name == "pickup_key"
+
+    def test_empty_plan(self):
+        plan = PlanGraph([])
+        assert plan.current_subgoal() is None
+        assert plan.advance() is True
+
+
+# ──────────────────────────────────────────────
+# SubgoalNavigator
+# ──────────────────────────────────────────────
+
+class TestSubgoalNavigator:
+    def setup_method(self):
+        self.cb = VSACodebook(dim=512, seed=42)
+        self.enc = VSAEncoder(self.cb)
+        self.sdm = SDMMemory(n_locations=1000, dim=512, seed=42)
+        self.nav = SubgoalNavigator(self.sdm, self.cb, self.enc, n_actions=7)
+
+    def test_select_returns_valid_action(self):
+        state = torch.randint(0, 2, (512,), dtype=torch.float32)
+        dummy_target = torch.randint(0, 2, (512,), dtype=torch.float32)
+        sg = Subgoal("test", dummy_target, state, "symbolic")
+        action = self.nav.select(state, sg)
+        assert 0 <= action < 7
+
+    def test_select_prefers_action_toward_target(self):
+        """If SDM predicts one action leads closer to target, navigator should pick it."""
+        # Use larger SDM for cleaner separation
+        sdm = SDMMemory(n_locations=5000, dim=512, seed=42)
+        state = torch.randint(0, 2, (512,), dtype=torch.float32)
+        target = torch.randint(0, 2, (512,), dtype=torch.float32)
+
+        # Write: action 2 from state → target (high similarity)
+        for _ in range(30):
+            sdm.write(state, self.cb.action(2), target, 0.0)
+
+        # Write: action 0 from state → random (low similarity to target)
+        random_next = torch.randint(0, 2, (512,), dtype=torch.float32)
+        for _ in range(30):
+            sdm.write(state, self.cb.action(0), random_next, 0.0)
+
+        sg = Subgoal("test", target, state, "symbolic")
+        nav = SubgoalNavigator(sdm, self.cb, self.enc, n_actions=7, epsilon=0.0)
+        actions = [nav.select(state, sg) for _ in range(10)]
+        # Should prefer action 2
+        assert actions.count(2) >= 7, f"Expected action 2, got {actions}"
+
+    def test_is_achieved_pickup_key(self):
+        """Key not visible → pickup_key achieved."""
+        obs_with_key = _make_obs(agent_pos=(2, 2), key_pos=(2, 4))
+        obs_no_key = _make_obs(agent_pos=(2, 4), key_pos=None, has_key=True)
+        dummy = torch.zeros(512)
+        sg = Subgoal("pickup_key", dummy, dummy, "symbolic")
+        assert not self.nav.is_achieved(obs_with_key, sg)
+        assert self.nav.is_achieved(obs_no_key, sg)
+
+    def test_is_achieved_open_door(self):
+        """Door state=0 → open_door achieved."""
+        obs_locked = _make_obs(door_pos=(3, 3), door_state=2)
+        obs_open = _make_obs(door_pos=(3, 3), door_state=0)
+        dummy = torch.zeros(512)
+        sg = Subgoal("open_door", dummy, dummy, "symbolic")
+        assert not self.nav.is_achieved(obs_locked, sg)
+        assert self.nav.is_achieved(obs_open, sg)
+
+
+# ──────────────────────────────────────────────
+# SubgoalPlanningAgent (integration)
+# ──────────────────────────────────────────────
+
+class TestSubgoalPlanningAgent:
+    def test_creates_successfully(self):
+        config = SubgoalConfig(dim=512, n_locations=1000, n_actions=7)
+        agent = SubgoalPlanningAgent(config)
+        assert agent is not None
+        assert agent.extractor is not None
+        assert agent.navigator is not None
+
+    def test_explore_phase_collects_traces(self):
+        """During explore, agent should collect trace data."""
+        config = SubgoalConfig(
+            dim=512, n_locations=1000, n_actions=7,
+            explore_episodes=5,
+        )
+        agent = SubgoalPlanningAgent(config)
+
+        class SimpleEnv:
+            def __init__(self):
+                self.steps = 0
+            def reset(self, seed=None):
+                self.steps = 0
+                return _make_obs(agent_pos=(2, 2), key_pos=(2, 4),
+                                 door_pos=(3, 3), goal_pos=(4, 4))
+            def step(self, action):
+                self.steps += 1
+                done = self.steps >= 3
+                obs = _make_obs(agent_pos=(4, 4), goal_pos=(4, 4)) if done else \
+                    _make_obs(agent_pos=(2, 3), key_pos=(2, 4),
+                              door_pos=(3, 3), goal_pos=(4, 4))
+                return obs, 1.0 if done else 0.0, done, False, {}
+
+        env = SimpleEnv()
+        for _ in range(5):
+            agent.run_episode(env, max_steps=20)
+        # Should have collected traces
+        assert len(agent._successful_traces) > 0
+
+    def test_plan_phase_builds_plan(self):
+        """After explore with successful traces, plan phase should build a PlanGraph."""
+        config = SubgoalConfig(
+            dim=512, n_locations=1000, n_actions=7,
+            explore_episodes=2,
+        )
+        agent = SubgoalPlanningAgent(config)
+
+        # Manually add a successful trace
+        trace = _make_doorkey_trace()
+        agent._successful_traces.append(trace)
+        agent._episode_count = 3  # past explore phase
+
+        # Run a plan episode
+        class DummyEnv:
+            def __init__(self):
+                self.steps = 0
+            def reset(self, seed=None):
+                self.steps = 0
+                return _make_obs(agent_pos=(2, 2), key_pos=(2, 4),
+                                 door_pos=(3, 3), goal_pos=(4, 4))
+            def step(self, action):
+                self.steps += 1
+                done = self.steps >= 10
+                return _make_obs(agent_pos=(2, 3)), 0.0, done, False, {}
+
+        env = DummyEnv()
+        agent.run_episode(env, max_steps=20)
+        assert agent.plan is not None
+        assert len(agent.plan.subgoals) >= 2  # at least pickup_key and reach_goal
+
+    def test_full_episode_with_doorkey_env(self):
+        """Integration test: run explore + plan on simplified DoorKey."""
+        config = SubgoalConfig(
+            dim=512, n_locations=2000, n_actions=7,
+            explore_episodes=10,
+            epsilon=0.2,
+            min_confidence=0.01,
+        )
+        agent = SubgoalPlanningAgent(config)
+
+        env = _DoorKeyEnv(seed=42)
+
+        results = []
+        for ep in range(30):
+            success, steps, reward = agent.run_episode(env, max_steps=200)
+            results.append(success)
+
+        # At minimum, some explore episodes should succeed (random walk ~40%)
+        explore_successes = sum(results[:10])
+        assert explore_successes >= 1, "No explore successes — env may be broken"
