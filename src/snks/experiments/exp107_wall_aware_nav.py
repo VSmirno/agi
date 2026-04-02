@@ -248,7 +248,7 @@ def run_exp107b(n_layouts: int = 200, plan_eps: int = 50) -> dict:
             n_locations=5000,
             n_actions=7,
             min_confidence=0.01,
-            epsilon=0.1,
+            epsilon=0.05,
             max_episode_steps=200,
             explore_episodes=0,  # No explore — build plan from observation
         )
