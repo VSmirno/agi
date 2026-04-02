@@ -72,12 +72,14 @@
 | 41 | Temporal Credit Assignment | COMPLETE (2026-04-01) | Eligibility trace: λ=0.92, window=35 steps, 5x memory savings |
 | 42 | Spatial Representation | COMPLETE (2026-04-01) | Perception fix: symbolic+CNN encoders, diagnostic confirms dual bottleneck |
 | 43 | Working Memory | COMPLETE (2026-04-01) | Selective reset: WM zone preserved, sustained activation confirmed, gating needed |
+| 44 | Foundation Audit | COMPLETE (2026-04-02) | 26/26 layer tests PASS, Golden Path 56.7%, Naked DAF 0% — world model needed |
+| 45 | VSA World Model | IN PROGRESS | VSA+SDM world model, 1-step lookahead planning |
 
 ---
 
 ## Статус: Блок 6 в разработке
 
-**Stages 0-43: COMPLETE** (122 экспериментов)
+**Stages 0-44: COMPLETE** (126 экспериментов)
 **Exp 92 GPU Scaling: DONE** (N=200K, 34/34 exps PASS on AMD ROCm)
 **Stage 38: Pure DAF** — убран scaffolding, чистый DAF pipeline, 12% DoorKey-5x5
 

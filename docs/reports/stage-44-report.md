@@ -1,6 +1,6 @@
 # Stage 44: Foundation Audit
 
-## Результат: IN PROGRESS (Phase 1 PASS, Phase 0 PASS, Phase 2 RUNNING)
+## Результат: PASS (audit) / FAIL (naked DAF)
 
 **Ветка:** `stage44-foundation-audit`
 **Тип:** Audit / Verification (не новая фича)
@@ -40,13 +40,13 @@
 | Audit (26 тестов) | all pass | 26/26 PASS | all pass | PASS |
 | 103 Golden Path | success rate | 56.7% (17/30) | > 50% | PASS |
 | 103 weight delta | mean delta | 0.098 | > 0 | PASS |
-| 104 Naked DAF | success rate | 0/12 = 0% (partial, running) | ≥ 15% | ⏳ RUNNING → likely FAIL |
+| 104 Naked DAF | success rate | 0/200 = 0% | ≥ 15% | FAIL |
 
 ## Запланированные эксперименты (tech debt)
 
 | TD | Exp | Что проверяется | Gate | Статус |
 |----|-----|-----------------|------|--------|
-| — | 104 | Naked DAF DoorKey-5x5, 50K нод, 200 ep | success ≥ 15% | ⏳ запущен на minipc |
+| — | 104 | Naked DAF DoorKey-5x5, 50K нод, 200 ep | success ≥ 15% | FAIL (0/200) |
 
 ## Ключевые решения
 
@@ -70,7 +70,24 @@
 
 ## Следующий этап
 
-Зависит от результатов exp104:
-- **PASS (≥15%):** фундамент жив, планировать следующие stages из роадмапа
-- **PARTIAL (5-15%):** ядро учится медленно, нужно адресовать timescale mismatch
-- **FAIL (<5%):** timescale mismatch критичен, нужен stage 45 с увеличением steps_per_cycle или пересмотром coupling mechanism
+exp104 FAIL (0/200 = 0%) подтверждает: Naked DAF не может решить DoorKey-5x5.
+Причина не в timescale mismatch, а в **отсутствии world model** — STDP меняет coupling weights, но нет пути от reward к policy.
+
+→ **Stage 45: VSA World Model** — добавить отдельный world model на основе VSA + SDM.
+
+---
+
+## Post-merge обновления
+
+### 2026-04-02 — exp104 завершён (FAIL)
+
+**Контекст:** Naked DAF DoorKey-5x5 на 50K нод, 200 эпизодов, GPU minipc.
+
+**Результаты:**
+| Exp | Метрика | Результат | Gate | Статус |
+|-----|---------|-----------|------|--------|
+| 104 | success_rate | 0/200 = 0% | ≥ 15% | FAIL |
+| 104 | reward | 0.0 (все эпизоды) | > 0 | FAIL |
+| 104 | PE range | 0.066-0.168 | — | info |
+
+**Вывод:** DAF-ядро корректно как perception engine, но не может решать задачи без world model. Нужен отдельный модуль для запоминания transitions и action selection на основе predicted reward. Stage 45 (VSA World Model) адресует это.
