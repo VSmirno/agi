@@ -24,6 +24,9 @@ class WorldModelConfig:
     min_confidence: float = 0.1
     epsilon: float = 0.1
     max_episode_steps: int = 200
+    trace_decay: float = 0.9       # eligibility trace decay (lambda)
+    trace_length: int = 30         # max trace length for backpropagation
+    novelty_bonus: float = 0.05    # intrinsic reward for novel states
 
 
 class VSACodebook:
@@ -296,7 +299,12 @@ class SDMPlanner:
 
 
 class WorldModelAgent:
-    """VSA World Model agent: encode → remember → plan → act."""
+    """VSA World Model agent: encode → remember → plan → act.
+
+    Features beyond basic SDM:
+    - Eligibility traces: on reward, backpropagates to recent (state, action) pairs
+    - Novelty bonus: small intrinsic reward for visiting unseen states
+    """
 
     def __init__(self, config: WorldModelConfig):
         self.config = config
@@ -315,6 +323,7 @@ class WorldModelAgent:
         )
         self._prev_state: torch.Tensor | None = None
         self._prev_action: int | None = None
+        self._episode_trace: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
 
     def step(self, obs: np.ndarray) -> int:
         state = self.encoder.encode(obs)
@@ -327,18 +336,47 @@ class WorldModelAgent:
         if self._prev_state is None:
             return
         next_state = self.encoder.encode(obs)
-        self.sdm.write(
-            self._prev_state,
-            self.codebook.action(self._prev_action),
-            next_state,
-            reward,
+        action_vsa = self.codebook.action(self._prev_action)
+
+        # Novelty bonus: if SDM has low confidence for this state, add intrinsic reward
+        _, conf = self.sdm.read_next(self._prev_state, action_vsa)
+        if conf < 0.05 and self.config.novelty_bonus > 0:
+            reward += self.config.novelty_bonus
+
+        # Write immediate transition
+        self.sdm.write(self._prev_state, action_vsa, next_state, reward)
+
+        # Store in episode trace for eligibility backpropagation
+        self._episode_trace.append(
+            (self._prev_state.clone(), action_vsa.clone(), next_state.clone())
         )
+
+        # If reward received, backpropagate through trace
+        if reward > 0 and len(self._episode_trace) > 1:
+            self._backpropagate_reward(reward)
+
+    def _backpropagate_reward(self, reward: float) -> None:
+        """Propagate reward backward through episode trace with decay."""
+        trace = self._episode_trace
+        decay = self.config.trace_decay
+        max_len = min(self.config.trace_length, len(trace) - 1)
+
+        for i in range(max_len):
+            idx = len(trace) - 2 - i  # skip current (already written)
+            if idx < 0:
+                break
+            state, action, next_state = trace[idx]
+            discounted = reward * (decay ** (i + 1))
+            if discounted < 0.001:
+                break
+            self.sdm.write(state, action, next_state, discounted)
 
     def run_episode(self, env, max_steps: int = 200) -> tuple[bool, int, float]:
         obs = env.reset()
         total_reward = 0.0
         self._prev_state = None
         self._prev_action = None
+        self._episode_trace = []
 
         for step_i in range(max_steps):
             action = self.step(obs)
