@@ -1,0 +1,30 @@
+[
+  {
+    "name": "exp108a_bfs",
+    "paths_found": 50,
+    "total": 50,
+    "rate": 1.0,
+    "mean_path_length": 11.16,
+    "gate": "PASS"
+  },
+  {
+    "name": "exp108b_navigation",
+    "successes": 200,
+    "total": 200,
+    "rate": 1.0,
+    "mean_steps": 16.345,
+    "mean_reward": 0.9705789999999999,
+    "time_s": 1.1479673385620117,
+    "failed_seeds": [],
+    "gate": "PASS"
+  },
+  {
+    "name": "exp108c_steps",
+    "n_success": 200,
+    "mean_steps": 16.345,
+    "min_steps": 10,
+    "max_steps": 25,
+    "p95_steps": 21.0,
+    "gate": "PASS"
+  }
+]
