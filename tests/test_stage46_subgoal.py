@@ -338,27 +338,26 @@ class TestSubgoalNavigator:
         action = self.nav.select(state, sg)
         assert 0 <= action < 7
 
-    def test_select_prefers_action_toward_target(self):
-        """If SDM predicts one action leads closer to target, navigator should pick it."""
-        # Use larger SDM for cleaner separation
-        sdm = SDMMemory(n_locations=5000, dim=512, seed=42)
-        state = torch.randint(0, 2, (512,), dtype=torch.float32)
-        target = torch.randint(0, 2, (512,), dtype=torch.float32)
+    def test_select_prefers_action_from_trace_segment(self):
+        """If trace segment has matching state, navigator should replay that action."""
+        from snks.agent.subgoal_planning import SymbolicState
 
-        # Write: action 2 from state → target (high similarity)
-        for _ in range(30):
-            sdm.write(state, self.cb.action(2), target, 0.0)
+        # Set up trace segment: at position (2,3) facing down, do action 2
+        segment = [
+            (SymbolicState(2, 3, 1, False, False), 2),  # at (2,3), dir=down, action=forward
+            (SymbolicState(3, 3, 1, False, False), 2),  # at (3,3), dir=down, action=forward
+        ]
+        nav = SubgoalNavigator(self.sdm, self.cb, self.enc, n_actions=7, epsilon=0.0)
+        nav.set_trace_segments({"test_sg": segment})
 
-        # Write: action 0 from state → random (low similarity to target)
-        random_next = torch.randint(0, 2, (512,), dtype=torch.float32)
-        for _ in range(30):
-            sdm.write(state, self.cb.action(0), random_next, 0.0)
+        # Current obs: agent at (2,3), same as trace
+        obs = _make_obs(agent_pos=(2, 3), agent_dir=1, key_pos=(1, 4), door_pos=(3, 3), goal_pos=(5, 4))
+        state = self.enc.encode(obs)
+        dummy_target = torch.zeros(512)
+        sg = Subgoal("test_sg", dummy_target, state, "symbolic")
 
-        sg = Subgoal("test", target, state, "symbolic")
-        nav = SubgoalNavigator(sdm, self.cb, self.enc, n_actions=7, epsilon=0.0)
-        actions = [nav.select(state, sg) for _ in range(10)]
-        # Should prefer action 2
-        assert actions.count(2) >= 7, f"Expected action 2, got {actions}"
+        actions = [nav.select(state, sg, current_obs=obs) for _ in range(10)]
+        assert actions.count(2) >= 9, f"Expected action 2 from trace, got {actions}"
 
     def test_is_achieved_pickup_key(self):
         """Key not visible → pickup_key achieved."""
