@@ -41,7 +41,7 @@
 
 | Stage | Название | Статус | Gate |
 |-------|----------|--------|------|
-| 52 | Integration test | | ≥50% random MultiRoom-N3 с инструкцией |
+| 52 | Integration test | COMPLETE (2026-04-02) | 100% random MultiRoom-N3 с инструкцией |
 | 53 | Architecture report | | Документ с решениями для M4 |
 
 ### M4: Масштаб (детализация после M3)
