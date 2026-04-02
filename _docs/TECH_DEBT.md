@@ -16,6 +16,7 @@ Maintained automatically by the `autonomous-dev` skill.
 | TD-002 | 39 | GPU_EXP | exp98e CurriculumTrainer DoorKey-5x5 на 50K нод. CPU-гейты механизмов PASS, абсолютная производительность не проверена. | success_rate ≥ 0.25 | `main` @ `c875a82` | OPEN | 2026-04-01 | — |
 | TD-003 | 40 | GPU_EXP | exp99 HebbianEncoder + PureDafAgent на 50K нод. CPU показал SDR overlap improvement 14%, реальное влияние на success_rate неизвестно. | success_rate ≥ 0.15 (лучше Stage 38 baseline) | `main` @ `c875a82` | OPEN | 2026-04-01 | — |
 | TD-004 | 43 | INTEGRATION | WM gating: sustained oscillation confirmed, coupling damping 0.1x applied, SKS excluded. But FHN **self-sustains** (intrinsic dynamics, not coupling). Need bistable FHN tuning or explicit gating for WM to actually help. | WM DoorKey success > no-WM success | `main` | OPEN | 2026-04-01 | — |
+| TD-005 | 45 | INTEGRATION | VSA World Model planning: forward beam search fails on detour tasks (DoorKey). Need subgoal extraction from successful traces + plan graph + subgoal-conditioned navigation. VSA+SDM foundation is solid (encoding 97%, prediction 0.85). | plan phase success_rate ≥ 15% DoorKey-5x5 | `main` | OPEN | 2026-04-02 | — |
 
 ---
 
