@@ -4,8 +4,8 @@ Components:
 - VSACodebook: Binary Spatter Code vectors (XOR bind, majority bundle)
 - VSAEncoder: MiniGrid symbolic obs → structured VSA vector
 - SDMMemory: Sparse Distributed Memory for transition storage
-- SDMPlanner: 1-step lookahead action selection via SDM reward prediction
-- WorldModelAgent: Full agent combining all components
+- CausalPlanner: forward beam search through SDM predictions (model-based planning)
+- WorldModelAgent: Full agent — explore phase fills SDM, plan phase uses beam search
 """
 
 from __future__ import annotations
@@ -24,8 +24,9 @@ class WorldModelConfig:
     min_confidence: float = 0.1
     epsilon: float = 0.1
     max_episode_steps: int = 200
-    trace_decay: float = 0.9       # eligibility trace decay (lambda)
-    trace_length: int = 30         # max trace length for backpropagation
+    explore_episodes: int = 50     # random exploration before planning
+    plan_depth: int = 8            # forward search depth
+    beam_width: int = 5            # beam search width
 
 
 class VSACodebook:
@@ -297,12 +298,97 @@ class SDMPlanner:
         return int(np.argmax(scores))
 
 
-class WorldModelAgent:
-    """VSA World Model agent: encode → remember → plan → act.
+class CausalPlanner:
+    """Forward beam search through SDM world model.
 
-    Features beyond basic SDM:
-    - Eligibility traces: on reward, backpropagates to recent (state, action) pairs
-    - Novelty bonus: small intrinsic reward for visiting unseen states
+    Model-based planning: "imagine" action consequences N steps ahead via SDM,
+    pick the action sequence whose terminal state is closest to goal.
+    Falls back to random exploration when SDM confidence is too low.
+    """
+
+    def __init__(self, sdm: SDMMemory, codebook: VSACodebook,
+                 n_actions: int = 7, plan_depth: int = 8,
+                 beam_width: int = 5, min_confidence: float = 0.1,
+                 epsilon: float = 0.1):
+        self.sdm = sdm
+        self.cb = codebook
+        self.n_actions = n_actions
+        self.plan_depth = plan_depth
+        self.beam_width = beam_width
+        self.min_confidence = min_confidence
+        self.epsilon = epsilon
+        self._goal_features: torch.Tensor | None = None
+
+    def set_goal(self, goal_vsa: torch.Tensor) -> None:
+        """Set goal features for similarity scoring."""
+        self._goal_features = goal_vsa
+
+    def select(self, state: torch.Tensor) -> int:
+        """Select action via forward beam search through SDM."""
+        if self._goal_features is None:
+            return int(torch.randint(0, self.n_actions, (1,)).item())
+
+        # Epsilon-greedy exploration
+        if self.epsilon > 0 and torch.rand(1).item() < self.epsilon:
+            return int(torch.randint(0, self.n_actions, (1,)).item())
+
+        # Beam search: each beam = (state, first_action, cumulative_score, confidence)
+        beams: list[tuple[torch.Tensor, int, float, float]] = []
+
+        # Initialize beams with 1-step predictions
+        for a_idx in range(self.n_actions):
+            action_vsa = self.cb.action(a_idx)
+            pred_next, conf = self.sdm.read_next(state, action_vsa)
+            reward = self.sdm.read_reward(state, action_vsa)
+            if conf < 0.01:
+                continue
+            goal_sim = self.cb.similarity(pred_next, self._goal_features)
+            score = goal_sim + reward * 0.5  # balance goal proximity and reward
+            beams.append((pred_next, a_idx, score, conf))
+
+        if not beams:
+            return int(torch.randint(0, self.n_actions, (1,)).item())
+
+        # Expand beams for remaining depth
+        for depth in range(1, self.plan_depth):
+            new_beams: list[tuple[torch.Tensor, int, float, float]] = []
+            for beam_state, first_action, cum_score, cum_conf in beams:
+                for a_idx in range(self.n_actions):
+                    action_vsa = self.cb.action(a_idx)
+                    pred_next, conf = self.sdm.read_next(beam_state, action_vsa)
+                    if conf < 0.01:
+                        continue
+                    reward = self.sdm.read_reward(beam_state, action_vsa)
+                    goal_sim = self.cb.similarity(pred_next, self._goal_features)
+                    score = goal_sim + reward * 0.5
+                    # Weighted by confidence chain
+                    total_conf = cum_conf * conf
+                    new_beams.append((pred_next, first_action, score * total_conf, total_conf))
+
+            if not new_beams:
+                break
+
+            # Keep top beam_width beams
+            new_beams.sort(key=lambda b: b[2], reverse=True)
+            beams = new_beams[:self.beam_width]
+
+        if not beams:
+            return int(torch.randint(0, self.n_actions, (1,)).item())
+
+        # Pick first_action of best beam
+        best = max(beams, key=lambda b: b[2])
+        return best[1]
+
+
+class WorldModelAgent:
+    """VSA World Model agent: explore → build model → plan → act.
+
+    Two-phase operation:
+    1. Explore phase (first N episodes): random actions, fill SDM with transitions
+    2. Plan phase: forward beam search through SDM predictions toward goal
+
+    The agent learns a causal model of the world (state+action→next_state)
+    and uses it for model-based planning — no reward shaping needed.
     """
 
     def __init__(self, config: WorldModelConfig):
@@ -313,20 +399,57 @@ class WorldModelAgent:
             n_locations=config.n_locations,
             dim=config.dim,
         )
-        self.planner = SDMPlanner(
+        self.causal_planner = CausalPlanner(
             sdm=self.sdm,
             codebook=self.codebook,
             n_actions=config.n_actions,
+            plan_depth=config.plan_depth,
+            beam_width=config.beam_width,
             min_confidence=config.min_confidence,
             epsilon=config.epsilon,
         )
+        # Keep SDMPlanner for backward compat with tests
+        self.planner = self.causal_planner
         self._prev_state: torch.Tensor | None = None
         self._prev_action: int | None = None
-        self._episode_trace: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = []
+        self._episode_count: int = 0
+        self._exploring: bool = True
+
+    def set_goal_from_obs(self, obs: np.ndarray) -> None:
+        """Extract goal features from observation and set planner goal."""
+        # Encode a "goal state" — what would the world look like if we were at the goal?
+        # We extract goal position from obs and create a synthetic goal state
+        goal_facts: list[torch.Tensor] = []
+        for r in range(obs.shape[0]):
+            for c in range(obs.shape[1]):
+                if int(obs[r, c, 0]) == VSAEncoder.OBJ_GOAL:
+                    # Goal state = agent at goal position
+                    goal_facts.append(self.codebook.bind(
+                        self.codebook.role("agent_pos"),
+                        self.codebook.filler(f"pos_{r}_{c}"),
+                    ))
+                    # Include goal presence
+                    goal_facts.append(self.codebook.bind(
+                        self.codebook.role("goal_pos"),
+                        self.codebook.filler(f"pos_{r}_{c}"),
+                    ))
+                    # Door should be open in goal state
+                    goal_facts.append(self.codebook.bind(
+                        self.codebook.role("door_state"),
+                        self.codebook.filler("open"),
+                    ))
+        if goal_facts:
+            goal_vsa = self.codebook.bundle(goal_facts)
+            self.causal_planner.set_goal(goal_vsa)
 
     def step(self, obs: np.ndarray) -> int:
         state = self.encoder.encode(obs)
-        action = self.planner.select(state)
+
+        if self._exploring:
+            action = int(torch.randint(0, self.config.n_actions, (1,)).item())
+        else:
+            action = self.causal_planner.select(state)
+
         self._prev_state = state
         self._prev_action = action
         return action
@@ -336,41 +459,20 @@ class WorldModelAgent:
             return
         next_state = self.encoder.encode(obs)
         action_vsa = self.codebook.action(self._prev_action)
-
-        # Write immediate transition
         self.sdm.write(self._prev_state, action_vsa, next_state, reward)
-
-        # Store in episode trace for eligibility backpropagation
-        self._episode_trace.append(
-            (self._prev_state.clone(), action_vsa.clone(), next_state.clone())
-        )
-
-        # If reward received, backpropagate through trace
-        if reward > 0 and len(self._episode_trace) > 1:
-            self._backpropagate_reward(reward)
-
-    def _backpropagate_reward(self, reward: float) -> None:
-        """Propagate reward backward through episode trace with decay."""
-        trace = self._episode_trace
-        decay = self.config.trace_decay
-        max_len = min(self.config.trace_length, len(trace) - 1)
-
-        for i in range(max_len):
-            idx = len(trace) - 2 - i  # skip current (already written)
-            if idx < 0:
-                break
-            state, action, next_state = trace[idx]
-            discounted = reward * (decay ** (i + 1))
-            if discounted < 0.001:
-                break
-            self.sdm.write(state, action, next_state, discounted)
 
     def run_episode(self, env, max_steps: int = 200) -> tuple[bool, int, float]:
         obs = env.reset()
         total_reward = 0.0
         self._prev_state = None
         self._prev_action = None
-        self._episode_trace = []
+
+        # Set goal from initial observation
+        if self._episode_count == 0 or self.causal_planner._goal_features is None:
+            self.set_goal_from_obs(obs)
+
+        # Check if we should switch from explore to plan
+        self._exploring = self._episode_count < self.config.explore_episodes
 
         for step_i in range(max_steps):
             action = self.step(obs)
@@ -378,6 +480,8 @@ class WorldModelAgent:
             self.observe(obs, reward)
             total_reward += reward
             if terminated or truncated:
+                self._episode_count += 1
                 return total_reward > 0, step_i + 1, total_reward
 
+        self._episode_count += 1
         return total_reward > 0, max_steps, total_reward
