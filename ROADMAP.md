@@ -1,7 +1,7 @@
 # СНКС — Roadmap v2 (Milestone-Driven)
 
 **Последнее обновление:** 2026-04-02
-**Статус:** M1 COMPLETE → M2 COMPLETE → M3 IN PROGRESS
+**Статус:** M1 COMPLETE → M2 COMPLETE → M3 COMPLETE → M4 IN PROGRESS
 **Полная спецификация:** [docs/superpowers/specs/2026-04-02-roadmap-v2-design.md](docs/superpowers/specs/2026-04-02-roadmap-v2-design.md)
 
 ---
@@ -42,10 +42,21 @@
 | Stage | Название | Статус | Gate |
 |-------|----------|--------|------|
 | 52 | Integration test | COMPLETE (2026-04-02) | 100% random MultiRoom-N3 с инструкцией |
-| 53 | Architecture report | | Документ с решениями для M4 |
+| 53 | Architecture report | COMPLETE (2026-04-02) | R1 negative, M4 plan (Stages 54-60), go for M4 |
 
-### M4: Масштаб (детализация после M3)
-**Gate:** новый env 5+ типов объектов, GPU scaling (conditional on R1)
+### M4: Масштаб
+**Gate:** новый env 5+ типов объектов, partial observability, subgoal chains 5+
+**R1 решение:** негативный вердикт → DAF = perception only, фокус на symbolic pipeline scaling
+
+| Stage | Название | Статус | Gate |
+|-------|----------|--------|------|
+| 54 | Partial Observability | | ≥80% DoorKey-5x5 с 7x7 view |
+| 55 | Exploration Strategy | | ≥60% MultiRoom-N3 с partial obs |
+| 56 | Complex Environment | | ≥50% BabyAI PutNext, 5+ object types |
+| 57 | Long Subgoal Chains | | ≥40% на задачах с 5+ subgoals |
+| 58 | SDM Scaling | | SDM capacity ≥1000 unique transitions |
+| 59 | Transfer Learning | | ≥70% new env без re-exploration |
+| 60 | M4 Integration Test | | ≥50% BabyAI BossLevel с инструкцией |
 
 ### M5: Автономия (vision, детализация после M4)
 Self-directed goals, compositional subgoals, meta-cognition
@@ -53,15 +64,17 @@ Self-directed goals, compositional subgoals, meta-cognition
 ---
 
 ## Research-трек R1: Осцилляторная динамика
-Параллельно с M1-M3, на minipc. Checkpoint: R1.3 или негативный вывод до M3 Stage 53.
+**Вердикт: НЕГАТИВНЫЙ** (Stage 53, 2026-04-02)
+
+FHN в текущей конфигурации — excitable regime, не oscillatory. Coupling timescale mismatch 50×. SKS формируются через SDR injection, не coupling. DAF остаётся как perception layer.
 
 | ID | Вопрос | Статус |
 |----|--------|--------|
-| R1.1 | Oscillatory FHN (I_base > 1.0) | |
-| R1.2 | Timescale fix (steps_per_cycle=5000) | |
-| R1.3 | SKS quality при oscillatory params | |
-| R1.4 | Downstream impact на VSA+SDM | |
-| R1.5 | GPU tech debt (TD-002, TD-003) | |
+| R1.1 | Oscillatory FHN (I_base > 1.0) | NEGATIVE — I_base=0.5 = excitable (Stage 44 audit) |
+| R1.2 | Timescale fix (steps_per_cycle=5000) | NOT APPLIED — 50× slowdown, impractical |
+| R1.3 | SKS quality при oscillatory params | NOT MEASURED — SKS = input-driven |
+| R1.4 | Downstream impact на VSA+SDM | N/A — VSA+SDM work without DAF oscillations |
+| R1.5 | GPU tech debt (TD-002, TD-003) | SUPERSEDED — modular architecture replaced Pure DAF |
 
 ---
 
