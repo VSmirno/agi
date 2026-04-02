@@ -150,7 +150,12 @@ class PlanGraph:
 
 
 class SubgoalNavigator:
-    """Navigate toward a subgoal using SDM world model predictions."""
+    """Navigate toward a subgoal using trace-based action replay.
+
+    Strategy: match current state to states in the trace segment for the
+    current subgoal, and replay the action from the most similar state.
+    Falls back to SDM prediction if no trace segment available.
+    """
 
     OBJ_KEY = 5
     OBJ_DOOR = 4
@@ -164,13 +169,33 @@ class SubgoalNavigator:
         self.n_actions = n_actions
         self.epsilon = epsilon
         self.min_confidence = min_confidence
+        # Trace segments per subgoal: list of (state_vsa, action)
+        self._trace_segments: dict[str, list[tuple[torch.Tensor, int]]] = {}
+
+    def set_trace_segments(self, segments: dict[str, list[tuple[torch.Tensor, int]]]) -> None:
+        """Set trace segments for each subgoal (extracted from successful trace)."""
+        self._trace_segments = segments
 
     def select(self, current_state: torch.Tensor, subgoal: Subgoal) -> int:
-        """Select action that moves toward subgoal target state."""
+        """Select action via trace matching or SDM fallback."""
         # Epsilon exploration
         if self.epsilon > 0 and torch.rand(1).item() < self.epsilon:
             return int(torch.randint(0, self.n_actions, (1,)).item())
 
+        # Strategy 1: trace-based replay
+        segment = self._trace_segments.get(subgoal.name, [])
+        if segment:
+            best_sim = -1.0
+            best_action = -1
+            for trace_state, trace_action in segment:
+                sim = self.cb.similarity(current_state, trace_state)
+                if sim > best_sim:
+                    best_sim = sim
+                    best_action = trace_action
+            if best_action >= 0 and best_sim > 0.55:
+                return best_action
+
+        # Strategy 2: SDM prediction toward target state
         target = subgoal.target_state
         best_sim = -1.0
         best_action = -1
@@ -299,6 +324,9 @@ class SubgoalPlanningAgent(WorldModelAgent):
             subgoals = self.extractor.extract(best_trace)
             if subgoals:
                 self.plan = PlanGraph(subgoals)
+                # Segment trace by subgoal boundaries
+                segments = self._segment_trace(best_trace, subgoals)
+                self.navigator.set_trace_segments(segments)
 
         # Fallback if no plan available
         if self.plan is None:
@@ -349,3 +377,37 @@ class SubgoalPlanningAgent(WorldModelAgent):
         if self.sg_config.use_best_trace:
             return min(self._successful_traces, key=len)
         return self._successful_traces[-1]
+
+    def _segment_trace(self, trace: list[TraceStep],
+                       subgoals: list[Subgoal]) -> dict[str, list[tuple[torch.Tensor, int]]]:
+        """Split trace into segments per subgoal.
+
+        For each subgoal, find the trace steps leading up to its achievement.
+        Returns dict mapping subgoal name → list of (state_vsa, action).
+        """
+        segments: dict[str, list[tuple[torch.Tensor, int]]] = {}
+        subgoal_names = [sg.name for sg in subgoals]
+
+        # Find boundary indices in trace (where each subgoal is achieved)
+        boundaries: list[int] = []
+        for sg in subgoals:
+            for i, step in enumerate(trace):
+                if self.navigator.is_achieved(step.obs_after, sg):
+                    boundaries.append(i)
+                    break
+            else:
+                # Subgoal not found — use end of trace
+                boundaries.append(len(trace) - 1)
+
+        # Build segments: trace from previous boundary to this boundary
+        prev_boundary = 0
+        for sg_idx, sg in enumerate(subgoals):
+            end = boundaries[sg_idx]
+            segment_steps: list[tuple[torch.Tensor, int]] = []
+            for i in range(prev_boundary, end + 1):
+                state_vsa = self.encoder.encode(trace[i].obs_before)
+                segment_steps.append((state_vsa, trace[i].action))
+            segments[sg.name] = segment_steps
+            prev_boundary = end + 1
+
+        return segments
