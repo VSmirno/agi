@@ -73,7 +73,7 @@
 | 42 | Spatial Representation | COMPLETE (2026-04-01) | Perception fix: symbolic+CNN encoders, diagnostic confirms dual bottleneck |
 | 43 | Working Memory | COMPLETE (2026-04-01) | Selective reset: WM zone preserved, sustained activation confirmed, gating needed |
 | 44 | Foundation Audit | COMPLETE (2026-04-02) | 26/26 layer tests PASS, Golden Path 56.7%, Naked DAF 0% — world model needed |
-| 45 | VSA World Model | IN PROGRESS | VSA+SDM world model, 1-step lookahead planning |
+| 45 | VSA World Model | COMPLETE (2026-04-02) | VSA+SDM foundation PASS (97% encoding, 0.85 prediction), planning FAIL (detour) |
 
 ---
 

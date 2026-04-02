@@ -31,3 +31,43 @@ Stage 45 адресует core bottleneck через VSA + SDM.
   - B: VSA+SDM (масштабируемый, bioplausible, content-addressable)
   - C: Neural network world model (backprop, не СНКС-philosophy)
 - **Выбран: B** — VSA+SDM: масштабируемый, bioplausible, фиксированные операции (XOR, majority vote)
+
+### [auto] Фаза 2: Реализация
+- VSACodebook: 512-bit BSC, XOR bind, majority bundle — 10 тестов PASS
+- VSAEncoder: MiniGrid symbolic obs → VSA vector, unbinding accuracy 97-99%
+- SDMMemory: 10K locations, auto-calibrated radius, transition storage — 6 тестов PASS
+- SDMPlanner: 1-step reward lookahead — 2 теста PASS
+- CausalPlanner: forward beam search (depth 3-6, beam 3-5) — depth>3 слишком медленно
+- BackwardChainPlanner: trace matching + reverse SDM
+- WorldModelAgent: explore→plan two-phase — 5 тестов PASS
+- Итого: 30 тестов PASS
+
+### [auto] Фаза 3: Эксперименты (на minipc)
+- **105a**: VSA encoding accuracy = 97-99% — **PASS** (gate ≥ 90%)
+- **105b**: SDM prediction similarity = 0.85-0.87 — **PASS** (gate ≥ 0.6)
+- **105c (explore)**: DoorKey-5x5 random = ~40% success (50 ep)
+- **105c (forward beam)**: plan phase = 0-20% — **FAIL** (goal similarity → упирается в дверь)
+- **105c (SDM reward)**: plan phase = 0-20% — **FAIL** (sparse reward, 1-step не учит цепочку)
+- **105c (trace match)**: plan phase = 0-10% — **FAIL** (VSA similarity ~0.5 не различает контексты)
+
+### Ключевой вывод
+DoorKey = detour task. Forward planning (beam search, reward lookahead) не работает, потому что:
+1. Прямой путь к цели блокирован дверью
+2. Reward sparse — только у цели
+3. VSA similarity недостаточно селективна для trace matching
+
+Нужен **subgoal extraction + plan graph** — scope для Stage 46.
+
+### [auto] Фаза 4: Веб-демо
+- demos/stage-45-vsa-world-model.html — Canvas DoorKey + SDM metrics + VSA вектор
+
+### [auto] Фаза 5: Merge
+- Report: PARTIAL PASS (foundation PASS, planning FAIL)
+- TD-005 создан: planning improvement
+- ROADMAP обновлён: Stage 45 COMPLETE
+
+### Решения
+- Отказ от reward shaping (промежуточные rewards = RL, не model-based)
+- Отказ от novelty bonus (заливает SDM шумом)
+- Forward beam search архитектурно не подходит для detour tasks
+- Trace matching без subgoal extraction — слишком шумный
