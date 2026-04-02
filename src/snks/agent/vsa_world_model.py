@@ -332,50 +332,64 @@ class CausalPlanner:
         if self.epsilon > 0 and torch.rand(1).item() < self.epsilon:
             return int(torch.randint(0, self.n_actions, (1,)).item())
 
-        # Beam search: each beam = (state, first_action, cumulative_score, confidence)
-        beams: list[tuple[torch.Tensor, int, float, float]] = []
+        # Quick 1-step check: is any action directly rewarding?
+        best_1step = -1
+        best_1step_score = -float('inf')
+        any_confident = False
 
-        # Initialize beams with 1-step predictions
+        for a_idx in range(self.n_actions):
+            action_vsa = self.cb.action(a_idx)
+            reward = self.sdm.read_reward(state, action_vsa)
+            _, conf = self.sdm.read_next(state, action_vsa)
+            if conf >= 0.01:
+                any_confident = True
+                score = reward * conf
+                if score > best_1step_score:
+                    best_1step_score = score
+                    best_1step = a_idx
+
+        if not any_confident:
+            return int(torch.randint(0, self.n_actions, (1,)).item())
+
+        # If 1-step has strong signal, use it (fast path)
+        if best_1step_score > 0.3:
+            return best_1step
+
+        # Beam search for deeper planning
+        # beam = (predicted_state, first_action, score)
+        beams: list[tuple[torch.Tensor, int, float]] = []
+        goal = self._goal_features
+
         for a_idx in range(self.n_actions):
             action_vsa = self.cb.action(a_idx)
             pred_next, conf = self.sdm.read_next(state, action_vsa)
-            reward = self.sdm.read_reward(state, action_vsa)
             if conf < 0.01:
                 continue
-            goal_sim = self.cb.similarity(pred_next, self._goal_features)
-            score = goal_sim + reward * 0.5  # balance goal proximity and reward
-            beams.append((pred_next, a_idx, score, conf))
+            goal_sim = self.cb.similarity(pred_next, goal)
+            reward = self.sdm.read_reward(state, action_vsa)
+            score = (goal_sim + reward * 0.5) * conf
+            beams.append((pred_next, a_idx, score))
 
         if not beams:
-            return int(torch.randint(0, self.n_actions, (1,)).item())
+            return best_1step if best_1step >= 0 else int(torch.randint(0, self.n_actions, (1,)).item())
 
-        # Expand beams for remaining depth
         for depth in range(1, self.plan_depth):
-            new_beams: list[tuple[torch.Tensor, int, float, float]] = []
-            for beam_state, first_action, cum_score, cum_conf in beams:
+            new_beams: list[tuple[torch.Tensor, int, float]] = []
+            for beam_state, first_action, cum_score in beams:
                 for a_idx in range(self.n_actions):
                     action_vsa = self.cb.action(a_idx)
                     pred_next, conf = self.sdm.read_next(beam_state, action_vsa)
                     if conf < 0.01:
                         continue
-                    reward = self.sdm.read_reward(beam_state, action_vsa)
-                    goal_sim = self.cb.similarity(pred_next, self._goal_features)
-                    score = goal_sim + reward * 0.5
-                    # Weighted by confidence chain
-                    total_conf = cum_conf * conf
-                    new_beams.append((pred_next, first_action, score * total_conf, total_conf))
+                    goal_sim = self.cb.similarity(pred_next, goal)
+                    score = (goal_sim + self.sdm.read_reward(beam_state, action_vsa) * 0.5) * conf
+                    new_beams.append((pred_next, first_action, max(score, cum_score)))
 
             if not new_beams:
                 break
-
-            # Keep top beam_width beams
             new_beams.sort(key=lambda b: b[2], reverse=True)
             beams = new_beams[:self.beam_width]
 
-        if not beams:
-            return int(torch.randint(0, self.n_actions, (1,)).item())
-
-        # Pick first_action of best beam
         best = max(beams, key=lambda b: b[2])
         return best[1]
 
