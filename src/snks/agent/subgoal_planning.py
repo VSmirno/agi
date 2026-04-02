@@ -500,8 +500,8 @@ class SubgoalPlanningAgent(WorldModelAgent):
         if self._episode_count == 0:
             self.set_goal_from_obs(obs)
 
-        # Build plan from observation if no successful traces yet (Stage 47: obs-based planning)
-        if self.plan is None and self._episode_count >= self.config.explore_episodes:
+        # Build/rebuild plan from observation (Stage 47: obs-based planning)
+        if self._episode_count >= self.config.explore_episodes:
             self.build_plan_from_obs(obs)
 
         if self._exploring:
