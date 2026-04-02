@@ -51,7 +51,7 @@
 | Stage | Название | Статус | Gate |
 |-------|----------|--------|------|
 | 54 | Partial Observability | COMPLETE (2026-04-02) | 100% DoorKey-5x5 с 7x7 view (200 seeds, mean 23.5 steps) |
-| 55 | Exploration Strategy | | ≥60% MultiRoom-N3 с partial obs |
+| 55 | Exploration Strategy | COMPLETE (2026-04-02) | 100% MultiRoom-N3 с partial obs (200 seeds, mean 22.1 steps) |
 | 56 | Complex Environment | | ≥50% BabyAI PutNext, 5+ object types |
 | 57 | Long Subgoal Chains | | ≥40% на задачах с 5+ subgoals |
 | 58 | SDM Scaling | | SDM capacity ≥1000 unique transitions |
