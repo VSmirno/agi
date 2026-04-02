@@ -171,3 +171,16 @@ DoorKey = detour task. Forward planning (beam search, reward lookahead) не р�
 - Obs-based planning вместо explore-then-plan: random walk ~1% success → unreliable
 - BFS = infrastructure, не cognitive claim → допустимо для СНКС
 - Stage 48 merged с 47 т.к. 100% на 200 random layouts уже выполняет gate 48
+
+---
+
+## Stage 50: Reconnect language pipeline
+
+### [Phase 0] Git setup
+- Ветка: stage50-language-reconnect от main (commit 8b6f8a9)
+- Tech debt проверен: 4 open (TD-001 IN_PROGRESS/blocked, TD-002 OPEN, TD-003 OPEN, TD-004 OPEN, TD-006 OPEN), 1 закрыт (TD-005)
+- Нет завершённых GPU-экспериментов для сбора
+- TD-002, TD-003 не запущены — Stage 50 приоритетнее
+
+### [Phase 1] Спецификация
+- Начало аудита language pipeline...
