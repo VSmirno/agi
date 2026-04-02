@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 45: VSA World Model — СНКС</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0e17;
+  color: #e2e8f0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+  padding: 20px;
+}
+h1 { color: #60a5fa; font-size: 1.8em; margin-bottom: 4px; }
+h2 { color: #60a5fa; font-size: 1.2em; margin: 16px 0 8px; }
+h3 { color: #93c5fd; font-size: 1em; margin: 12px 0 6px; }
+.subtitle { color: #94a3b8; font-size: 0.95em; margin-bottom: 16px; }
+
+.container { max-width: 1200px; margin: 0 auto; }
+.row { display: flex; gap: 20px; flex-wrap: wrap; }
+.col { flex: 1; min-width: 300px; }
+
+.panel {
+  background: #111827;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+canvas { border: 1px solid #334155; border-radius: 4px; display: block; }
+
+.controls {
+  display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; align-items: center;
+}
+.controls button {
+  background: #1e293b; color: #60a5fa; border: 1px solid #334155;
+  padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;
+}
+.controls button:hover { background: #334155; }
+.controls button.active { background: #1e40af; border-color: #60a5fa; }
+
+.stat { display: inline-block; margin-right: 16px; margin-bottom: 4px; }
+.stat-label { color: #94a3b8; font-size: 0.85em; }
+.stat-value { color: #e2e8f0; font-size: 1.1em; font-weight: 600; }
+.stat-value.pass { color: #34d399; }
+.stat-value.fail { color: #f87171; }
+
+.metric-bar {
+  height: 20px; background: #1e293b; border-radius: 4px; overflow: hidden;
+  margin: 4px 0 8px; position: relative;
+}
+.metric-fill {
+  height: 100%; border-radius: 4px; transition: width 0.3s;
+}
+.metric-label {
+  position: absolute; right: 6px; top: 1px; font-size: 0.8em; color: #e2e8f0;
+}
+
+.gate-line {
+  position: absolute; height: 100%; width: 2px; background: #fbbf24;
+  top: 0;
+}
+
+.action-log {
+  background: #0f172a; border: 1px solid #1e293b; border-radius: 4px;
+  padding: 8px; font-family: monospace; font-size: 0.8em; color: #94a3b8;
+  height: 120px; overflow-y: auto; margin-top: 8px;
+}
+
+.explain {
+  background: #0f172a; border-left: 3px solid #60a5fa;
+  padding: 12px; margin: 12px 0; font-size: 0.9em; line-height: 1.5;
+}
+
+.speed-control { display: flex; align-items: center; gap: 6px; }
+.speed-control label { color: #94a3b8; font-size: 0.85em; }
+
+table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #1e293b; font-size: 0.85em; }
+th { color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Этап 45: VSA World Model</h1>
+<p class="subtitle">Векторная символическая архитектура + ассоциативная память для world model агента</p>
+
+<div class="row">
+<!-- Left: Grid visualization -->
+<div class="col">
+<div class="panel">
+<h2>Среда DoorKey-5x5</h2>
+<canvas id="gridCanvas" width="350" height="350"></canvas>
+<div id="actionText" style="color: #94a3b8; font-size: 0.9em; margin-top: 6px;">Нажмите «Запустить»</div>
+
+<div class="controls">
+  <button id="btnPlay" onclick="togglePlay()">▶ Запустить</button>
+  <button id="btnStep" onclick="stepOnce()">⏭ Шаг</button>
+  <button id="btnReset" onclick="resetDemo()">↺ Сброс</button>
+  <div class="speed-control">
+    <label>Скорость:</label>
+    <button onclick="setSpeed(0.5)" id="sp05">×0.5</button>
+    <button onclick="setSpeed(1)" id="sp1" class="active">×1</button>
+    <button onclick="setSpeed(2)" id="sp2">×2</button>
+    <button onclick="setSpeed(5)" id="sp5">×5</button>
+  </div>
+</div>
+
+<div style="display: flex; gap: 12px; flex-wrap: wrap;">
+  <div class="stat"><span class="stat-label">Шаг</span><br><span class="stat-value" id="stepNum">0 / 200</span></div>
+  <div class="stat"><span class="stat-label">Эпизод</span><br><span class="stat-value" id="epNum">1</span></div>
+  <div class="stat"><span class="stat-label">Награда</span><br><span class="stat-value" id="reward">0.000</span></div>
+  <div class="stat"><span class="stat-label">Инвентарь</span><br><span class="stat-value" id="inventory">пусто</span></div>
+  <div class="stat"><span class="stat-label">Статус</span><br><span class="stat-value" id="status">готов</span></div>
+</div>
+
+<div class="action-log" id="actionLog"></div>
+</div>
+</div>
+
+<!-- Right: Metrics & SDM -->
+<div class="col">
+<div class="panel">
+<h2>Результаты экспериментов</h2>
+<table>
+<tr><th>Тест</th><th>Метрика</th><th>Результат</th><th>Gate</th><th>Статус</th></tr>
+<tr><td>105a</td><td>Unbinding accuracy</td><td id="r105a">—</td><td>≥ 90%</td><td id="s105a">—</td></tr>
+<tr><td>105b</td><td>SDM similarity</td><td id="r105b">—</td><td>≥ 0.6</td><td id="s105b">—</td></tr>
+<tr><td>105c</td><td>Success rate</td><td id="r105c">—</td><td>≥ 15%</td><td id="s105c">—</td></tr>
+<tr><td>105c</td><td>Learning trend</td><td id="r105cL">—</td><td>last > first</td><td id="s105cL">—</td></tr>
+</table>
+</div>
+
+<div class="panel">
+<h2>SDM Память</h2>
+<div class="stat"><span class="stat-label">Записей в SDM</span><br><span class="stat-value" id="sdmWrites">0</span></div>
+<div class="stat"><span class="stat-label">Уверенность (макс.)</span><br><span class="stat-value" id="sdmConf">0.000</span></div>
+
+<h3>Успешность по эпизодам</h3>
+<canvas id="chartCanvas" width="460" height="180"></canvas>
+</div>
+
+<div class="panel">
+<h2>VSA вектор состояния</h2>
+<canvas id="vsaCanvas" width="460" height="60"></canvas>
+<div style="color: #94a3b8; font-size: 0.8em; margin-top: 4px;">512-бит бинарный вектор (чёрный=0, голубой=1)</div>
+</div>
+
+<div class="explain">
+<h3>Как это работает</h3>
+<p>Агент кодирует наблюдение (позиция, ключ, дверь, цель) в <b>512-битный вектор</b> через VSA (Vector Symbolic Architecture). Каждый факт привязывается к роли через XOR-операцию и объединяется через голосование большинства.</p>
+<p style="margin-top: 8px;">Переходы (состояние + действие → следующее состояние + награда) записываются в <b>SDM</b> (Sparse Distributed Memory) — ассоциативную память с 10 000 адресов.</p>
+<p style="margin-top: 8px;">Для выбора действия агент делает <b>1-шаговый предварительный просмотр</b>: запрашивает SDM о предсказанной награде для каждого действия и выбирает лучшее.</p>
+</div>
+
+<div class="explain">
+<h3>Почему это важно для AGI</h3>
+<p>Это первый шаг к <b>world model</b> в СНКС: агент не просто реагирует, а <b>запоминает последствия</b> своих действий и <b>планирует</b> на основе опыта. Всё без backprop — только локальные операции (XOR, голосование, порог).</p>
+</div>
+</div>
+</div>
+</div>
+
+<script>
+// ──────────────────────────────────────────────
+// Grid environment simulation
+// ──────────────────────────────────────────────
+const CELL = 50;
+const GRID = 7; // 5x5 inner + walls
+const ACTIONS = ['повернуть←', 'повернуть→', 'вперёд', 'подобрать', 'положить', 'открыть/закрыть', 'готово'];
+const DIR_ARROWS = ['▶', '▼', '◀', '▲'];
+const DIR_DX = [[0,1],[1,0],[0,-1],[-1,0]];
+
+let state = null;
+let playing = false;
+let speed = 1;
+let timer = null;
+let episodeResults = [];
+let totalWrites = 0;
+let maxConf = 0;
+let episodeNum = 0;
+
+// Simple VSA simulation for demo
+class DemoVSA {
+  constructor() {
+    this.dim = 512;
+    this.memory = new Map(); // simplified SDM
+  }
+
+  encode(s) {
+    // Create pseudo-VSA vector from state
+    const vec = new Uint8Array(this.dim);
+    const hash = this._hash(JSON.stringify(s));
+    for (let i = 0; i < this.dim; i++) {
+      vec[i] = (hash[i % hash.length] + i * 7) % 2;
+    }
+    return vec;
+  }
+
+  _hash(str) {
+    const h = [];
+    for (let i = 0; i < str.length; i++) {
+      h.push(str.charCodeAt(i));
+    }
+    return h;
+  }
+
+  write(stateVec, action, reward) {
+    const key = Array.from(stateVec.slice(0, 32)).join('') + '_' + action;
+    if (!this.memory.has(key)) {
+      this.memory.set(key, { reward: 0, count: 0 });
+    }
+    const m = this.memory.get(key);
+    m.reward += reward;
+    m.count += 1;
+    totalWrites++;
+  }
+
+  selectAction(stateVec, nActions, epsilon) {
+    if (Math.random() < epsilon) return Math.floor(Math.random() * nActions);
+    let bestA = 0, bestR = -Infinity;
+    let anyKnown = false;
+    for (let a = 0; a < nActions; a++) {
+      const key = Array.from(stateVec.slice(0, 32)).join('') + '_' + a;
+      if (this.memory.has(key)) {
+        anyKnown = true;
+        const m = this.memory.get(key);
+        const r = m.reward / m.count;
+        if (r > bestR) { bestR = r; bestA = a; }
+      }
+    }
+    if (!anyKnown) return Math.floor(Math.random() * nActions);
+    maxConf = Math.min(1, totalWrites / 500);
+    return bestA;
+  }
+}
+
+const vsa = new DemoVSA();
+
+function initState() {
+  return {
+    agentPos: [2, 2], agentDir: 0,
+    keyPos: [2, 4], hasKey: false, keyPicked: false,
+    doorPos: [3, 3], doorOpen: false,
+    goalPos: [4, 4],
+    step: 0, reward: 0, done: false, success: false,
+    path: [[2, 2]],
+    vsaVec: new Uint8Array(512)
+  };
+}
+
+function resetDemo() {
+  stopPlay();
+  episodeNum++;
+  state = initState();
+  state.vsaVec = vsa.encode(stateKey(state));
+  updateUI();
+  drawGrid();
+  drawVSA();
+  log('Сброс. Эпизод ' + episodeNum);
+}
+
+function stateKey(s) {
+  return { ap: s.agentPos, ad: s.agentDir, hk: s.hasKey, do: s.doorOpen };
+}
+
+function stepEnv(action) {
+  if (!state || state.done) return;
+
+  const prevVec = vsa.encode(stateKey(state));
+  const s = state;
+  s.step++;
+
+  if (action === 0) { // turn left
+    s.agentDir = (s.agentDir + 3) % 4;
+  } else if (action === 1) { // turn right
+    s.agentDir = (s.agentDir + 1) % 4;
+  } else if (action === 2) { // forward
+    const [dr, dc] = DIR_DX[s.agentDir];
+    const nr = s.agentPos[0] + dr, nc = s.agentPos[1] + dc;
+    if (nr >= 1 && nr <= 5 && nc >= 1 && nc <= 5) {
+      if (!(nr === s.doorPos[0] && nc === s.doorPos[1] && !s.doorOpen)) {
+        s.agentPos = [nr, nc];
+        s.path.push([nr, nc]);
+      }
+    }
+  } else if (action === 3) { // pickup
+    if (s.agentPos[0] === s.keyPos[0] && s.agentPos[1] === s.keyPos[1] && !s.hasKey) {
+      s.hasKey = true;
+      s.keyPicked = true;
+    }
+  } else if (action === 5) { // toggle
+    const [dr, dc] = DIR_DX[s.agentDir];
+    const fr = s.agentPos[0] + dr, fc = s.agentPos[1] + dc;
+    if (fr === s.doorPos[0] && fc === s.doorPos[1] && s.hasKey && !s.doorOpen) {
+      s.doorOpen = true;
+    }
+  }
+
+  // Check goal
+  let reward = 0;
+  if (s.agentPos[0] === s.goalPos[0] && s.agentPos[1] === s.goalPos[1]) {
+    reward = 1.0 - 0.9 * (s.step / 200);
+    s.done = true;
+    s.success = true;
+  }
+  if (s.step >= 200) {
+    s.done = true;
+  }
+
+  s.reward += reward;
+  s.vsaVec = vsa.encode(stateKey(s));
+
+  // Write to SDM
+  vsa.write(prevVec, action, reward);
+
+  if (s.done) {
+    episodeResults.push(s.success ? 1 : 0);
+    if (s.success) {
+      log('✓ Успех! Шагов: ' + s.step + ', награда: ' + s.reward.toFixed(3));
+    } else {
+      log('✗ Таймаут (' + s.step + ' шагов)');
+    }
+    drawChart();
+    // Auto-restart
+    if (playing) {
+      setTimeout(() => {
+        resetDemo();
+        if (playing) startPlay();
+      }, 500 / speed);
+      return;
+    }
+  }
+
+  updateUI();
+  drawGrid();
+  drawVSA();
+}
+
+function stepOnce() {
+  if (!state) resetDemo();
+  if (state.done) { resetDemo(); return; }
+  const vec = vsa.encode(stateKey(state));
+  const action = vsa.selectAction(vec, 7, 0.15);
+  log('Действие: ' + ACTIONS[action]);
+  stepEnv(action);
+}
+
+function togglePlay() {
+  if (playing) stopPlay();
+  else { if (!state) resetDemo(); startPlay(); }
+}
+
+function startPlay() {
+  playing = true;
+  document.getElementById('btnPlay').textContent = '⏸ Пауза';
+  document.getElementById('btnPlay').classList.add('active');
+  tick();
+}
+
+function stopPlay() {
+  playing = false;
+  if (timer) { clearTimeout(timer); timer = null; }
+  document.getElementById('btnPlay').textContent = '▶ Запустить';
+  document.getElementById('btnPlay').classList.remove('active');
+}
+
+function tick() {
+  if (!playing || !state) return;
+  if (state.done) return;
+  const vec = vsa.encode(stateKey(state));
+  const action = vsa.selectAction(vec, 7, 0.15);
+  stepEnv(action);
+  timer = setTimeout(tick, 200 / speed);
+}
+
+function setSpeed(s) {
+  speed = s;
+  document.querySelectorAll('.speed-control button').forEach(b => b.classList.remove('active'));
+  document.getElementById('sp' + String(s).replace('.', '')).classList.add('active');
+}
+
+// ──────────────────────────────────────────────
+// Drawing
+// ──────────────────────────────────────────────
+
+function drawGrid() {
+  const canvas = document.getElementById('gridCanvas');
+  const ctx = canvas.getContext('2d');
+  const s = state || initState();
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      const x = c * CELL, y = r * CELL;
+      if (r === 0 || r === 6 || c === 0 || c === 6) {
+        ctx.fillStyle = '#666666';
+      } else {
+        ctx.fillStyle = '#0f172a';
+      }
+      ctx.fillRect(x, y, CELL, CELL);
+      ctx.strokeStyle = '#334155';
+      ctx.strokeRect(x, y, CELL, CELL);
+    }
+  }
+
+  // Path
+  if (s.path.length > 1) {
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(96, 165, 250, 0.25)';
+    ctx.lineWidth = 3;
+    ctx.moveTo(s.path[0][1] * CELL + CELL/2, s.path[0][0] * CELL + CELL/2);
+    for (let i = 1; i < s.path.length; i++) {
+      ctx.lineTo(s.path[i][1] * CELL + CELL/2, s.path[i][0] * CELL + CELL/2);
+    }
+    ctx.stroke();
+    ctx.lineWidth = 1;
+  }
+
+  // Goal
+  const gx = s.goalPos[1] * CELL + CELL/2, gy = s.goalPos[0] * CELL + CELL/2;
+  ctx.fillStyle = '#00ff88';
+  ctx.font = '24px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('◆', gx, gy);
+
+  // Key
+  if (!s.keyPicked) {
+    const kx = s.keyPos[1] * CELL + CELL/2, ky = s.keyPos[0] * CELL + CELL/2;
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText('★', kx, ky);
+  }
+
+  // Door
+  const dx = s.doorPos[1] * CELL, dy = s.doorPos[0] * CELL;
+  if (s.doorOpen) {
+    ctx.fillStyle = 'rgba(101, 67, 33, 0.4)';
+  } else {
+    ctx.fillStyle = '#8B4513';
+  }
+  ctx.fillRect(dx + 4, dy + 4, CELL - 8, CELL - 8);
+  ctx.strokeStyle = s.doorOpen ? '#654321' : '#A0522D';
+  ctx.strokeRect(dx + 4, dy + 4, CELL - 8, CELL - 8);
+
+  // Agent (triangle)
+  const ax = s.agentPos[1] * CELL + CELL/2, ay = s.agentPos[0] * CELL + CELL/2;
+  ctx.fillStyle = '#ff4444';
+  ctx.save();
+  ctx.translate(ax, ay);
+  ctx.rotate([0, Math.PI/2, Math.PI, -Math.PI/2][s.agentDir]);
+  ctx.beginPath();
+  ctx.moveTo(14, 0);
+  ctx.lineTo(-10, -10);
+  ctx.lineTo(-10, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawVSA() {
+  const canvas = document.getElementById('vsaCanvas');
+  const ctx = canvas.getContext('2d');
+  const vec = state ? state.vsaVec : new Uint8Array(512);
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const pw = w / 512;
+  for (let i = 0; i < 512; i++) {
+    ctx.fillStyle = vec[i] ? '#60a5fa' : '#111827';
+    ctx.fillRect(i * pw, 0, Math.max(pw, 1), h);
+  }
+}
+
+function drawChart() {
+  const canvas = document.getElementById('chartCanvas');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  if (episodeResults.length === 0) return;
+
+  // Background
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(0, 0, w, h);
+
+  // Gate line at 15%
+  const gateY = h - 0.15 * h;
+  ctx.strokeStyle = '#fbbf24';
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, gateY);
+  ctx.lineTo(w, gateY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#fbbf24';
+  ctx.font = '10px monospace';
+  ctx.fillText('gate 15%', w - 55, gateY - 3);
+
+  // Rolling average (window=10)
+  const winSize = Math.max(5, Math.min(10, episodeResults.length));
+  const avgs = [];
+  for (let i = 0; i < episodeResults.length; i++) {
+    const start = Math.max(0, i - winSize + 1);
+    const slice = episodeResults.slice(start, i + 1);
+    avgs.push(slice.reduce((a, b) => a + b, 0) / slice.length);
+  }
+
+  // Draw bars + line
+  const barW = Math.max(2, w / Math.max(episodeResults.length, 1));
+  for (let i = 0; i < episodeResults.length; i++) {
+    ctx.fillStyle = episodeResults[i] ? '#34d39944' : '#f8717122';
+    ctx.fillRect(i * barW, episodeResults[i] ? h * 0.3 : h * 0.7, barW - 1, episodeResults[i] ? h * 0.7 : h * 0.3);
+  }
+
+  // Rolling avg line
+  ctx.strokeStyle = '#60a5fa';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < avgs.length; i++) {
+    const x = i * barW + barW / 2;
+    const y = h - avgs[i] * h;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.lineWidth = 1;
+
+  // Labels
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '10px monospace';
+  ctx.fillText('Эпизод: ' + episodeResults.length, 5, 12);
+  const sr = (episodeResults.reduce((a,b) => a+b, 0) / episodeResults.length * 100).toFixed(1);
+  ctx.fillText('Успех: ' + sr + '%', 5, 24);
+}
+
+function updateUI() {
+  const s = state || initState();
+  document.getElementById('stepNum').textContent = s.step + ' / 200';
+  document.getElementById('epNum').textContent = episodeNum;
+  document.getElementById('reward').textContent = s.reward.toFixed(3);
+  document.getElementById('inventory').textContent = s.hasKey ? '🔑 ключ' : 'пусто';
+  document.getElementById('sdmWrites').textContent = totalWrites;
+  document.getElementById('sdmConf').textContent = maxConf.toFixed(3);
+
+  let statusText = 'идёт';
+  if (!s.keyPicked && !s.hasKey) statusText = 'ищет ключ';
+  else if (s.hasKey && !s.doorOpen) statusText = 'идёт к двери';
+  else if (s.doorOpen) statusText = 'идёт к цели';
+  if (s.done) statusText = s.success ? 'успех!' : 'таймаут';
+  document.getElementById('status').textContent = statusText;
+
+  const actionEl = document.getElementById('actionText');
+  if (s.done) {
+    actionEl.textContent = s.success ? '✓ Агент достиг цели!' : '✗ Время вышло';
+    actionEl.style.color = s.success ? '#34d399' : '#f87171';
+  }
+}
+
+function log(msg) {
+  const el = document.getElementById('actionLog');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+// ──────────────────────────────────────────────
+// Experiment results (fill from real data when available)
+// ──────────────────────────────────────────────
+
+function fillResults(data) {
+  if (data['105a']) {
+    const r = data['105a'];
+    document.getElementById('r105a').textContent = (r.accuracy * 100).toFixed(1) + '%';
+    const el = document.getElementById('s105a');
+    el.textContent = r.gate ? 'PASS' : 'FAIL';
+    el.className = 'stat-value ' + (r.gate ? 'pass' : 'fail');
+  }
+  if (data['105b']) {
+    const r = data['105b'];
+    document.getElementById('r105b').textContent = r.mean_similarity.toFixed(3);
+    const el = document.getElementById('s105b');
+    el.textContent = r.gate ? 'PASS' : 'FAIL';
+    el.className = 'stat-value ' + (r.gate ? 'pass' : 'fail');
+  }
+  if (data['105c']) {
+    const r = data['105c'];
+    document.getElementById('r105c').textContent = (r.success_rate * 100).toFixed(1) + '%';
+    const el = document.getElementById('s105c');
+    el.textContent = r.gate_primary ? 'PASS' : 'FAIL';
+    el.className = 'stat-value ' + (r.gate_primary ? 'pass' : 'fail');
+    document.getElementById('r105cL').textContent =
+      (r.first_50_rate * 100).toFixed(0) + '% → ' + (r.last_50_rate * 100).toFixed(0) + '%';
+    const el2 = document.getElementById('s105cL');
+    el2.textContent = r.gate_learning ? 'PASS' : 'FAIL';
+    el2.className = 'stat-value ' + (r.gate_learning ? 'pass' : 'fail');
+  }
+}
+
+// Pre-fill with known results from minipc run
+const RESULTS = {
+  "105a": {"accuracy": 0.96, "correct": 96, "total": 100, "gate": true},
+  "105b": {"mean_similarity": 0.859, "n_transitions": 990, "n_tested": 500, "gate": true},
+  // 105c will be filled when experiment completes
+};
+fillResults(RESULTS);
+
+// Init
+state = initState();
+state.vsaVec = vsa.encode(stateKey(state));
+drawGrid();
+drawVSA();
+drawChart();
+updateUI();
+</script>
+</body>
+</html>
