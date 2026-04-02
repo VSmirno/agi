@@ -71,3 +71,16 @@ DoorKey = detour task. Forward planning (beam search, reward lookahead) не р�
 - Отказ от novelty bonus (заливает SDM шумом)
 - Forward beam search архитектурно не подходит для detour tasks
 - Trace matching без subgoal extraction — слишком шумный
+
+---
+
+## Stage 46: Subgoal Planning
+
+### [14:00] Фаза 0: Git setup
+- Ветка: stage46-subgoal-planning от main (commit 35b2881)
+- Tech debt проверен: 5 open (TD-001 IN_PROGRESS, TD-002..005 OPEN), 0 закрыто
+- minipc: нет активных tmux-сессий
+- TD-001: blocked by Stage 42 (perception), пропускаем
+- TD-002, TD-003: GPU_EXP, minipc свободен — можно запустить после merge
+- TD-004: INTEGRATION, зависит от WM gating — пропускаем
+- TD-005: INTEGRATION, VSA planning FAIL — scope Stage 46
