@@ -289,8 +289,9 @@ def run_exp107b(n_layouts: int = 200, plan_eps: int = 50) -> dict:
     solved_80 = sum(1 for r in results_per_layout if r["plan_rate"] >= 0.8)
     solved_50 = sum(1 for r in results_per_layout if r["plan_rate"] > 0.5)
     solved_any = sum(1 for r in results_per_layout if r["plan_rate"] > 0)
-    no_traces = sum(1 for r in results_per_layout if r["n_traces"] == 0)
     mean_plan_rate = np.mean([r["plan_rate"] for r in results_per_layout])
+    mean_steps_all = np.mean([r["mean_steps"] for r in results_per_layout])
+    no_plan = sum(1 for r in results_per_layout if not r["has_plan"])
 
     gate = solved_80 / n_layouts >= 0.80  # ≥80% of layouts solved at ≥80% rate
 
@@ -299,8 +300,9 @@ def run_exp107b(n_layouts: int = 200, plan_eps: int = 50) -> dict:
     print(f"\n  Solved (≥80% plan): {solved_80}/{n_layouts} = {solved_80 / n_layouts:.1%}")
     print(f"  Solved (>50% plan): {solved_50}/{n_layouts} = {solved_50 / n_layouts:.1%}")
     print(f"  Solved (any plan): {solved_any}/{n_layouts} = {solved_any / n_layouts:.1%}")
-    print(f"  No traces found: {no_traces}/{n_layouts}")
+    print(f"  No plan built: {no_plan}/{n_layouts}")
     print(f"  Mean plan rate: {mean_plan_rate:.1%}")
+    print(f"  Mean steps (solved): {mean_steps_all:.1f}")
     print(f"  Gate (≥80% layouts at ≥80%): {'PASS' if gate else 'FAIL'}")
     print(f"  Time: {elapsed:.1f}s")
 
@@ -309,8 +311,9 @@ def run_exp107b(n_layouts: int = 200, plan_eps: int = 50) -> dict:
         "solved_80": solved_80,
         "solved_50": solved_50,
         "solved_any": solved_any,
-        "no_traces": no_traces,
+        "no_plan": no_plan,
         "mean_plan_rate": float(mean_plan_rate),
+        "mean_steps": float(mean_steps_all),
         "gate": gate,
         "elapsed_s": elapsed,
     }
