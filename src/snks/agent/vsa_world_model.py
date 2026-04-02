@@ -27,6 +27,7 @@ class WorldModelConfig:
     explore_episodes: int = 50     # random exploration before planning
     plan_depth: int = 8            # forward search depth
     beam_width: int = 5            # beam search width
+    backward_depth: int = 5        # backward chaining depth
 
 
 class VSACodebook:
@@ -394,6 +395,109 @@ class CausalPlanner:
         return best[1]
 
 
+class BackwardChainPlanner:
+    """Backward chaining through SDM world model.
+
+    Instead of forward search toward goal, starts from goal and works
+    backward: "what (state, action) leads to a state similar to goal?"
+    Then: "what leads to THAT state?" etc.
+
+    Uses a reverse SDM that stores next_state → bind(state, action).
+    At plan time, chains backward from goal to find which first action
+    the current state should take.
+    """
+
+    def __init__(self, forward_sdm: SDMMemory, codebook: VSACodebook,
+                 n_actions: int = 7, backward_depth: int = 5,
+                 min_confidence: float = 0.05, epsilon: float = 0.15):
+        self.forward_sdm = forward_sdm
+        self.cb = codebook
+        self.n_actions = n_actions
+        self.backward_depth = backward_depth
+        self.min_confidence = min_confidence
+        self.epsilon = epsilon
+        self._goal_features: torch.Tensor | None = None
+
+        # Reverse SDM: address = next_state, content = bind(state, action)
+        self.reverse_sdm = SDMMemory(
+            n_locations=forward_sdm.n_locations,
+            dim=forward_sdm.dim,
+            seed=137,  # different seed for different address space
+        )
+        # Store episode traces for backward chaining
+        self._successful_traces: list[list[tuple[torch.Tensor, int]]] = []
+
+    def set_goal(self, goal_vsa: torch.Tensor) -> None:
+        self._goal_features = goal_vsa
+
+    def record_transition(self, state: torch.Tensor, action: int,
+                          next_state: torch.Tensor, reward: float) -> None:
+        """Record transition in reverse SDM for backward queries."""
+        action_vsa = self.cb.action(action)
+        sa_pair = self.cb.bind(state, action_vsa)
+        # Reverse SDM: key=next_state, value=bind(state, action)
+        self.reverse_sdm.write(next_state, torch.zeros_like(action_vsa), sa_pair, reward)
+
+    def record_success_trace(self, trace: list[tuple[torch.Tensor, int]]) -> None:
+        """Record a successful episode trace for subgoal extraction."""
+        self._successful_traces.append(trace)
+
+    def select(self, current_state: torch.Tensor) -> int:
+        """Select action via backward chaining from goal."""
+        if self._goal_features is None:
+            return int(torch.randint(0, self.n_actions, (1,)).item())
+
+        # Epsilon exploration
+        if torch.rand(1).item() < self.epsilon:
+            return int(torch.randint(0, self.n_actions, (1,)).item())
+
+        # Strategy 1: Check if current state is similar to any state
+        # that was 1 step before a successful state in traces
+        if self._successful_traces:
+            return self._select_from_traces(current_state)
+
+        # Strategy 2: Forward 1-step with reward signal (fallback)
+        return self._select_1step_reward(current_state)
+
+    def _select_from_traces(self, current_state: torch.Tensor) -> int:
+        """Find the most similar state in successful traces, use that action."""
+        best_sim = -1.0
+        best_action = -1
+
+        for trace in self._successful_traces:
+            for state, action in trace:
+                sim = self.cb.similarity(current_state, state)
+                if sim > best_sim:
+                    best_sim = sim
+                    best_action = action
+
+        if best_action >= 0 and best_sim > 0.6:
+            return best_action
+
+        return self._select_1step_reward(current_state)
+
+    def _select_1step_reward(self, state: torch.Tensor) -> int:
+        """Fallback: 1-step reward lookahead."""
+        best_score = -float('inf')
+        best_action = -1
+        any_conf = False
+
+        for a_idx in range(self.n_actions):
+            action_vsa = self.cb.action(a_idx)
+            reward = self.forward_sdm.read_reward(state, action_vsa)
+            _, conf = self.forward_sdm.read_next(state, action_vsa)
+            if conf >= self.min_confidence:
+                any_conf = True
+                score = reward * conf
+                if score > best_score:
+                    best_score = score
+                    best_action = a_idx
+
+        if not any_conf or best_action < 0:
+            return int(torch.randint(0, self.n_actions, (1,)).item())
+        return best_action
+
+
 class WorldModelAgent:
     """VSA World Model agent: explore → build model → plan → act.
 
@@ -413,12 +517,11 @@ class WorldModelAgent:
             n_locations=config.n_locations,
             dim=config.dim,
         )
-        self.causal_planner = CausalPlanner(
-            sdm=self.sdm,
+        self.backward_planner = BackwardChainPlanner(
+            forward_sdm=self.sdm,
             codebook=self.codebook,
             n_actions=config.n_actions,
-            plan_depth=config.plan_depth,
-            beam_width=config.beam_width,
+            backward_depth=config.backward_depth,
             min_confidence=config.min_confidence,
             epsilon=config.epsilon,
         )
@@ -429,39 +532,31 @@ class WorldModelAgent:
             min_confidence=config.min_confidence,
             epsilon=config.epsilon,
         )
-        # Keep SDMPlanner for backward compat with tests
+        # Keep planner for backward compat with tests
         self.planner = self.sdm_planner
         self._prev_state: torch.Tensor | None = None
         self._prev_action: int | None = None
         self._episode_count: int = 0
         self._exploring: bool = True
+        self._episode_trace: list[tuple[torch.Tensor, int]] = []
 
     def set_goal_from_obs(self, obs: np.ndarray) -> None:
         """Extract goal features from observation and set planner goal."""
-        # Encode a "goal state" — what would the world look like if we were at the goal?
-        # We extract goal position from obs and create a synthetic goal state
         goal_facts: list[torch.Tensor] = []
         for r in range(obs.shape[0]):
             for c in range(obs.shape[1]):
                 if int(obs[r, c, 0]) == VSAEncoder.OBJ_GOAL:
-                    # Goal state = agent at goal position
                     goal_facts.append(self.codebook.bind(
                         self.codebook.role("agent_pos"),
                         self.codebook.filler(f"pos_{r}_{c}"),
                     ))
-                    # Include goal presence
                     goal_facts.append(self.codebook.bind(
                         self.codebook.role("goal_pos"),
                         self.codebook.filler(f"pos_{r}_{c}"),
                     ))
-                    # Door should be open in goal state
-                    goal_facts.append(self.codebook.bind(
-                        self.codebook.role("door_state"),
-                        self.codebook.filler("open"),
-                    ))
         if goal_facts:
             goal_vsa = self.codebook.bundle(goal_facts)
-            self.causal_planner.set_goal(goal_vsa)
+            self.backward_planner.set_goal(goal_vsa)
 
     def step(self, obs: np.ndarray) -> int:
         state = self.encoder.encode(obs)
@@ -469,8 +564,8 @@ class WorldModelAgent:
         if self._exploring:
             action = int(torch.randint(0, self.config.n_actions, (1,)).item())
         else:
-            # Use 1-step SDM planner: leverages recorded rewards from explore phase
-            action = self.sdm_planner.select(state)
+            # Use backward chain planner: matches current state to successful traces
+            action = self.backward_planner.select(state)
 
         self._prev_state = state
         self._prev_action = action
@@ -482,15 +577,22 @@ class WorldModelAgent:
         next_state = self.encoder.encode(obs)
         action_vsa = self.codebook.action(self._prev_action)
         self.sdm.write(self._prev_state, action_vsa, next_state, reward)
+        # Record in episode trace
+        self._episode_trace.append((self._prev_state.clone(), self._prev_action))
+        # Also record in reverse SDM for backward queries
+        self.backward_planner.record_transition(
+            self._prev_state, self._prev_action, next_state, reward,
+        )
 
     def run_episode(self, env, max_steps: int = 200) -> tuple[bool, int, float]:
         obs = env.reset()
         total_reward = 0.0
         self._prev_state = None
         self._prev_action = None
+        self._episode_trace = []
 
         # Set goal from initial observation
-        if self._episode_count == 0 or self.causal_planner._goal_features is None:
+        if self._episode_count == 0:
             self.set_goal_from_obs(obs)
 
         # Check if we should switch from explore to plan
@@ -502,6 +604,11 @@ class WorldModelAgent:
             self.observe(obs, reward)
             total_reward += reward
             if terminated or truncated:
+                # Record successful traces for backward chaining
+                if total_reward > 0 and self._episode_trace:
+                    self.backward_planner.record_success_trace(
+                        list(self._episode_trace)
+                    )
                 self._episode_count += 1
                 return total_reward > 0, step_i + 1, total_reward
 
