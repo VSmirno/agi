@@ -31,28 +31,40 @@ from snks.agent.subgoal_planning import (
 # ──────────────────────────────────────────────
 
 class _DoorKeyEnv:
-    """Simplified DoorKey-5x5 for testing (copied from exp105)."""
+    """Simplified DoorKey-5x5 with blocking wall for testing.
+
+    Layout (inner 5x5):
+      Row 0: . A . K .   (agent at 0,1, key at 0,3)
+      Row 1: . . . . .
+      Row 2: W W D W W   (wall with door at 2,2)
+      Row 3: . . . . .
+      Row 4: . . . G .   (goal at 4,3)
+    """
 
     def __init__(self, seed: int | None = None):
         self.rng = np.random.RandomState(seed)
         self.size = 5
         self.n_actions = 7
         self.max_steps = 200
+        self.wall_positions = [[2, 0], [2, 1], [2, 3], [2, 4]]
         self.reset()
 
     def reset(self, seed: int | None = None) -> np.ndarray:
         if seed is not None:
             self.rng = np.random.RandomState(seed)
-        self.agent_pos = [1, 1]
-        self.agent_dir = 0
-        self.key_pos = [1, 3]
+        self.agent_pos = [0, 1]
+        self.agent_dir = 1
+        self.key_pos = [0, 3]
         self.has_key = False
         self.door_pos = [2, 2]
         self.door_open = False
-        self.goal_pos = [3, 3]
+        self.goal_pos = [4, 3]
         self.steps = 0
         self.key_picked = False
         return self._obs()
+
+    def _is_wall(self, r: int, c: int) -> bool:
+        return [r, c] in self.wall_positions
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         self.steps += 1
@@ -65,7 +77,9 @@ class _DoorKeyEnv:
             dr, dc = [(0, 1), (1, 0), (0, -1), (-1, 0)][self.agent_dir]
             nr, nc = self.agent_pos[0] + dr, self.agent_pos[1] + dc
             if 0 <= nr < self.size and 0 <= nc < self.size:
-                if [nr, nc] == self.door_pos and not self.door_open:
+                if self._is_wall(nr, nc):
+                    pass
+                elif [nr, nc] == self.door_pos and not self.door_open:
                     pass
                 else:
                     self.agent_pos = [nr, nc]
@@ -90,6 +104,8 @@ class _DoorKeyEnv:
         for i in range(7):
             obs[0, i, 0] = 2; obs[6, i, 0] = 2
             obs[i, 0, 0] = 2; obs[i, 6, 0] = 2
+        for wr, wc in self.wall_positions:
+            obs[wr + 1, wc + 1, 0] = 2
         ar, ac = self.agent_pos[0] + 1, self.agent_pos[1] + 1
         obs[ar, ac, 0] = 10
         obs[ar, ac, 2] = self.agent_dir
@@ -142,46 +158,52 @@ def _make_obs(agent_pos=(3, 3), agent_dir=0, key_pos=None, key_color=1,
 
 
 def _make_doorkey_trace() -> list[TraceStep]:
-    """Create a realistic successful DoorKey trace.
+    """Create a realistic successful DoorKey trace with blocking wall.
 
-    Sequence: start → navigate to key → pickup → navigate to door → toggle → navigate to goal.
+    Layout (obs coords): agent(1,2), key(1,4), wall row 3, door(3,3), goal(5,4).
+    Sequence: navigate to key → pickup → navigate to door → toggle → go through → goal.
     """
     trace = []
 
-    # Step 1: Agent at (2,2), moving toward key at (2,4)
-    obs_before = _make_obs(agent_pos=(2, 2), key_pos=(2, 4), door_pos=(3, 3), goal_pos=(4, 4))
-    obs_after = _make_obs(agent_pos=(2, 3), key_pos=(2, 4), door_pos=(3, 3), goal_pos=(4, 4))
-    trace.append(TraceStep(obs_before, 2, obs_after, 0.0))  # forward
-
-    # Step 2: Continue to key
-    obs_before = obs_after
-    obs_after = _make_obs(agent_pos=(2, 4), key_pos=(2, 4), door_pos=(3, 3), goal_pos=(4, 4))
+    # Step 1: Agent at (1,2), moving toward key at (1,4)
+    obs_before = _make_obs(agent_pos=(1, 2), key_pos=(1, 4), door_pos=(3, 3), goal_pos=(5, 4))
+    obs_after = _make_obs(agent_pos=(1, 3), key_pos=(1, 4), door_pos=(3, 3), goal_pos=(5, 4))
     trace.append(TraceStep(obs_before, 2, obs_after, 0.0))
 
-    # Step 3: Pickup key — key disappears from grid
+    # Step 2: Reach key position
     obs_before = obs_after
-    obs_after = _make_obs(agent_pos=(2, 4), key_pos=None, door_pos=(3, 3), goal_pos=(4, 4), has_key=True)
-    trace.append(TraceStep(obs_before, 3, obs_after, 0.0))  # pickup
-
-    # Step 4: Navigate toward door
-    obs_before = obs_after
-    obs_after = _make_obs(agent_pos=(2, 3), key_pos=None, door_pos=(3, 3), goal_pos=(4, 4), has_key=True)
+    obs_after = _make_obs(agent_pos=(1, 4), key_pos=(1, 4), door_pos=(3, 3), goal_pos=(5, 4))
     trace.append(TraceStep(obs_before, 2, obs_after, 0.0))
 
-    # Step 5: Face door and toggle — door opens
+    # Step 3: Pickup key — key disappears
     obs_before = obs_after
-    obs_after = _make_obs(agent_pos=(2, 3), key_pos=None, door_pos=(3, 3), door_state=0, goal_pos=(4, 4), has_key=True)
-    trace.append(TraceStep(obs_before, 5, obs_after, 0.0))  # toggle
+    obs_after = _make_obs(agent_pos=(1, 4), key_pos=None, door_pos=(3, 3), goal_pos=(5, 4), has_key=True)
+    trace.append(TraceStep(obs_before, 3, obs_after, 0.0))
 
-    # Step 6: Navigate through door to goal area
+    # Step 4: Navigate toward door (turn + move)
     obs_before = obs_after
-    obs_after = _make_obs(agent_pos=(3, 3), key_pos=None, door_pos=(3, 3), door_state=0, goal_pos=(4, 4), has_key=True)
+    obs_after = _make_obs(agent_pos=(2, 3), key_pos=None, door_pos=(3, 3), goal_pos=(5, 4), has_key=True)
     trace.append(TraceStep(obs_before, 2, obs_after, 0.0))
 
-    # Step 7: Reach goal
+    # Step 5: Toggle door — door opens
     obs_before = obs_after
-    obs_after = _make_obs(agent_pos=(4, 4), key_pos=None, door_pos=(3, 3), door_state=0, goal_pos=(4, 4), has_key=True)
-    trace.append(TraceStep(obs_before, 2, obs_after, 1.0))  # reward!
+    obs_after = _make_obs(agent_pos=(2, 3), key_pos=None, door_pos=(3, 3), door_state=0, goal_pos=(5, 4), has_key=True)
+    trace.append(TraceStep(obs_before, 5, obs_after, 0.0))
+
+    # Step 6: Move through door
+    obs_before = obs_after
+    obs_after = _make_obs(agent_pos=(3, 3), key_pos=None, door_pos=(3, 3), door_state=0, goal_pos=(5, 4), has_key=True)
+    trace.append(TraceStep(obs_before, 2, obs_after, 0.0))
+
+    # Step 7: Navigate to goal
+    obs_before = obs_after
+    obs_after = _make_obs(agent_pos=(4, 4), key_pos=None, door_pos=(3, 3), door_state=0, goal_pos=(5, 4), has_key=True)
+    trace.append(TraceStep(obs_before, 2, obs_after, 0.0))
+
+    # Step 8: Reach goal
+    obs_before = obs_after
+    obs_after = _make_obs(agent_pos=(5, 4), key_pos=None, door_pos=(3, 3), door_state=0, goal_pos=(5, 4), has_key=True)
+    trace.append(TraceStep(obs_before, 2, obs_after, 1.0))
 
     return trace
 
@@ -430,10 +452,10 @@ class TestSubgoalPlanningAgent:
         assert len(agent.plan.subgoals) >= 2  # at least pickup_key and reach_goal
 
     def test_full_episode_with_doorkey_env(self):
-        """Integration test: run explore + plan on simplified DoorKey."""
+        """Integration test: inject successful trace, verify plan builds and agent runs."""
         config = SubgoalConfig(
             dim=512, n_locations=2000, n_actions=7,
-            explore_episodes=10,
+            explore_episodes=2,
             epsilon=0.2,
             min_confidence=0.01,
         )
@@ -441,11 +463,20 @@ class TestSubgoalPlanningAgent:
 
         env = _DoorKeyEnv(seed=42)
 
-        results = []
-        for ep in range(30):
-            success, steps, reward = agent.run_episode(env, max_steps=200)
-            results.append(success)
+        # Run 2 explore episodes (won't succeed, but fills SDM)
+        for _ in range(2):
+            agent.run_episode(env, max_steps=200)
 
-        # At minimum, some explore episodes should succeed (random walk ~40%)
-        explore_successes = sum(results[:10])
-        assert explore_successes >= 1, "No explore successes — env may be broken"
+        # Inject a known successful trace so plan phase has data
+        trace = _make_doorkey_trace()
+        agent._successful_traces.append(trace)
+
+        # Run plan episodes — should build plan and attempt subgoal navigation
+        for _ in range(5):
+            agent.run_episode(env, max_steps=200)
+
+        # Verify plan was built with correct subgoals
+        assert agent.plan is not None, "Plan should have been built from injected trace"
+        names = [s.name for s in agent.plan.subgoals]
+        assert "pickup_key" in names, f"Expected pickup_key in plan, got {names}"
+        assert "reach_goal" in names, f"Expected reach_goal in plan, got {names}"

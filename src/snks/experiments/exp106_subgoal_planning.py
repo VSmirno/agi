@@ -34,49 +34,67 @@ from snks.agent.vsa_world_model import VSACodebook, VSAEncoder
 # ──────────────────────────────────────────────
 
 class DoorKeyEnv:
-    """Simplified DoorKey-5x5."""
+    """Simplified DoorKey-5x5 with blocking wall.
+
+    Layout (inner 5x5, obs 7x7 with border walls):
+      Row 0: . A . K .   (agent at 0,1, key at 0,3)
+      Row 1: . . . . .
+      Row 2: W W D W W   (wall divider with door at 2,2)
+      Row 3: . . . . .
+      Row 4: . . . G .   (goal at 4,3)
+
+    The wall at row 2 FORCES the agent through the door.
+    Door is locked → must pickup key first, then toggle.
+    """
 
     def __init__(self, seed: int | None = None):
         self.rng = np.random.RandomState(seed)
         self.size = 5
         self.n_actions = 7
         self.max_steps = 200
+        # Wall positions (inner coords) — row 2 except door
+        self.wall_positions = [[2, 0], [2, 1], [2, 3], [2, 4]]
         self.reset()
 
     def reset(self, seed: int | None = None) -> np.ndarray:
         if seed is not None:
             self.rng = np.random.RandomState(seed)
-        self.agent_pos = [1, 1]
-        self.agent_dir = 0
-        self.key_pos = [1, 3]
+        self.agent_pos = [0, 1]
+        self.agent_dir = 1  # facing down
+        self.key_pos = [0, 3]
         self.has_key = False
         self.door_pos = [2, 2]
         self.door_open = False
-        self.goal_pos = [3, 3]
+        self.goal_pos = [4, 3]
         self.steps = 0
         self.key_picked = False
         return self._obs()
 
+    def _is_wall(self, r: int, c: int) -> bool:
+        return [r, c] in self.wall_positions
+
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         self.steps += 1
         reward = 0.0
-        if action == 0:
+        if action == 0:  # turn left
             self.agent_dir = (self.agent_dir - 1) % 4
-        elif action == 1:
+        elif action == 1:  # turn right
             self.agent_dir = (self.agent_dir + 1) % 4
-        elif action == 2:
+        elif action == 2:  # forward
             dr, dc = [(0, 1), (1, 0), (0, -1), (-1, 0)][self.agent_dir]
             nr, nc = self.agent_pos[0] + dr, self.agent_pos[1] + dc
             if 0 <= nr < self.size and 0 <= nc < self.size:
-                if [nr, nc] == self.door_pos and not self.door_open:
-                    pass
+                if self._is_wall(nr, nc):
+                    pass  # blocked by wall
+                elif [nr, nc] == self.door_pos and not self.door_open:
+                    pass  # blocked by locked door
                 else:
                     self.agent_pos = [nr, nc]
-        elif action == 3:
+        elif action == 3:  # pickup
             if self.agent_pos == self.key_pos and not self.has_key:
                 self.has_key = True
                 self.key_picked = True
-        elif action == 5:
+        elif action == 5:  # toggle
             dr, dc = [(0, 1), (1, 0), (0, -1), (-1, 0)][self.agent_dir]
             fr, fc = self.agent_pos[0] + dr, self.agent_pos[1] + dc
             if [fr, fc] == self.door_pos and self.has_key and not self.door_open:
@@ -90,20 +108,29 @@ class DoorKeyEnv:
 
     def _obs(self) -> np.ndarray:
         obs = np.zeros((7, 7, 3), dtype=np.int64)
+        # Border walls
         for i in range(7):
             obs[0, i, 0] = 2; obs[6, i, 0] = 2
             obs[i, 0, 0] = 2; obs[i, 6, 0] = 2
+        # Interior walls (inner→obs: +1)
+        for wr, wc in self.wall_positions:
+            obs[wr + 1, wc + 1, 0] = 2
+        # Agent
         ar, ac = self.agent_pos[0] + 1, self.agent_pos[1] + 1
         obs[ar, ac, 0] = 10
         obs[ar, ac, 2] = self.agent_dir
+        # Key
         if not self.key_picked:
             kr, kc = self.key_pos[0] + 1, self.key_pos[1] + 1
             obs[kr, kc, 0] = 5; obs[kr, kc, 1] = 1
+        # Door
         dr, dc = self.door_pos[0] + 1, self.door_pos[1] + 1
         obs[dr, dc, 0] = 4
         obs[dr, dc, 2] = 0 if self.door_open else 2
+        # Goal
         gr, gc = self.goal_pos[0] + 1, self.goal_pos[1] + 1
         obs[gr, gc, 0] = 8
+        # Has key indicator
         if self.has_key:
             obs[ar, ac, 1] = 5
         return obs
@@ -113,7 +140,7 @@ class DoorKeyEnv:
 # Helper: collect explore traces
 # ──────────────────────────────────────────────
 
-def _collect_explore_traces(n_episodes: int = 50, seed: int = 42) -> list[list[TraceStep]]:
+def _collect_explore_traces(n_episodes: int = 500, seed: int = 42) -> list[list[TraceStep]]:
     """Run random episodes and return successful traces."""
     env = DoorKeyEnv(seed=seed)
     cb = VSACodebook(dim=512, seed=42)
@@ -216,7 +243,7 @@ def run_exp106b() -> dict:
     """Verify plan graph ordering from extracted subgoals."""
     print("\n=== Exp 106b: Plan Graph Construction ===")
 
-    traces = _collect_explore_traces(n_episodes=50)
+    traces = _collect_explore_traces(n_episodes=500)
     if not traces:
         print("  ERROR: No traces")
         return {"gate": False}
@@ -464,9 +491,9 @@ def main():
 
     results = {}
 
-    results["106a"] = run_exp106a(n_episodes=50)
+    results["106a"] = run_exp106a(n_episodes=500)
     results["106b"] = run_exp106b()
-    results["106c"] = run_exp106c(n_episodes=100, explore_eps=50)
+    results["106c"] = run_exp106c(n_episodes=400, explore_eps=200)
     results["106d"] = run_exp106d(n_episodes=50)
 
     # Summary
