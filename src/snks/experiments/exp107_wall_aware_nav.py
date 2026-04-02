@@ -229,9 +229,13 @@ def run_exp107a(n_layouts: int = 100) -> dict:
 # Exp 107b: SubgoalPlanningAgent with BFS on random layouts
 # ──────────────────────────────────────────────
 
-def run_exp107b(n_layouts: int = 200, explore_eps: int = 100) -> dict:
-    """Primary gate: BFS-enhanced SubgoalPlanningAgent on random DoorKey-5x5."""
-    print(f"\n=== Exp 107b: Random DoorKey-5x5 ({n_layouts} layouts) ===")
+def run_exp107b(n_layouts: int = 200, plan_eps: int = 50) -> dict:
+    """Primary gate: BFS-enhanced SubgoalPlanningAgent on random DoorKey-5x5.
+
+    Uses obs-based planning (build_plan_from_obs) — no explore phase needed.
+    Each layout gets plan_eps episodes of pure planning with BFS navigation.
+    """
+    print(f"\n=== Exp 107b: Random DoorKey-5x5 ({n_layouts} layouts, {plan_eps} plan eps each) ===")
 
     results_per_layout: list[dict] = []
     t0 = time.time()
@@ -244,29 +248,27 @@ def run_exp107b(n_layouts: int = 200, explore_eps: int = 100) -> dict:
             n_locations=5000,
             n_actions=7,
             min_confidence=0.01,
-            epsilon=0.15,
+            epsilon=0.1,
             max_episode_steps=200,
-            explore_episodes=explore_eps,
+            explore_episodes=0,  # No explore — build plan from observation
         )
         agent = SubgoalPlanningAgent(config)
 
-        # Run explore + plan episodes on this layout
-        total_episodes = explore_eps + 50  # 50 plan episodes per layout
         plan_successes = 0
-        plan_total = 0
+        plan_steps: list[int] = []
 
-        for ep in range(total_episodes):
+        for ep in range(plan_eps):
             success, steps, reward = agent.run_episode(env, max_steps=200)
-            if ep >= explore_eps:
-                plan_total += 1
-                if success:
-                    plan_successes += 1
+            if success:
+                plan_successes += 1
+                plan_steps.append(steps)
 
-        plan_rate = plan_successes / plan_total if plan_total > 0 else 0.0
+        plan_rate = plan_successes / plan_eps
+        mean_steps = np.mean(plan_steps) if plan_steps else 200
         results_per_layout.append({
             "seed": layout_seed,
             "plan_rate": plan_rate,
-            "n_traces": len(agent._successful_traces),
+            "mean_steps": float(mean_steps),
             "has_plan": agent.plan is not None,
         })
 
@@ -278,6 +280,7 @@ def run_exp107b(n_layouts: int = 200, explore_eps: int = 100) -> dict:
             print(
                 f"  Layout {layouts_done}/{n_layouts}: "
                 f"solved(>50%)={solved}/{layouts_done}, "
+                f"mean_steps={mean_steps:.0f}, "
                 f"ETA {eta:.0f}s",
                 flush=True,
             )
@@ -389,7 +392,7 @@ def main():
 
     results = {}
     results["107a"] = run_exp107a(n_layouts=200)
-    results["107b"] = run_exp107b(n_layouts=200, explore_eps=100)
+    results["107b"] = run_exp107b(n_layouts=200, plan_eps=50)
     # Skip 107c for now — 107b is the primary gate
     # results["107c"] = run_exp107c(n_layouts=50)
 
