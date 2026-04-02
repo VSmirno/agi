@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import torch
 
+from snks.agent.pathfinding import GridPathfinder
 from snks.agent.vsa_world_model import (
     SDMMemory,
     VSACodebook,
@@ -225,6 +226,11 @@ class SubgoalNavigator:
         self._target_positions: dict[str, tuple[int, int, int | None]] = {}
         # Trace segments (kept for compatibility)
         self._trace_segments: dict[str, list[tuple[SymbolicState, int]]] = {}
+        # BFS pathfinding (Stage 47)
+        self._pathfinder = GridPathfinder()
+        self._cached_path: list[int] | None = None
+        self._cached_target: tuple[int, int] | None = None
+        self._use_bfs: bool = True
 
     def set_trace_segments(self, segments: dict[str, list[tuple[SymbolicState, int]]]) -> None:
         """Set trace segments for each subgoal."""
@@ -268,7 +274,10 @@ class SubgoalNavigator:
                         return special_action
                     return int(torch.randint(0, self.n_actions, (1,)).item())
 
-                # Navigate toward target: turn to face, then forward
+                # Navigate toward target: BFS pathfinding (wall-aware)
+                if self._use_bfs:
+                    return self._navigate_bfs(current_obs, current_sym,
+                                              target_row, target_col, subgoal)
                 return self._navigate_toward(current_sym, target_row, target_col)
 
         # Strategy 2: SDM prediction (fallback)
@@ -332,6 +341,33 @@ class SubgoalNavigator:
         # Turn shortest way
         diff = (want_dir - current.agent_dir) % 4
         return 1 if diff <= 2 else 0  # right or left turn
+
+    def _navigate_bfs(self, obs: np.ndarray, current_sym: SymbolicState,
+                      target_row: int, target_col: int,
+                      subgoal: Subgoal) -> int:
+        """BFS-based wall-aware navigation toward target position.
+
+        Recomputes path each step (BFS on 7x7 is <1ms).
+        Returns first action of the optimal path.
+        """
+        start = (current_sym.agent_row, current_sym.agent_col)
+        goal = (target_row, target_col)
+
+        # For open_door subgoal: door might still be locked, use allow_door
+        allow_door = subgoal.name == "open_door"
+        path = self._pathfinder.find_path(obs, start, goal,
+                                          allow_door=allow_door)
+        if path is None:
+            path = self._pathfinder.find_path(obs, start, goal,
+                                              allow_door=True)
+        if path is None or len(path) <= 1:
+            return self._navigate_toward(current_sym, target_row, target_col)
+
+        actions = self._pathfinder.path_to_actions(path, current_sym.agent_dir)
+        if actions:
+            return actions[0]
+
+        return self._navigate_toward(current_sym, target_row, target_col)
 
     def is_achieved(self, obs: np.ndarray, subgoal: Subgoal) -> bool:
         """Check if subgoal is achieved in current observation."""
