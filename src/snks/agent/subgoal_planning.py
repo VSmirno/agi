@@ -149,11 +149,55 @@ class PlanGraph:
         self.current_idx = 0
 
 
-class SubgoalNavigator:
-    """Navigate toward a subgoal using trace-based action replay.
+@dataclass
+class SymbolicState:
+    """Symbolic state extracted from observation for matching."""
+    agent_row: int
+    agent_col: int
+    agent_dir: int
+    has_key: bool
+    door_open: bool
 
-    Strategy: match current state to states in the trace segment for the
-    current subgoal, and replay the action from the most similar state.
+    def distance(self, other: SymbolicState) -> int:
+        """Manhattan distance + direction mismatch + state mismatch."""
+        d = abs(self.agent_row - other.agent_row) + abs(self.agent_col - other.agent_col)
+        if self.agent_dir != other.agent_dir:
+            d += 1
+        if self.has_key != other.has_key:
+            d += 2  # key state matters a lot
+        if self.door_open != other.door_open:
+            d += 2
+        return d
+
+
+def _extract_symbolic(obs: np.ndarray) -> SymbolicState:
+    """Extract symbolic state from 7x7x3 observation."""
+    agent_row, agent_col, agent_dir = 0, 0, 0
+    has_key_vis = False
+    door_open = False
+
+    for r in range(obs.shape[0]):
+        for c in range(obs.shape[1]):
+            obj_type = int(obs[r, c, 0])
+            if obj_type == 10:  # agent
+                agent_row, agent_col = r, c
+                agent_dir = int(obs[r, c, 2])
+            elif obj_type == 5:  # key
+                has_key_vis = True
+            elif obj_type == 4:  # door
+                door_open = int(obs[r, c, 2]) == 0
+
+    # has_key = carrying (key not visible on grid + agent color indicator)
+    has_key = not has_key_vis and int(obs[agent_row, agent_col, 1]) == 5
+
+    return SymbolicState(agent_row, agent_col, agent_dir, has_key, door_open)
+
+
+class SubgoalNavigator:
+    """Navigate toward a subgoal using symbolic trace-based matching.
+
+    Strategy: match current symbolic state (position, direction, inventory)
+    to trace segment states, and replay the action from closest match.
     Falls back to SDM prediction if no trace segment available.
     """
 
@@ -169,31 +213,34 @@ class SubgoalNavigator:
         self.n_actions = n_actions
         self.epsilon = epsilon
         self.min_confidence = min_confidence
-        # Trace segments per subgoal: list of (state_vsa, action)
-        self._trace_segments: dict[str, list[tuple[torch.Tensor, int]]] = {}
+        # Trace segments per subgoal: list of (symbolic_state, action)
+        self._trace_segments: dict[str, list[tuple[SymbolicState, int]]] = {}
 
-    def set_trace_segments(self, segments: dict[str, list[tuple[torch.Tensor, int]]]) -> None:
-        """Set trace segments for each subgoal (extracted from successful trace)."""
+    def set_trace_segments(self, segments: dict[str, list[tuple[SymbolicState, int]]]) -> None:
+        """Set trace segments for each subgoal."""
         self._trace_segments = segments
 
-    def select(self, current_state: torch.Tensor, subgoal: Subgoal) -> int:
-        """Select action via trace matching or SDM fallback."""
+    def select(self, current_state: torch.Tensor, subgoal: Subgoal,
+               current_obs: np.ndarray | None = None) -> int:
+        """Select action via symbolic trace matching or SDM fallback."""
         # Epsilon exploration
         if self.epsilon > 0 and torch.rand(1).item() < self.epsilon:
             return int(torch.randint(0, self.n_actions, (1,)).item())
 
-        # Strategy 1: trace-based replay
-        segment = self._trace_segments.get(subgoal.name, [])
-        if segment:
-            best_sim = -1.0
-            best_action = -1
-            for trace_state, trace_action in segment:
-                sim = self.cb.similarity(current_state, trace_state)
-                if sim > best_sim:
-                    best_sim = sim
-                    best_action = trace_action
-            if best_action >= 0 and best_sim > 0.55:
-                return best_action
+        # Strategy 1: symbolic trace-based replay
+        if current_obs is not None:
+            segment = self._trace_segments.get(subgoal.name, [])
+            if segment:
+                current_sym = _extract_symbolic(current_obs)
+                best_dist = float('inf')
+                best_action = -1
+                for trace_sym, trace_action in segment:
+                    dist = current_sym.distance(trace_sym)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_action = trace_action
+                if best_action >= 0 and best_dist <= 4:
+                    return best_action
 
         # Strategy 2: SDM prediction toward target state
         target = subgoal.target_state
@@ -344,7 +391,7 @@ class SubgoalPlanningAgent(WorldModelAgent):
                 # Plan complete but env not terminated — random walk
                 action = int(torch.randint(0, self.config.n_actions, (1,)).item())
             else:
-                action = self.navigator.select(state, current_subgoal)
+                action = self.navigator.select(state, current_subgoal, current_obs=obs)
 
             prev_obs = obs.copy()
             obs, reward, terminated, truncated, info = env.step(action)
@@ -379,14 +426,13 @@ class SubgoalPlanningAgent(WorldModelAgent):
         return self._successful_traces[-1]
 
     def _segment_trace(self, trace: list[TraceStep],
-                       subgoals: list[Subgoal]) -> dict[str, list[tuple[torch.Tensor, int]]]:
-        """Split trace into segments per subgoal.
+                       subgoals: list[Subgoal]) -> dict[str, list[tuple[SymbolicState, int]]]:
+        """Split trace into segments per subgoal using symbolic state matching.
 
         For each subgoal, find the trace steps leading up to its achievement.
-        Returns dict mapping subgoal name → list of (state_vsa, action).
+        Returns dict mapping subgoal name → list of (SymbolicState, action).
         """
-        segments: dict[str, list[tuple[torch.Tensor, int]]] = {}
-        subgoal_names = [sg.name for sg in subgoals]
+        segments: dict[str, list[tuple[SymbolicState, int]]] = {}
 
         # Find boundary indices in trace (where each subgoal is achieved)
         boundaries: list[int] = []
@@ -396,17 +442,16 @@ class SubgoalPlanningAgent(WorldModelAgent):
                     boundaries.append(i)
                     break
             else:
-                # Subgoal not found — use end of trace
                 boundaries.append(len(trace) - 1)
 
-        # Build segments: trace from previous boundary to this boundary
+        # Build segments with symbolic states
         prev_boundary = 0
         for sg_idx, sg in enumerate(subgoals):
             end = boundaries[sg_idx]
-            segment_steps: list[tuple[torch.Tensor, int]] = []
+            segment_steps: list[tuple[SymbolicState, int]] = []
             for i in range(prev_boundary, end + 1):
-                state_vsa = self.encoder.encode(trace[i].obs_before)
-                segment_steps.append((state_vsa, trace[i].action))
+                sym_state = _extract_symbolic(trace[i].obs_before)
+                segment_steps.append((sym_state, trace[i].action))
             segments[sg.name] = segment_steps
             prev_boundary = end + 1
 
