@@ -309,15 +309,8 @@ class BossLevelAgent:
         obj_type_id = OBJ_NAME_TO_ID.get(sg.obj)
         color_id = COLOR_IDS.get(sg.color) if sg.color else None
 
-        # Find target position from spatial map (may be None if not yet explored)
+        # Target position resolved lazily via _resolve_target during execution
         target_pos = None
-        if obj_type_id is not None:
-            if color_id is not None:
-                target_pos = self.spatial_map.find_object_by_type_color(
-                    obj_type_id, color_id
-                )
-            if target_pos is None and obj_type_id is not None:
-                target_pos = self.spatial_map.find_object(obj_type_id)
 
         if sg.type == SG_GO_TO:
             return ExecutableSubgoal(
@@ -377,19 +370,51 @@ class BossLevelAgent:
         return None
 
     def _resolve_target(self, sg: ExecutableSubgoal) -> None:
-        """Try to resolve target position from spatial map."""
+        """Try to resolve target position from spatial map.
+
+        When multiple matching objects exist, picks the nearest to agent.
+        """
         if sg.target_pos is not None:
             return
         if sg.name == "drop":
-            return  # drop at current pos
+            return
         if sg.target_obj_type is not None:
-            if sg.target_color is not None:
-                pos = self.spatial_map.find_object_by_type_color(
-                    sg.target_obj_type, sg.target_color
-                )
-            else:
-                pos = self.spatial_map.find_object(sg.target_obj_type)
-            sg.target_pos = pos
+            sg.target_pos = self._find_nearest_object(
+                sg.target_obj_type, sg.target_color
+            )
+
+    def _find_nearest_object(self, obj_type: int,
+                             color: int | None) -> tuple[int, int] | None:
+        """Find the nearest matching object to the agent."""
+        # Get all matching positions
+        type_match = self.spatial_map.grid[:, :, 0] == obj_type
+        if color is not None:
+            color_match = self.spatial_map.grid[:, :, 1] == color
+            mask = type_match & color_match
+        else:
+            mask = type_match
+
+        positions = np.argwhere(mask)
+        if len(positions) == 0:
+            return None
+
+        if len(positions) == 1:
+            return int(positions[0, 0]), int(positions[0, 1])
+
+        # Find nearest to agent's last known position
+        if self._last_pos is not None:
+            ar, ac = self._last_pos
+        else:
+            ar, ac = self.spatial_map.height // 2, self.spatial_map.width // 2
+
+        best = None
+        best_dist = float("inf")
+        for pos in positions:
+            d = abs(int(pos[0]) - ar) + abs(int(pos[1]) - ac)
+            if d < best_dist:
+                best_dist = d
+                best = (int(pos[0]), int(pos[1]))
+        return best
 
     # ── Subgoal execution ──
 

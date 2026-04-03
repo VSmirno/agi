@@ -71,13 +71,10 @@ class MissionEncoder:
 
     def tokenize(self, mission: str) -> list[str]:
         """Tokenize mission string into meaningful tokens."""
-        # Normalize
         text = mission.lower().strip()
-        # Split
-        tokens = text.split()
-        # Remove stopwords but keep structural words
-        filtered = [t for t in tokens if t not in STOPWORDS]
-        return filtered if filtered else tokens  # fallback to all if over-filtered
+        tokens = [t.strip(",.;:!?") for t in text.split()]
+        filtered = [t for t in tokens if t and t not in STOPWORDS]
+        return filtered if filtered else tokens
 
     def encode_mission(self, mission: str) -> torch.Tensor:
         """Encode mission text into a single VSA vector.
