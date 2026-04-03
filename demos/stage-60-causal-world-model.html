@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 60: Каузальная World Model из демонстраций</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0e17; color: #e2e8f0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh; padding: 20px;
+}
+h1 { color: #60a5fa; font-size: 1.8em; margin-bottom: 4px; }
+h2 { color: #60a5fa; font-size: 1.2em; margin: 16px 0 8px; }
+.subtitle { color: #94a3b8; font-size: 0.95em; margin-bottom: 16px; }
+.container { max-width: 1200px; margin: 0 auto; }
+.panel {
+  background: #111827; border: 1px solid #1e293b;
+  border-radius: 8px; padding: 16px; margin-bottom: 16px;
+}
+.row { display: flex; gap: 20px; flex-wrap: wrap; }
+.col { flex: 1; min-width: 300px; }
+canvas { border: 2px solid #334155; border-radius: 4px; display: block; background: #0f172a; }
+.controls {
+  display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; align-items: center;
+}
+.controls button {
+  background: #1e293b; color: #60a5fa; border: 1px solid #334155;
+  padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;
+}
+.controls button:hover { background: #334155; }
+.controls button.active { background: #1e40af; border-color: #60a5fa; }
+.gate-table { width: 100%; border-collapse: collapse; font-size: 0.9em; margin: 8px 0; }
+.gate-table th { text-align: left; color: #94a3b8; padding: 6px 8px; border-bottom: 1px solid #334155; }
+.gate-table td { padding: 6px 8px; border-bottom: 1px solid #1e293b; }
+.pass { color: #34d399; font-weight: 700; }
+.fail { color: #f87171; font-weight: 700; }
+.qa-log {
+  background: #0a0e17; border: 1px solid #1e293b; border-radius: 4px;
+  padding: 10px; max-height: 240px; overflow-y: auto; font-family: monospace;
+  font-size: 0.82em; line-height: 1.6;
+}
+.qa-log .q { color: #60a5fa; }
+.qa-log .a-ok { color: #34d399; }
+.qa-log .a-fail { color: #f87171; }
+.explain {
+  background: #0f172a; border-left: 3px solid #60a5fa;
+  padding: 12px 16px; margin: 12px 0; font-size: 0.9em; line-height: 1.6;
+}
+.color-dot {
+  display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+  margin-right: 4px; vertical-align: middle;
+}
+.rule-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 0.78em; font-weight: 600; margin: 2px;
+}
+.rule-color  { background: #1a1200; color: #fbbf24; }
+.rule-pickup { background: #001a2a; color: #38bdf8; }
+.rule-door   { background: #1a0020; color: #c084fc; }
+.rule-carry  { background: #002a10; color: #34d399; }
+.rule-key    { background: #2a0000; color: #f87171; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Этап 60: Каузальная World Model</h1>
+  <p class="subtitle">Обучение через 5 синтетических демонстраций &rarr; 3 уровня QA-валидации &rarr; generalization на unseen цвета</p>
+
+  <div class="row">
+    <div class="col" style="flex: 0 0 520px;">
+      <div class="panel">
+        <h2>Граф каузальных правил</h2>
+        <canvas id="ruleCanvas" width="500" height="400"></canvas>
+        <div class="controls">
+          <button id="btnAnimate" onclick="startAnimation()">Запустить</button>
+          <button onclick="resetDemo()">Сброс</button>
+          <span style="color:#94a3b8; font-size:0.85em; margin-left:8px;" id="animStatus"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="panel">
+        <h2>Результаты экспериментов</h2>
+        <table class="gate-table">
+          <tr><th>Уровень</th><th>Тип</th><th>Результат</th><th>Gate</th><th>Статус</th></tr>
+          <tr><td>QA-A</td><td>Факты (True/False)</td><td>100%</td><td>&ge;90%</td><td class="pass">PASS</td></tr>
+          <tr><td>QA-B</td><td>Предусловия</td><td>100%</td><td>&ge;80%</td><td class="pass">PASS</td></tr>
+          <tr><td>QA-C</td><td>Каузальные цепочки</td><td>100%</td><td>&ge;70%</td><td class="pass">PASS</td></tr>
+        </table>
+
+        <h2>Правила (5 штук)</h2>
+        <div>
+          <span class="rule-badge rule-color">same_color_unlock</span>
+          <span class="rule-badge rule-pickup">pickup_requires_adjacent</span>
+          <span class="rule-badge rule-door">door_blocks_passage</span>
+          <span class="rule-badge rule-carry">carrying_limits</span>
+          <span class="rule-badge rule-key">open_requires_key</span>
+        </div>
+
+        <h2>QA-лог</h2>
+        <div class="qa-log" id="qaLog"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Как это работает</h2>
+    <div class="explain">
+      <strong>Идея:</strong> модель учится из 5 коротких демонстраций (3-5 шагов каждая), как младенец учится от родителя.
+      Каждое правило хранится в отдельной SDM (Sparse Distributed Memory) через VSA-кодирование.<br><br>
+      <strong>Ключевое свойство:</strong> <code>bind(X, X) = zero_vector</code> для любого цвета X.
+      Это значит, что пара "красный ключ + красная дверь" и "зелёный ключ + зелёная дверь"
+      дают одинаковый адрес в SDM (нулевой вектор). Поэтому правило, выученное на красном цвете,
+      автоматически работает для зелёного, фиолетового или любого другого &mdash;
+      без единого примера этих цветов.<br><br>
+      <strong>Почему это важно для AGI:</strong> каузальное обобщение из минимальных данных &mdash;
+      фундамент для world model, способной рассуждать о новых ситуациях.
+      Не нужен миллион примеров, достаточно 3 демонстраций.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Формула identity</h2>
+    <div class="explain" style="font-family: monospace; font-size: 0.95em;">
+      bind(red, red) = <span style="color:#34d399">zero_vector</span><br>
+      bind(blue, blue) = <span style="color:#34d399">zero_vector</span><br>
+      bind(green, green) = <span style="color:#34d399">zero_vector</span> &larr; <em>unseen!</em><br>
+      <br>
+      bind(red, blue) = <span style="color:#f87171">random_vector_1</span> &ne; zero<br>
+      bind(red, green) = <span style="color:#f87171">random_vector_2</span> &ne; zero<br>
+      <br>
+      SDM[<span style="color:#34d399">zero_vector</span>] = reward +1 &rarr; <span style="color:#fbbf24">"одинаковый цвет = открывает"</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Data ──
+const RULES = [
+  { id: 'same_color', label: 'Одинаковый цвет\nоткрывает дверь', x: 250, y: 80, color: '#fbbf24', badge: 'rule-color' },
+  { id: 'pickup_adj', label: 'Подобрать = \nбыть рядом', x: 80, y: 200, color: '#38bdf8', badge: 'rule-pickup' },
+  { id: 'door_blocks', label: 'Закрытая дверь\nблокирует путь', x: 420, y: 200, color: '#c084fc', badge: 'rule-door' },
+  { id: 'carry_one', label: 'Нести можно\nтолько одно', x: 130, y: 340, color: '#34d399', badge: 'rule-carry' },
+  { id: 'need_key', label: 'Для открытия\nнужен ключ', x: 370, y: 340, color: '#f87171', badge: 'rule-key' },
+];
+
+const EDGES = [
+  { from: 'pickup_adj', to: 'same_color', label: 'подобрал ключ' },
+  { from: 'same_color', to: 'door_blocks', label: 'открыл дверь' },
+  { from: 'need_key', to: 'same_color', label: 'есть ключ' },
+  { from: 'carry_one', to: 'pickup_adj', label: 'руки свободны' },
+];
+
+const QA_QUESTIONS = [
+  // QA-A
+  { type: 'A', q: 'Красный ключ открывает красную дверь?', a: 'Да (bind(red,red) = zero → reward +1)', ok: true },
+  { type: 'A', q: 'Синий ключ открывает красную дверь?', a: 'Нет (bind(blue,red) ≠ zero → reward -1)', ok: true },
+  { type: 'A', q: 'Зелёный ключ открывает зелёную дверь?', a: 'Да — unseen цвет, generalization!', ok: true },
+  { type: 'A', q: 'Фиолетовый ключ открывает серую дверь?', a: 'Нет (разные цвета)', ok: true },
+  // QA-B
+  { type: 'B', q: 'Что нужно чтобы открыть красную дверь?', a: 'Красный ключ', ok: true },
+  { type: 'B', q: 'Что нужно чтобы открыть зелёную дверь?', a: 'Зелёный ключ (unseen!)', ok: true },
+  { type: 'B', q: 'Можно ли открыть без ключа?', a: 'Нет — open_requires_key', ok: true },
+  // QA-C
+  { type: 'C', q: 'Как пройти через красную дверь?', a: 'найти_ключ → подобрать → открыть → пройти', ok: true, chain: ['pickup_adj', 'same_color', 'door_blocks'] },
+  { type: 'C', q: 'Как пройти через зелёную дверь?', a: 'найти_ключ → подобрать → открыть → пройти (unseen!)', ok: true, chain: ['pickup_adj', 'same_color', 'door_blocks'] },
+];
+
+// ── Canvas drawing ──
+const canvas = document.getElementById('ruleCanvas');
+const ctx = canvas.getContext('2d');
+let activeNodes = new Set();
+let activeEdges = new Set();
+let animStep = -1;
+let animTimer = null;
+
+function drawGraph() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Edges
+  EDGES.forEach((e, i) => {
+    const from = RULES.find(r => r.id === e.from);
+    const to = RULES.find(r => r.id === e.to);
+    const active = activeEdges.has(i);
+    ctx.beginPath();
+    ctx.strokeStyle = active ? '#60a5fa' : '#334155';
+    ctx.lineWidth = active ? 3 : 1.5;
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+
+    // Arrow
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    const mx = (from.x + to.x) / 2;
+    const my = (from.y + to.y) / 2;
+    ctx.beginPath();
+    ctx.moveTo(mx + 8 * Math.cos(angle), my + 8 * Math.sin(angle));
+    ctx.lineTo(mx - 8 * Math.cos(angle - 0.5), my - 8 * Math.sin(angle - 0.5));
+    ctx.lineTo(mx - 8 * Math.cos(angle + 0.5), my - 8 * Math.sin(angle + 0.5));
+    ctx.closePath();
+    ctx.fillStyle = active ? '#60a5fa' : '#334155';
+    ctx.fill();
+
+    // Edge label
+    if (active) {
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px Segoe UI, sans-serif';
+      ctx.textAlign = 'center';
+      const ox = 15 * Math.cos(angle + Math.PI / 2);
+      const oy = 15 * Math.sin(angle + Math.PI / 2);
+      ctx.fillText(e.label, mx + ox, my + oy);
+    }
+  });
+
+  // Nodes
+  RULES.forEach(r => {
+    const active = activeNodes.has(r.id);
+    const radius = 38;
+
+    // Glow
+    if (active) {
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, radius + 8, 0, Math.PI * 2);
+      ctx.fillStyle = r.color + '22';
+      ctx.fill();
+    }
+
+    // Circle
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = active ? r.color + '33' : '#1e293b';
+    ctx.strokeStyle = active ? r.color : '#334155';
+    ctx.lineWidth = active ? 2.5 : 1.5;
+    ctx.fill();
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = active ? r.color : '#94a3b8';
+    ctx.font = (active ? 'bold ' : '') + '11px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    const lines = r.label.split('\n');
+    lines.forEach((line, i) => {
+      ctx.fillText(line, r.x, r.y - 4 + i * 14);
+    });
+  });
+}
+
+// ── QA Log ──
+const qaLog = document.getElementById('qaLog');
+
+function addQAEntry(qa) {
+  const div = document.createElement('div');
+  const typeLabel = `[QA-${qa.type}]`;
+  div.innerHTML = `<span class="q">${typeLabel} ${qa.q}</span><br>` +
+    `<span class="${qa.ok ? 'a-ok' : 'a-fail'}">&rarr; ${qa.a}</span>`;
+  div.style.marginBottom = '8px';
+  qaLog.appendChild(div);
+  qaLog.scrollTop = qaLog.scrollHeight;
+}
+
+// ── Animation ──
+function startAnimation() {
+  if (animTimer) return;
+  resetDemo();
+  animStep = 0;
+  document.getElementById('btnAnimate').classList.add('active');
+  document.getElementById('animStatus').textContent = 'Обучение...';
+  stepAnimation();
+}
+
+function stepAnimation() {
+  if (animStep >= QA_QUESTIONS.length + RULES.length) {
+    document.getElementById('animStatus').textContent = 'Все проверки пройдены!';
+    document.getElementById('btnAnimate').classList.remove('active');
+    animTimer = null;
+    return;
+  }
+
+  // First 5 steps: light up rules one by one (learning phase)
+  if (animStep < RULES.length) {
+    const rule = RULES[animStep];
+    activeNodes.add(rule.id);
+    drawGraph();
+    document.getElementById('animStatus').textContent = `Обучение правилу ${animStep + 1}/5...`;
+  } else {
+    // QA phase
+    const qaIdx = animStep - RULES.length;
+    const qa = QA_QUESTIONS[qaIdx];
+    document.getElementById('animStatus').textContent = `QA-${qa.type}: вопрос ${qaIdx + 1}/${QA_QUESTIONS.length}`;
+
+    // Highlight chain if QA-C
+    activeEdges.clear();
+    if (qa.chain) {
+      qa.chain.forEach(nodeId => activeNodes.add(nodeId));
+      EDGES.forEach((e, i) => {
+        if (qa.chain.includes(e.from) && qa.chain.includes(e.to)) {
+          activeEdges.add(i);
+        }
+      });
+    }
+    drawGraph();
+    addQAEntry(qa);
+  }
+
+  animStep++;
+  animTimer = setTimeout(stepAnimation, animStep <= RULES.length ? 600 : 1200);
+}
+
+function resetDemo() {
+  if (animTimer) { clearTimeout(animTimer); animTimer = null; }
+  animStep = -1;
+  activeNodes.clear();
+  activeEdges.clear();
+  qaLog.innerHTML = '';
+  document.getElementById('btnAnimate').classList.remove('active');
+  document.getElementById('animStatus').textContent = '';
+  drawGraph();
+}
+
+// Initial draw
+drawGraph();
+</script>
+</body>
+</html>

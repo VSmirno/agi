@@ -1,7 +1,7 @@
 # СНКС — Roadmap v2 (Milestone-Driven)
 
 **Последнее обновление:** 2026-04-03
-**Статус:** M1 COMPLETE → M2 COMPLETE → M3 COMPLETE → M4 IN PROGRESS (5/8) — architecture pivot at Stage 59
+**Статус:** M1 COMPLETE → M2 COMPLETE → M3 COMPLETE → M4 IN PROGRESS (7/8) — architecture pivot at Stage 59
 **Полная спецификация:** [docs/superpowers/specs/2026-04-02-roadmap-v2-design.md](docs/superpowers/specs/2026-04-02-roadmap-v2-design.md)
 
 ---
@@ -57,7 +57,7 @@
 | 57 | Long Subgoal Chains | COMPLETE ⚠️ SYMBOLIC | 40% KeyCorridor — ChainPlanner + BFS |
 | 58 | SDM Retrofit | COMPLETE ⚠️ NEGATIVE (2026-04-03) | SDM не добавляет value — heuristic=100% на DoorKey, honest ablation |
 | 59 | VSA Causal Induction | COMPLETE (2026-04-03) | **100% generalization unseen colors**, bind(X,X)=identity proof |
-| 60 | World Model via Demos | | Causal world model обученная через демонстрации |
+| 60 | World Model via Demos | COMPLETE (2026-04-03) | **100% QA-A/B/C**, causal world model из 5 синтетических демо |
 | 61 | Demo-Guided Agent | | Agent использует world model для planning в grid среде |
 | 62 | M4 Integration Test | | ≥50% BabyAI BossLevel с инструкцией |
 
@@ -66,7 +66,7 @@
 
 **Новый подход: обучение через демонстрации, не exploration.**
 - Stage 59: VSA bind(X,X)=identity ✅ — few-shot generalization доказана (3 demos → 100% unseen colors)
-- Stage 60: World model через демонстрации — каузальные правила из показанных примеров
+- Stage 60: Causal world model ✅ — 5 правил из синтетических демо, 3 уровня QA PASS
 - Stage 61: Agent использует world model — exploration только для layout, не для rule discovery
 - Аналогия: младенца УЧАТ, а не он сам открывает правила за миллион попыток
 
