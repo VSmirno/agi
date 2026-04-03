@@ -1,0 +1,214 @@
+{
+  "experiment": "exp115_causal_world_model",
+  "dim": 512,
+  "n_locations": 1000,
+  "phases": {
+    "a": {
+      "phase": "115a",
+      "train_accuracy": 1.0,
+      "test_accuracy": 1.0,
+      "cross_accuracy": 0.8889,
+      "gate": true,
+      "gate_threshold": 0.9,
+      "details": [
+        {
+          "key": "green",
+          "door": "green",
+          "expected": true,
+          "predicted": true,
+          "correct": true
+        },
+        {
+          "key": "green",
+          "door": "purple",
+          "expected": false,
+          "predicted": false,
+          "correct": true
+        },
+        {
+          "key": "green",
+          "door": "grey",
+          "expected": false,
+          "predicted": false,
+          "correct": true
+        },
+        {
+          "key": "purple",
+          "door": "green",
+          "expected": false,
+          "predicted": false,
+          "correct": true
+        },
+        {
+          "key": "purple",
+          "door": "purple",
+          "expected": true,
+          "predicted": true,
+          "correct": true
+        },
+        {
+          "key": "purple",
+          "door": "grey",
+          "expected": false,
+          "predicted": false,
+          "correct": true
+        },
+        {
+          "key": "grey",
+          "door": "green",
+          "expected": false,
+          "predicted": false,
+          "correct": true
+        },
+        {
+          "key": "grey",
+          "door": "purple",
+          "expected": false,
+          "predicted": false,
+          "correct": true
+        },
+        {
+          "key": "grey",
+          "door": "grey",
+          "expected": true,
+          "predicted": true,
+          "correct": true
+        }
+      ],
+      "elapsed_s": 0.35
+    },
+    "b": {
+      "phase": "115b",
+      "accuracy": 1.0,
+      "correct": 8,
+      "total": 8,
+      "gate": true,
+      "gate_threshold": 0.8,
+      "details": [
+        {
+          "query": "open(red)",
+          "expected": "red",
+          "answer": "red",
+          "correct": true,
+          "description": "red key for red door"
+        },
+        {
+          "query": "open(blue)",
+          "expected": "blue",
+          "answer": "blue",
+          "correct": true,
+          "description": "blue key for blue door"
+        },
+        {
+          "query": "open(yellow)",
+          "expected": "yellow",
+          "answer": "yellow",
+          "correct": true,
+          "description": "yellow key for yellow door"
+        },
+        {
+          "query": "open(green)",
+          "expected": "green",
+          "answer": "green",
+          "correct": true,
+          "description": "green key for green door (unseen)"
+        },
+        {
+          "query": "open(purple)",
+          "expected": "purple",
+          "answer": "purple",
+          "correct": true,
+          "description": "purple key for purple door (unseen)"
+        },
+        {
+          "query": "pickup(None)",
+          "expected": "adjacent",
+          "answer": "adjacent",
+          "correct": true,
+          "description": "pickup requires adjacent"
+        },
+        {
+          "query": "forward(locked)",
+          "expected": "blocked",
+          "answer": "blocked",
+          "correct": true,
+          "description": "locked door blocks passage"
+        },
+        {
+          "query": "open(no_key)",
+          "expected": "need_key",
+          "answer": "need_key",
+          "correct": true,
+          "description": "open requires key"
+        }
+      ],
+      "elapsed_s": 0.42
+    },
+    "c": {
+      "phase": "115c",
+      "accuracy": 1.0,
+      "correct": 3,
+      "total": 3,
+      "gate": true,
+      "gate_threshold": 0.7,
+      "details": [
+        {
+          "goal": "pass_locked_door",
+          "color": "red",
+          "chain": [
+            "find_key",
+            "pickup_key",
+            "open_door",
+            "pass_through"
+          ],
+          "required": [
+            "pickup_key",
+            "open_door"
+          ],
+          "has_all": true,
+          "correct_order": true,
+          "correct": true,
+          "description": "pass through red locked door"
+        },
+        {
+          "goal": "pass_locked_door",
+          "color": "blue",
+          "chain": [
+            "find_key",
+            "pickup_key",
+            "open_door",
+            "pass_through"
+          ],
+          "required": [
+            "pickup_key",
+            "open_door"
+          ],
+          "has_all": true,
+          "correct_order": true,
+          "correct": true,
+          "description": "pass through blue locked door"
+        },
+        {
+          "goal": "pass_locked_door",
+          "color": "green",
+          "chain": [
+            "find_key",
+            "pickup_key",
+            "open_door",
+            "pass_through"
+          ],
+          "required": [
+            "pickup_key",
+            "open_door"
+          ],
+          "has_all": true,
+          "correct_order": true,
+          "correct": true,
+          "description": "pass through green locked door (unseen color)"
+        }
+      ],
+      "elapsed_s": 0.41
+    }
+  },
+  "all_gates": true
+}
