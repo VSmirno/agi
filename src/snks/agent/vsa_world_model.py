@@ -33,9 +33,11 @@ class WorldModelConfig:
 class VSACodebook:
     """Binary Spatter Code codebook with lazy allocation."""
 
-    def __init__(self, dim: int = 512, seed: int = 42):
+    def __init__(self, dim: int = 512, seed: int = 42,
+                 device: torch.device | str | None = None):
         self.dim = dim
-        self._rng = torch.Generator()
+        self.device = torch.device(device) if device else torch.device("cpu")
+        self._rng = torch.Generator(device="cpu")  # RNG always on CPU
         self._rng.manual_seed(seed)
         self._roles: dict[str, torch.Tensor] = {}
         self._fillers: dict[str, torch.Tensor] = {}
@@ -45,7 +47,8 @@ class VSACodebook:
         self._reward_negative = self._random_vec()
 
     def _random_vec(self) -> torch.Tensor:
-        return torch.randint(0, 2, (self.dim,), dtype=torch.float32, generator=self._rng)
+        v = torch.randint(0, 2, (self.dim,), dtype=torch.float32, generator=self._rng)
+        return v.to(self.device)
 
     def role(self, name: str) -> torch.Tensor:
         if name not in self._roles:
@@ -160,24 +163,27 @@ class VSAEncoder:
 class SDMMemory:
     """Sparse Distributed Memory for transition storage."""
 
-    def __init__(self, n_locations: int = 10000, dim: int = 512, seed: int = 42):
+    def __init__(self, n_locations: int = 10000, dim: int = 512, seed: int = 42,
+                 device: torch.device | str | None = None):
         self.n_locations = n_locations
         self.dim = dim
         self.n_writes = 0
+        self.device = torch.device(device) if device else torch.device("cpu")
 
-        rng = torch.Generator()
+        rng = torch.Generator(device="cpu")
         rng.manual_seed(seed)
 
-        # Hard location addresses (random, fixed)
-        self.addresses = torch.randint(
+        # Generate addresses on CPU, then move to device
+        addresses_cpu = torch.randint(
             0, 2, (n_locations, dim), dtype=torch.float32, generator=rng,
         )
-        # Content counters
-        self.content_next = torch.zeros(n_locations, dim, dtype=torch.float32)
-        self.content_reward = torch.zeros(n_locations, dim, dtype=torch.float32)
-
-        # Calibrate activation radius
+        # Calibrate on CPU (avoid ROCm segfaults on pairwise ops)
+        self.addresses = addresses_cpu
         self.activation_radius = self._calibrate_radius()
+        # Move to target device after calibration
+        self.addresses = self.addresses.to(self.device)
+        self.content_next = torch.zeros(n_locations, dim, dtype=torch.float32, device=self.device)
+        self.content_reward = torch.zeros(n_locations, dim, dtype=torch.float32, device=self.device)
 
     def _calibrate_radius(self) -> int:
         """Find radius so 1-5% of locations activate on random query."""
@@ -194,7 +200,7 @@ class SDMMemory:
         # Start at 0.45 * median, adjust if needed
         radius = int(median_dist * 0.45)
         for attempt in range(20):
-            query = torch.randint(0, 2, (self.dim,), dtype=torch.float32)
+            query = torch.randint(0, 2, (self.dim,), dtype=torch.float32)  # CPU for calibration
             n_act = self._count_activated(query, radius)
             pct = n_act / self.n_locations
             if 0.005 <= pct <= 0.15:
@@ -226,11 +232,11 @@ class SDMMemory:
 
         # Reward encoding: store reward_positive or reward_negative pattern
         if reward > 0:
-            update_r = torch.ones(self.dim, dtype=torch.float32)
+            update_r = torch.ones(self.dim, dtype=torch.float32, device=self.device)
         elif reward < 0:
-            update_r = -torch.ones(self.dim, dtype=torch.float32)
+            update_r = -torch.ones(self.dim, dtype=torch.float32, device=self.device)
         else:
-            update_r = torch.zeros(self.dim, dtype=torch.float32)
+            update_r = torch.zeros(self.dim, dtype=torch.float32, device=self.device)
         self.content_reward[mask] += update_r.unsqueeze(0)
 
         self.n_writes += 1
@@ -241,7 +247,7 @@ class SDMMemory:
         n_activated = mask.sum().item()
 
         if n_activated == 0:
-            return torch.zeros(self.dim, dtype=torch.float32), 0.0
+            return torch.zeros(self.dim, dtype=torch.float32, device=self.device), 0.0
 
         summed = self.content_next[mask].sum(dim=0)
         predicted = (summed > 0).float()
@@ -423,6 +429,7 @@ class BackwardChainPlanner:
             n_locations=forward_sdm.n_locations,
             dim=forward_sdm.dim,
             seed=137,  # different seed for different address space
+            device=forward_sdm.device,
         )
         # Store episode traces for backward chaining
         self._successful_traces: list[list[tuple[torch.Tensor, int]]] = []
@@ -509,13 +516,16 @@ class WorldModelAgent:
     and uses it for model-based planning — no reward shaping needed.
     """
 
-    def __init__(self, config: WorldModelConfig):
+    def __init__(self, config: WorldModelConfig,
+                 device: torch.device | str | None = None):
         self.config = config
-        self.codebook = VSACodebook(dim=config.dim)
+        self.device = torch.device(device) if device else torch.device("cpu")
+        self.codebook = VSACodebook(dim=config.dim, device=self.device)
         self.encoder = VSAEncoder(self.codebook)
         self.sdm = SDMMemory(
             n_locations=config.n_locations,
             dim=config.dim,
+            device=self.device,
         )
         self.backward_planner = BackwardChainPlanner(
             forward_sdm=self.sdm,
