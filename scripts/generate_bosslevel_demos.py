@@ -178,6 +178,19 @@ def record_episode(env_name: str, seed: int) -> dict | None:
     goals = parse_mission_goals(mission)
     subgoals = goals_to_subgoals(goals) if success else []
 
+    # Record all object positions from full grid (for navigation training)
+    object_positions = []
+    for x in range(uw.grid.width):
+        for y in range(uw.grid.height):
+            cell = uw.grid.get(x, y)
+            if cell is not None and cell.type in ("key", "ball", "box", "door"):
+                object_positions.append({
+                    "type": cell.type,
+                    "color": cell.color,
+                    "col": x,
+                    "row": y,
+                })
+
     demo = {
         "env": env_name,
         "seed": seed,
@@ -186,6 +199,7 @@ def record_episode(env_name: str, seed: int) -> dict | None:
         "grid_height": uw.grid.height,
         "frames": frames,
         "subgoals_extracted": subgoals,
+        "object_positions": object_positions,
         "success": success,
         "total_steps": len(frames),
     }
