@@ -80,7 +80,7 @@ class BossLevelAgent:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.causal_model = CausalWorldModel(dim=causal_dim, seed=seed, device=device)
         self.mission_model = MissionModel(dim=causal_dim, seed=seed + 50, device=device)
-        self.nav_policy = NavigationPolicy(dim=1024, n_locations=5000, seed=seed + 100, device=device)
+        self.nav_policy = NavigationPolicy(dim=512, n_locations=2000, seed=seed + 100, device=device)
         self.spatial_map = SpatialMap(grid_width, grid_height)
         self.explorer = FrontierExplorer()  # fallback
         self.pathfinder = GridPathfinder()
