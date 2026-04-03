@@ -388,7 +388,7 @@ class DemoGuidedAgent:
         self.spatial_map.update(obs_7x7, agent_col, agent_row, agent_dir)
 
         # Check immediate interactions
-        action = self._check_immediate(obs_7x7)
+        action = self._check_immediate(obs_7x7, agent_row, agent_col, agent_dir)
         if action is not None:
             return action
 
@@ -474,7 +474,9 @@ class DemoGuidedAgent:
                     return (r, c)
         return None
 
-    def _check_immediate(self, obs_7x7: np.ndarray) -> int | None:
+    def _check_immediate(self, obs_7x7: np.ndarray,
+                         agent_row: int, agent_col: int,
+                         agent_dir: int) -> int | None:
         """Check for immediate interaction opportunities."""
         front_obj = int(obs_7x7[3, 5, 0])
         front_state = int(obs_7x7[3, 5, 2])
@@ -499,6 +501,30 @@ class DemoGuidedAgent:
         if front_obj == OBJ_DOOR and front_state == 1:
             return ACT_TOGGLE
 
+        # Not facing a door, but adjacent to a closed door — turn toward it
+        turn = self._turn_toward_closed_door(agent_row, agent_col, agent_dir)
+        if turn is not None:
+            return turn
+
+        return None
+
+    def _turn_toward_closed_door(self, agent_row: int, agent_col: int,
+                                 agent_dir: int) -> int | None:
+        """If adjacent to a closed (not locked) door, turn to face it."""
+        for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+            nr, nc = agent_row + dr, agent_col + dc
+            if not (0 <= nr < self.spatial_map.height
+                    and 0 <= nc < self.spatial_map.width):
+                continue
+            if not self.spatial_map.explored[nr, nc]:
+                continue
+            obj = int(self.spatial_map.grid[nr, nc, 0])
+            state = int(self.spatial_map.grid[nr, nc, 2])
+            if obj == OBJ_DOOR and state == 1:  # closed, not locked
+                need_dir = _dir_from_delta(dr, dc)
+                if need_dir is not None and need_dir != agent_dir:
+                    diff = (need_dir - agent_dir) % 4
+                    return ACT_RIGHT if diff <= 2 else ACT_LEFT
         return None
 
     def _should_pickup_key(self, key_color_id: int) -> bool:
