@@ -36,35 +36,45 @@ class SituationEncoder:
 
     def encode_situation(self, situation: dict[str, str],
                          action: str) -> torch.Tensor:
-        """Encode a full situation (state + action) as VSA vector."""
-        facts = []
-        for role_name, filler_name in situation.items():
-            if filler_name:
-                facts.append(VSACodebook.bind(
-                    self.cb.role(role_name),
-                    self.cb.filler(f"{role_name}_{filler_name}")
-                ))
-        # Include action as a fact
-        facts.append(VSACodebook.bind(
-            self.cb.role("action"),
-            self.cb.filler(f"act_{action}")
-        ))
-        if not facts:
-            return torch.zeros(self.cb.dim, device=self.cb.device)
-        return VSACodebook.bundle(facts)
+        """Encode a full situation (state + action) as VSA vector.
+
+        Uses chained bind (not bundle) to preserve orthogonality.
+        Bundle of 5+ items degrades to noise; chained bind stays sharp.
+        """
+        # Use COMPOUND fillers instead of chained bind.
+        # Binary XOR loses structure after 3+ binds.
+        # Instead: create unique filler per (obj+state, action, carry_state) combo.
+        facing = situation.get('facing_obj', 'empty')
+        obj_state = situation.get('obj_state', 'none')
+        carrying = situation.get('carrying', 'nothing')
+        obj_color = situation.get('obj_color', 'none')
+        carry_color = situation.get('carrying_color', 'none')
+
+        # Compound filler: unique per situation class
+        compound_key = f"sit_{facing}_{obj_state}_{carrying}_{action}"
+        vec = self.cb.filler(compound_key)
+
+        # Bind with color info (max 2 binds: obj_color, carry_color)
+        vec = VSACodebook.bind(vec, self.cb.filler(f"ocol_{obj_color}"))
+        vec = VSACodebook.bind(vec, self.cb.filler(f"ccol_{carry_color}"))
+        return vec
 
     def encode_outcome(self, outcome: dict[str, str]) -> torch.Tensor:
-        """Encode an outcome as VSA vector."""
-        facts = []
-        for role_name, filler_name in outcome.items():
-            if filler_name:
-                facts.append(VSACodebook.bind(
-                    self.cb.role(f"out_{role_name}"),
-                    self.cb.filler(f"out_{role_name}_{filler_name}")
-                ))
-        if not facts:
-            return torch.zeros(self.cb.dim, device=self.cb.device)
-        return VSACodebook.bundle(facts)
+        """Encode an outcome as VSA vector.
+
+        Uses the 'result' field as primary signal — it's the most
+        discriminative part of the outcome.
+        """
+        result = outcome.get("result", "unknown")
+        vec = self.cb.filler(f"res_{result}")
+        # Chain additional outcome fields if present
+        if "obj_state" in outcome:
+            vec = VSACodebook.bind(vec, self.cb.filler(f"ost_{outcome['obj_state']}"))
+        if "carrying" in outcome:
+            vec = VSACodebook.bind(vec, self.cb.filler(f"carry_{outcome['carrying']}"))
+        if "carrying_color" in outcome:
+            vec = VSACodebook.bind(vec, self.cb.filler(f"ccol_{outcome['carrying_color']}"))
+        return vec
 
     def decode_outcome(self, vec: torch.Tensor,
                        candidate_outcomes: list[dict[str, str]]
@@ -123,13 +133,42 @@ class UnifiedWorldModel:
         self.n_trained = 0
 
     def train(self, transitions: list[Transition]) -> int:
-        """Train on a list of transitions."""
-        for t in transitions:
+        """Train on a list of transitions.
+
+        Balances positive/negative transitions to avoid reward signal
+        being dominated by failures (typical 10:1 neg/pos ratio in
+        synthetic data).
+        """
+        pos = [t for t in transitions if t.reward > 0]
+        neg = [t for t in transitions if t.reward < 0]
+        zero = [t for t in transitions if t.reward == 0]
+
+        # Amplify positives more, negatives less
+        pos_amplify = self.n_amplify * 3
+        neg_amplify = max(1, self.n_amplify // 2)
+        zero_amplify = 1
+
+        for t in pos:
             sit_vec = self.encoder.encode_situation(t.situation, t.action)
             out_vec = self.encoder.encode_outcome(t.outcome)
-            for _ in range(self.n_amplify):
+            for _ in range(pos_amplify):
                 self.sdm.write(sit_vec, self._zeros, out_vec, t.reward)
             self.n_trained += 1
+
+        for t in neg:
+            sit_vec = self.encoder.encode_situation(t.situation, t.action)
+            out_vec = self.encoder.encode_outcome(t.outcome)
+            for _ in range(neg_amplify):
+                self.sdm.write(sit_vec, self._zeros, out_vec, t.reward)
+            self.n_trained += 1
+
+        for t in zero:
+            sit_vec = self.encoder.encode_situation(t.situation, t.action)
+            out_vec = self.encoder.encode_outcome(t.outcome)
+            for _ in range(zero_amplify):
+                self.sdm.write(sit_vec, self._zeros, out_vec, t.reward)
+            self.n_trained += 1
+
         return self.n_trained
 
     def query(self, situation: dict[str, str],

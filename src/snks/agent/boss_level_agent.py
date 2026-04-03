@@ -682,7 +682,7 @@ class BossLevelAgent:
             explored_ratio, n_rooms, nearest_door_dir,
         )
 
-        if direction is not None and confidence >= self.nav_policy.confidence_threshold:
+        if False and direction is not None and confidence >= self.nav_policy.confidence_threshold:
             # Find nearest door/frontier in predicted direction
             target = self._find_target_in_direction(
                 agent_row, agent_col, direction
