@@ -403,10 +403,10 @@ class DemoGuidedAgent:
         if self._plan and self._current_sg_idx < len(self._plan):
             sg = self._plan[self._current_sg_idx]
             if sg.target_pos is None:
-                # Target not yet found — explore
+                # Target not yet found — explore (avoid locked doors)
                 self.explore_steps += 1
-                return self.explorer.select_action(
-                    self.spatial_map, agent_row, agent_col, agent_dir
+                return self._explore_avoiding_locked(
+                    agent_row, agent_col, agent_dir
                 )
             self.execute_steps += 1
             return self.executor.select_action(
@@ -415,8 +415,8 @@ class DemoGuidedAgent:
 
         # No plan yet — explore
         self.explore_steps += 1
-        return self.explorer.select_action(
-            self.spatial_map, agent_row, agent_col, agent_dir
+        return self._explore_avoiding_locked(
+            agent_row, agent_col, agent_dir
         )
 
     def observe_result(self, obs_7x7: np.ndarray,
@@ -546,6 +546,38 @@ class DemoGuidedAgent:
         key_color_name = COLOR_NAMES.get(key_color_id, "unknown")
 
         return self.causal_model.query_color_match(key_color_name, door_color_name)
+
+    def _explore_avoiding_locked(self, agent_row: int, agent_col: int,
+                                  agent_dir: int) -> int:
+        """Explore while treating locked doors as walls.
+
+        Temporarily masks locked doors in the spatial map so
+        FrontierExplorer's BFS won't route through them.
+        """
+        # Find locked doors and temporarily mark as walls
+        locked_cells: list[tuple[int, int, int, int, int]] = []
+        for r in range(self.spatial_map.height):
+            for c in range(self.spatial_map.width):
+                if not self.spatial_map.explored[r, c]:
+                    continue
+                obj = int(self.spatial_map.grid[r, c, 0])
+                state = int(self.spatial_map.grid[r, c, 2])
+                if obj == OBJ_DOOR and state == 2:
+                    color = int(self.spatial_map.grid[r, c, 1])
+                    locked_cells.append((r, c, obj, color, state))
+                    self.spatial_map.grid[r, c, 0] = OBJ_WALL
+
+        action = self.explorer.select_action(
+            self.spatial_map, agent_row, agent_col, agent_dir
+        )
+
+        # Restore locked doors
+        for r, c, obj, color, state in locked_cells:
+            self.spatial_map.grid[r, c, 0] = obj
+            self.spatial_map.grid[r, c, 1] = color
+            self.spatial_map.grid[r, c, 2] = state
+
+        return action
 
     def _detect_door_state(self) -> None:
         """Detect if the locked door is now open."""
