@@ -18,6 +18,7 @@ import torch
 
 from snks.agent.vsa_world_model import SDMMemory, VSACodebook
 from snks.agent.world_model_trainer import Transition
+from snks.agent.abstraction_engine import AbstractionEngine
 
 
 CARRYABLE_TYPES = {"key", "ball", "box"}
@@ -87,6 +88,12 @@ class CLSWorldModel:
         # Neocortex: exact, unlimited
         self.neocortex: dict[str, Rule] = {}
 
+        # Abstraction engine: discovers categories, builds abstract SDM
+        self.abstraction = AbstractionEngine(
+            self.codebook, dim=dim, n_locations=1000,
+            n_amplify=10, seed=seed + 10,
+        )
+
         # Stats
         self.n_sdm_writes = 0
         self.n_sdm_skipped = 0
@@ -101,11 +108,17 @@ class CLSWorldModel:
         # Phase 2: Consolidate — promote verified rules to neocortex
         self._consolidate(transitions)
 
+        # Phase 3: Discover categories and build abstract SDM
+        self.abstraction.discover_categories(self.neocortex)
+        n_abstract = self.abstraction.build_abstract_sdm()
+
         return {
             "sdm_writes": self.n_sdm_writes,
             "sdm_skipped": self.n_sdm_skipped,
             "consolidated": self.n_consolidated,
             "neocortex_size": len(self.neocortex),
+            "abstract_categories": len(self.abstraction.categories),
+            "abstract_rules": n_abstract,
         }
 
     def _write_on_surprise(self, t: Transition) -> None:
@@ -197,33 +210,11 @@ class CLSWorldModel:
             rule = self.neocortex[key]
             return rule.outcome, 1.0, "neocortex"
 
-        # Neocortex generalization: substitute unseen colors with trained.
-        # Preserve same/different color relationship.
-        obj_color = situation.get("obj_color", "")
-        carry_color = situation.get("carrying_color", "")
-        trained = ["red", "green", "blue"]
-        is_same = (obj_color == carry_color and obj_color != "")
-
-        substitutions = []
-        if is_same:
-            substitutions = [(c, c) for c in trained]
-        else:
-            for so in trained:
-                for sc in trained:
-                    if obj_color != carry_color and so == sc:
-                        continue
-                    substitutions.append((so, sc))
-
-        for sub_obj, sub_carry in substitutions:
-            sub_sit = dict(situation)
-            if obj_color and obj_color not in trained:
-                sub_sit["obj_color"] = sub_obj
-            if carry_color and carry_color not in trained:
-                sub_sit["carrying_color"] = sub_carry
-            sub_key = make_situation_key(sub_sit, action)
-            if sub_key in self.neocortex:
-                rule = self.neocortex[sub_key]
-                return rule.outcome, 0.9, "neocortex_generalized"
+        # Abstract generalization via abstraction engine
+        facing = situation.get("facing_obj", "empty")
+        outcome_str, abs_conf = self.abstraction.query_abstract(facing, action)
+        if outcome_str != "unknown" and abs_conf > 0.01:
+            return {"result": outcome_str}, abs_conf, "abstract"
 
         # Hippocampus (fuzzy/generalization)
         sit_vec = self._encode_situation(situation, action)
@@ -240,36 +231,11 @@ class CLSWorldModel:
         if key in self.neocortex:
             return self.neocortex[key].reward
 
-        # Generalize: substitute unseen colors with trained ones
-        # Preserve same/different color relationship
-        obj_color = situation.get("obj_color", "")
-        carry_color = situation.get("carrying_color", "")
-        trained = ["red", "green", "blue"]
-        is_same_color = (obj_color == carry_color and obj_color != "")
-
-        if is_same_color:
-            # Same-color pair → substitute both with same trained color
-            for sub in trained:
-                sub_sit = dict(situation)
-                sub_sit["obj_color"] = sub
-                sub_sit["carrying_color"] = sub
-                sub_key = make_situation_key(sub_sit, action)
-                if sub_key in self.neocortex:
-                    return self.neocortex[sub_key].reward
-        else:
-            # Different colors → substitute with different trained colors
-            for sub_obj in trained:
-                for sub_carry in trained:
-                    if obj_color != carry_color and sub_obj == sub_carry:
-                        continue  # preserve "different" relationship
-                    sub_sit = dict(situation)
-                    if obj_color and obj_color not in trained:
-                        sub_sit["obj_color"] = sub_obj
-                    if carry_color and carry_color not in trained:
-                        sub_sit["carrying_color"] = sub_carry
-                    sub_key = make_situation_key(sub_sit, action)
-                    if sub_key in self.neocortex:
-                        return self.neocortex[sub_key].reward
+        # Abstract generalization
+        facing = situation.get("facing_obj", "empty")
+        abs_reward = self.abstraction.query_abstract_reward(facing, action)
+        if abs_reward != 0:
+            return abs_reward
 
         sit_vec = self._encode_situation(situation, action)
         return self.hippocampus.read_reward(sit_vec, self._zeros)
@@ -313,7 +279,7 @@ class CLSWorldModel:
                         obj_color: str, obj_state: str = "none") -> str:
         """Level 2: What do you need to <action> the <obj>?"""
         if action == "toggle" and obj_state == "locked":
-            # First: check if same-color key works (via neocortex or SDM)
+            # Check if same-color key works via neocortex
             same_color_sit = {
                 "facing_obj": "door",
                 "obj_color": obj_color,
@@ -325,34 +291,12 @@ class CLSWorldModel:
             if reward > 0:
                 return f"key_{obj_color}"
 
-            # If same-color not found (held-out color), check if the
-            # same-color rule holds for ANY trained color. If yes,
-            # generalize: same-color rule applies to all colors.
-            for trained_color in ["red", "green", "blue"]:
-                sit = {
-                    "facing_obj": "door",
-                    "obj_color": trained_color,
-                    "obj_state": "locked",
-                    "carrying": "key",
-                    "carrying_color": trained_color,
-                }
-                r = self.query_reward(sit, "toggle")
-                if r > 0:
-                    # Same-color rule confirmed → generalize
-                    return f"key_{obj_color}"
+            # Abstract reasoning: "unlockable" category requires matching key
+            # If same-color rule works for ANY trained color → generalizes
+            cats = self.abstraction.get_categories_for_object("door")
+            if "unlockable" in cats:
+                return f"key_{obj_color}"  # same-color rule
 
-            # Try all colors explicitly
-            for key_color in ["red", "green", "blue", "purple", "yellow", "grey"]:
-                situation = {
-                    "facing_obj": "door",
-                    "obj_color": obj_color,
-                    "obj_state": "locked",
-                    "carrying": "key",
-                    "carrying_color": key_color,
-                }
-                reward = self.query_reward(situation, "toggle")
-                if reward > 0:
-                    return f"key_{key_color}"
             return "matching_key"
 
         if action == "pickup":
