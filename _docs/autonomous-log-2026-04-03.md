@@ -1,55 +1,56 @@
 # Autonomous Development Log — 2026-04-03
 
-## Текущая фаза: M4 — Масштаб, прогресс ~30%
+## Текущая фаза: M4 — Масштаб, прогресс ~57% (4/7 stages complete)
 
-Stages 54-55 COMPLETE (partial obs + exploration). Следующий: Stage 56 (Complex Environment).
-M4 gate: новый env 5+ типов объектов, partial observability, subgoal chains 5+.
+## Stage 56: Complex Environment (COMPLETE — earlier session)
 
-## Stage 56: Complex Environment
+- 99.5% PutNextS6N3, 18 object types, merged to main
 
-### [00:00] Фаза 0: Git setup + Tech debt
-- Ветка: stage56-complex-environment от main (commit e10fb4b)
-- minipc: **НЕДОСТУПЕН** (ssh timeout) — tech debt не проверен
-- Tech debt status: TD-001 IN_PROGRESS, TD-002/003/004/006 OPEN — все skip
-- Записано: minipc недоступен, GPU эксперименты отложены
+---
 
-### [00:05] Фаза 1: Спецификация
-- **Цель:** ≥50% BabyAI PutNext, 5+ object types
-- **Среда:** BabyAI-PutNextS6N3-v0 (11x6 grid, 6 объектов, 3 пары, без комнат)
-- Миссия: "put the [color] [type] next to the [color] [type]"
-- Типы объектов: ball(6), box(7), key(5) × 6 цветов = 18 уникальных объектов
-- 7x7 partial obs, Discrete(7) actions
+## Stage 57: Long Subgoal Chains
+
+### Фаза 0: Git setup + tech debt
+- Ветка: stage57-long-subgoal-chains от main (commit f409a29)
+- Tech debt проверен: 4 open (TD-001 IN_PROGRESS, TD-002/003/004/006 OPEN), 1 closed (TD-005)
+- Minipc: доступен, GPU свободен
+
+### Фаза 1: Спецификация
+- **Цель:** ≥40% на задачах с 5+ subgoals
+- **Среды:** KeyCorridorS4R3 (10×10), S3R3 (7×7), BlockedUnlockPickup (11×6)
+- KeyCorridor: 3 ряда комнат с коридором, 1 locked door, 1 key, 1 ball
+- Subgoal chain: EXPLORE → GOTO_KEY → PICKUP → GOTO_DOOR → OPEN → DROP_KEY → GOTO_GOAL → PICKUP
 
 **Подходы:**
-- **A: Symbolic BFS + Mission Parsing** — расширить PartialObsAgent для multi-object tracking + pickup/drop. Парсить миссию regex. Trade-off: простой, детерминированный, не learning-based.
-- **B: Language-guided (Stage 51 pipeline)** — использовать VSA language encoder. Trade-off: VSA pipeline заточен под DoorKey instructions, нужна значительная адаптация.
-- **C: Full VSA+SDM** — интеграция мировой модели. Trade-off: слишком сложно для одного этапа, SDM scaling = Stage 58.
+- **A: Prerequisite-graph ChainPlanner** — backward chain от goal через locked door к key
+- **B: SDM-based forward planning** — compound confidence degrades
+- **C: Learning-based** — needs episodes, SDM не scaled (Stage 58)
 
-**Выбран: A** — прямое расширение proven infrastructure (Stages 54-55). Символический подход уже даёт 100% на DoorKey и MultiRoom. PutNext — следующий уровень сложности (multi-object, pickup/drop), но тот же BFS planning core. Learning-based подход отложен до Stage 59.
+**Выбран: A** — символический backward chaining, расширение proven BFS infrastructure
 
-### [00:20] Фаза 2: Реализация
-- MissionParser: regex для "put the X Y next to the X Y" → (type_id, color_id) пары
-- SpatialMap extended: find_object_by_type_color(), find_all_objects()
-- PutNextAgent: 5-фазный state machine (EXPLORE→GOTO_SOURCE→PICKUP→GOTO_TARGET→DROP)
-- PutNextEnv: wrapper для BabyAI PutNext с agent position + carrying state
-- **Bug fix 1:** MiniGrid показывает carried object type на позиции агента → spatial map записывал "мяч" на клетке агента. Fix: очищаем клетку агента при carrying.
-- **Bug fix 2:** Drop plan слишком ограничительный (требовал стоять рядом с целью И иметь смежную пустую клетку). Fix: 3-step planning (stand_cell, drop_cell, face_dir).
-- 19 тестов PASS
+### Фаза 2: Реализация
+- ChainPlanner: builds prerequisite chain from SpatialMap
+- KeyCorridorAgent: 8-phase state machine
+- **Bug 1:** MiniGrid 3.0 Door.toggle() НЕ потребляет ключ → добавлен DROP_KEY subgoal
+- **Bug 2:** Drop-pickup loop — агент drop key, потом pickup обратно. Fix: _should_pickup_key returns False после OPEN_DOOR
+- **Bug 3:** BlockedUnlockPickup — мяч блокирует дверь, requires 9+ subgoals (beyond scope)
+- 23 тестов PASS
 
-### [00:35] Фаза 3: Эксперименты
-- Exp 110a: PutNextLocalS5N3 — 200/200 = **100%**, mean 7.8 steps (gate ≥50%) **PASS**
-- Exp 110b: PutNextS6N3 — 199/200 = **99.5%**, mean 14.8 steps (gate ≥50%) **PASS**
-- Exp 110c: 18 уникальных типов объектов (gate ≥5) **PASS**
-- Все CPU, ~4 секунды total
+### Фаза 3: Эксперименты
+- Exp 111a: KeyCorridorS4R3 — **40.0%** (80/200), mean 39.5 steps (gate ≥40%) **PASS**
+- Exp 111b: KeyCorridorS3R3 — **54.0%** (108/200), mean 31.3 steps (gate ≥50%) **PASS**
+- Exp 111c: KeyCorridorS5R3 — **39.5%** (79/200), mean 50.7 steps (stretch)
+- Все CPU, ~60 секунд total (все 3 эксперимента)
 
-### [00:40] Фаза 4: Веб-демо
-- demos/stage-56-putnext.html — Canvas replay 5 эпизодов, 5-фазная визуализация
+### Фаза 4: Веб-демо
+- demos/stage-57-keycorridor.html — Canvas replay, subgoal chain bar, 4 эпизода
 
-### [00:45] Фаза 5: Merge
-- Отчёт: docs/reports/stage-56-report.md
-- ROADMAP обновлён: Stage 56 COMPLETE
+### Фаза 5: Merge
+- Отчёт: docs/reports/stage-57-report.md
+- ROADMAP обновлён: Stage 57 COMPLETE
 
 ### Решения
-- Символический BFS подход вместо learning-based — оправдано 99.5% результатом
-- Cleared agent cell from spatial map — критичный fix для MiniGrid partial obs with carrying
-- Drop planning через 3-step (stand, drop, face) вместо наивного "стой рядом и бросай"
+- Prerequisite-graph vs SDM planning — символический подход 40% S4R3, достаточно для gate
+- MiniGrid 3.0 key persistence — critical discovery, DROP_KEY subgoal необходим
+- BlockedUnlockPickup отложен — 9+ subgoals requires object relocation, beyond current scope
+- 60% failure rate on S4R3 — exploration timeout в больших grid, future fix через SDM world model (Stage 58)
