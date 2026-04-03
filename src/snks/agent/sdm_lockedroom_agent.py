@@ -226,10 +226,14 @@ class SDMLockedRoomAgent:
         if front_obj == OBJ_DOOR and front_state == DOOR_CLOSED:
             return ACT_TOGGLE
 
-        # Facing locked door with key → toggle (try to unlock)
+        # Facing locked door with key → toggle ONLY if we're heading to this door
         if front_obj == OBJ_DOOR and front_state == DOOR_LOCKED and carrying_color is not None:
-            self._last_toggle_door_color = IDX_TO_COLOR.get(front_color)
-            return ACT_TOGGLE
+            door_color = IDX_TO_COLOR.get(front_color)
+            locked = self._find_locked_door()
+            if locked is not None:
+                # Only toggle if this is the door we're targeting
+                self._last_toggle_door_color = door_color
+                return ACT_TOGGLE
 
         # Facing key and should pick up
         if front_obj == OBJ_KEY and carrying_color is None:
@@ -248,28 +252,26 @@ class SDMLockedRoomAgent:
         return True
 
     def _select_subgoal(self, carrying_color: str | None) -> int:
+        # If no locked door remains, go to goal (door already opened)
+        locked_door = self._find_locked_door()
+        if locked_door is None:
+            goal_pos = self._find_goal()
+            if goal_pos is not None:
+                return self.SG_GOTO_GOAL
+            return self.SG_EXPLORE
+
         if carrying_color is not None:
             # We have a key — find which door to try
             target = self._select_target_door(carrying_color)
             if target is not None:
                 self._target_door_color = target
                 return self.SG_GOTO_DOOR
-            # No target door found — explore more
             return self.SG_EXPLORE
 
-        # Not carrying key
-        locked_door = self._find_locked_door()
-        if locked_door is not None:
-            # We know there's a locked door — find the key
-            key_target = self._select_target_key()
-            if key_target is not None:
-                return self.SG_GOTO_KEY
-
-        # Check if goal is accessible (door already opened)
-        goal_pos = self._find_goal()
-        if goal_pos is not None:
-            # Check if path to goal exists (no locked doors in way)
-            return self.SG_GOTO_GOAL
+        # Not carrying key — find the key
+        key_target = self._select_target_key()
+        if key_target is not None:
+            return self.SG_GOTO_KEY
 
         return self.SG_EXPLORE
 
