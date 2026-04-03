@@ -1,6 +1,6 @@
 # Stage 58: SDM Retrofit — Learned Agent for DoorKey
 
-## Результат: PASS (с оговорками)
+## Результат: PARTIAL — SDM infrastructure работает, но DoorKey слишком прост для learned planning
 
 **Ветка:** `stage58-sdm-retrofit`
 **Тип:** RETROFIT — первый learned stage после 11-этапного symbolic drift
@@ -24,21 +24,32 @@
 - SDM capacity: 7751 writes (gate ≥1000) PASS
 - Exploration phase: 50 episodes достаточно, 0.7 секунд на CPU
 
-## Честный анализ: что learned, что symbolic
+## Честный анализ: SDM не помогает на DoorKey
 
-### Learned (через SDM):
-- Subgoal selection: SDM выбирает GOTO_KEY / GOTO_DOOR / GOTO_GOAL на основе reward signal
-- Transition memory: SDM записывает (abstract_state, subgoal) → (next_state, reward)
-- +11.5% improvement over pure heuristic
+### Ablation study (dim=256, 1000 locations, GPU)
 
-### Symbolic (hardcoded):
-- Frontier exploration (навигация к неизведанным клеткам)
-- BFS pathfinding (маршрутизация)
-- Reflexes: toggle doors, pickup keys when facing them
-- Heuristic subgoal fallback: key → door → goal priority ordering
+| Режим | Success | Что работает |
+|-------|---------|-------------|
+| Pure heuristic (SDM пустой) | **100%** | key→door→goal + frontier + reflexes |
+| Heuristic + SDM (trained) | **100%** | То же, SDM не мешает |
+| **Pure SDM** (heuristic=explore) | **88.5%** | SDM хуже чем heuristic |
 
 ### Вердикт
-Это **hybrid agent** — честный компромисс. SDM работает на уровне subgoal selection, symbolic navigation на уровне actions. Это лучше чем pure symbolic (Stages 47-57), но далеко от fully learned agent. Следующие этапы должны заменять symbolic компоненты learned аналогами.
+
+SDM не только не помогает — он **снижает performance** на 11.5% (100% → 88.5%). Причина: DoorKey имеет единственный оптимальный порядок subgoals (key→door→goal). `_heuristic_subgoal()` реализует этот порядок идеально. SDM не может быть лучше оптимального решения — он может только добавить шум.
+
+Ранее reported "+11.5% SDM improvement" (dim=256) — артефакт: это heuristic давал 88.5% в "random baseline" тесте из-за того, что baseline тоже использовал heuristic. Реальное сравнение: **heuristic = 100%, SDM мешает**.
+
+### Что реально learned
+- SDM **infrastructure** работает: write/read transitions, reward signal, subgoal encoding
+- SDM **capacity** gate пройден: 7751+ writes
+- Но DoorKey — **неподходящая среда** для демонстрации learned planning: порядок subgoals тривиален
+
+### Что нужно для реальной валидации SDM
+Среда где heuristic key→door→goal **не работает**:
+- Несколько ключей разного цвета → нужно выбрать правильный
+- Non-obvious subgoal ordering → SDM учит порядок из experience
+- Stochastic environments → hardcoded heuristic ненадёжен
 
 ## Эксперименты
 
@@ -74,4 +85,7 @@
 
 ## Следующий этап
 
-Ретроспектива Stages 47-57: пометить как symbolic baselines в ROADMAP, затем поэтапная замена symbolic → learned компонентов.
+SDM infrastructure готова, но нужна среда где learned planning даёт реальное преимущество. Варианты:
+- **Multi-key environment**: несколько ключей разных цветов, нужно выбрать правильный → heuristic не знает порядок, SDM учит
+- **KeyCorridor**: key-door color matching → heuristic не знает какой ключ к какой двери
+- **Stochastic env**: объекты перемещаются → hardcoded порядок ненадёжен
