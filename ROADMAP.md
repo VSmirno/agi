@@ -1,7 +1,7 @@
 # СНКС — Roadmap v2 (Milestone-Driven)
 
 **Последнее обновление:** 2026-04-03
-**Статус:** M1 COMPLETE → M2 COMPLETE → M3 COMPLETE → M4 IN PROGRESS (4/7)
+**Статус:** M1 COMPLETE → M2 COMPLETE → M3 COMPLETE → M4 IN PROGRESS (5/8) — architecture pivot at Stage 59
 **Полная спецификация:** [docs/superpowers/specs/2026-04-02-roadmap-v2-design.md](docs/superpowers/specs/2026-04-02-roadmap-v2-design.md)
 
 ---
@@ -55,16 +55,20 @@
 | 55 | Exploration Strategy | COMPLETE ⚠️ SYMBOLIC | 100% MultiRoom — FrontierExplorer + BFS |
 | 56 | Complex Environment | COMPLETE ⚠️ SYMBOLIC | 99.5% PutNext — state machine + BFS |
 | 57 | Long Subgoal Chains | COMPLETE ⚠️ SYMBOLIC | 40% KeyCorridor — ChainPlanner + BFS |
-| 58 | SDM Retrofit | COMPLETE (2026-04-03) | 100% DoorKey — **SDM learned subgoal selection** + symbolic nav |
-| 59 | Transfer Learning | | ≥70% new env без re-exploration |
-| 60 | M4 Integration Test | | ≥50% BabyAI BossLevel с инструкцией |
+| 58 | SDM Retrofit | COMPLETE ⚠️ NEGATIVE (2026-04-03) | SDM не добавляет value — heuristic=100% на DoorKey, honest ablation |
+| 59 | VSA Causal Induction | COMPLETE (2026-04-03) | **100% generalization unseen colors**, bind(X,X)=identity proof |
+| 60 | World Model via Demos | | Causal world model обученная через демонстрации |
+| 61 | Demo-Guided Agent | | Agent использует world model для planning в grid среде |
+| 62 | M4 Integration Test | | ≥50% BabyAI BossLevel с инструкцией |
 
-### Learned Pipeline Retrofit Plan
-**Stages 47-57 пройдены символическим BFS. Следующие этапы заменяют symbolic → learned:**
-- Stage 58: SDM subgoal selection ✅ (hybrid: SDM selects what, BFS does how)
-- Next: replace BFS navigation with SDM-guided exploration
-- Next: replace heuristic subgoal fallback with pure SDM planning
-- Next: replace reflexes with learned interaction policies
+### Architecture Pivot (Stage 59, 2026-04-03)
+**Stages 47-58: символический BFS + SDM = тупик.** SDM паразитирует на BFS — либо BFS решает всё (SDM не нужен), либо BFS не справляется (SDM не получает данных).
+
+**Новый подход: обучение через демонстрации, не exploration.**
+- Stage 59: VSA bind(X,X)=identity ✅ — few-shot generalization доказана (3 demos → 100% unseen colors)
+- Stage 60: World model через демонстрации — каузальные правила из показанных примеров
+- Stage 61: Agent использует world model — exploration только для layout, не для rule discovery
+- Аналогия: младенца УЧАТ, а не он сам открывает правила за миллион попыток
 
 ### M5: Автономия (vision, детализация после M4)
 Self-directed goals, compositional subgoals, meta-cognition
