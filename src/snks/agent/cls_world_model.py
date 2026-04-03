@@ -188,7 +188,7 @@ class CLSWorldModel:
               action: str) -> tuple[dict[str, str], float, str]:
         """Predict outcome. Returns (outcome, confidence, source).
 
-        source: "neocortex" or "hippocampus"
+        source: "neocortex", "neocortex_generalized", or "hippocampus"
         """
         key = make_situation_key(situation, action)
 
@@ -196,6 +196,26 @@ class CLSWorldModel:
         if key in self.neocortex:
             rule = self.neocortex[key]
             return rule.outcome, 1.0, "neocortex"
+
+        # Neocortex generalization: try substituting colors with trained ones.
+        # If situation has unseen color, check if a trained color gives a result
+        # and the physics is color-independent (same structure → same outcome).
+        obj_color = situation.get("obj_color", "")
+        carry_color = situation.get("carrying_color", "")
+        for sub_color in ["red", "green", "blue"]:
+            sub_sit = dict(situation)
+            if obj_color and obj_color not in ["red", "green", "blue"]:
+                sub_sit["obj_color"] = sub_color
+            if carry_color and carry_color not in ["red", "green", "blue"]:
+                # If same-color pair, substitute both with same trained color
+                if carry_color == obj_color:
+                    sub_sit["carrying_color"] = sub_color
+                else:
+                    sub_sit["carrying_color"] = sub_color
+            sub_key = make_situation_key(sub_sit, action)
+            if sub_key in self.neocortex:
+                rule = self.neocortex[sub_key]
+                return rule.outcome, 0.9, "neocortex_generalized"
 
         # Hippocampus (fuzzy/generalization)
         sit_vec = self._encode_situation(situation, action)
@@ -211,6 +231,22 @@ class CLSWorldModel:
         key = make_situation_key(situation, action)
         if key in self.neocortex:
             return self.neocortex[key].reward
+
+        # Generalize: substitute unseen colors with trained ones
+        obj_color = situation.get("obj_color", "")
+        carry_color = situation.get("carrying_color", "")
+        for sub_color in ["red", "green", "blue"]:
+            sub_sit = dict(situation)
+            if obj_color and obj_color not in ["red", "green", "blue"]:
+                sub_sit["obj_color"] = sub_color
+            if carry_color and carry_color not in ["red", "green", "blue"]:
+                if carry_color == obj_color:
+                    sub_sit["carrying_color"] = sub_color
+                else:
+                    sub_sit["carrying_color"] = sub_color
+            sub_key = make_situation_key(sub_sit, action)
+            if sub_key in self.neocortex:
+                return self.neocortex[sub_key].reward
 
         sit_vec = self._encode_situation(situation, action)
         return self.hippocampus.read_reward(sit_vec, self._zeros)
@@ -254,6 +290,35 @@ class CLSWorldModel:
                         obj_color: str, obj_state: str = "none") -> str:
         """Level 2: What do you need to <action> the <obj>?"""
         if action == "toggle" and obj_state == "locked":
+            # First: check if same-color key works (via neocortex or SDM)
+            same_color_sit = {
+                "facing_obj": "door",
+                "obj_color": obj_color,
+                "obj_state": "locked",
+                "carrying": "key",
+                "carrying_color": obj_color,
+            }
+            reward = self.query_reward(same_color_sit, "toggle")
+            if reward > 0:
+                return f"key_{obj_color}"
+
+            # If same-color not found (held-out color), check if the
+            # same-color rule holds for ANY trained color. If yes,
+            # generalize: same-color rule applies to all colors.
+            for trained_color in ["red", "green", "blue"]:
+                sit = {
+                    "facing_obj": "door",
+                    "obj_color": trained_color,
+                    "obj_state": "locked",
+                    "carrying": "key",
+                    "carrying_color": trained_color,
+                }
+                r = self.query_reward(sit, "toggle")
+                if r > 0:
+                    # Same-color rule confirmed → generalize
+                    return f"key_{obj_color}"
+
+            # Try all colors explicitly
             for key_color in ["red", "green", "blue", "purple", "yellow", "grey"]:
                 situation = {
                     "facing_obj": "door",
