@@ -197,21 +197,29 @@ class CLSWorldModel:
             rule = self.neocortex[key]
             return rule.outcome, 1.0, "neocortex"
 
-        # Neocortex generalization: try substituting colors with trained ones.
-        # If situation has unseen color, check if a trained color gives a result
-        # and the physics is color-independent (same structure → same outcome).
+        # Neocortex generalization: substitute unseen colors with trained.
+        # Preserve same/different color relationship.
         obj_color = situation.get("obj_color", "")
         carry_color = situation.get("carrying_color", "")
-        for sub_color in ["red", "green", "blue"]:
+        trained = ["red", "green", "blue"]
+        is_same = (obj_color == carry_color and obj_color != "")
+
+        substitutions = []
+        if is_same:
+            substitutions = [(c, c) for c in trained]
+        else:
+            for so in trained:
+                for sc in trained:
+                    if obj_color != carry_color and so == sc:
+                        continue
+                    substitutions.append((so, sc))
+
+        for sub_obj, sub_carry in substitutions:
             sub_sit = dict(situation)
-            if obj_color and obj_color not in ["red", "green", "blue"]:
-                sub_sit["obj_color"] = sub_color
-            if carry_color and carry_color not in ["red", "green", "blue"]:
-                # If same-color pair, substitute both with same trained color
-                if carry_color == obj_color:
-                    sub_sit["carrying_color"] = sub_color
-                else:
-                    sub_sit["carrying_color"] = sub_color
+            if obj_color and obj_color not in trained:
+                sub_sit["obj_color"] = sub_obj
+            if carry_color and carry_color not in trained:
+                sub_sit["carrying_color"] = sub_carry
             sub_key = make_situation_key(sub_sit, action)
             if sub_key in self.neocortex:
                 rule = self.neocortex[sub_key]
@@ -233,20 +241,35 @@ class CLSWorldModel:
             return self.neocortex[key].reward
 
         # Generalize: substitute unseen colors with trained ones
+        # Preserve same/different color relationship
         obj_color = situation.get("obj_color", "")
         carry_color = situation.get("carrying_color", "")
-        for sub_color in ["red", "green", "blue"]:
-            sub_sit = dict(situation)
-            if obj_color and obj_color not in ["red", "green", "blue"]:
-                sub_sit["obj_color"] = sub_color
-            if carry_color and carry_color not in ["red", "green", "blue"]:
-                if carry_color == obj_color:
-                    sub_sit["carrying_color"] = sub_color
-                else:
-                    sub_sit["carrying_color"] = sub_color
-            sub_key = make_situation_key(sub_sit, action)
-            if sub_key in self.neocortex:
-                return self.neocortex[sub_key].reward
+        trained = ["red", "green", "blue"]
+        is_same_color = (obj_color == carry_color and obj_color != "")
+
+        if is_same_color:
+            # Same-color pair → substitute both with same trained color
+            for sub in trained:
+                sub_sit = dict(situation)
+                sub_sit["obj_color"] = sub
+                sub_sit["carrying_color"] = sub
+                sub_key = make_situation_key(sub_sit, action)
+                if sub_key in self.neocortex:
+                    return self.neocortex[sub_key].reward
+        else:
+            # Different colors → substitute with different trained colors
+            for sub_obj in trained:
+                for sub_carry in trained:
+                    if obj_color != carry_color and sub_obj == sub_carry:
+                        continue  # preserve "different" relationship
+                    sub_sit = dict(situation)
+                    if obj_color and obj_color not in trained:
+                        sub_sit["obj_color"] = sub_obj
+                    if carry_color and carry_color not in trained:
+                        sub_sit["carrying_color"] = sub_carry
+                    sub_key = make_situation_key(sub_sit, action)
+                    if sub_key in self.neocortex:
+                        return self.neocortex[sub_key].reward
 
         sit_vec = self._encode_situation(situation, action)
         return self.hippocampus.read_reward(sit_vec, self._zeros)
