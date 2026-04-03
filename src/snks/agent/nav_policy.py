@@ -207,19 +207,16 @@ class NavigationPolicy:
         if not frames:
             return []
 
-        # Find target position from subgoals
-        # Use the first subgoal's object as target
+        # Find target from subgoals
         subgoals = demo.get("subgoals_extracted", [])
         target_type = subgoals[0].get("obj", "ball") if subgoals else "ball"
         target_color = subgoals[0].get("color", "") if subgoals else ""
 
-        # Find actual target position in the demo grid
-        # We need to scan the grid data — but demos don't store full grid
-        # Instead, use the LAST frame position as approximate target
-        # (Bot reaches target at the end)
-        last_frame = frames[-1]
-        target_col = last_frame.get("agent_col", 0)
-        target_row = last_frame.get("agent_row", 0)
+        # Find actual target position from object_positions (full grid data)
+        object_positions = demo.get("object_positions", [])
+        target_col, target_row = self._find_target_in_objects(
+            object_positions, target_type, target_color, frames
+        )
 
         grid_w = demo.get("grid_width", 22)
         grid_h = demo.get("grid_height", 22)
@@ -275,6 +272,25 @@ class NavigationPolicy:
             prev_dir = agent_dir
 
         return points
+
+    @staticmethod
+    def _find_target_in_objects(objects: list[dict], target_type: str,
+                                target_color: str,
+                                frames: list[dict]) -> tuple[int, int]:
+        """Find target object position from full grid object list."""
+        # Exact match first
+        for obj in objects:
+            if obj["type"] == target_type and obj["color"] == target_color:
+                return obj["col"], obj["row"]
+        # Type-only match
+        for obj in objects:
+            if obj["type"] == target_type:
+                return obj["col"], obj["row"]
+        # Fallback: last frame position
+        if frames:
+            last = frames[-1]
+            return last.get("agent_col", 0), last.get("agent_row", 0)
+        return 0, 0
 
     def _learn_point(self, point: dict) -> None:
         """Write one decision point to SDM."""

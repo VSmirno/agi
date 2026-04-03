@@ -73,10 +73,14 @@ class BossLevelAgent:
     """
 
     def __init__(self, grid_width: int = 22, grid_height: int = 22,
-                 causal_dim: int = 512, seed: int = 42):
-        self.causal_model = CausalWorldModel(dim=causal_dim, seed=seed)
-        self.mission_model = MissionModel(dim=causal_dim, seed=seed + 50)
-        self.nav_policy = NavigationPolicy(dim=1024, n_locations=5000, seed=seed + 100)
+                 causal_dim: int = 512, seed: int = 42,
+                 device: str | None = None):
+        if device is None:
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.causal_model = CausalWorldModel(dim=causal_dim, seed=seed, device=device)
+        self.mission_model = MissionModel(dim=causal_dim, seed=seed + 50, device=device)
+        self.nav_policy = NavigationPolicy(dim=1024, n_locations=5000, seed=seed + 100, device=device)
         self.spatial_map = SpatialMap(grid_width, grid_height)
         self.explorer = FrontierExplorer()  # fallback
         self.pathfinder = GridPathfinder()
