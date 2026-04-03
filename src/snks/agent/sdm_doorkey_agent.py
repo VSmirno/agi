@@ -133,14 +133,16 @@ class SDMDoorKeyAgent:
     def __init__(self, grid_width: int = 5, grid_height: int = 5,
                  dim: int = 512, n_locations: int = 5000,
                  explore_episodes: int = 50,
-                 epsilon: float = 0.15):
+                 epsilon: float = 0.15,
+                 device: torch.device | str | None = None):
+        self.device = torch.device(device) if device else torch.device("cpu")
         self.spatial_map = SpatialMap(grid_width, grid_height)
         self.explorer = FrontierExplorer()
         self.pathfinder = GridPathfinder()
 
-        self.codebook = VSACodebook(dim=dim)
+        self.codebook = VSACodebook(dim=dim, device=self.device)
         self.encoder = AbstractStateEncoder(self.codebook)
-        self.sdm = SDMMemory(n_locations=n_locations, dim=dim)
+        self.sdm = SDMMemory(n_locations=n_locations, dim=dim, device=self.device)
 
         self.sdm_planner = SDMPlanner(
             sdm=self.sdm, codebook=self.codebook,
