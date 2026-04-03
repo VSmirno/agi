@@ -154,6 +154,7 @@ class SDMObstructedAgent:
         self._needs_drop: bool = False
         self._opened_doors: set[str] = set()  # colors of doors we've opened
         self._target_key_color: str | None = None  # which key to pick up
+        self._done_with_keys: bool = False  # all doors open, don't pickup keys
 
     def reset_episode(self) -> None:
         self.spatial_map.reset()
@@ -162,6 +163,7 @@ class SDMObstructedAgent:
         self._needs_drop = False
         self._opened_doors = set()
         self._target_key_color = None
+        self._done_with_keys = False
 
     def select_action(self, obs_7x7: np.ndarray,
                       agent_col: int, agent_row: int, agent_dir: int,
@@ -207,11 +209,12 @@ class SDMObstructedAgent:
         return None
 
     def _should_pickup_key(self, key_color: str | None) -> bool:
+        if self._done_with_keys:
+            return False
         if key_color is None:
             return True
         if not self._exploring and self._target_key_color is not None:
             return key_color == self._target_key_color
-        # During exploration: pick up any key
         return True
 
     def _select_subgoal(self, carrying_color: str | None) -> int:
@@ -222,6 +225,7 @@ class SDMObstructedAgent:
         if not locked_doors:
             if carrying_color is not None:
                 self._needs_drop = True
+                self._done_with_keys = True
                 return self.SG_DROP_KEY
             if ball_pos is not None:
                 return self.SG_GOTO_BALL
