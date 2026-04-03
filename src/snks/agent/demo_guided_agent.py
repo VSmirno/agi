@@ -373,6 +373,7 @@ class DemoGuidedAgent:
         self.spatial_map.reset()
         self._has_key = False
         self._door_open = False
+        self._locked_door_pos = None
         self._plan = []
         self._current_sg_idx = 0
         self.explore_steps = 0
@@ -441,9 +442,12 @@ class DemoGuidedAgent:
 
     def _try_plan(self) -> None:
         """Attempt to build a plan from current map knowledge."""
-        door_pos = self.spatial_map.find_object(OBJ_DOOR)
+        # Find a LOCKED door (state=2), not just any door
+        door_pos = self._find_locked_door()
         if door_pos is None:
             return
+
+        self._locked_door_pos = door_pos
 
         # Get door color
         door_color_id = int(self.spatial_map.grid[door_pos[0], door_pos[1], 1])
@@ -457,6 +461,18 @@ class DemoGuidedAgent:
         if self._plan:
             self._current_sg_idx = 0
             self.plan_ready = True
+
+    def _find_locked_door(self) -> tuple[int, int] | None:
+        """Find position of a locked door (state=2) in spatial map."""
+        for r in range(self.spatial_map.height):
+            for c in range(self.spatial_map.width):
+                if not self.spatial_map.explored[r, c]:
+                    continue
+                obj = int(self.spatial_map.grid[r, c, 0])
+                state = int(self.spatial_map.grid[r, c, 2])
+                if obj == OBJ_DOOR and state == 2:
+                    return (r, c)
+        return None
 
     def _check_immediate(self, obs_7x7: np.ndarray) -> int | None:
         """Check for immediate interaction opportunities."""
@@ -490,10 +506,14 @@ class DemoGuidedAgent:
         if not self._trained:
             return True
 
-        # Find which door we need to open
-        door_pos = self.spatial_map.find_object(OBJ_DOOR)
+        # Find the locked door specifically
+        door_pos = self._find_locked_door() if not hasattr(self, '_locked_door_pos') or self._locked_door_pos is None else self._locked_door_pos
         if door_pos is None:
-            return True  # no door found yet, pick up any key
+            # No locked door found yet — in DoorKey there's only one door,
+            # so check any door; in LockedRoom, skip wrong keys
+            door_pos = self.spatial_map.find_object(OBJ_DOOR)
+            if door_pos is None:
+                return True  # no door found yet, pick up any key
 
         door_color_id = int(self.spatial_map.grid[door_pos[0], door_pos[1], 1])
         door_color_name = COLOR_NAMES.get(door_color_id, "unknown")
@@ -502,10 +522,12 @@ class DemoGuidedAgent:
         return self.causal_model.query_color_match(key_color_name, door_color_name)
 
     def _detect_door_state(self) -> None:
-        """Detect if any door is now open."""
-        door_pos = self.spatial_map.find_object(OBJ_DOOR)
-        if door_pos is not None:
-            state = int(self.spatial_map.grid[door_pos[0], door_pos[1], 2])
+        """Detect if the locked door is now open."""
+        if not hasattr(self, '_locked_door_pos') or self._locked_door_pos is None:
+            return
+        r, c = self._locked_door_pos
+        if self.spatial_map.explored[r, c]:
+            state = int(self.spatial_map.grid[r, c, 2])
             if state == 0:  # open
                 self._door_open = True
 
