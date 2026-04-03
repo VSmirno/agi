@@ -147,7 +147,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--n-train", type=int, default=100)
     parser.add_argument("--n-eval", type=int, default=200)
-    parser.add_argument("--max-steps", type=int, default=500)
+    parser.add_argument("--max-steps", type=int, default=1000)
     parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()
 

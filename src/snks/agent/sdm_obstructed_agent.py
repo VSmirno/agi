@@ -218,8 +218,11 @@ class SDMObstructedAgent:
         locked_doors = self._find_locked_doors()
         ball_pos = self._find_ball()
 
-        # No more locked doors → go to ball
+        # No more locked doors → go to ball (drop key first if carrying)
         if not locked_doors:
+            if carrying_color is not None:
+                self._needs_drop = True
+                return self.SG_DROP_KEY
             if ball_pos is not None:
                 return self.SG_GOTO_BALL
             return self.SG_EXPLORE
