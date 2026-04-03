@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 57: Длинные цепочки подцелей — KeyCorridor</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0e17; color: #e2e8f0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh; padding: 20px;
+}
+h1 { color: #60a5fa; font-size: 1.8em; margin-bottom: 4px; }
+h2 { color: #60a5fa; font-size: 1.2em; margin: 16px 0 8px; }
+.subtitle { color: #94a3b8; font-size: 0.95em; margin-bottom: 16px; }
+.container { max-width: 1100px; margin: 0 auto; }
+.panel {
+  background: #111827; border: 1px solid #1e293b;
+  border-radius: 8px; padding: 16px; margin-bottom: 16px;
+}
+.row { display: flex; gap: 20px; flex-wrap: wrap; }
+.col-canvas { flex: 0 0 auto; }
+.col-info { flex: 1; min-width: 240px; }
+canvas { border: 2px solid #334155; border-radius: 4px; display: block; }
+canvas.success-flash { border-color: #34d399; box-shadow: 0 0 16px #34d39966; }
+.controls {
+  display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; align-items: center;
+}
+.controls button {
+  background: #1e293b; color: #60a5fa; border: 1px solid #334155;
+  padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;
+}
+.controls button:hover { background: #334155; }
+.controls button.active { background: #1e40af; border-color: #60a5fa; }
+.ep-buttons { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.ep-buttons button {
+  background: #1e293b; color: #94a3b8; border: 1px solid #334155;
+  padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em;
+}
+.ep-buttons button:hover { background: #334155; }
+.ep-buttons button.active { background: #1e40af; border-color: #60a5fa; color: #60a5fa; }
+.info-table { width: 100%; border-collapse: collapse; font-size: 0.88em; }
+.info-table td { padding: 5px 6px; border-bottom: 1px solid #1e293b; }
+.info-table td:first-child { color: #94a3b8; width: 42%; }
+.info-table td:last-child { color: #e2e8f0; font-weight: 600; }
+.mission-text { color: #60a5fa !important; font-style: italic; }
+.phase-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 0.8em; font-weight: 600;
+}
+.phase-EXPLORE       { background: #1e293b; color: #94a3b8; }
+.phase-GOTO_KEY      { background: #1a1200; color: #fbbf24; }
+.phase-PICKUP_KEY    { background: #2a1800; color: #fcd34d; }
+.phase-GOTO_LOCKED_DOOR { background: #1a0e00; color: #fb923c; }
+.phase-OPEN_DOOR     { background: #2a0000; color: #f87171; }
+.phase-DROP_KEY      { background: #1a0030; color: #c084fc; }
+.phase-GOTO_GOAL     { background: #002a10; color: #34d399; }
+.phase-PICKUP_GOAL   { background: #003a18; color: #6ee7b7; }
+.phase-DONE          { background: #003a00; color: #4ade80; }
+.reward-value { color: #34d399; }
+.stat { display: inline-block; margin-right: 16px; margin-bottom: 4px; }
+.stat-label { color: #94a3b8; font-size: 0.85em; }
+.stat-value { color: #e2e8f0; font-size: 1.1em; font-weight: 600; }
+.metrics-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px; margin: 12px 0;
+}
+.metric-card {
+  background: #0f172a; border: 1px solid #1e293b; border-radius: 8px;
+  padding: 16px; text-align: center;
+}
+.metric-value { font-size: 2em; font-weight: 700; }
+.metric-label { font-size: 0.8em; color: #94a3b8; margin-top: 4px; }
+.metric-gate { font-size: 0.75em; color: #475569; margin-top: 2px; }
+.pass { color: #34d399; }
+.na  { color: #94a3b8; }
+.explain {
+  background: #0f172a; border-left: 3px solid #60a5fa;
+  padding: 12px 16px; margin: 12px 0; border-radius: 0 4px 4px 0;
+  font-size: 0.9em; line-height: 1.6;
+}
+.explain h3 { color: #60a5fa; font-size: 1em; margin-bottom: 6px; }
+.phase-list { list-style: none; padding: 0; margin: 8px 0; }
+.phase-list li { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 6px; }
+.phase-list .badge { flex: 0 0 auto; padding: 1px 7px; border-radius: 8px; font-size: 0.78em; font-weight: 600; }
+
+/* Subgoal chain bar */
+.subgoal-chain { margin-top: 10px; }
+.subgoal-chain-label { color: #94a3b8; font-size: 0.8em; margin-bottom: 4px; }
+.subgoal-bar {
+  display: flex; gap: 3px; height: 20px;
+}
+.subgoal-seg {
+  flex: 1; border-radius: 3px; display: flex; align-items: center; justify-content: center;
+  font-size: 0.6em; font-weight: 700; color: rgba(0,0,0,0.6);
+  transition: opacity 0.3s;
+}
+.subgoal-seg.done { opacity: 1; }
+.subgoal-seg.pending { opacity: 0.25; }
+
+/* Results table */
+.results-table { width: 100%; border-collapse: collapse; font-size: 0.88em; margin: 12px 0; }
+.results-table th {
+  background: #0f172a; color: #94a3b8; padding: 8px 10px;
+  text-align: left; border-bottom: 1px solid #334155; font-weight: 600;
+}
+.results-table td { padding: 8px 10px; border-bottom: 1px solid #1e293b; }
+.results-table tr:last-child td { border-bottom: none; }
+.results-table td.pass-cell { color: #34d399; font-weight: 700; }
+.results-table td.na-cell { color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Этап 57: Длинные цепочки подцелей</h1>
+  <p class="subtitle">KeyCorridor — агент решает задачу из 5–6 последовательных подцелей: найти ключ, открыть дверь, добраться до цели.</p>
+
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-value pass">54.0%</div>
+      <div class="metric-label">KeyCorridorS3R3 (200 эпизодов)</div>
+      <div class="metric-gate">gate &ge;50% — PASS</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value pass">40.0%</div>
+      <div class="metric-label">KeyCorridorS4R3 (200 эпизодов)</div>
+      <div class="metric-gate">gate &ge;40% — PASS</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value" style="color:#60a5fa">39.5%</div>
+      <div class="metric-label">KeyCorridorS5R3 (200 эпизодов)</div>
+      <div class="metric-gate">stretch цель</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value" style="color:#c084fc">5–6</div>
+      <div class="metric-label">Подцелей в цепочке</div>
+      <div class="metric-gate">рекорд этапа</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Визуализация эпизода</h2>
+
+    <div style="margin-bottom:10px">
+      <span style="color:#94a3b8;font-size:0.85em">Эпизод:</span>
+      <div class="ep-buttons" id="epButtons"></div>
+    </div>
+
+    <div class="row">
+      <div class="col-canvas">
+        <canvas id="gridCanvas"></canvas>
+        <div class="controls">
+          <button id="btnPlay" onclick="togglePlay()">Запустить</button>
+          <button onclick="stepForward()">Шаг</button>
+          <button onclick="resetEpisode()">Сброс</button>
+          <button class="active" id="spd05" onclick="setSpeed(600,'spd05')">x0.5</button>
+          <button id="spd1" onclick="setSpeed(300,'spd1')">x1</button>
+          <button id="spd2" onclick="setSpeed(150,'spd2')">x2</button>
+          <button id="spd5" onclick="setSpeed(60,'spd5')">x5</button>
+        </div>
+      </div>
+      <div class="col-info">
+        <table class="info-table">
+          <tr><td>Миссия</td><td class="mission-text" id="infoMission">—</td></tr>
+          <tr><td>Шаг</td><td id="infoStep">0 / 0</td></tr>
+          <tr><td>Фаза</td><td id="infoPhase">—</td></tr>
+          <tr><td>Действие</td><td id="infoAction">—</td></tr>
+          <tr><td>Несёт</td><td id="infoCarrying">—</td></tr>
+          <tr><td>Подцели</td><td id="infoSubgoals">0 / 6</td></tr>
+        </table>
+
+        <div class="subgoal-chain" id="subgoalChain">
+          <div class="subgoal-chain-label">Цепочка подцелей:</div>
+          <div class="subgoal-bar" id="subgoalBar"></div>
+        </div>
+
+        <div class="explain" style="margin-top:12px; font-size:0.82em; line-height:1.4">
+          <strong>Легенда:</strong><br>
+          <span style="color:#666666">&#9632; стена</span> &nbsp;
+          <span style="color:#0f172a;background:#334155;padding:0 3px">&#9632; пол</span> &nbsp;
+          <span style="color:#ff4444">&#9654; агент</span><br>
+          <span style="color:#ffd700">&#9733; ключ</span> &nbsp;
+          <span style="color:#8B4513">&#9632; дверь закрыта</span><br>
+          <span style="color:#8B0000">&#9632; дверь заперта</span> &nbsp;
+          <span style="color:#654321">&#9632; дверь открыта</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Результаты эксперимента exp111</h2>
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>Среда</th>
+          <th>Точность</th>
+          <th>Gate</th>
+          <th>Шаги (ср.)</th>
+          <th>Подцелей</th>
+          <th>Статус</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>KeyCorridorS4R3</td>
+          <td>40.0%</td>
+          <td>&ge;40%</td>
+          <td>39.5</td>
+          <td>5–6</td>
+          <td class="pass-cell">PASS</td>
+        </tr>
+        <tr>
+          <td>KeyCorridorS3R3</td>
+          <td>54.0%</td>
+          <td>&ge;50%</td>
+          <td>31.3</td>
+          <td>6</td>
+          <td class="pass-cell">PASS</td>
+        </tr>
+        <tr>
+          <td>KeyCorridorS5R3</td>
+          <td>39.5%</td>
+          <td>stretch</td>
+          <td>50.7</td>
+          <td>5–6</td>
+          <td class="na-cell">N/A</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="explain">
+      <h3>Как это работает — планировщик на графе зависимостей</h3>
+      <ul class="phase-list">
+        <li>
+          <span class="badge phase-EXPLORE">Разведка</span>
+          <span>Агент случайно исследует комнаты, пока не обнаружит ключ и запертую дверь.</span>
+        </li>
+        <li>
+          <span class="badge phase-GOTO_KEY">К ключу</span>
+          <span>Когда ключ найден — строится путь A* к его клетке.</span>
+        </li>
+        <li>
+          <span class="badge phase-PICKUP_KEY">Подбор ключа</span>
+          <span>Агент встаёт лицом к ключу и выполняет pickup.</span>
+        </li>
+        <li>
+          <span class="badge phase-GOTO_LOCKED_DOOR">К запертой двери</span>
+          <span>Ключ в руках — планируем путь к запертой двери нужного цвета.</span>
+        </li>
+        <li>
+          <span class="badge phase-OPEN_DOOR">Открыть дверь</span>
+          <span>Действие toggle перед дверью открывает её (требует ключ правильного цвета).</span>
+        </li>
+        <li>
+          <span class="badge phase-DROP_KEY">Бросить ключ</span>
+          <span>После открытия дверь больше не нужна — ключ кладётся на ближайшую свободную клетку.</span>
+        </li>
+        <li>
+          <span class="badge phase-PICKUP_GOAL">Подбор цели</span>
+          <span>Навигация к целевому объекту (шару) и финальное действие pickup.</span>
+        </li>
+      </ul>
+      <p style="margin-top:8px">
+        Граф зависимостей кодирует предусловия каждой подцели: <em>OPEN_DOOR</em> требует
+        <em>PICKUP_KEY</em>, <em>PICKUP_GOAL</em> требует <em>OPEN_DOOR</em>.
+        Планировщик топологически сортирует граф и исполняет подцели в правильном порядке.
+      </p>
+    </div>
+    <div class="explain">
+      <h3>Почему это важно для AGI</h3>
+      Цепочки из 5–6 подцелей — качественный скачок от задач типа DoorKey (3 подцели).
+      Агент должен удерживать в памяти долгосрочный план, не теряя промежуточные состояния:
+      какой ключ был подобран, какая дверь открыта, что нужно сделать дальше.
+      Это прямой аналог <em>рабочей памяти</em> и <em>иерархического планирования</em> у людей.
+      Масштабирование на ещё более длинные цепочки (Stage 58+) ведёт к задачам уровня
+      «найди книгу в библиотеке» — десятки зависимых подцелей.
+    </div>
+  </div>
+</div>
+
+<script>
+const EPISODES = [{"env":"BabyAI-KeyCorridorS3R3-v0","seed":0,"mission":"pick up the ball","grid_width":7,"grid_height":7,"grid":[[{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"door","color":"grey","locked":false,"open":false},{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"wall","color":"grey"},{"type":"door","color":"purple","locked":false,"open":true},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"door","color":"yellow","locked":false,"open":true},{"type":"empty","color":""},{"type":"door","color":"yellow","locked":false,"open":true},{"type":"empty","color":""},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"door","color":"yellow","locked":false,"open":false},{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"key","color":"purple"},{"type":"door","color":"red","locked":false,"open":true},{"type":"empty","color":""},{"type":"door","color":"purple","locked":false,"open":true},{"type":"ball","color":"purple"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}]],"frames":[{"step":0,"agent_col":3,"agent_row":2,"agent_dir":0,"action":"right","phase":"EXPLORE","carrying":"","subgoals":0},{"step":1,"agent_col":3,"agent_row":2,"agent_dir":1,"action":"right","phase":"EXPLORE","carrying":"","subgoals":0},{"step":2,"agent_col":3,"agent_row":2,"agent_dir":2,"action":"left","phase":"EXPLORE","carrying":"","subgoals":0},{"step":3,"agent_col":3,"agent_row":2,"agent_dir":1,"action":"forward","phase":"EXPLORE","carrying":"","subgoals":0},{"step":4,"agent_col":3,"agent_row":3,"agent_dir":1,"action":"left","phase":"EXPLORE","carrying":"","subgoals":0},{"step":5,"agent_col":3,"agent_row":3,"agent_dir":0,"action":"toggle","phase":"EXPLORE","carrying":"","subgoals":0},{"step":6,"agent_col":3,"agent_row":3,"agent_dir":0,"action":"right","phase":"EXPLORE","carrying":"","subgoals":0},{"step":7,"agent_col":3,"agent_row":3,"agent_dir":1,"action":"right","phase":"EXPLORE","carrying":"","subgoals":0},{"step":8,"agent_col":3,"agent_row":3,"agent_dir":2,"action":"toggle","phase":"EXPLORE","carrying":"","subgoals":0},{"step":9,"agent_col":3,"agent_row":3,"agent_dir":2,"action":"right","phase":"EXPLORE","carrying":"","subgoals":0},{"step":10,"agent_col":3,"agent_row":3,"agent_dir":3,"action":"right","phase":"EXPLORE","carrying":"","subgoals":0},{"step":11,"agent_col":3,"agent_row":3,"agent_dir":0,"action":"forward","phase":"EXPLORE","carrying":"","subgoals":0},{"step":12,"agent_col":4,"agent_row":3,"agent_dir":0,"action":"forward","phase":"EXPLORE","carrying":"","subgoals":0},{"step":13,"agent_col":5,"agent_row":3,"agent_dir":0,"action":"left","phase":"EXPLORE","carrying":"","subgoals":0},{"step":14,"agent_col":5,"agent_row":3,"agent_dir":3,"action":"toggle","phase":"EXPLORE","carrying":"","subgoals":0},{"step":15,"agent_col":5,"agent_row":3,"agent_dir":3,"action":"left","phase":"EXPLORE","carrying":"","subgoals":0},{"step":16,"agent_col":5,"agent_row":3,"agent_dir":2,"action":"forward","phase":"EXPLORE","carrying":"","subgoals":0},{"step":17,"agent_col":4,"agent_row":3,"agent_dir":2,"action":"forward","phase":"EXPLORE","carrying":"","subgoals":0},{"step":18,"agent_col":3,"agent_row":3,"agent_dir":2,"action":"left","phase":"EXPLORE","carrying":"","subgoals":0},{"step":19,"agent_col":3,"agent_row":3,"agent_dir":1,"action":"forward","phase":"EXPLORE","carrying":"","subgoals":0},{"step":20,"agent_col":3,"agent_row":4,"agent_dir":1,"action":"forward","phase":"EXPLORE","carrying":"","subgoals":0},{"step":21,"agent_col":3,"agent_row":5,"agent_dir":1,"action":"left","phase":"EXPLORE","carrying":"","subgoals":0},{"step":22,"agent_col":3,"agent_row":5,"agent_dir":0,"action":"right","phase":"EXPLORE","carrying":"","subgoals":0},{"step":23,"agent_col":3,"agent_row":5,"agent_dir":1,"action":"right","phase":"EXPLORE","carrying":"","subgoals":0},{"step":24,"agent_col":3,"agent_row":5,"agent_dir":2,"action":"toggle","phase":"EXPLORE","carrying":"","subgoals":0},{"step":25,"agent_col":3,"agent_row":5,"agent_dir":2,"action":"forward","phase":"GOTO_KEY","carrying":"","subgoals":0},{"step":26,"agent_col":2,"agent_row":5,"agent_dir":2,"action":"pickup","phase":"GOTO_KEY","carrying":"","subgoals":1},{"step":27,"agent_col":2,"agent_row":5,"agent_dir":2,"action":"right","phase":"GOTO_LOCKED_DOOR","carrying":"purple key","subgoals":2},{"step":28,"agent_col":2,"agent_row":5,"agent_dir":3,"action":"right","phase":"GOTO_LOCKED_DOOR","carrying":"purple key","subgoals":2},{"step":29,"agent_col":2,"agent_row":5,"agent_dir":0,"action":"forward","phase":"GOTO_LOCKED_DOOR","carrying":"purple key","subgoals":2},{"step":30,"agent_col":3,"agent_row":5,"agent_dir":0,"action":"toggle","phase":"GOTO_LOCKED_DOOR","carrying":"purple key","subgoals":3},{"step":31,"agent_col":3,"agent_row":5,"agent_dir":0,"action":"forward","phase":"GOTO_GOAL","carrying":"purple key","subgoals":3},{"step":32,"agent_col":4,"agent_row":5,"agent_dir":0,"action":"right","phase":"DROP_KEY","carrying":"purple key","subgoals":4},{"step":33,"agent_col":4,"agent_row":5,"agent_dir":1,"action":"right","phase":"DROP_KEY","carrying":"purple key","subgoals":4},{"step":34,"agent_col":4,"agent_row":5,"agent_dir":2,"action":"drop","phase":"DROP_KEY","carrying":"purple key","subgoals":5},{"step":35,"agent_col":4,"agent_row":5,"agent_dir":2,"action":"right","phase":"GOTO_GOAL","carrying":"","subgoals":5},{"step":36,"agent_col":4,"agent_row":5,"agent_dir":3,"action":"right","phase":"GOTO_GOAL","carrying":"","subgoals":5},{"step":37,"agent_col":4,"agent_row":5,"agent_dir":0,"action":"pickup","phase":"GOTO_GOAL","carrying":"","subgoals":6},{"step":38,"agent_col":4,"agent_row":5,"agent_dir":0,"action":"done","phase":"DONE","carrying":"","subgoals":6,"reward":0.8733333333333333}],"success":true,"total_steps":39,"subgoals_completed":6,"completed_names":["PICKUP_KEY","GOTO_KEY","OPEN_DOOR","GOTO_GOAL","DROP_KEY","PICKUP_GOAL"]},{"env":"BabyAI-KeyCorridorS3R3-v0","seed":1,"mission":"pick up the ball","grid_width":7,"grid_height":7,"grid":[[{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"door","color":"purple","locked":false,"open":false},{"type":"empty","color":""},{"type":"door","color":"grey","locked":false,"open":false},{"type":"empty","color":""},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"door","color":"purple","locked":false,"open":false},{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"key","color":"purple"},{"type":"door","color":"yellow","locked":false,"open":true},{"type":"empty","color":""},{"type":"door","color":"purple","locked":false,"open":true},{"type":"ball","color":"red"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"door","color":"green","locked":false,"open":false},{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"door","color":"purple","locked":false,"open":false},{"type":"empty","color":""},{"type":"door","color":"red","locked":false,"open":false},{"type":"empty","color":""},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}]],"frames":[{"step":0,"agent_col":3,"agent_row":2,"agent_dir":0,"action":"right","phase":"EXPLORE","carrying":"","subgoals":0},{"step":1,"agent_col":3,"agent_row":2,"agent_dir":1,"action":"right","phase":"EXPLORE","carrying":"","subgoals":0},{"step":2,"agent_col":3,"agent_row":2,"agent_dir":2,"action":"left","phase":"EXPLORE","carrying":"","subgoals":0},{"step":3,"agent_col":3,"agent_row":2,"agent_dir":1,"action":"forward","phase":"EXPLORE","carrying":"","subgoals":0},{"step":4,"agent_col":3,"agent_row":3,"agent_dir":1,"action":"right","phase":"EXPLORE","carrying":"","subgoals":0},{"step":5,"agent_col":3,"agent_row":3,"agent_dir":2,"action":"toggle","phase":"EXPLORE","carrying":"","subgoals":0},{"step":6,"agent_col":3,"agent_row":3,"agent_dir":2,"action":"forward","phase":"GOTO_KEY","carrying":"","subgoals":0},{"step":7,"agent_col":2,"agent_row":3,"agent_dir":2,"action":"pickup","phase":"GOTO_KEY","carrying":"","subgoals":1},{"step":8,"agent_col":2,"agent_row":3,"agent_dir":2,"action":"right","phase":"GOTO_LOCKED_DOOR","carrying":"purple key","subgoals":2},{"step":9,"agent_col":2,"agent_row":3,"agent_dir":3,"action":"right","phase":"GOTO_LOCKED_DOOR","carrying":"purple key","subgoals":2},{"step":10,"agent_col":2,"agent_row":3,"agent_dir":0,"action":"forward","phase":"GOTO_LOCKED_DOOR","carrying":"purple key","subgoals":2},{"step":11,"agent_col":3,"agent_row":3,"agent_dir":0,"action":"toggle","phase":"GOTO_LOCKED_DOOR","carrying":"purple key","subgoals":3},{"step":12,"agent_col":3,"agent_row":3,"agent_dir":0,"action":"forward","phase":"GOTO_GOAL","carrying":"purple key","subgoals":3},{"step":13,"agent_col":4,"agent_row":3,"agent_dir":0,"action":"right","phase":"DROP_KEY","carrying":"purple key","subgoals":4},{"step":14,"agent_col":4,"agent_row":3,"agent_dir":1,"action":"right","phase":"DROP_KEY","carrying":"purple key","subgoals":4},{"step":15,"agent_col":4,"agent_row":3,"agent_dir":2,"action":"drop","phase":"DROP_KEY","carrying":"purple key","subgoals":5},{"step":16,"agent_col":4,"agent_row":3,"agent_dir":2,"action":"right","phase":"GOTO_GOAL","carrying":"","subgoals":5},{"step":17,"agent_col":4,"agent_row":3,"agent_dir":3,"action":"right","phase":"GOTO_GOAL","carrying":"","subgoals":5},{"step":18,"agent_col":4,"agent_row":3,"agent_dir":0,"action":"pickup","phase":"GOTO_GOAL","carrying":"","subgoals":6},{"step":19,"agent_col":4,"agent_row":3,"agent_dir":0,"action":"done","phase":"DONE","carrying":"","subgoals":6,"reward":0.9366666666666666}],"success":true,"total_steps":20,"subgoals_completed":6,"completed_names":["PICKUP_KEY","GOTO_KEY","OPEN_DOOR","GOTO_GOAL","DROP_KEY","PICKUP_GOAL"]},{"env":"BabyAI-KeyCorridorS3R3-v0","seed":6,"mission":"pick up the ball","grid_width":7,"grid_height":7,"grid":[[{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"door","color":"green","locked":false,"open":false},{"type":"empty","color":""},{"type":"door","color":"blue","locked":false,"open":false},{"type":"empty","color":""},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"door","color":"green","locked":false,"open":false},{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"key","color":"purple"},{"type":"door","color":"blue","locked":false,"open":true},{"type":"empty","color":""},{"type":"door","color":"purple","locked":false,"open":true},{"type":"ball","color":"purple"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"door","color":"green","locked":false,"open":false},{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"door","color":"red","locked":false,"open":false},{"type":"empty","color":""},{"type":"door","color":"blue","locked":false,"open":false},{"type":"empty","color":""},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}]],"frames":[{"step":0,"agent_col":3,"agent_row":3,"agent_dir":3,"action":"left","phase":"EXPLORE","carrying":"","subgoals":0},{"step":1,"agent_col":3,"agent_row":3,"agent_dir":2,"action":"toggle","phase":"EXPLORE","carrying":"","subgoals":0},{"step":2,"agent_col":3,"agent_row":3,"agent_dir":2,"action":"forward","phase":"GOTO_KEY","carrying":"","subgoals":0},{"step":3,"agent_col":2,"agent_row":3,"agent_dir":2,"action":"pickup","phase":"GOTO_KEY","carrying":"","subgoals":1},{"step":4,"agent_col":2,"agent_row":3,"agent_dir":2,"action":"right","phase":"GOTO_LOCKED_DOOR","carrying":"purple key","subgoals":2},{"step":5,"agent_col":2,"agent_row":3,"agent_dir":3,"action":"right","phase":"GOTO_LOCKED_DOOR","carrying":"purple key","subgoals":2},{"step":6,"agent_col":2,"agent_row":3,"agent_dir":0,"action":"forward","phase":"GOTO_LOCKED_DOOR","carrying":"purple key","subgoals":2},{"step":7,"agent_col":3,"agent_row":3,"agent_dir":0,"action":"toggle","phase":"GOTO_LOCKED_DOOR","carrying":"purple key","subgoals":3},{"step":8,"agent_col":3,"agent_row":3,"agent_dir":0,"action":"forward","phase":"GOTO_GOAL","carrying":"purple key","subgoals":3},{"step":9,"agent_col":4,"agent_row":3,"agent_dir":0,"action":"right","phase":"DROP_KEY","carrying":"purple key","subgoals":4},{"step":10,"agent_col":4,"agent_row":3,"agent_dir":1,"action":"right","phase":"DROP_KEY","carrying":"purple key","subgoals":4},{"step":11,"agent_col":4,"agent_row":3,"agent_dir":2,"action":"drop","phase":"DROP_KEY","carrying":"purple key","subgoals":5},{"step":12,"agent_col":4,"agent_row":3,"agent_dir":2,"action":"right","phase":"GOTO_GOAL","carrying":"","subgoals":5},{"step":13,"agent_col":4,"agent_row":3,"agent_dir":3,"action":"right","phase":"GOTO_GOAL","carrying":"","subgoals":5},{"step":14,"agent_col":4,"agent_row":3,"agent_dir":0,"action":"pickup","phase":"GOTO_GOAL","carrying":"","subgoals":6},{"step":15,"agent_col":4,"agent_row":3,"agent_dir":0,"action":"done","phase":"DONE","carrying":"","subgoals":6,"reward":0.95}],"success":true,"total_steps":16,"subgoals_completed":6,"completed_names":["PICKUP_KEY","GOTO_KEY","OPEN_DOOR","GOTO_GOAL","DROP_KEY","PICKUP_GOAL"]},{"env":"BabyAI-KeyCorridorS3R3-v0","seed":8,"mission":"pick up the ball","grid_width":7,"grid_height":7,"grid":[[{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"door","color":"grey","locked":false,"open":false},{"type":"empty","color":""},{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"door","color":"green","locked":false,"open":false},{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"wall","color":"grey"},{"type":"door","color":"green","locked":false,"open":false},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"key","color":"green"},{"type":"door","color":"blue","locked":false,"open":true},{"type":"empty","color":""},{"type":"door","color":"red","locked":false,"open":true},{"type":"empty","color":""},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"door","color":"yellow","locked":false,"open":false},{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"empty","color":""},{"type":"door","color":"grey","locked":false,"open":false},{"type":"empty","color":""},{"type":"door","color":"green","locked":false,"open":true},{"type":"ball","color":"green"},{"type":"wall","color":"grey"}],[{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"},{"type":"wall","color":"grey"}]],"frames":[{"step":0,"agent_col":3,"agent_row":3,"agent_dir":3,"action":"left","phase":"EXPLORE","carrying":"","subgoals":0},{"step":1,"agent_col":3,"agent_row":3,"agent_dir":2,"action":"toggle","phase":"EXPLORE","carrying":"","subgoals":0},{"step":2,"agent_col":3,"agent_row":3,"agent_dir":2,"action":"left","phase":"EXPLORE","carrying":"","subgoals":0},{"step":3,"agent_col":3,"agent_row":3,"agent_dir":1,"action":"right","phase":"GOTO_KEY","carrying":"","subgoals":0},{"step":4,"agent_col":3,"agent_row":3,"agent_dir":2,"action":"forward","phase":"GOTO_KEY","carrying":"","subgoals":0},{"step":5,"agent_col":2,"agent_row":3,"agent_dir":2,"action":"pickup","phase":"GOTO_KEY","carrying":"","subgoals":1},{"step":6,"agent_col":2,"agent_row":3,"agent_dir":2,"action":"right","phase":"GOTO_LOCKED_DOOR","carrying":"green key","subgoals":2},{"step":7,"agent_col":2,"agent_row":3,"agent_dir":3,"action":"right","phase":"GOTO_LOCKED_DOOR","carrying":"green key","subgoals":2},{"step":8,"agent_col":2,"agent_row":3,"agent_dir":0,"action":"forward","phase":"GOTO_LOCKED_DOOR","carrying":"green key","subgoals":2},{"step":9,"agent_col":3,"agent_row":3,"agent_dir":0,"action":"toggle","phase":"GOTO_LOCKED_DOOR","carrying":"green key","subgoals":2},{"step":10,"agent_col":3,"agent_row":3,"agent_dir":0,"action":"right","phase":"GOTO_LOCKED_DOOR","carrying":"green key","subgoals":2},{"step":11,"agent_col":3,"agent_row":3,"agent_dir":1,"action":"forward","phase":"GOTO_LOCKED_DOOR","carrying":"green key","subgoals":2},{"step":12,"agent_col":3,"agent_row":4,"agent_dir":1,"action":"forward","phase":"GOTO_LOCKED_DOOR","carrying":"green key","subgoals":2},{"step":13,"agent_col":3,"agent_row":5,"agent_dir":1,"action":"left","phase":"GOTO_LOCKED_DOOR","carrying":"green key","subgoals":2},{"step":14,"agent_col":3,"agent_row":5,"agent_dir":0,"action":"toggle","phase":"GOTO_LOCKED_DOOR","carrying":"green key","subgoals":3},{"step":15,"agent_col":3,"agent_row":5,"agent_dir":0,"action":"forward","phase":"GOTO_GOAL","carrying":"green key","subgoals":3},{"step":16,"agent_col":4,"agent_row":5,"agent_dir":0,"action":"right","phase":"DROP_KEY","carrying":"green key","subgoals":4},{"step":17,"agent_col":4,"agent_row":5,"agent_dir":1,"action":"right","phase":"DROP_KEY","carrying":"green key","subgoals":4},{"step":18,"agent_col":4,"agent_row":5,"agent_dir":2,"action":"drop","phase":"DROP_KEY","carrying":"green key","subgoals":5},{"step":19,"agent_col":4,"agent_row":5,"agent_dir":2,"action":"right","phase":"GOTO_GOAL","carrying":"","subgoals":5},{"step":20,"agent_col":4,"agent_row":5,"agent_dir":3,"action":"right","phase":"GOTO_GOAL","carrying":"","subgoals":5},{"step":21,"agent_col":4,"agent_row":5,"agent_dir":0,"action":"pickup","phase":"GOTO_GOAL","carrying":"","subgoals":6},{"step":22,"agent_col":4,"agent_row":5,"agent_dir":0,"action":"done","phase":"DONE","carrying":"","subgoals":6,"reward":0.9266666666666666}],"success":true,"total_steps":23,"subgoals_completed":6,"completed_names":["PICKUP_KEY","GOTO_KEY","OPEN_DOOR","GOTO_GOAL","DROP_KEY","PICKUP_GOAL"]}];
+
+// ---- Color maps ----
+const OBJ_COLORS = {
+  red: '#ef4444', green: '#22c55e', blue: '#3b82f6',
+  purple: '#a855f7', yellow: '#eab308', grey: '#9ca3af'
+};
+
+// Subgoal chain definition (ordered)
+const SUBGOAL_CHAIN = [
+  { key: 'EXPLORE',          label: 'Разведка',   color: '#475569' },
+  { key: 'GOTO_KEY',         label: 'К ключу',    color: '#b45309' },
+  { key: 'PICKUP_KEY',       label: 'Ключ взят',  color: '#d97706' },
+  { key: 'GOTO_LOCKED_DOOR', label: 'К двери',    color: '#ea580c' },
+  { key: 'OPEN_DOOR',        label: 'Открыть',    color: '#dc2626' },
+  { key: 'DROP_KEY',         label: 'Бросить',    color: '#9333ea' },
+  { key: 'PICKUP_GOAL',      label: 'Цель взята', color: '#059669' }
+];
+
+// Phase display names
+const PHASE_RU = {
+  EXPLORE:          'Разведка',
+  GOTO_KEY:         'К ключу',
+  PICKUP_KEY:       'Подбор ключа',
+  GOTO_LOCKED_DOOR: 'К запертой двери',
+  OPEN_DOOR:        'Открыть дверь',
+  DROP_KEY:         'Бросить ключ',
+  GOTO_GOAL:        'К цели',
+  PICKUP_GOAL:      'Подбор цели',
+  DONE:             'Готово'
+};
+
+const ACTION_RU = {
+  forward: 'вперёд',
+  left:    'влево',
+  right:   'вправо',
+  pickup:  'подобрать',
+  drop:    'положить',
+  toggle:  'переключить',
+  done:    'завершить'
+};
+
+// Phases that count as "past" each subgoal in the chain
+const PHASE_ORDER = [
+  'EXPLORE', 'GOTO_KEY', 'PICKUP_KEY',
+  'GOTO_LOCKED_DOOR', 'OPEN_DOOR', 'DROP_KEY',
+  'GOTO_GOAL', 'PICKUP_GOAL', 'DONE'
+];
+
+// ---- State ----
+let curEp = 0, curFrame = 0, playing = false, timer = null, speed = 600;
+
+// ---- Episode selector buttons ----
+function buildEpButtons() {
+  const cont = document.getElementById('epButtons');
+  cont.innerHTML = '';
+  EPISODES.forEach((ep, i) => {
+    const b = document.createElement('button');
+    b.id = 'ep' + i;
+    const env = ep.env.replace('BabyAI-', '').replace('-v0', '');
+    b.textContent = 'Эпизод ' + (i + 1) + ' (seed=' + ep.seed + ')';
+    if (i === 0) b.classList.add('active');
+    b.onclick = () => switchEp(i);
+    cont.appendChild(b);
+  });
+}
+
+function switchEp(idx) {
+  stopPlay();
+  curEp = idx;
+  curFrame = 0;
+  document.querySelectorAll('.ep-buttons button').forEach((b, i) => {
+    b.classList.toggle('active', i === idx);
+  });
+  draw();
+  updateInfo();
+}
+
+// ---- Playback controls ----
+function togglePlay() {
+  if (playing) stopPlay();
+  else startPlay();
+}
+
+function startPlay() {
+  const ep = EPISODES[curEp];
+  if (curFrame >= ep.frames.length - 1) { curFrame = 0; }
+  playing = true;
+  document.getElementById('btnPlay').textContent = 'Пауза';
+  timer = setInterval(() => {
+    const ep2 = EPISODES[curEp];
+    if (curFrame < ep2.frames.length - 1) {
+      curFrame++;
+      draw();
+      updateInfo();
+    } else {
+      stopPlay();
+      // Flash on success
+      if (ep2.success) {
+        const cv = document.getElementById('gridCanvas');
+        cv.classList.add('success-flash');
+        setTimeout(() => cv.classList.remove('success-flash'), 1200);
+      }
+    }
+  }, speed);
+}
+
+function stopPlay() {
+  playing = false;
+  clearInterval(timer);
+  timer = null;
+  document.getElementById('btnPlay').textContent = 'Запустить';
+}
+
+function stepForward() {
+  stopPlay();
+  const ep = EPISODES[curEp];
+  if (curFrame < ep.frames.length - 1) {
+    curFrame++;
+    draw();
+    updateInfo();
+  }
+}
+
+function resetEpisode() {
+  stopPlay();
+  curFrame = 0;
+  draw();
+  updateInfo();
+}
+
+function setSpeed(ms, btnId) {
+  speed = ms;
+  ['spd05','spd1','spd2','spd5'].forEach(id => {
+    document.getElementById(id).classList.toggle('active', id === btnId);
+  });
+  if (playing) { stopPlay(); startPlay(); }
+}
+
+// ---- Grid state resolution ----
+function getGridState(epIdx, frameIdx) {
+  const ep = EPISODES[epIdx];
+  const W = ep.grid_width, H = ep.grid_height;
+  // Deep-copy initial grid cells
+  const cells = {};
+  for (let row = 0; row < H; row++) {
+    for (let col = 0; col < W; col++) {
+      const c = ep.grid[row][col];
+      cells[col + ',' + row] = c ? Object.assign({}, c) : null;
+    }
+  }
+
+  // Apply mutations up to frameIdx
+  let pickedUpObj = null;
+  for (let fi = 0; fi <= frameIdx && fi < ep.frames.length; fi++) {
+    const f = ep.frames[fi];
+    if (f.action === 'pickup') {
+      const [fc, fr] = frontCellOf(f.agent_col, f.agent_row, f.agent_dir);
+      const key = fc + ',' + fr;
+      pickedUpObj = cells[key];
+      cells[key] = null;
+    }
+    if (f.action === 'drop' && pickedUpObj) {
+      const [fc, fr] = frontCellOf(f.agent_col, f.agent_row, f.agent_dir);
+      const key = fc + ',' + fr;
+      cells[key] = pickedUpObj;
+      pickedUpObj = null;
+    }
+    if (f.action === 'toggle') {
+      const [fc, fr] = frontCellOf(f.agent_col, f.agent_row, f.agent_dir);
+      const key = fc + ',' + fr;
+      if (cells[key] && cells[key].type === 'door') {
+        cells[key] = Object.assign({}, cells[key], { open: true, locked: false });
+      }
+    }
+  }
+  return { cells, W, H };
+}
+
+function frontCellOf(col, row, dir) {
+  // dir: 0=right, 1=down, 2=left, 3=up
+  const dc = [1, 0, -1, 0];
+  const dr = [0, 1, 0, -1];
+  return [col + dc[dir], row + dr[dir]];
+}
+
+// ---- Drawing ----
+const CELL = 50;
+
+function draw() {
+  const ep = EPISODES[curEp];
+  const W = ep.grid_width, H = ep.grid_height;
+  const cv = document.getElementById('gridCanvas');
+  cv.width = W * CELL;
+  cv.height = H * CELL;
+  const ctx = cv.getContext('2d');
+
+  const fi = Math.min(curFrame, ep.frames.length - 1);
+  const frame = ep.frames[fi];
+  const { cells } = getGridState(curEp, fi);
+
+  // Find goal object (ball) position in initial grid
+  let goalPos = null;
+  for (let row = 0; row < H && !goalPos; row++) {
+    for (let col = 0; col < W && !goalPos; col++) {
+      const c = ep.grid[row][col];
+      if (c && c.type === 'ball') goalPos = { col, row };
+    }
+  }
+
+  // --- Draw cells ---
+  for (let row = 0; row < H; row++) {
+    for (let col = 0; col < W; col++) {
+      const x = col * CELL, y = row * CELL;
+      const key = col + ',' + row;
+      const cellObj = cells[key];
+      const type = cellObj ? cellObj.type : null;
+
+      if (type === 'wall') {
+        ctx.fillStyle = '#666666';
+        ctx.fillRect(x, y, CELL, CELL);
+      } else {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(x, y, CELL, CELL);
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+      }
+
+      if (!cellObj || type === 'wall') continue;
+
+      const objColor = OBJ_COLORS[cellObj.color] || '#9ca3af';
+
+      if (type === 'door') {
+        drawDoor(ctx, x, y, CELL, objColor, cellObj.open, cellObj.locked);
+      } else if (type === 'key') {
+        drawKey(ctx, x, y, CELL, objColor);
+      } else if (type === 'ball') {
+        drawBall(ctx, x, y, CELL, objColor);
+      } else if (type === 'box') {
+        drawBox(ctx, x, y, CELL, objColor);
+      }
+    }
+  }
+
+  // --- Agent trail ---
+  ctx.fillStyle = 'rgba(255,68,68,0.10)';
+  for (let i = 1; i < fi; i++) {
+    const f = ep.frames[i];
+    ctx.fillRect(f.agent_col * CELL + 3, f.agent_row * CELL + 3, CELL - 6, CELL - 6);
+  }
+
+  // --- Highlight goal ---
+  if (goalPos && frame.phase !== 'DONE') {
+    const px = goalPos.col * CELL, py = goalPos.row * CELL;
+    ctx.strokeStyle = '#34d399';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(px + 2, py + 2, CELL - 4, CELL - 4);
+  }
+
+  // --- Agent ---
+  drawAgent(ctx, frame.agent_col * CELL, frame.agent_row * CELL, CELL, frame.agent_dir);
+
+  // --- Carrying indicator on agent ---
+  if (frame.carrying) {
+    const ax = frame.agent_col * CELL, ay = frame.agent_row * CELL;
+    ctx.fillStyle = 'rgba(255,215,0,0.7)';
+    ctx.beginPath();
+    ctx.arc(ax + CELL - 8, ay + 8, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawAgent(ctx, x, y, cell, dir) {
+  const cx = x + cell / 2, cy = y + cell / 2;
+  const r = cell * 0.35;
+  // Rotate based on direction: 0=right(90deg), 1=down(180), 2=left(270), 3=up(0)
+  const angle = (dir * Math.PI / 2) - Math.PI / 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle + Math.PI / 2);
+  ctx.beginPath();
+  ctx.moveTo(0, -r);
+  ctx.lineTo(r * 0.6, r * 0.7);
+  ctx.lineTo(-r * 0.6, r * 0.7);
+  ctx.closePath();
+  ctx.fillStyle = '#ff4444';
+  ctx.fill();
+  ctx.strokeStyle = '#ff8888';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawDoor(ctx, x, y, cell, color, open, locked) {
+  const pad = 4;
+  if (open) {
+    // Open door: dashed thin frame
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 3]);
+    ctx.globalAlpha = 0.5;
+    ctx.strokeRect(x + pad, y + pad, cell - pad * 2, cell - pad * 2);
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  } else if (locked) {
+    // Locked door: dark red fill + lock symbol
+    ctx.fillStyle = '#8B0000';
+    ctx.fillRect(x + pad, y + pad, cell - pad * 2, cell - pad * 2);
+    ctx.strokeStyle = '#cc0000';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x + pad, y + pad, cell - pad * 2, cell - pad * 2);
+    // Lock icon
+    ctx.fillStyle = '#ffaaaa';
+    ctx.font = Math.floor(cell * 0.4) + 'px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('\uD83D\uDD12', x + cell / 2, y + cell / 2);
+  } else {
+    // Closed door: solid brown
+    ctx.fillStyle = color || '#8B4513';
+    ctx.fillRect(x + pad, y + pad, cell - pad * 2, cell - pad * 2);
+    ctx.strokeStyle = '#5a2d0c';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x + pad, y + pad, cell - pad * 2, cell - pad * 2);
+    // Door knob
+    const kx = x + cell * 0.65, ky = y + cell * 0.5;
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.arc(kx, ky, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawKey(ctx, x, y, cell, color) {
+  const cx = x + cell / 2, cy = y + cell / 2;
+  // Draw star shape for key
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 0.5;
+  const r1 = cell * 0.28, r2 = cell * 0.12;
+  const pts = 5;
+  ctx.beginPath();
+  for (let i = 0; i < pts * 2; i++) {
+    const angle = (i * Math.PI / pts) - Math.PI / 2;
+    const r = (i % 2 === 0) ? r1 : r2;
+    const px = cx + Math.cos(angle) * r;
+    const py2 = cy + Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(px, py2);
+    else ctx.lineTo(px, py2);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+}
+
+function drawBall(ctx, x, y, cell, color) {
+  const cx = x + cell / 2, cy = y + cell / 2;
+  const r = cell * 0.3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // Shine
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.25, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.fill();
+}
+
+function drawBox(ctx, x, y, cell, color) {
+  const pad = 7;
+  ctx.fillStyle = color;
+  ctx.fillRect(x + pad, y + pad, cell - pad * 2, cell - pad * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + pad, y + pad, cell - pad * 2, cell - pad * 2);
+}
+
+// ---- Info panel update ----
+function updateInfo() {
+  const ep = EPISODES[curEp];
+  const fi = Math.min(curFrame, ep.frames.length - 1);
+  const frame = ep.frames[fi];
+
+  document.getElementById('infoMission').textContent = ep.mission;
+  document.getElementById('infoStep').textContent = fi + ' / ' + (ep.frames.length - 1);
+
+  // Phase badge
+  const phase = frame.phase || 'EXPLORE';
+  const phaseRu = PHASE_RU[phase] || phase;
+  const phaseEl = document.getElementById('infoPhase');
+  phaseEl.innerHTML = '<span class="phase-badge phase-' + phase + '">' + phaseRu + '</span>';
+
+  // Action
+  const actRu = ACTION_RU[frame.action] || frame.action || '—';
+  document.getElementById('infoAction').textContent = actRu;
+
+  // Carrying
+  const carrying = frame.carrying || '';
+  document.getElementById('infoCarrying').textContent = carrying || 'ничего';
+
+  // Subgoals
+  const sg = frame.subgoals || 0;
+  document.getElementById('infoSubgoals').textContent = sg + ' / 6';
+
+  // Subgoal bar
+  updateSubgoalBar(phase, sg);
+}
+
+function updateSubgoalBar(phase, completedCount) {
+  const bar = document.getElementById('subgoalBar');
+  bar.innerHTML = '';
+
+  const phaseIdx = PHASE_ORDER.indexOf(phase);
+
+  SUBGOAL_CHAIN.forEach((sg, i) => {
+    const seg = document.createElement('div');
+    seg.className = 'subgoal-seg';
+    seg.title = sg.label;
+
+    // A subgoal is "done" if we've passed beyond it in the phase order
+    const sgPhaseIdx = PHASE_ORDER.indexOf(sg.key);
+    const isDone = phaseIdx > sgPhaseIdx || (phase === 'DONE');
+
+    seg.style.background = sg.color;
+    seg.classList.add(isDone ? 'done' : 'pending');
+    seg.textContent = i + 1;
+    bar.appendChild(seg);
+  });
+}
+
+// ---- Init ----
+buildEpButtons();
+draw();
+updateInfo();
+</script>
+</body>
+</html>
