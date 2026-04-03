@@ -18,8 +18,12 @@ from dataclasses import dataclass, field
 
 import torch
 
+from typing import TYPE_CHECKING
+
 from snks.agent.vsa_world_model import SDMMemory, VSACodebook
-from snks.agent.cls_world_model import Rule, make_situation_key
+
+if TYPE_CHECKING:
+    from snks.agent.cls_world_model import Rule
 
 
 # Well-known category names (auto-discovered, named for readability)
