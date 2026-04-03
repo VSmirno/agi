@@ -190,7 +190,9 @@ class FrontierExplorer:
             return None
 
         obs = spatial_map.to_obs()
-        walls = self._pathfinder.extract_walls(obs, allow_door=True)
+        walls = self._pathfinder.extract_walls(
+            obs, allow_door=True, allow_objects=True
+        )
         h, w = spatial_map.height, spatial_map.width
 
         queue = deque([(agent_row, agent_col)])
