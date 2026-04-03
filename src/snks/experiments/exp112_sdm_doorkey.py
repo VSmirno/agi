@@ -21,7 +21,9 @@ import torch
 
 from snks.agent.sdm_doorkey_agent import SDMDoorKeyAgent, SDMDoorKeyEnv
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# ROCm 6.1 ↔ GPU arch mismatch on minipc — force CPU until fixed
+# TODO: re-enable after ROCm/PyTorch update
+DEVICE = torch.device("cpu")
 
 
 def run_episode(agent: SDMDoorKeyAgent, seed: int,
@@ -66,7 +68,7 @@ def run_experiment(explore_episodes: int = 50, eval_seeds: int = 200,
 
     agent = SDMDoorKeyAgent(
         grid_width=5, grid_height=5,
-        dim=512, n_locations=5000,
+        dim=256, n_locations=1000,
         explore_episodes=explore_episodes,
         epsilon=0.15,
         device=DEVICE,
