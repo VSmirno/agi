@@ -140,28 +140,22 @@ class AbstractionEngine:
         if action == "toggle" and obj_state in ("locked", "closed", "open"):
             action_key = f"toggle_{obj_state}"
 
-        # First: check known categories
+        # Known categories: direct lookup (no SDM noise)
         for cat in self.categories.values():
             if cat.action != action_key:
                 continue
             if obj_type in cat.members:
-                key_vec = self._encode_abstract_key(cat.name, action)
-                result_vec, conf = self.sdm.read_next(key_vec, self._zeros)
-                if conf > 0.01:
-                    outcome = self._decode_outcome(result_vec)
-                    return outcome, conf
+                return cat.outcome, 1.0
 
-        # Object not in any known category — try SDM generalization
+        # Unknown object: SDM generalization
         for cat in self.categories.values():
             if cat.action != action_key:
                 continue
-            # Check SDM similarity: does this object behave like members?
-            key_vec = self._encode_abstract_key(cat.name, action)
-            reward = self.sdm.read_reward(key_vec, self._zeros)
-            if reward > 0:
-                result_vec, conf = self.sdm.read_next(key_vec, self._zeros)
-                if conf > 0.01:
-                    return self._decode_outcome(result_vec), conf
+            key_vec = self._encode_abstract_key(cat.name, action_key)
+            result_vec, conf = self.sdm.read_next(key_vec, self._zeros)
+            if conf > 0.01:
+                outcome = self._decode_outcome(result_vec)
+                return outcome, conf
 
         return "unknown", 0.0
 
