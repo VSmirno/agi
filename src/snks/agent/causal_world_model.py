@@ -196,8 +196,10 @@ class CausalWorldModel:
             # What color key is needed to open a door of color=param?
             # Iterate candidate colors, find which gives positive reward
             candidates = self._get_known_colors()
-            if not candidates:
-                candidates = [param]  # fallback
+            # Always include the query color itself — identity generalization
+            # means unseen colors work via bind(X,X)=zero even if X wasn't in training
+            if param not in candidates:
+                candidates.append(param)
             best_color = None
             best_reward = -float("inf")
             for color in candidates:
