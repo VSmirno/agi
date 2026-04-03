@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Этап 61: Demo-Guided Agent</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0e17; color: #e2e8f0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh; padding: 20px;
+}
+h1 { color: #60a5fa; font-size: 1.8em; margin-bottom: 4px; }
+h2 { color: #60a5fa; font-size: 1.2em; margin: 16px 0 8px; }
+.subtitle { color: #94a3b8; font-size: 0.95em; margin-bottom: 16px; }
+.container { max-width: 1200px; margin: 0 auto; }
+.panel {
+  background: #111827; border: 1px solid #1e293b;
+  border-radius: 8px; padding: 16px; margin-bottom: 16px;
+}
+.row { display: flex; gap: 20px; flex-wrap: wrap; }
+.col { flex: 1; min-width: 300px; }
+canvas { border: 2px solid #334155; border-radius: 4px; display: block; background: #0f172a; }
+.controls {
+  display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; align-items: center;
+}
+.controls button {
+  background: #1e293b; color: #60a5fa; border: 1px solid #334155;
+  padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.9em;
+}
+.controls button:hover { background: #334155; }
+.controls button.active { background: #1e40af; border-color: #60a5fa; }
+.gate-table { width: 100%; border-collapse: collapse; font-size: 0.9em; margin: 8px 0; }
+.gate-table th { text-align: left; color: #94a3b8; padding: 6px 8px; border-bottom: 1px solid #334155; }
+.gate-table td { padding: 6px 8px; border-bottom: 1px solid #1e293b; }
+.pass { color: #34d399; font-weight: 700; }
+.fail { color: #f87171; font-weight: 700; }
+.explain {
+  background: #0f172a; border-left: 3px solid #60a5fa;
+  padding: 12px 16px; margin: 12px 0; font-size: 0.9em; line-height: 1.6;
+}
+.phase-badge {
+  display: inline-block; padding: 3px 10px; border-radius: 12px;
+  font-size: 0.8em; font-weight: 600; margin: 2px;
+}
+.phase-explore { background: #1a1200; color: #fbbf24; }
+.phase-plan    { background: #001a2a; color: #38bdf8; }
+.phase-execute { background: #002a10; color: #34d399; }
+.log {
+  background: #0a0e17; border: 1px solid #1e293b; border-radius: 4px;
+  padding: 10px; max-height: 280px; overflow-y: auto; font-family: monospace;
+  font-size: 0.82em; line-height: 1.6;
+}
+.subgoal-list { list-style: none; padding: 0; }
+.subgoal-list li {
+  padding: 6px 10px; margin: 3px 0; border-radius: 4px;
+  background: #1e293b; font-size: 0.9em;
+}
+.subgoal-list li.done { background: #064e3b; color: #34d399; }
+.subgoal-list li.active { background: #1e3a5f; color: #60a5fa; border: 1px solid #60a5fa; }
+.subgoal-list li.pending { background: #1e293b; color: #64748b; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Этап 61: Demo-Guided Agent</h1>
+  <p class="subtitle">Демонстрации &rarr; Каузальная модель &rarr; Backward chaining план &rarr; BFS навигация в MiniGrid</p>
+
+  <div class="row">
+    <div class="col" style="flex: 0 0 520px;">
+      <div class="panel">
+        <h2>Агент в среде DoorKey-8x8</h2>
+        <canvas id="gridCanvas" width="480" height="480"></canvas>
+        <div class="controls">
+          <button id="btnRun" onclick="startDemo()">Запустить</button>
+          <button onclick="resetDemo()">Сброс</button>
+          <button onclick="nextStep()">Шаг</button>
+          <span style="color:#94a3b8; font-size:0.85em; margin-left:8px;" id="stepInfo"></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Результаты Gate-тестов (exp116)</h2>
+        <table class="gate-table">
+          <tr><th>Phase</th><th>Среда</th><th>Результат</th><th>Gate</th><th>Статус</th></tr>
+          <tr>
+            <td>116a</td><td>DoorKey-8x8</td>
+            <td id="gate_a_val">—</td><td>&ge;95%</td>
+            <td id="gate_a_status">ожидание</td>
+          </tr>
+          <tr>
+            <td>116b</td><td>LockedRoom</td>
+            <td id="gate_b_val">—</td><td>&ge;80%</td>
+            <td id="gate_b_status">ожидание</td>
+          </tr>
+          <tr>
+            <td>116c</td><td>Ablation (delta)</td>
+            <td id="gate_c_val">—</td><td>&ge;40%</td>
+            <td id="gate_c_status">ожидание</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="panel">
+        <h2>Каузальный план</h2>
+        <div class="explain">
+          <strong>Backward chaining:</strong> цель &rarr; pass_locked_door &rarr;
+          open_door (нужен ключ) &rarr; pickup_key (нужна смежность) &rarr; find_key (explore)
+        </div>
+        <ul class="subgoal-list" id="subgoalList">
+          <li class="pending" id="sg0">1. find_key — найти ключ нужного цвета</li>
+          <li class="pending" id="sg1">2. pickup_key — подойти и поднять</li>
+          <li class="pending" id="sg2">3. open_door — подойти к двери и открыть</li>
+          <li class="pending" id="sg3">4. pass_through — дойти до цели</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h2>Фазы агента</h2>
+        <span class="phase-badge phase-explore">EXPLORE</span>
+        <span class="phase-badge phase-plan">PLAN</span>
+        <span class="phase-badge phase-execute">EXECUTE</span>
+        <div style="margin-top: 8px; font-size: 0.88em; color: #94a3b8;">
+          <strong>EXPLORE:</strong> FrontierExplorer + SpatialMap — обнаружение layout<br>
+          <strong>PLAN:</strong> CausalWorldModel.query_chain() — backward chaining subgoals<br>
+          <strong>EXECUTE:</strong> BFS навигация + precondition checks
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Лог действий</h2>
+        <div class="log" id="actionLog"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Архитектура</h2>
+        <div class="explain">
+          <strong>DemoGuidedAgent</strong> объединяет:<br>
+          &bull; <strong>CausalWorldModel</strong> (Stage 60) — 5 правил из демонстраций<br>
+          &bull; <strong>SpatialMap</strong> (Stage 54) — аккумуляция partial observations<br>
+          &bull; <strong>FrontierExplorer</strong> (Stage 55) — исследование неизвестных клеток<br>
+          &bull; <strong>GridPathfinder</strong> (Stage 47) — BFS навигация<br>
+          &bull; <strong>CausalPlanner</strong> (NEW) — backward chaining &rarr; subgoals<br>
+          &bull; <strong>SubgoalExecutor</strong> (NEW) — стейт-машина EXPLORE&rarr;NAVIGATE&rarr;INTERACT
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const W = 8, H = 8, CELL = 58;
+const canvas = document.getElementById('gridCanvas');
+const ctx = canvas.getContext('2d');
+const log = document.getElementById('actionLog');
+
+const COLORS = {
+  wall: '#334155', empty: '#1e293b', door_locked: '#f59e0b',
+  door_open: '#65a30d', key: '#f59e0b', goal: '#22d3ee',
+  agent: '#60a5fa', explored: '#1a2332', unexplored: '#0a0e17',
+};
+
+// Simulated grid state
+let grid = [];
+let agent = { r: 1, c: 1, dir: 0, hasKey: false };
+let doorOpen = false;
+let step = 0;
+let phase = 'explore';
+let currentSg = 0;
+let running = false;
+let animId = null;
+
+// Key and door positions (fixed for demo)
+const KEY_POS = { r: 2, c: 2, color: '#ef4444' };
+const DOOR_POS = { r: 1, c: 4, color: '#ef4444' };
+const GOAL_POS = { r: 3, c: 6 };
+
+function initGrid() {
+  grid = [];
+  for (let r = 0; r < H; r++) {
+    grid[r] = [];
+    for (let c = 0; c < W; c++) {
+      if (r === 0 || r === H-1 || c === 0 || c === W-1) grid[r][c] = 'wall';
+      else grid[r][c] = 'empty';
+    }
+  }
+  // Add vertical wall with door
+  for (let r = 1; r < H-1; r++) {
+    if (r !== DOOR_POS.r) grid[r][4] = 'wall';
+  }
+  grid[DOOR_POS.r][DOOR_POS.c] = 'door_locked';
+  grid[KEY_POS.r][KEY_POS.c] = 'key';
+  grid[GOAL_POS.r][GOAL_POS.c] = 'goal';
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (let r = 0; r < H; r++) {
+    for (let c = 0; c < W; c++) {
+      const x = c * CELL + 4, y = r * CELL + 4;
+      const cell = grid[r][c];
+
+      ctx.fillStyle = cell === 'wall' ? COLORS.wall :
+                      cell === 'door_locked' ? '#422006' :
+                      cell === 'door_open' ? '#14532d' :
+                      COLORS.empty;
+      ctx.fillRect(x, y, CELL-2, CELL-2);
+
+      if (cell === 'key') {
+        ctx.fillStyle = KEY_POS.color;
+        ctx.beginPath();
+        ctx.arc(x + CELL/2, y + CELL/2, 12, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = '#0a0e17';
+        ctx.font = 'bold 16px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('K', x + CELL/2, y + CELL/2 + 5);
+      }
+      if (cell === 'door_locked') {
+        ctx.fillStyle = DOOR_POS.color;
+        ctx.fillRect(x + 8, y + 4, CELL-18, CELL-10);
+        ctx.fillStyle = '#0a0e17';
+        ctx.font = 'bold 14px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('D', x + CELL/2, y + CELL/2 + 5);
+      }
+      if (cell === 'door_open') {
+        ctx.strokeStyle = '#65a30d';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 8, y + 4, CELL-18, CELL-10);
+      }
+      if (cell === 'goal') {
+        ctx.fillStyle = COLORS.goal;
+        ctx.beginPath();
+        const cx2 = x + CELL/2, cy2 = y + CELL/2;
+        for (let i = 0; i < 5; i++) {
+          const a = (i * 4 * Math.PI / 5) - Math.PI/2;
+          const rr = i === 0 ? 14 : 14;
+          ctx[i === 0 ? 'moveTo' : 'lineTo'](cx2 + Math.cos(a)*14, cy2 + Math.sin(a)*14);
+          const a2 = a + 2*Math.PI/5;
+          ctx.lineTo(cx2 + Math.cos(a2)*6, cy2 + Math.sin(a2)*6);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }
+
+  // Draw agent
+  const ax = agent.c * CELL + 4 + CELL/2;
+  const ay = agent.r * CELL + 4 + CELL/2;
+  ctx.fillStyle = COLORS.agent;
+  ctx.beginPath();
+  ctx.arc(ax, ay, 16, 0, Math.PI*2);
+  ctx.fill();
+  if (agent.hasKey) {
+    ctx.fillStyle = KEY_POS.color;
+    ctx.beginPath();
+    ctx.arc(ax+10, ay-10, 6, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // Direction arrow
+  const dirs = [[0,1],[1,0],[0,-1],[-1,0]];
+  const d = dirs[agent.dir];
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(ax + d[1]*14, ay + d[0]*14);
+  ctx.stroke();
+}
+
+// Demo scenario steps
+const scenario = [
+  // Explore phase
+  { r:1, c:1, dir:1, msg:'EXPLORE: начинаем исследование', sg:0 },
+  { r:2, c:1, dir:1, msg:'EXPLORE: двигаемся вниз', sg:0 },
+  { r:2, c:1, dir:0, msg:'EXPLORE: обнаружен ключ! Строим план...', sg:0, setPhase:'plan' },
+  // Plan built, now execute
+  { r:2, c:1, dir:0, msg:'PLAN: query_chain("pass_locked_door","red") → [find_key, pickup_key, open_door, pass_through]', sg:0, setPhase:'execute' },
+  { r:2, c:2, dir:0, msg:'EXECUTE: find_key done. pickup_key: подбираем красный ключ', sg:1, pickup:true },
+  { r:2, c:3, dir:0, msg:'EXECUTE: pickup_key done. open_door: навигация к двери', sg:2 },
+  { r:1, c:3, dir:3, msg:'EXECUTE: BFS к двери (1,4)', sg:2 },
+  { r:1, c:3, dir:0, msg:'EXECUTE: query_can_act("open", has_key=True) → OK, toggle', sg:2, openDoor:true },
+  { r:1, c:4, dir:0, msg:'EXECUTE: open_door done. pass_through: навигация к цели', sg:3 },
+  { r:1, c:5, dir:0, msg:'EXECUTE: BFS к цели (3,6)', sg:3 },
+  { r:2, c:5, dir:1, msg:'EXECUTE: навигация...', sg:3 },
+  { r:3, c:5, dir:0, msg:'EXECUTE: почти на месте', sg:3 },
+  { r:3, c:6, dir:0, msg:'SUCCESS! Цель достигнута за 12 шагов', sg:4 },
+];
+
+function addLog(msg) {
+  const cls = msg.includes('EXPLORE') ? 'color:#fbbf24' :
+              msg.includes('PLAN') ? 'color:#38bdf8' :
+              msg.includes('SUCCESS') ? 'color:#34d399' : 'color:#e2e8f0';
+  log.innerHTML += `<div style="${cls}">[${step}] ${msg}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function updateSubgoals(idx) {
+  for (let i = 0; i < 4; i++) {
+    const el = document.getElementById('sg'+i);
+    if (i < idx) el.className = 'done';
+    else if (i === idx && idx < 4) el.className = 'active';
+    else el.className = 'pending';
+  }
+}
+
+function nextStep() {
+  if (step >= scenario.length) return;
+  const s = scenario[step];
+  agent.r = s.r; agent.c = s.c; agent.dir = s.dir;
+  if (s.pickup) { agent.hasKey = true; grid[KEY_POS.r][KEY_POS.c] = 'empty'; }
+  if (s.openDoor) { doorOpen = true; grid[DOOR_POS.r][DOOR_POS.c] = 'door_open'; }
+  if (s.setPhase) phase = s.setPhase;
+  addLog(s.msg);
+  updateSubgoals(s.sg);
+  document.getElementById('stepInfo').textContent = `Шаг ${step+1}/${scenario.length} | Фаза: ${phase.toUpperCase()}`;
+  draw();
+  step++;
+}
+
+function startDemo() {
+  if (running) return;
+  running = true;
+  document.getElementById('btnRun').textContent = 'Идёт...';
+  function tick() {
+    if (step >= scenario.length) { running = false; document.getElementById('btnRun').textContent = 'Готово'; return; }
+    nextStep();
+    animId = setTimeout(tick, 700);
+  }
+  tick();
+}
+
+function resetDemo() {
+  running = false;
+  if (animId) clearTimeout(animId);
+  step = 0; phase = 'explore'; currentSg = 0;
+  agent = { r:1, c:1, dir:0, hasKey:false };
+  doorOpen = false;
+  log.innerHTML = '';
+  document.getElementById('stepInfo').textContent = '';
+  document.getElementById('btnRun').textContent = 'Запустить';
+  updateSubgoals(-1);
+  initGrid();
+  draw();
+}
+
+// Init
+initGrid();
+draw();
+updateSubgoals(-1);
+</script>
+</body>
+</html>

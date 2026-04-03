@@ -58,7 +58,7 @@
 | 58 | SDM Retrofit | COMPLETE ⚠️ NEGATIVE (2026-04-03) | SDM не добавляет value — heuristic=100% на DoorKey, honest ablation |
 | 59 | VSA Causal Induction | COMPLETE (2026-04-03) | **100% generalization unseen colors**, bind(X,X)=identity proof |
 | 60 | World Model via Demos | COMPLETE (2026-04-03) | **100% QA-A/B/C**, causal world model из 5 синтетических демо |
-| 61 | Demo-Guided Agent | | Agent использует world model для planning в grid среде |
+| 61 | Demo-Guided Agent | IN PROGRESS (2026-04-03) | DemoGuidedAgent: каузальное планирование + BFS навигация, 17 unit tests PASS, gates on minipc |
 | 62 | M4 Integration Test | | ≥50% BabyAI BossLevel с инструкцией |
 
 ### Architecture Pivot (Stage 59, 2026-04-03)
