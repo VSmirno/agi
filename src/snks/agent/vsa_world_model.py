@@ -173,16 +173,17 @@ class SDMMemory:
         rng = torch.Generator(device="cpu")
         rng.manual_seed(seed)
 
-        # Hard location addresses (random, fixed)
-        self.addresses = torch.randint(
+        # Generate addresses on CPU, then move to device
+        addresses_cpu = torch.randint(
             0, 2, (n_locations, dim), dtype=torch.float32, generator=rng,
-        ).to(self.device)
-        # Content counters
+        )
+        # Calibrate on CPU (avoid ROCm segfaults on pairwise ops)
+        self.addresses = addresses_cpu
+        self.activation_radius = self._calibrate_radius()
+        # Move to target device after calibration
+        self.addresses = self.addresses.to(self.device)
         self.content_next = torch.zeros(n_locations, dim, dtype=torch.float32, device=self.device)
         self.content_reward = torch.zeros(n_locations, dim, dtype=torch.float32, device=self.device)
-
-        # Calibrate activation radius
-        self.activation_radius = self._calibrate_radius()
 
     def _calibrate_radius(self) -> int:
         """Find radius so 1-5% of locations activate on random query."""
@@ -199,7 +200,7 @@ class SDMMemory:
         # Start at 0.45 * median, adjust if needed
         radius = int(median_dist * 0.45)
         for attempt in range(20):
-            query = torch.randint(0, 2, (self.dim,), dtype=torch.float32).to(self.device)
+            query = torch.randint(0, 2, (self.dim,), dtype=torch.float32)  # CPU for calibration
             n_act = self._count_activated(query, radius)
             pct = n_act / self.n_locations
             if 0.005 <= pct <= 0.15:
