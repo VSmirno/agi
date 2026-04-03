@@ -237,7 +237,11 @@ class CLSWorldModel:
 
         # Abstract generalization
         facing = situation.get("facing_obj", "empty")
-        abs_reward = self.abstraction.query_abstract_reward(facing, action)
+        obj_state = situation.get("obj_state", "none")
+        carrying = situation.get("carrying", "nothing")
+        abs_reward = self.abstraction.query_abstract_reward(
+            facing, action, obj_state, carrying
+        )
         if abs_reward != 0:
             return abs_reward
 
