@@ -20,6 +20,9 @@ from snks.agent.vsa_world_model import SDMMemory, VSACodebook
 from snks.agent.world_model_trainer import Transition
 
 
+CARRYABLE_TYPES = {"key", "ball", "box"}
+
+
 @dataclass
 class Rule:
     """A consolidated world model rule."""
@@ -235,9 +238,11 @@ class CLSWorldModel:
 
     def qa_can_pass(self, obj_type: str, obj_state: str = "none") -> bool:
         """Level 1: Can you walk through <obj_type>?"""
+        # Use a trained color — neocortex stores per-color entries
+        color = "red"
         situation = {
             "facing_obj": obj_type,
-            "obj_color": "grey",
+            "obj_color": color,
             "obj_state": obj_state,
             "carrying": "nothing",
             "carrying_color": "",
@@ -329,8 +334,11 @@ class CLSWorldModel:
 
         compound = f"sit_{facing}_{obj_state}_{carrying}_{action}"
         vec = self.codebook.filler(compound)
-        vec = VSACodebook.bind(vec, self.codebook.filler(f"ocol_{obj_color}"))
-        vec = VSACodebook.bind(vec, self.codebook.filler(f"ccol_{carry_color}"))
+        # CRITICAL: use SAME filler for obj_color and carry_color
+        # so that bind(color_X, color_X) = zero for ANY X (VSA identity)
+        # This enables generalization to unseen colors
+        vec = VSACodebook.bind(vec, self.codebook.filler(f"color_{obj_color}"))
+        vec = VSACodebook.bind(vec, self.codebook.filler(f"color_{carry_color}"))
         return vec
 
     def _encode_outcome(self, outcome: dict[str, str]) -> torch.Tensor:
