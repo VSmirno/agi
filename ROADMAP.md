@@ -1,7 +1,7 @@
 # СНКС — Roadmap v2 (Milestone-Driven)
 
 **Последнее обновление:** 2026-04-03
-**Статус:** M1 COMPLETE → M2 COMPLETE → M3 COMPLETE → M4 IN PROGRESS
+**Статус:** M1 COMPLETE → M2 COMPLETE → M3 COMPLETE → M4 IN PROGRESS (4/7)
 **Полная спецификация:** [docs/superpowers/specs/2026-04-02-roadmap-v2-design.md](docs/superpowers/specs/2026-04-02-roadmap-v2-design.md)
 
 ---
@@ -53,7 +53,7 @@
 | 54 | Partial Observability | COMPLETE (2026-04-02) | 100% DoorKey-5x5 с 7x7 view (200 seeds, mean 23.5 steps) |
 | 55 | Exploration Strategy | COMPLETE (2026-04-02) | 100% MultiRoom-N3 с partial obs (200 seeds, mean 22.1 steps) |
 | 56 | Complex Environment | COMPLETE (2026-04-03) | 99.5% PutNextS6N3, 18 object types, mean 14.8 steps |
-| 57 | Long Subgoal Chains | | ≥40% на задачах с 5+ subgoals |
+| 57 | Long Subgoal Chains | COMPLETE (2026-04-03) | 40% KeyCorridorS4R3, 54% S3R3, 5-6 subgoals |
 | 58 | SDM Scaling | | SDM capacity ≥1000 unique transitions |
 | 59 | Transfer Learning | | ≥70% new env без re-exploration |
 | 60 | M4 Integration Test | | ≥50% BabyAI BossLevel с инструкцией |
