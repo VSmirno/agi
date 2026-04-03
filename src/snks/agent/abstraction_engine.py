@@ -28,12 +28,13 @@ if TYPE_CHECKING:
 
 # Well-known category names (auto-discovered, named for readability)
 CATEGORY_NAMES = {
-    ("pickup", "picked_up"): "carryable",
-    ("pickup", "failed_carrying"): "carryable_blocked",
-    ("pickup", "nothing_to_pickup"): "not_carryable",
+    ("pickup_empty", "picked_up"): "carryable",
+    ("pickup_carrying", "failed_carrying"): "carryable_blocked",
+    ("pickup_empty", "nothing_to_pickup"): "not_carryable",
+    ("pickup_carrying", "nothing_to_pickup"): "not_carryable_carrying",
     ("toggle_closed", "door_opened"): "openable",
-    ("toggle_locked", "door_unlocked"): "unlockable",
-    ("toggle_locked", "door_still_locked"): "locked_no_key",
+    ("toggle_locked_withkey", "door_unlocked"): "unlockable_withkey",
+    ("toggle_locked_nokey", "door_still_locked"): "locked_no_key",
     ("toggle_open", "door_closed"): "closeable",
     ("toggle", "nothing_happened"): "not_toggleable",
     ("forward", "blocked"): "solid",
@@ -88,8 +89,21 @@ class AbstractionEngine:
                 continue
 
             # Include state for toggle actions (locked vs closed matters)
+            # Include carrying type for actions where it matters
+            carrying = parts[3] if len(parts) > 3 else "nothing"
+
             if action == "toggle" and obj_state in ("locked", "closed", "open"):
-                pattern_key = (f"toggle_{obj_state}", result)
+                # For locked doors, carrying key vs not matters
+                if obj_state == "locked" and carrying == "key":
+                    pattern_key = (f"toggle_locked_withkey", result)
+                elif obj_state == "locked":
+                    pattern_key = (f"toggle_locked_nokey", result)
+                else:
+                    pattern_key = (f"toggle_{obj_state}", result)
+            elif action == "pickup" and carrying != "nothing":
+                pattern_key = ("pickup_carrying", result)
+            elif action == "pickup":
+                pattern_key = ("pickup_empty", result)
             else:
                 pattern_key = (action, result)
             patterns.setdefault(pattern_key, set()).add(facing_obj)
@@ -127,18 +141,26 @@ class AbstractionEngine:
 
     def query_abstract(self, obj_type: str,
                        action: str,
-                       obj_state: str = "none") -> tuple[str, float]:
+                       obj_state: str = "none",
+                       carrying: str = "nothing") -> tuple[str, float]:
         """Query abstract SDM for predicted outcome.
 
-        Finds which category the object belongs to for this action,
-        then reads the abstract rule from SDM.
+        Finds which category the object belongs to for this action+state,
+        then returns the category's outcome.
 
         Returns (predicted_outcome, confidence).
         """
-        # Build state-sensitive action key for toggle
+        # Build context-sensitive action key
         action_key = action
-        if action == "toggle" and obj_state in ("locked", "closed", "open"):
+        if action == "toggle" and obj_state == "locked":
+            if carrying == "key":
+                action_key = "toggle_locked_withkey"
+            else:
+                action_key = "toggle_locked_nokey"
+        elif action == "toggle" and obj_state in ("closed", "open"):
             action_key = f"toggle_{obj_state}"
+        elif action == "pickup":
+            action_key = "pickup_empty" if carrying == "nothing" else "pickup_carrying"
 
         # Known categories: direct lookup (no SDM noise)
         for cat in self.categories.values():
