@@ -75,9 +75,9 @@ def run_doorkey_episode(agent: DemoGuidedAgent, size: int = 8,
 def run_lockedroom_episode(agent: DemoGuidedAgent, seed: int = 0,
                            max_steps: int = MAX_STEPS) -> dict:
     """Run one LockedRoom episode. Returns episode stats."""
-    from minigrid.envs.lockedroom import LockedRoom
+    from minigrid.envs.lockedroom import LockedRoomEnv
 
-    env = LockedRoom(max_steps=max_steps)
+    env = LockedRoomEnv(size=19, max_steps=max_steps)
     obs_dict, info = env.reset(seed=seed)
     obs = obs_dict["image"]
     pos = env.agent_pos
