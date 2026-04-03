@@ -42,6 +42,7 @@ from snks.agent.mission_model import (
     SG_PICK_UP,
     SG_PUT_NEXT_TO,
 )
+from snks.agent.nav_policy import NavigationPolicy, DIR_VECTORS, pos_to_direction
 from snks.agent.pathfinding import GridPathfinder
 from snks.agent.spatial_map import (
     FrontierExplorer,
@@ -75,8 +76,9 @@ class BossLevelAgent:
                  causal_dim: int = 512, seed: int = 42):
         self.causal_model = CausalWorldModel(dim=causal_dim, seed=seed)
         self.mission_model = MissionModel(dim=causal_dim, seed=seed + 50)
+        self.nav_policy = NavigationPolicy(dim=1024, n_locations=5000, seed=seed + 100)
         self.spatial_map = SpatialMap(grid_width, grid_height)
-        self.explorer = FrontierExplorer()
+        self.explorer = FrontierExplorer()  # fallback
         self.pathfinder = GridPathfinder()
 
         self._trained = False
@@ -114,9 +116,10 @@ class BossLevelAgent:
 
         self.causal_model.learn_all_rules(colors)
         n_learned = self.mission_model.train_from_demos(demos)
+        n_nav = self.nav_policy.train_from_demos(demos)
         self._trained = True
 
-        return {"colors": colors, "demos_learned": n_learned}
+        return {"colors": colors, "demos_learned": n_learned, "nav_points": n_nav}
 
     def reset(self, mission: str = "") -> None:
         """Reset for new episode."""
@@ -640,12 +643,12 @@ class BossLevelAgent:
 
     def _explore(self, agent_row: int, agent_col: int,
                  agent_dir: int) -> int:
-        """Explore toward nearest frontier with anti-stuck fallback.
+        """Explore using learned NavigationPolicy with frontier fallback.
 
-        Unlike Stage 61 which masked locked doors as walls, BossLevel
-        exploration goes through all doors (most are just closed, not locked).
-        When the agent hits a locked door, _check_immediate_nav handles it
-        (toggles if carrying key, otherwise anti-stuck turns away).
+        1. Query NavigationPolicy for predicted direction to target
+        2. Find nearest door/frontier in that direction
+        3. BFS navigate there
+        4. Fallback: FrontierExplorer if no prediction
         """
         current_pos = (agent_row, agent_col)
         if current_pos == self._last_pos:
@@ -658,9 +661,138 @@ class BossLevelAgent:
             self._stuck_count = 0
             return ACT_LEFT if np.random.random() > 0.5 else ACT_RIGHT
 
+        # Get current target info from plan
+        target_type, target_color = self._current_target_info()
+
+        # Query NavigationPolicy
+        explored_ratio = float(self.spatial_map.explored.sum()) / (
+            self.spatial_map.width * self.spatial_map.height
+        )
+        n_rooms = self._count_rooms_visited()
+        nearest_door_dir = self._nearest_door_direction(agent_row, agent_col)
+
+        direction, confidence = self.nav_policy.predict_direction(
+            agent_row, agent_col,
+            self.spatial_map.height, self.spatial_map.width,
+            target_type, target_color,
+            explored_ratio, n_rooms, nearest_door_dir,
+        )
+
+        if direction is not None and confidence >= self.nav_policy.confidence_threshold:
+            # Find nearest door/frontier in predicted direction
+            target = self._find_target_in_direction(
+                agent_row, agent_col, direction
+            )
+            if target is not None:
+                obs = self.spatial_map.to_obs()
+                path = self.pathfinder.find_path(
+                    obs, (agent_row, agent_col), target,
+                    allow_door=True, allow_objects=True,
+                )
+                if path and len(path) > 1:
+                    actions = self.pathfinder.path_to_actions(path, agent_dir)
+                    if actions:
+                        return actions[0]
+
+        # Fallback: FrontierExplorer
         return self.explorer.select_action(
             self.spatial_map, agent_row, agent_col, agent_dir
         )
+
+    def _current_target_info(self) -> tuple[str, str]:
+        """Get target type and color from current subgoal."""
+        if self._plan and self._current_sg_idx < len(self._plan):
+            sg = self._plan[self._current_sg_idx]
+            # Map obj_type_id back to string
+            type_map = {v: k for k, v in OBJ_NAME_TO_ID.items()}
+            obj_str = type_map.get(sg.target_obj_type, "ball")
+            color_str = COLOR_NAMES.get(sg.target_color, "") if sg.target_color is not None else ""
+            return obj_str, color_str
+        return "ball", ""
+
+    def _count_rooms_visited(self) -> int:
+        """Approximate rooms visited by counting explored quadrants."""
+        h, w = self.spatial_map.height, self.spatial_map.width
+        qh, qw = h // 4, w // 4
+        rooms = 0
+        for qr in range(4):
+            for qc in range(4):
+                r0, r1 = qr * qh, (qr + 1) * qh
+                c0, c1 = qc * qw, (qc + 1) * qw
+                if self.spatial_map.explored[r0:r1, c0:c1].any():
+                    rooms += 1
+        return rooms
+
+    def _nearest_door_direction(self, agent_row: int,
+                                agent_col: int) -> str | None:
+        """Find direction to nearest unexplored/closed door."""
+        best_dist = float("inf")
+        best_dir = None
+        for r in range(self.spatial_map.height):
+            for c in range(self.spatial_map.width):
+                if not self.spatial_map.explored[r, c]:
+                    continue
+                obj = int(self.spatial_map.grid[r, c, 0])
+                state = int(self.spatial_map.grid[r, c, 2])
+                if obj == OBJ_DOOR and state in (1, 2):  # closed or locked
+                    d = abs(r - agent_row) + abs(c - agent_col)
+                    if d < best_dist and d > 0:
+                        best_dist = d
+                        best_dir = pos_to_direction(agent_row, agent_col, r, c)
+        return best_dir
+
+    def _find_target_in_direction(self, agent_row: int, agent_col: int,
+                                  direction: str) -> tuple[int, int] | None:
+        """Find nearest door or frontier in the given direction."""
+        dr, dc = DIR_VECTORS[direction]
+
+        # Search along the direction for a door or frontier
+        best = None
+        best_score = float("inf")
+
+        # Check doors first
+        for r in range(self.spatial_map.height):
+            for c in range(self.spatial_map.width):
+                if not self.spatial_map.explored[r, c]:
+                    continue
+                obj = int(self.spatial_map.grid[r, c, 0])
+                if obj != OBJ_DOOR:
+                    continue
+
+                # Check if this door is roughly in the predicted direction
+                vr, vc = r - agent_row, c - agent_col
+                if abs(vr) + abs(vc) == 0:
+                    continue
+
+                # Dot product with direction vector (higher = more aligned)
+                dot = vr * dr + vc * dc
+                if dot <= 0:
+                    continue  # wrong direction
+
+                dist = abs(vr) + abs(vc)
+                # Score: prefer close + aligned
+                score = dist - dot * 0.5
+                if score < best_score:
+                    best_score = score
+                    best = (r, c)
+
+        if best is not None:
+            return best
+
+        # No door in direction — try frontier cells
+        frontiers = self.spatial_map.frontiers()
+        for fr, fc in frontiers:
+            vr, vc = fr - agent_row, fc - agent_col
+            dot = vr * dr + vc * dc
+            if dot <= 0:
+                continue
+            dist = abs(vr) + abs(vc)
+            score = dist - dot * 0.5
+            if score < best_score:
+                best_score = score
+                best = (fr, fc)
+
+        return best
 
     def get_stats(self) -> dict:
         """Return episode statistics."""
