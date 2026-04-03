@@ -150,6 +150,9 @@ class BossLevelAgent:
         # Check if current "open" subgoal needs a key we don't have
         self._maybe_insert_key_subgoals()
 
+        # Check if current "pick_up" subgoal needs dropping current item
+        self._maybe_insert_drop()
+
         # Execute current subgoal
         if self._plan and self._current_sg_idx < len(self._plan):
             sg = self._plan[self._current_sg_idx]
@@ -285,6 +288,25 @@ class BossLevelAgent:
         # Insert before current subgoal
         for i, ins in enumerate(inserts):
             self._plan.insert(self._current_sg_idx + i, ins)
+
+    def _maybe_insert_drop(self) -> None:
+        """If current subgoal is pick_up but agent is already carrying, insert DROP."""
+        if not self._plan or self._current_sg_idx >= len(self._plan):
+            return
+        sg = self._plan[self._current_sg_idx]
+        if sg.name != "pick_up":
+            return
+        if self._carrying is None:
+            return
+        # Already carrying something — need to drop first
+        # Don't insert if previous subgoal was already a drop
+        if (self._current_sg_idx > 0 and
+                self._plan[self._current_sg_idx - 1].name == "drop"):
+            return
+        self._plan.insert(self._current_sg_idx, ExecutableSubgoal(
+            name="drop", target_pos=(0, 0),
+            action_at_target=ACT_DROP, precondition=None,
+        ))
 
     # ── Plan building ──
 
@@ -454,6 +476,12 @@ class BossLevelAgent:
         path = self.pathfinder.find_path(
             obs, (agent_row, agent_col), (tr, tc), allow_door=True
         )
+        # Fallback: if no path avoiding objects, try through objects
+        if path is None:
+            path = self.pathfinder.find_path(
+                obs, (agent_row, agent_col), (tr, tc),
+                allow_door=True, allow_objects=True
+            )
         if path is None or len(path) <= 1:
             return self.explorer.select_action(
                 self.spatial_map, agent_row, agent_col, agent_dir
@@ -503,6 +531,11 @@ class BossLevelAgent:
             path = self.pathfinder.find_path(
                 obs, (agent_row, agent_col), (ar, ac), allow_door=True
             )
+            if path is None:
+                path = self.pathfinder.find_path(
+                    obs, (agent_row, agent_col), (ar, ac),
+                    allow_door=True, allow_objects=True
+                )
             if path is not None and len(path) < best_dist:
                 best_dist = len(path)
                 best = (ar, ac)

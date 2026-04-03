@@ -51,7 +51,8 @@ class GridPathfinder:
 
     def find_path(self, obs: np.ndarray,
                   start: tuple[int, int], goal: tuple[int, int],
-                  allow_door: bool = False) -> list[tuple[int, int]] | None:
+                  allow_door: bool = False,
+                  allow_objects: bool = False) -> list[tuple[int, int]] | None:
         """BFS shortest path from start to goal, avoiding walls.
 
         Returns list of (row, col) positions including start and goal,
@@ -60,7 +61,8 @@ class GridPathfinder:
         if start == goal:
             return [start]
 
-        walls = self.extract_walls(obs, allow_door=allow_door)
+        walls = self.extract_walls(obs, allow_door=allow_door,
+                                   allow_objects=allow_objects)
         h, w = obs.shape[0], obs.shape[1]
 
         queue: deque[tuple[int, int]] = deque([start])
