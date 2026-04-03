@@ -158,9 +158,9 @@ class SDMDoorKeyAgent:
         self._episode_count = 0
         self._exploring = True
 
-        # State tracking
+        # State tracking (subgoal level)
         self._prev_state_vsa: torch.Tensor | None = None
-        self._prev_action: int | None = None
+        self._prev_subgoal: int | None = None
         self._episode_trace: list[tuple[torch.Tensor, int]] = []
 
         # Episode-level state
@@ -171,7 +171,7 @@ class SDMDoorKeyAgent:
         """Reset per-episode state (not SDM — that persists)."""
         self.spatial_map.reset()
         self._prev_state_vsa = None
-        self._prev_action = None
+        self._prev_subgoal = None
         self._episode_trace = []
         self._has_key = False
         self._door_state = "locked"
@@ -185,23 +185,27 @@ class SDMDoorKeyAgent:
         self._has_key = has_key
         self._door_state = door_state
 
-        # Symbolic reflexes — low-level primitives
+        # Symbolic reflexes — low-level primitives (not recorded as subgoals)
         reflex = self._check_reflexes(obs_7x7, has_key)
         if reflex is not None:
-            self._record_action(agent_row, agent_col, has_key, door_state, reflex)
             return reflex
 
         # Encode abstract state via VSA
         state_vsa = self._encode_current_state(agent_row, agent_col, has_key, door_state)
 
-        # Choose action: exploration or SDM-based planning
+        # Choose subgoal: exploration heuristic or SDM-based planning
         if self._exploring:
-            action = self._explore_action(agent_row, agent_col, agent_dir)
+            subgoal = self._heuristic_subgoal()
         else:
-            action = self._plan_action(state_vsa, agent_row, agent_col, agent_dir)
+            subgoal = self._sdm_select_subgoal(state_vsa)
 
-        self._record_action(agent_row, agent_col, has_key, door_state, action)
-        return action
+        # Record subgoal-level transition in SDM
+        self._record_subgoal_transition(
+            agent_row, agent_col, has_key, door_state, subgoal
+        )
+
+        # Execute subgoal via symbolic navigation
+        return self._execute_subgoal(subgoal, agent_row, agent_col, agent_dir)
 
     def _check_reflexes(self, obs_7x7: np.ndarray, has_key: bool) -> int | None:
         """Symbolic reflexes: toggle doors, pickup keys."""
@@ -251,44 +255,151 @@ class SDMDoorKeyAgent:
             self.spatial_map, agent_row, agent_col, agent_dir
         )
 
+    # Subgoal IDs for SDM planning
+    SG_EXPLORE = 0
+    SG_GOTO_KEY = 1
+    SG_GOTO_DOOR = 2
+    SG_GOTO_GOAL = 3
+
     def _plan_action(self, state_vsa: torch.Tensor,
                      agent_row: int, agent_col: int, agent_dir: int) -> int:
-        """SDM-based planning with trace matching fallback."""
-        # Try backward chain planner (trace matching)
-        action = self.backward_planner.select(state_vsa)
+        """SDM-based subgoal planning + symbolic navigation.
 
-        # If backward planner returned random (no confident match),
-        # try SDM reward lookahead
-        # Check if SDM has confidence for this state
-        best_conf = 0.0
-        for a in range(6):
-            _, conf = self.sdm.read_next(state_vsa, self.codebook.action(a))
-            best_conf = max(best_conf, conf)
+        SDM selects WHAT to do (subgoal). FrontierExplorer/BFS handles HOW.
+        This separation lets SDM operate at the right abstraction level.
+        """
+        subgoal = self._sdm_select_subgoal(state_vsa)
+        return self._execute_subgoal(
+            subgoal, agent_row, agent_col, agent_dir
+        )
 
-        if best_conf < 0.05:
-            # SDM has no knowledge about this state — fall back to exploration
+    def _sdm_select_subgoal(self, state_vsa: torch.Tensor) -> int:
+        """Query SDM for best subgoal given current state."""
+        best_sg = self.SG_EXPLORE
+        best_score = -float("inf")
+
+        for sg in (self.SG_EXPLORE, self.SG_GOTO_KEY, self.SG_GOTO_DOOR, self.SG_GOTO_GOAL):
+            sg_vsa = self.codebook.action(sg)  # reuse action codebook for subgoals
+            reward = self.sdm.read_reward(state_vsa, sg_vsa)
+            _, conf = self.sdm.read_next(state_vsa, sg_vsa)
+            if conf >= 0.01:
+                score = reward * conf
+                if score > best_score:
+                    best_score = score
+                    best_sg = sg
+
+        # If no confidence anywhere, use heuristic fallback
+        if best_score <= 0:
+            return self._heuristic_subgoal()
+
+        return best_sg
+
+    def _heuristic_subgoal(self) -> int:
+        """Fallback when SDM has no signal: simple priority ordering."""
+        objs = self.spatial_map.find_objects()
+        if not self._has_key:
+            if objs.get("key_pos") is not None:
+                return self.SG_GOTO_KEY
+            return self.SG_EXPLORE
+        if self._door_state in ("locked", "closed"):
+            if objs.get("door_pos") is not None:
+                return self.SG_GOTO_DOOR
+            return self.SG_EXPLORE
+        if objs.get("goal_pos") is not None:
+            return self.SG_GOTO_GOAL
+        return self.SG_EXPLORE
+
+    def _execute_subgoal(self, subgoal: int,
+                         agent_row: int, agent_col: int, agent_dir: int) -> int:
+        """Navigate toward subgoal target using BFS/frontier explorer."""
+        objs = self.spatial_map.find_objects()
+
+        target_pos = None
+        if subgoal == self.SG_GOTO_KEY:
+            target_pos = objs.get("key_pos")
+        elif subgoal == self.SG_GOTO_DOOR:
+            target_pos = objs.get("door_pos")
+        elif subgoal == self.SG_GOTO_GOAL:
+            target_pos = objs.get("goal_pos")
+
+        if target_pos is None:
             return self._explore_action(agent_row, agent_col, agent_dir)
 
-        # Use SDM planner for action selection
-        return self.sdm_planner.select(state_vsa)
+        # Navigate to adjacent cell of target
+        adj = self._find_adjacent_walkable(target_pos, agent_row, agent_col)
+        if adj is None:
+            return self._explore_action(agent_row, agent_col, agent_dir)
 
-    def _record_action(self, agent_row: int, agent_col: int,
-                       has_key: bool, door_state: str, action: int) -> None:
-        """Record transition in SDM."""
+        dr = abs(agent_row - target_pos[0])
+        dc = abs(agent_col - target_pos[1])
+        if dr + dc == 1:
+            # Adjacent — turn to face target
+            return self._turn_toward(target_pos[0], target_pos[1],
+                                     agent_row, agent_col, agent_dir)
+
+        return self._navigate_to(adj[0], adj[1], agent_row, agent_col, agent_dir)
+
+    def _find_adjacent_walkable(self, pos: tuple[int, int],
+                                agent_row: int, agent_col: int) -> tuple[int, int] | None:
+        obs = self.spatial_map.to_obs()
+        # Mark objects as walls for pathfinding
+        for t in (OBJ_KEY, 6, 7):  # key, ball, box
+            mask = obs[:, :, 0] == t
+            obs[mask, 0] = OBJ_WALL
+        best = None
+        best_dist = float("inf")
+        for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+            nr, nc = pos[0] + dr, pos[1] + dc
+            if not (0 <= nr < self.spatial_map.height and 0 <= nc < self.spatial_map.width):
+                continue
+            if int(obs[nr, nc, 0]) in (OBJ_WALL,):
+                continue
+            path = self.pathfinder.find_path(obs, (agent_row, agent_col), (nr, nc), allow_door=True)
+            if path is not None and len(path) < best_dist:
+                best_dist = len(path)
+                best = (nr, nc)
+        return best
+
+    def _navigate_to(self, tr: int, tc: int,
+                     agent_row: int, agent_col: int, agent_dir: int) -> int:
+        if agent_row == tr and agent_col == tc:
+            return int(np.random.randint(0, 3))
+        obs = self.spatial_map.to_obs()
+        path = self.pathfinder.find_path(obs, (agent_row, agent_col), (tr, tc), allow_door=True)
+        if path is None or len(path) <= 1:
+            return self._explore_action(agent_row, agent_col, agent_dir)
+        actions = self.pathfinder.path_to_actions(path, agent_dir)
+        return actions[0] if actions else ACT_FORWARD
+
+    def _turn_toward(self, tr: int, tc: int,
+                     ar: int, ac: int, agent_dir: int) -> int:
+        dr, dc = tr - ar, tc - ac
+        if dc > 0: need = 0
+        elif dr > 0: need = 1
+        elif dc < 0: need = 2
+        else: need = 3
+        if need == agent_dir:
+            return ACT_FORWARD
+        diff = (need - agent_dir) % 4
+        return ACT_RIGHT if diff <= 2 else ACT_LEFT
+
+    def _record_subgoal_transition(self, agent_row: int, agent_col: int,
+                                   has_key: bool, door_state: str,
+                                   subgoal: int, reward: float = 0.0) -> None:
+        """Record subgoal-level transition in SDM.
+
+        Key insight: SDM stores (abstract_state, subgoal) → (next_abstract_state, reward).
+        This is at the subgoal level, not at the raw action level.
+        """
         state_vsa = self._encode_current_state(agent_row, agent_col, has_key, door_state)
 
-        if self._prev_state_vsa is not None and self._prev_action is not None:
-            action_vsa = self.codebook.action(self._prev_action)
-            # Write to SDM: (prev_state, prev_action) → current_state
-            self.sdm.write(self._prev_state_vsa, action_vsa, state_vsa, 0.0)
-            # Record for backward chaining
-            self.backward_planner.record_transition(
-                self._prev_state_vsa, self._prev_action, state_vsa, 0.0,
-            )
-            self._episode_trace.append((self._prev_state_vsa.clone(), self._prev_action))
+        if self._prev_state_vsa is not None and self._prev_subgoal is not None:
+            sg_vsa = self.codebook.action(self._prev_subgoal)
+            self.sdm.write(self._prev_state_vsa, sg_vsa, state_vsa, reward)
+            self._episode_trace.append((self._prev_state_vsa.clone(), self._prev_subgoal))
 
         self._prev_state_vsa = state_vsa
-        self._prev_action = action
+        self._prev_subgoal = subgoal
 
     def observe_result(self, obs_7x7: np.ndarray,
                        agent_col: int, agent_row: int, agent_dir: int,
@@ -296,13 +407,12 @@ class SDMDoorKeyAgent:
         """Update state after action execution."""
         self.spatial_map.update(obs_7x7, agent_col, agent_row, agent_dir)
 
-        # If reward received, write reward signal to SDM for last transition
-        if reward > 0 and self._prev_state_vsa is not None and self._prev_action is not None:
-            action_vsa = self.codebook.action(self._prev_action)
+        # If reward received, write amplified reward signal to SDM
+        if reward > 0 and self._prev_state_vsa is not None and self._prev_subgoal is not None:
+            sg_vsa = self.codebook.action(self._prev_subgoal)
             next_state = self._encode_current_state(agent_row, agent_col, has_key, door_state)
-            # Overwrite with reward signal
-            for _ in range(5):  # amplify reward signal
-                self.sdm.write(self._prev_state_vsa, action_vsa, next_state, reward)
+            for _ in range(10):  # amplify reward signal
+                self.sdm.write(self._prev_state_vsa, sg_vsa, next_state, reward)
 
     def _episode_done(self, success: bool) -> None:
         """Called at end of episode."""
