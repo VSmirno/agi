@@ -31,10 +31,10 @@ CATEGORY_NAMES = {
     ("pickup", "picked_up"): "carryable",
     ("pickup", "failed_carrying"): "carryable_blocked",
     ("pickup", "nothing_to_pickup"): "not_carryable",
-    ("toggle", "door_opened"): "openable",
-    ("toggle", "door_unlocked"): "unlockable",
-    ("toggle", "door_still_locked"): "locked_no_key",
-    ("toggle", "door_closed"): "closeable",
+    ("toggle_closed", "door_opened"): "openable",
+    ("toggle_locked", "door_unlocked"): "unlockable",
+    ("toggle_locked", "door_still_locked"): "locked_no_key",
+    ("toggle_open", "door_closed"): "closeable",
     ("toggle", "nothing_happened"): "not_toggleable",
     ("forward", "blocked"): "solid",
     ("forward", "moved"): "passable",
@@ -78,16 +78,20 @@ class AbstractionEngine:
         for key, rule in neocortex.items():
             # Parse situation key: "facing_color_state_carrying_carrycolor_action"
             parts = key.split("_")
-            # Find action (last part)
             action = parts[-1]
-            # Find facing object (first part)
             facing_obj = parts[0]
+            # Extract state (3rd field) for state-sensitive categories
+            obj_state = parts[2] if len(parts) > 2 else "none"
 
             result = rule.outcome.get("result", "")
             if not result:
                 continue
 
-            pattern_key = (action, result)
+            # Include state for toggle actions (locked vs closed matters)
+            if action == "toggle" and obj_state in ("locked", "closed", "open"):
+                pattern_key = (f"toggle_{obj_state}", result)
+            else:
+                pattern_key = (action, result)
             patterns.setdefault(pattern_key, set()).add(facing_obj)
 
         # Create named categories
@@ -122,7 +126,8 @@ class AbstractionEngine:
         return n_rules
 
     def query_abstract(self, obj_type: str,
-                       action: str) -> tuple[str, float]:
+                       action: str,
+                       obj_state: str = "none") -> tuple[str, float]:
         """Query abstract SDM for predicted outcome.
 
         Finds which category the object belongs to for this action,
@@ -130,9 +135,14 @@ class AbstractionEngine:
 
         Returns (predicted_outcome, confidence).
         """
+        # Build state-sensitive action key for toggle
+        action_key = action
+        if action == "toggle" and obj_state in ("locked", "closed", "open"):
+            action_key = f"toggle_{obj_state}"
+
         # First: check known categories
         for cat in self.categories.values():
-            if cat.action != action:
+            if cat.action != action_key:
                 continue
             if obj_type in cat.members:
                 key_vec = self._encode_abstract_key(cat.name, action)
@@ -142,10 +152,8 @@ class AbstractionEngine:
                     return outcome, conf
 
         # Object not in any known category — try SDM generalization
-        # Encode with a generic "unknown" category, SDM may generalize
-        # from similar objects' patterns
         for cat in self.categories.values():
-            if cat.action != action:
+            if cat.action != action_key:
                 continue
             # Check SDM similarity: does this object behave like members?
             key_vec = self._encode_abstract_key(cat.name, action)

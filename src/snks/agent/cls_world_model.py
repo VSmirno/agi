@@ -212,7 +212,10 @@ class CLSWorldModel:
 
         # Abstract generalization via abstraction engine
         facing = situation.get("facing_obj", "empty")
-        outcome_str, abs_conf = self.abstraction.query_abstract(facing, action)
+        obj_state = situation.get("obj_state", "none")
+        outcome_str, abs_conf = self.abstraction.query_abstract(
+            facing, action, obj_state
+        )
         if outcome_str != "unknown" and abs_conf > 0.01:
             return {"result": outcome_str}, abs_conf, "abstract"
 
