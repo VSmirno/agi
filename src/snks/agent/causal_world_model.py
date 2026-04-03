@@ -37,6 +37,8 @@ RULE_PICKUP_ADJACENT = "pickup_requires_adjacent"
 RULE_DOOR_BLOCKS = "door_blocks_passage"
 RULE_CARRYING_LIMITS = "carrying_limits"
 RULE_OPEN_REQUIRES_KEY = "open_requires_key"
+RULE_PUT_NEXT_TO = "put_next_to"
+RULE_GO_TO_COMPLETE = "go_to_complete"
 
 ALL_RULE_TYPES = [
     RULE_SAME_COLOR_UNLOCK,
@@ -44,6 +46,8 @@ ALL_RULE_TYPES = [
     RULE_DOOR_BLOCKS,
     RULE_CARRYING_LIMITS,
     RULE_OPEN_REQUIRES_KEY,
+    RULE_PUT_NEXT_TO,
+    RULE_GO_TO_COMPLETE,
 ]
 
 
@@ -80,6 +84,16 @@ class RuleEncoder:
     def encode_door_state(self, state: str) -> torch.Tensor:
         """Encode door state (locked/unlocked)."""
         return self.cb.filler(f"door_{state}")
+
+    def encode_put_next_to(self, carrying: bool, adjacent: bool) -> torch.Tensor:
+        """Encode PUT_NEXT_TO preconditions: carrying + adjacent to target."""
+        carry_vec = self.cb.filler(f"carrying_{carrying}")
+        adj_vec = self.cb.filler(f"put_adjacent_{adjacent}")
+        return VSACodebook.bind(carry_vec, adj_vec)
+
+    def encode_go_to_complete(self, adjacent: bool) -> torch.Tensor:
+        """Encode GO_TO completion: adjacent to target = success."""
+        return self.cb.filler(f"goto_adjacent_{adjacent}")
 
 
 class CausalWorldModel:
@@ -168,13 +182,37 @@ class CausalWorldModel:
             sdm.write(addr_has, self._zeros, addr_has, 1.0)
             sdm.write(addr_no, self._zeros, addr_no, -1.0)
 
+    def learn_put_next_to_rules(self) -> None:
+        """Learn put-next-to rules: need carrying + adjacent to target."""
+        sdm = self._sdm(RULE_PUT_NEXT_TO)
+        # Success: carrying AND adjacent
+        addr_ok = self.encoder.encode_put_next_to(carrying=True, adjacent=True)
+        # Fail cases
+        addr_no_carry = self.encoder.encode_put_next_to(carrying=False, adjacent=True)
+        addr_no_adj = self.encoder.encode_put_next_to(carrying=True, adjacent=False)
+        for _ in range(self.n_amplify):
+            sdm.write(addr_ok, self._zeros, addr_ok, 1.0)
+            sdm.write(addr_no_carry, self._zeros, addr_no_carry, -1.0)
+            sdm.write(addr_no_adj, self._zeros, addr_no_adj, -1.0)
+
+    def learn_go_to_complete_rules(self) -> None:
+        """Learn go-to completion: adjacent = success."""
+        sdm = self._sdm(RULE_GO_TO_COMPLETE)
+        addr_adj = self.encoder.encode_go_to_complete(adjacent=True)
+        addr_not_adj = self.encoder.encode_go_to_complete(adjacent=False)
+        for _ in range(self.n_amplify):
+            sdm.write(addr_adj, self._zeros, addr_adj, 1.0)
+            sdm.write(addr_not_adj, self._zeros, addr_not_adj, -1.0)
+
     def learn_all_rules(self, colors: list[str]) -> None:
-        """Learn all 5 rule types."""
+        """Learn all 7 rule types."""
         self.learn_color_rules(colors)
         self.learn_pickup_rules()
         self.learn_door_blocks_rules()
         self.learn_carrying_limits_rules()
         self.learn_open_requires_key_rules()
+        self.learn_put_next_to_rules()
+        self.learn_go_to_complete_rules()
 
     # ── QA-A: True/False queries ──
 
@@ -233,13 +271,38 @@ class CausalWorldModel:
             reward = sdm.read_reward(addr_locked, self._zeros)
             return "blocked" if reward < 0 else "passable"
 
+        if action == "put_next_to":
+            # Need carrying + adjacent
+            sdm = self._sdm(RULE_PUT_NEXT_TO)
+            addr = self.encoder.encode_put_next_to(carrying=True, adjacent=True)
+            reward = sdm.read_reward(addr, self._zeros)
+            return "carrying_and_adjacent" if reward > 0 else "unknown"
+
+        if action == "go_to":
+            # Complete when adjacent
+            sdm = self._sdm(RULE_GO_TO_COMPLETE)
+            addr = self.encoder.encode_go_to_complete(adjacent=True)
+            reward = sdm.read_reward(addr, self._zeros)
+            return "adjacent" if reward > 0 else "unknown"
+
         return "unknown"
 
-    def query_can_act(self, action: str, has_key: bool = True) -> bool:
+    def query_can_act(self, action: str, has_key: bool = True,
+                      carrying: bool = False, adjacent: bool = False) -> bool:
         """Can the agent perform this action given current state?"""
         if action == "open":
             sdm = self._sdm(RULE_OPEN_REQUIRES_KEY)
             addr = self.encoder.encode_has_key(has_key)
+            reward = sdm.read_reward(addr, self._zeros)
+            return reward > 0
+        if action == "put_next_to":
+            sdm = self._sdm(RULE_PUT_NEXT_TO)
+            addr = self.encoder.encode_put_next_to(carrying=carrying, adjacent=adjacent)
+            reward = sdm.read_reward(addr, self._zeros)
+            return reward > 0
+        if action == "go_to":
+            sdm = self._sdm(RULE_GO_TO_COMPLETE)
+            addr = self.encoder.encode_go_to_complete(adjacent=adjacent)
             reward = sdm.read_reward(addr, self._zeros)
             return reward > 0
         return True

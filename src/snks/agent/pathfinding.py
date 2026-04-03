@@ -16,14 +16,23 @@ class GridPathfinder:
 
     OBJ_WALL = 2
     OBJ_DOOR = 4
+    OBJ_KEY = 5
+    OBJ_BALL = 6
+    OBJ_BOX = 7
+
+    # Object types that block movement in MiniGrid
+    SOLID_OBJECTS = {OBJ_KEY, OBJ_BALL, OBJ_BOX}
 
     def extract_walls(self, obs: np.ndarray,
-                      allow_door: bool = False) -> set[tuple[int, int]]:
+                      allow_door: bool = False,
+                      allow_objects: bool = False) -> set[tuple[int, int]]:
         """Extract impassable cell positions from observation.
 
         Args:
             obs: 7x7x3 MiniGrid observation (channel 0 = obj type, channel 2 = state)
             allow_door: if True, locked doors are treated as passable
+            allow_objects: if True, keys/balls/boxes are treated as passable
+                           (useful for navigating TO an object for pickup)
         """
         walls: set[tuple[int, int]] = set()
         h, w = obs.shape[0], obs.shape[1]
@@ -34,9 +43,10 @@ class GridPathfinder:
                     walls.add((r, c))
                 elif obj_type == self.OBJ_DOOR:
                     door_state = int(obs[r, c, 2])
-                    # state 2 = locked, state 1 = closed, state 0 = open
                     if door_state == 2 and not allow_door:
                         walls.add((r, c))
+                elif obj_type in self.SOLID_OBJECTS and not allow_objects:
+                    walls.add((r, c))
         return walls
 
     def find_path(self, obs: np.ndarray,
