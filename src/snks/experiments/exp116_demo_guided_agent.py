@@ -27,11 +27,12 @@ from snks.agent.demo_guided_agent import (
 
 TRAIN_COLORS = ["red", "blue", "yellow"]
 N_SEEDS = 20
-MAX_STEPS = 300
+MAX_STEPS_DOORKEY = 300
+MAX_STEPS_LOCKEDROOM = 500  # 19x19 grid with 9 rooms needs more steps
 
 
 def run_doorkey_episode(agent: DemoGuidedAgent, size: int = 8,
-                        seed: int = 0, max_steps: int = MAX_STEPS
+                        seed: int = 0, max_steps: int = MAX_STEPS_DOORKEY
                         ) -> dict:
     """Run one DoorKey episode. Returns episode stats."""
     from minigrid.envs.doorkey import DoorKeyEnv
@@ -73,7 +74,7 @@ def run_doorkey_episode(agent: DemoGuidedAgent, size: int = 8,
 
 
 def run_lockedroom_episode(agent: DemoGuidedAgent, seed: int = 0,
-                           max_steps: int = MAX_STEPS) -> dict:
+                           max_steps: int = MAX_STEPS_LOCKEDROOM) -> dict:
     """Run one LockedRoom episode. Returns episode stats."""
     from minigrid.envs.lockedroom import LockedRoomEnv
 
