@@ -20,6 +20,7 @@ OBJ_TYPES = ["key", "ball", "box", "door", "wall", "goal", "empty"]
 INTERACTABLE = ["key", "ball", "box", "door"]
 CARRYABLE = ["key", "ball", "box"]
 COLORS = ["red", "green", "blue", "purple", "yellow", "grey"]
+TRAIN_COLORS = ["red", "green", "blue"]  # held-out: purple, yellow, grey
 ACTIONS = ["forward", "pickup", "drop", "toggle"]
 DOOR_STATES = ["open", "closed", "locked"]
 
@@ -33,19 +34,26 @@ class Transition:
     reward: float  # +1 = success, -1 = failed, 0 = no-op
 
 
-def generate_synthetic_transitions() -> list[Transition]:
+def generate_synthetic_transitions(
+    colors: list[str] | None = None,
+) -> list[Transition]:
     """Generate exhaustive transitions from MiniGrid physics.
 
     Covers all (facing_object, object_state, carrying, action) combinations.
+    If colors is None, uses TRAIN_COLORS (3 colors) to enable
+    generalization testing on held-out colors.
     """
+    if colors is None:
+        colors = TRAIN_COLORS
+
     transitions: list[Transition] = []
 
     for obj in OBJ_TYPES:
-        for color in COLORS:
+        for color in colors:
             for action in ACTIONS:
                 for carrying in [None] + [(c_type, c_color)
                                           for c_type in CARRYABLE
-                                          for c_color in COLORS]:
+                                          for c_color in colors]:
                     carrying_type = carrying[0] if carrying else "nothing"
                     carrying_color = carrying[1] if carrying else ""
 
