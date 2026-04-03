@@ -143,7 +143,7 @@ class NavigationPolicy:
         )
         self._zeros = torch.zeros(dim, device=self.device)
         self.n_trained = 0
-        self.confidence_threshold = 0.05
+        self.confidence_threshold = 0.30
 
     def train_from_demos(self, demos: list[dict]) -> int:
         """Train navigation policy from Bot demo episodes.
