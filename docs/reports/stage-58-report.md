@@ -42,11 +42,15 @@
 
 ## Эксперименты
 
-| Exp | Explore | Success | Baseline | SDM writes | Gate | Статус |
-|-----|---------|---------|----------|------------|------|--------|
-| 112a | 50 ep | 100% (200/200) | 88.5% | 7,751 | ≥30% | PASS |
-| 112b | 100 ep | 100% (200/200) | 88.5% | 8,783 | ≥30% | PASS |
-| — | — | — | — | — | ≥1000 writes | PASS |
+| Exp | Config | Explore | Success | Baseline | SDM effect | Gate | Статус |
+|-----|--------|---------|---------|----------|------------|------|--------|
+| 112a | dim=256, 1K loc, CPU | 50 ep | **100%** (200/200) | 88.5% | **+11.5%** | ≥30% | PASS |
+| 112b | dim=256, 1K loc, CPU | 100 ep | **100%** (200/200) | 88.5% | **+11.5%** | ≥30% | PASS |
+| 112c | dim=512, 5K loc, GPU | 50 ep | 88.5% (177/200) | 88.5% | +0% | ≥30% | PASS |
+| 112d | dim=512, 5K loc, GPU | 100 ep | 88.5% (177/200) | 88.5% | +0% | ≥30% | PASS |
+| — | — | — | — | — | — | ≥1000 writes | PASS |
+
+**SDM interference discovery:** Larger SDM (5000 locations, 512 dim) → more collisions → reward signal diluted → zero improvement over heuristic. Smaller SDM (1000 loc, 256 dim) → cleaner signal → +11.5%. This is a fundamental SDM capacity/interference tradeoff.
 
 ## Ключевые решения
 
