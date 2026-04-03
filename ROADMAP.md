@@ -1,7 +1,7 @@
 # СНКС — Roadmap v2 (Milestone-Driven)
 
 **Последнее обновление:** 2026-04-03
-**Статус:** M1 COMPLETE → M2 COMPLETE → M3 COMPLETE → M4 IN PROGRESS (7/8) — architecture pivot at Stage 59
+**Статус:** M1 COMPLETE → M2 COMPLETE → M3 COMPLETE → M4 IN PROGRESS (8/9) — architecture pivot at Stage 59
 **Полная спецификация:** [docs/superpowers/specs/2026-04-02-roadmap-v2-design.md](docs/superpowers/specs/2026-04-02-roadmap-v2-design.md)
 
 ---
@@ -58,7 +58,7 @@
 | 58 | SDM Retrofit | COMPLETE ⚠️ NEGATIVE (2026-04-03) | SDM не добавляет value — heuristic=100% на DoorKey, honest ablation |
 | 59 | VSA Causal Induction | COMPLETE (2026-04-03) | **100% generalization unseen colors**, bind(X,X)=identity proof |
 | 60 | World Model via Demos | COMPLETE (2026-04-03) | **100% QA-A/B/C**, causal world model из 5 синтетических демо |
-| 61 | Demo-Guided Agent | IN PROGRESS (2026-04-03) | DemoGuidedAgent: каузальное планирование + BFS навигация, 17 unit tests PASS, gates on minipc |
+| 61 | Demo-Guided Agent | COMPLETE (2026-04-03) | **100% DoorKey + 100% LockedRoom**, causal planning + BFS, ablation delta=100% |
 | 62 | M4 Integration Test | | ≥50% BabyAI BossLevel с инструкцией |
 
 ### Architecture Pivot (Stage 59, 2026-04-03)
