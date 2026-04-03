@@ -181,14 +181,29 @@ class AbstractionEngine:
 
         return "unknown", 0.0
 
-    def query_abstract_reward(self, obj_type: str, action: str) -> float:
+    def query_abstract_reward(self, obj_type: str, action: str,
+                              obj_state: str = "none",
+                              carrying: str = "nothing") -> float:
         """Query abstract SDM for reward signal."""
+        # Build context-sensitive action key (same logic as query_abstract)
+        action_key = action
+        if action == "toggle" and obj_state == "locked":
+            action_key = "toggle_locked_withkey" if carrying == "key" else "toggle_locked_nokey"
+        elif action == "toggle" and obj_state in ("closed", "open"):
+            action_key = f"toggle_{obj_state}"
+        elif action == "pickup":
+            action_key = "pickup_empty" if carrying == "nothing" else "pickup_carrying"
+
         for cat in self.categories.values():
-            if cat.action != action:
+            if cat.action != action_key:
                 continue
             if obj_type in cat.members:
-                key_vec = self._encode_abstract_key(cat.name, action)
-                return self.sdm.read_reward(key_vec, self._zeros)
+                # Use stored reward directly from category
+                positive = cat.outcome in (
+                    "picked_up", "door_opened", "door_unlocked",
+                    "moved", "dropped",
+                )
+                return 1.0 if positive else -1.0
         return 0.0
 
     def get_categories_for_object(self, obj_type: str) -> list[str]:
