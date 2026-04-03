@@ -18,45 +18,53 @@
 
 ## Milestones
 
-### M1: Генерализация
+### M1: Генерализация ⚠️ SYMBOLIC BASELINE
 **Gate:** ≥80% random DoorKey-5x5, ≥60% MultiRoom-N3
+**⚠️ Stages 47-49 = pure symbolic BFS, no learned components. Gates passed via hardcoded pathfinding.**
 
 | Stage | Название | Статус | Gate |
 |-------|----------|--------|------|
-| 47 | Wall-aware навигация | COMPLETE (2026-04-02) | 100% на 200 random DoorKey-5x5, mean 16 steps |
-| 48 | Random layouts | COMPLETE (merged with 47) | 100% на 200 рандомных карт (covered by Stage 47) |
-| 49 | Multi-room | COMPLETE (2026-04-02) | 100% на 200 random MultiRoom-N3, mean 16 steps |
+| 47 | Wall-aware навигация | COMPLETE ⚠️ SYMBOLIC | 100% DoorKey-5x5 — BFS pathfinding, no learning |
+| 48 | Random layouts | COMPLETE ⚠️ SYMBOLIC | merged with 47 |
+| 49 | Multi-room | COMPLETE ⚠️ SYMBOLIC | 100% MultiRoom-N3 — BFS + door toggle, no learning |
 
-### M2: Языковой контроль
+### M2: Языковой контроль ⚠️ SYMBOLIC BASELINE
 **Gate:** ≥70% success с языковой инструкцией
-**Зависимости:** M1 Stage 48
+**⚠️ Stages 50-51 = regex parsing + fixed random VSA vectors, no learned encoding.**
 
 | Stage | Название | Статус | Gate |
 |-------|----------|--------|------|
-| 50 | Reconnect language pipeline | COMPLETE (2026-04-02) | 100% encode/decode accuracy (30 instructions) |
-| 51 | Language-guided planning | COMPLETE (2026-04-02) | 100% на 200 random DoorKey-5x5 с инструкцией |
+| 50 | Reconnect language pipeline | COMPLETE ⚠️ SYMBOLIC | regex parsing, fixed binary vectors (not trained) |
+| 51 | Language-guided planning | COMPLETE ⚠️ SYMBOLIC | BFS + regex, no SDM/VSA learning |
 
-### M3: Концепция доказана
+### M3: Концепция доказана ⚠️ SYMBOLIC BASELINE
 **Gate:** M1 + M2 + интеграция ≥50% random MultiRoom-N3 с инструкцией + R1 вердикт
 
 | Stage | Название | Статус | Gate |
 |-------|----------|--------|------|
-| 52 | Integration test | COMPLETE (2026-04-02) | 100% random MultiRoom-N3 с инструкцией |
-| 53 | Architecture report | COMPLETE (2026-04-02) | R1 negative, M4 plan (Stages 54-60), go for M4 |
+| 52 | Integration test | COMPLETE ⚠️ SYMBOLIC | env detection + delegation to symbolic agents |
+| 53 | Architecture report | COMPLETE (2026-04-02) | R1 negative, M4 plan |
 
 ### M4: Масштаб
 **Gate:** новый env 5+ типов объектов, partial observability, subgoal chains 5+
-**R1 решение:** негативный вердикт → DAF = perception only, фокус на symbolic pipeline scaling
+**R1 решение:** негативный вердикт → DAF = perception only
 
 | Stage | Название | Статус | Gate |
 |-------|----------|--------|------|
-| 54 | Partial Observability | COMPLETE (2026-04-02) | 100% DoorKey-5x5 с 7x7 view (200 seeds, mean 23.5 steps) |
-| 55 | Exploration Strategy | COMPLETE (2026-04-02) | 100% MultiRoom-N3 с partial obs (200 seeds, mean 22.1 steps) |
-| 56 | Complex Environment | COMPLETE (2026-04-03) | 99.5% PutNextS6N3, 18 object types, mean 14.8 steps |
-| 57 | Long Subgoal Chains | COMPLETE (2026-04-03) | 40% KeyCorridorS4R3, 54% S3R3, 5-6 subgoals |
-| 58 | SDM Scaling | | SDM capacity ≥1000 unique transitions |
+| 54 | Partial Observability | COMPLETE ⚠️ SYMBOLIC | 100% DoorKey — SpatialMap + BFS, no learning |
+| 55 | Exploration Strategy | COMPLETE ⚠️ SYMBOLIC | 100% MultiRoom — FrontierExplorer + BFS |
+| 56 | Complex Environment | COMPLETE ⚠️ SYMBOLIC | 99.5% PutNext — state machine + BFS |
+| 57 | Long Subgoal Chains | COMPLETE ⚠️ SYMBOLIC | 40% KeyCorridor — ChainPlanner + BFS |
+| 58 | SDM Retrofit | COMPLETE (2026-04-03) | 100% DoorKey — **SDM learned subgoal selection** + symbolic nav |
 | 59 | Transfer Learning | | ≥70% new env без re-exploration |
 | 60 | M4 Integration Test | | ≥50% BabyAI BossLevel с инструкцией |
+
+### Learned Pipeline Retrofit Plan
+**Stages 47-57 пройдены символическим BFS. Следующие этапы заменяют symbolic → learned:**
+- Stage 58: SDM subgoal selection ✅ (hybrid: SDM selects what, BFS does how)
+- Next: replace BFS navigation with SDM-guided exploration
+- Next: replace heuristic subgoal fallback with pure SDM planning
+- Next: replace reflexes with learned interaction policies
 
 ### M5: Автономия (vision, детализация после M4)
 Self-directed goals, compositional subgoals, meta-cognition
