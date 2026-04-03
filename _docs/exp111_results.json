@@ -1,0 +1,7274 @@
+{
+  "exp111a_s4r3": {
+    "summary": {
+      "env": "BabyAI-KeyCorridorS4R3-v0",
+      "n_seeds": 200,
+      "max_steps": 480,
+      "success_rate": 0.4,
+      "successes": 80,
+      "mean_steps_success": 39.5,
+      "mean_subgoals": 2.3,
+      "min_subgoals_success": 5,
+      "max_subgoals_success": 6,
+      "total_elapsed_s": 42.8
+    },
+    "episodes": [
+      {
+        "seed": 0,
+        "success": true,
+        "steps": 25,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.953125,
+        "elapsed_s": 0.015
+      },
+      {
+        "seed": 1,
+        "success": true,
+        "steps": 45,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.915625,
+        "elapsed_s": 0.031
+      },
+      {
+        "seed": 2,
+        "success": true,
+        "steps": 27,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.949375,
+        "elapsed_s": 0.016
+      },
+      {
+        "seed": 3,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.32
+      },
+      {
+        "seed": 4,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.284
+      },
+      {
+        "seed": 5,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.293
+      },
+      {
+        "seed": 6,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.313
+      },
+      {
+        "seed": 7,
+        "success": true,
+        "steps": 41,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.923125,
+        "elapsed_s": 0.027
+      },
+      {
+        "seed": 8,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.301
+      },
+      {
+        "seed": 9,
+        "success": true,
+        "steps": 33,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.938125,
+        "elapsed_s": 0.022
+      },
+      {
+        "seed": 10,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.343
+      },
+      {
+        "seed": 11,
+        "success": true,
+        "steps": 22,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.95875,
+        "elapsed_s": 0.013
+      },
+      {
+        "seed": 12,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.367
+      },
+      {
+        "seed": 13,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.31
+      },
+      {
+        "seed": 14,
+        "success": true,
+        "steps": 33,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.938125,
+        "elapsed_s": 0.02
+      },
+      {
+        "seed": 15,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.338
+      },
+      {
+        "seed": 16,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.356
+      },
+      {
+        "seed": 17,
+        "success": true,
+        "steps": 23,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.956875,
+        "elapsed_s": 0.017
+      },
+      {
+        "seed": 18,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.345
+      },
+      {
+        "seed": 19,
+        "success": true,
+        "steps": 54,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8987499999999999,
+        "elapsed_s": 0.038
+      },
+      {
+        "seed": 20,
+        "success": true,
+        "steps": 47,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.911875,
+        "elapsed_s": 0.029
+      },
+      {
+        "seed": 21,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.33
+      },
+      {
+        "seed": 22,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.337
+      },
+      {
+        "seed": 23,
+        "success": true,
+        "steps": 22,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.95875,
+        "elapsed_s": 0.015
+      },
+      {
+        "seed": 24,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.31
+      },
+      {
+        "seed": 25,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.337
+      },
+      {
+        "seed": 26,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.303
+      },
+      {
+        "seed": 27,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.31
+      },
+      {
+        "seed": 28,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.318
+      },
+      {
+        "seed": 29,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.3
+      },
+      {
+        "seed": 30,
+        "success": true,
+        "steps": 48,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.91,
+        "elapsed_s": 0.035
+      },
+      {
+        "seed": 31,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.339
+      },
+      {
+        "seed": 32,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.348
+      },
+      {
+        "seed": 33,
+        "success": true,
+        "steps": 26,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.95125,
+        "elapsed_s": 0.016
+      },
+      {
+        "seed": 34,
+        "success": true,
+        "steps": 66,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.87625,
+        "elapsed_s": 0.047
+      },
+      {
+        "seed": 35,
+        "success": true,
+        "steps": 44,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9175,
+        "elapsed_s": 0.025
+      },
+      {
+        "seed": 36,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.304
+      },
+      {
+        "seed": 37,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.339
+      },
+      {
+        "seed": 38,
+        "success": true,
+        "steps": 24,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.955,
+        "elapsed_s": 0.018
+      },
+      {
+        "seed": 39,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.307
+      },
+      {
+        "seed": 40,
+        "success": true,
+        "steps": 38,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.92875,
+        "elapsed_s": 0.024
+      },
+      {
+        "seed": 41,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.289
+      },
+      {
+        "seed": 42,
+        "success": true,
+        "steps": 56,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.895,
+        "elapsed_s": 0.037
+      },
+      {
+        "seed": 43,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.304
+      },
+      {
+        "seed": 44,
+        "success": true,
+        "steps": 29,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.945625,
+        "elapsed_s": 0.019
+      },
+      {
+        "seed": 45,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.294
+      },
+      {
+        "seed": 46,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.29
+      },
+      {
+        "seed": 47,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.354
+      },
+      {
+        "seed": 48,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.316
+      },
+      {
+        "seed": 49,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.31
+      },
+      {
+        "seed": 50,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.331
+      },
+      {
+        "seed": 51,
+        "success": true,
+        "steps": 23,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.956875,
+        "elapsed_s": 0.015
+      },
+      {
+        "seed": 52,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.268
+      },
+      {
+        "seed": 53,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.303
+      },
+      {
+        "seed": 54,
+        "success": true,
+        "steps": 60,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8875,
+        "elapsed_s": 0.039
+      },
+      {
+        "seed": 55,
+        "success": true,
+        "steps": 25,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.953125,
+        "elapsed_s": 0.015
+      },
+      {
+        "seed": 56,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.345
+      },
+      {
+        "seed": 57,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.297
+      },
+      {
+        "seed": 58,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.323
+      },
+      {
+        "seed": 59,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.35
+      },
+      {
+        "seed": 60,
+        "success": true,
+        "steps": 43,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.919375,
+        "elapsed_s": 0.026
+      },
+      {
+        "seed": 61,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.316
+      },
+      {
+        "seed": 62,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.298
+      },
+      {
+        "seed": 63,
+        "success": true,
+        "steps": 24,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.955,
+        "elapsed_s": 0.015
+      },
+      {
+        "seed": 64,
+        "success": true,
+        "steps": 38,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.92875,
+        "elapsed_s": 0.022
+      },
+      {
+        "seed": 65,
+        "success": true,
+        "steps": 26,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.95125,
+        "elapsed_s": 0.016
+      },
+      {
+        "seed": 66,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.321
+      },
+      {
+        "seed": 67,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.315
+      },
+      {
+        "seed": 68,
+        "success": true,
+        "steps": 33,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.938125,
+        "elapsed_s": 0.024
+      },
+      {
+        "seed": 69,
+        "success": true,
+        "steps": 46,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.91375,
+        "elapsed_s": 0.032
+      },
+      {
+        "seed": 70,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.289
+      },
+      {
+        "seed": 71,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.325
+      },
+      {
+        "seed": 72,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.279
+      },
+      {
+        "seed": 73,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.324
+      },
+      {
+        "seed": 74,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.321
+      },
+      {
+        "seed": 75,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.264
+      },
+      {
+        "seed": 76,
+        "success": true,
+        "steps": 49,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.908125,
+        "elapsed_s": 0.031
+      },
+      {
+        "seed": 77,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.321
+      },
+      {
+        "seed": 78,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.342
+      },
+      {
+        "seed": 79,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.281
+      },
+      {
+        "seed": 80,
+        "success": true,
+        "steps": 38,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.92875,
+        "elapsed_s": 0.024
+      },
+      {
+        "seed": 81,
+        "success": true,
+        "steps": 51,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.904375,
+        "elapsed_s": 0.036
+      },
+      {
+        "seed": 82,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.29
+      },
+      {
+        "seed": 83,
+        "success": true,
+        "steps": 29,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.945625,
+        "elapsed_s": 0.022
+      },
+      {
+        "seed": 84,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.32
+      },
+      {
+        "seed": 85,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.32
+      },
+      {
+        "seed": 86,
+        "success": true,
+        "steps": 30,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.94375,
+        "elapsed_s": 0.018
+      },
+      {
+        "seed": 87,
+        "success": true,
+        "steps": 51,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.904375,
+        "elapsed_s": 0.037
+      },
+      {
+        "seed": 88,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.342
+      },
+      {
+        "seed": 89,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.307
+      },
+      {
+        "seed": 90,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.301
+      },
+      {
+        "seed": 91,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.297
+      },
+      {
+        "seed": 92,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.297
+      },
+      {
+        "seed": 93,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.306
+      },
+      {
+        "seed": 94,
+        "success": true,
+        "steps": 40,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.925,
+        "elapsed_s": 0.026
+      },
+      {
+        "seed": 95,
+        "success": true,
+        "steps": 35,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.934375,
+        "elapsed_s": 0.028
+      },
+      {
+        "seed": 96,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.324
+      },
+      {
+        "seed": 97,
+        "success": true,
+        "steps": 52,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9025,
+        "elapsed_s": 0.035
+      },
+      {
+        "seed": 98,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.288
+      },
+      {
+        "seed": 99,
+        "success": true,
+        "steps": 29,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.945625,
+        "elapsed_s": 0.017
+      },
+      {
+        "seed": 100,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.313
+      },
+      {
+        "seed": 101,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.328
+      },
+      {
+        "seed": 102,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.324
+      },
+      {
+        "seed": 103,
+        "success": true,
+        "steps": 51,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.904375,
+        "elapsed_s": 0.034
+      },
+      {
+        "seed": 104,
+        "success": true,
+        "steps": 48,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.91,
+        "elapsed_s": 0.03
+      },
+      {
+        "seed": 105,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.308
+      },
+      {
+        "seed": 106,
+        "success": true,
+        "steps": 59,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.889375,
+        "elapsed_s": 0.045
+      },
+      {
+        "seed": 107,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.332
+      },
+      {
+        "seed": 108,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.275
+      },
+      {
+        "seed": 109,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.311
+      },
+      {
+        "seed": 110,
+        "success": true,
+        "steps": 32,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.94,
+        "elapsed_s": 0.022
+      },
+      {
+        "seed": 111,
+        "success": true,
+        "steps": 29,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.945625,
+        "elapsed_s": 0.022
+      },
+      {
+        "seed": 112,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.311
+      },
+      {
+        "seed": 113,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.28
+      },
+      {
+        "seed": 114,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.331
+      },
+      {
+        "seed": 115,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.348
+      },
+      {
+        "seed": 116,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.279
+      },
+      {
+        "seed": 117,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.297
+      },
+      {
+        "seed": 118,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.334
+      },
+      {
+        "seed": 119,
+        "success": true,
+        "steps": 42,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.92125,
+        "elapsed_s": 0.029
+      },
+      {
+        "seed": 120,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.312
+      },
+      {
+        "seed": 121,
+        "success": true,
+        "steps": 50,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.90625,
+        "elapsed_s": 0.041
+      },
+      {
+        "seed": 122,
+        "success": true,
+        "steps": 27,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.949375,
+        "elapsed_s": 0.019
+      },
+      {
+        "seed": 123,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.318
+      },
+      {
+        "seed": 124,
+        "success": true,
+        "steps": 41,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.923125,
+        "elapsed_s": 0.037
+      },
+      {
+        "seed": 125,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.309
+      },
+      {
+        "seed": 126,
+        "success": true,
+        "steps": 48,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.91,
+        "elapsed_s": 0.034
+      },
+      {
+        "seed": 127,
+        "success": true,
+        "steps": 60,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8875,
+        "elapsed_s": 0.043
+      },
+      {
+        "seed": 128,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.333
+      },
+      {
+        "seed": 129,
+        "success": true,
+        "steps": 37,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.930625,
+        "elapsed_s": 0.028
+      },
+      {
+        "seed": 130,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.317
+      },
+      {
+        "seed": 131,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.295
+      },
+      {
+        "seed": 132,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.327
+      },
+      {
+        "seed": 133,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.316
+      },
+      {
+        "seed": 134,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.304
+      },
+      {
+        "seed": 135,
+        "success": true,
+        "steps": 26,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.95125,
+        "elapsed_s": 0.015
+      },
+      {
+        "seed": 136,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.332
+      },
+      {
+        "seed": 137,
+        "success": true,
+        "steps": 58,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.89125,
+        "elapsed_s": 0.042
+      },
+      {
+        "seed": 138,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.32
+      },
+      {
+        "seed": 139,
+        "success": true,
+        "steps": 46,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.91375,
+        "elapsed_s": 0.029
+      },
+      {
+        "seed": 140,
+        "success": true,
+        "steps": 42,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.92125,
+        "elapsed_s": 0.033
+      },
+      {
+        "seed": 141,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.331
+      },
+      {
+        "seed": 142,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.299
+      },
+      {
+        "seed": 143,
+        "success": true,
+        "steps": 35,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.934375,
+        "elapsed_s": 0.034
+      },
+      {
+        "seed": 144,
+        "success": true,
+        "steps": 40,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.925,
+        "elapsed_s": 0.038
+      },
+      {
+        "seed": 145,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.318
+      },
+      {
+        "seed": 146,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.323
+      },
+      {
+        "seed": 147,
+        "success": true,
+        "steps": 21,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.960625,
+        "elapsed_s": 0.014
+      },
+      {
+        "seed": 148,
+        "success": true,
+        "steps": 63,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.881875,
+        "elapsed_s": 0.047
+      },
+      {
+        "seed": 149,
+        "success": true,
+        "steps": 32,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.94,
+        "elapsed_s": 0.022
+      },
+      {
+        "seed": 150,
+        "success": true,
+        "steps": 26,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.95125,
+        "elapsed_s": 0.015
+      },
+      {
+        "seed": 151,
+        "success": true,
+        "steps": 54,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8987499999999999,
+        "elapsed_s": 0.034
+      },
+      {
+        "seed": 152,
+        "success": true,
+        "steps": 48,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.91,
+        "elapsed_s": 0.041
+      },
+      {
+        "seed": 153,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.327
+      },
+      {
+        "seed": 154,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.306
+      },
+      {
+        "seed": 155,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.31
+      },
+      {
+        "seed": 156,
+        "success": true,
+        "steps": 56,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.895,
+        "elapsed_s": 0.044
+      },
+      {
+        "seed": 157,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.296
+      },
+      {
+        "seed": 158,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.298
+      },
+      {
+        "seed": 159,
+        "success": true,
+        "steps": 40,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.925,
+        "elapsed_s": 0.027
+      },
+      {
+        "seed": 160,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.298
+      },
+      {
+        "seed": 161,
+        "success": true,
+        "steps": 38,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.92875,
+        "elapsed_s": 0.042
+      },
+      {
+        "seed": 162,
+        "success": true,
+        "steps": 39,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.926875,
+        "elapsed_s": 0.048
+      },
+      {
+        "seed": 163,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.295
+      },
+      {
+        "seed": 164,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.298
+      },
+      {
+        "seed": 165,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.375
+      },
+      {
+        "seed": 166,
+        "success": true,
+        "steps": 33,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.938125,
+        "elapsed_s": 0.022
+      },
+      {
+        "seed": 167,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.311
+      },
+      {
+        "seed": 168,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.32
+      },
+      {
+        "seed": 169,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.333
+      },
+      {
+        "seed": 170,
+        "success": true,
+        "steps": 52,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9025,
+        "elapsed_s": 0.033
+      },
+      {
+        "seed": 171,
+        "success": true,
+        "steps": 25,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.953125,
+        "elapsed_s": 0.013
+      },
+      {
+        "seed": 172,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.336
+      },
+      {
+        "seed": 173,
+        "success": true,
+        "steps": 33,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.938125,
+        "elapsed_s": 0.021
+      },
+      {
+        "seed": 174,
+        "success": true,
+        "steps": 65,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.878125,
+        "elapsed_s": 0.057
+      },
+      {
+        "seed": 175,
+        "success": true,
+        "steps": 45,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.915625,
+        "elapsed_s": 0.029
+      },
+      {
+        "seed": 176,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.342
+      },
+      {
+        "seed": 177,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.28
+      },
+      {
+        "seed": 178,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.318
+      },
+      {
+        "seed": 179,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.326
+      },
+      {
+        "seed": 180,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.286
+      },
+      {
+        "seed": 181,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.283
+      },
+      {
+        "seed": 182,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.293
+      },
+      {
+        "seed": 183,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.31
+      },
+      {
+        "seed": 184,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.302
+      },
+      {
+        "seed": 185,
+        "success": true,
+        "steps": 23,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.956875,
+        "elapsed_s": 0.015
+      },
+      {
+        "seed": 186,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.333
+      },
+      {
+        "seed": 187,
+        "success": true,
+        "steps": 40,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.925,
+        "elapsed_s": 0.032
+      },
+      {
+        "seed": 188,
+        "success": true,
+        "steps": 30,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.94375,
+        "elapsed_s": 0.025
+      },
+      {
+        "seed": 189,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.3
+      },
+      {
+        "seed": 190,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.264
+      },
+      {
+        "seed": 191,
+        "success": true,
+        "steps": 46,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.91375,
+        "elapsed_s": 0.03
+      },
+      {
+        "seed": 192,
+        "success": true,
+        "steps": 49,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.908125,
+        "elapsed_s": 0.034
+      },
+      {
+        "seed": 193,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.33
+      },
+      {
+        "seed": 194,
+        "success": true,
+        "steps": 24,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.955,
+        "elapsed_s": 0.018
+      },
+      {
+        "seed": 195,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.29
+      },
+      {
+        "seed": 196,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.319
+      },
+      {
+        "seed": 197,
+        "success": true,
+        "steps": 31,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.941875,
+        "elapsed_s": 0.02
+      },
+      {
+        "seed": 198,
+        "success": true,
+        "steps": 49,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.908125,
+        "elapsed_s": 0.032
+      },
+      {
+        "seed": 199,
+        "success": false,
+        "steps": 480,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.336
+      }
+    ]
+  },
+  "exp111b_s3r3": {
+    "summary": {
+      "env": "BabyAI-KeyCorridorS3R3-v0",
+      "n_seeds": 200,
+      "max_steps": 270,
+      "success_rate": 0.54,
+      "successes": 108,
+      "mean_steps_success": 31.3,
+      "mean_subgoals": 3.2,
+      "min_subgoals_success": 6,
+      "max_subgoals_success": 6,
+      "total_elapsed_s": 17.4
+    },
+    "episodes": [
+      {
+        "seed": 0,
+        "success": true,
+        "steps": 42,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.86,
+        "elapsed_s": 0.022
+      },
+      {
+        "seed": 1,
+        "success": true,
+        "steps": 29,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9033333333333333,
+        "elapsed_s": 0.016
+      },
+      {
+        "seed": 2,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.145
+      },
+      {
+        "seed": 3,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.132
+      },
+      {
+        "seed": 4,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.133
+      },
+      {
+        "seed": 5,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.129
+      },
+      {
+        "seed": 6,
+        "success": true,
+        "steps": 15,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.95,
+        "elapsed_s": 0.007
+      },
+      {
+        "seed": 7,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.158
+      },
+      {
+        "seed": 8,
+        "success": true,
+        "steps": 26,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9133333333333333,
+        "elapsed_s": 0.017
+      },
+      {
+        "seed": 9,
+        "success": true,
+        "steps": 15,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.95,
+        "elapsed_s": 0.01
+      },
+      {
+        "seed": 10,
+        "success": true,
+        "steps": 35,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8833333333333333,
+        "elapsed_s": 0.022
+      },
+      {
+        "seed": 11,
+        "success": true,
+        "steps": 39,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.87,
+        "elapsed_s": 0.022
+      },
+      {
+        "seed": 12,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.143
+      },
+      {
+        "seed": 13,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.122
+      },
+      {
+        "seed": 14,
+        "success": true,
+        "steps": 43,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8566666666666667,
+        "elapsed_s": 0.02
+      },
+      {
+        "seed": 15,
+        "success": true,
+        "steps": 42,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.86,
+        "elapsed_s": 0.019
+      },
+      {
+        "seed": 16,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.141
+      },
+      {
+        "seed": 17,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.148
+      },
+      {
+        "seed": 18,
+        "success": true,
+        "steps": 21,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9299999999999999,
+        "elapsed_s": 0.009
+      },
+      {
+        "seed": 19,
+        "success": true,
+        "steps": 35,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8833333333333333,
+        "elapsed_s": 0.016
+      },
+      {
+        "seed": 20,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.138
+      },
+      {
+        "seed": 21,
+        "success": true,
+        "steps": 40,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8666666666666667,
+        "elapsed_s": 0.024
+      },
+      {
+        "seed": 22,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.135
+      },
+      {
+        "seed": 23,
+        "success": true,
+        "steps": 27,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.91,
+        "elapsed_s": 0.013
+      },
+      {
+        "seed": 24,
+        "success": true,
+        "steps": 28,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9066666666666666,
+        "elapsed_s": 0.014
+      },
+      {
+        "seed": 25,
+        "success": true,
+        "steps": 15,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.95,
+        "elapsed_s": 0.007
+      },
+      {
+        "seed": 26,
+        "success": true,
+        "steps": 16,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9466666666666667,
+        "elapsed_s": 0.008
+      },
+      {
+        "seed": 27,
+        "success": true,
+        "steps": 46,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8466666666666667,
+        "elapsed_s": 0.021
+      },
+      {
+        "seed": 28,
+        "success": true,
+        "steps": 39,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.87,
+        "elapsed_s": 0.02
+      },
+      {
+        "seed": 29,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.127
+      },
+      {
+        "seed": 30,
+        "success": true,
+        "steps": 45,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.85,
+        "elapsed_s": 0.023
+      },
+      {
+        "seed": 31,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.145
+      },
+      {
+        "seed": 32,
+        "success": true,
+        "steps": 23,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9233333333333333,
+        "elapsed_s": 0.011
+      },
+      {
+        "seed": 33,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.136
+      },
+      {
+        "seed": 34,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.137
+      },
+      {
+        "seed": 35,
+        "success": true,
+        "steps": 34,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8866666666666667,
+        "elapsed_s": 0.02
+      },
+      {
+        "seed": 36,
+        "success": true,
+        "steps": 28,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9066666666666666,
+        "elapsed_s": 0.017
+      },
+      {
+        "seed": 37,
+        "success": true,
+        "steps": 38,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8733333333333333,
+        "elapsed_s": 0.02
+      },
+      {
+        "seed": 38,
+        "success": true,
+        "steps": 23,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9233333333333333,
+        "elapsed_s": 0.012
+      },
+      {
+        "seed": 39,
+        "success": true,
+        "steps": 16,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9466666666666667,
+        "elapsed_s": 0.009
+      },
+      {
+        "seed": 40,
+        "success": true,
+        "steps": 25,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9166666666666666,
+        "elapsed_s": 0.011
+      },
+      {
+        "seed": 41,
+        "success": true,
+        "steps": 20,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9333333333333333,
+        "elapsed_s": 0.011
+      },
+      {
+        "seed": 42,
+        "success": true,
+        "steps": 30,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9,
+        "elapsed_s": 0.016
+      },
+      {
+        "seed": 43,
+        "success": true,
+        "steps": 15,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.95,
+        "elapsed_s": 0.007
+      },
+      {
+        "seed": 44,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.139
+      },
+      {
+        "seed": 45,
+        "success": true,
+        "steps": 21,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9299999999999999,
+        "elapsed_s": 0.008
+      },
+      {
+        "seed": 46,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.132
+      },
+      {
+        "seed": 47,
+        "success": true,
+        "steps": 47,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8433333333333333,
+        "elapsed_s": 0.026
+      },
+      {
+        "seed": 48,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.128
+      },
+      {
+        "seed": 49,
+        "success": true,
+        "steps": 40,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8666666666666667,
+        "elapsed_s": 0.02
+      },
+      {
+        "seed": 50,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.146
+      },
+      {
+        "seed": 51,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.175
+      },
+      {
+        "seed": 52,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.134
+      },
+      {
+        "seed": 53,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.142
+      },
+      {
+        "seed": 54,
+        "success": true,
+        "steps": 16,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9466666666666667,
+        "elapsed_s": 0.006
+      },
+      {
+        "seed": 55,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.129
+      },
+      {
+        "seed": 56,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.131
+      },
+      {
+        "seed": 57,
+        "success": true,
+        "steps": 48,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.84,
+        "elapsed_s": 0.025
+      },
+      {
+        "seed": 58,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.149
+      },
+      {
+        "seed": 59,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.159
+      },
+      {
+        "seed": 60,
+        "success": true,
+        "steps": 40,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8666666666666667,
+        "elapsed_s": 0.02
+      },
+      {
+        "seed": 61,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.156
+      },
+      {
+        "seed": 62,
+        "success": true,
+        "steps": 37,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8766666666666667,
+        "elapsed_s": 0.021
+      },
+      {
+        "seed": 63,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.125
+      },
+      {
+        "seed": 64,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.127
+      },
+      {
+        "seed": 65,
+        "success": true,
+        "steps": 28,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9066666666666666,
+        "elapsed_s": 0.014
+      },
+      {
+        "seed": 66,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.12
+      },
+      {
+        "seed": 67,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.155
+      },
+      {
+        "seed": 68,
+        "success": true,
+        "steps": 15,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.95,
+        "elapsed_s": 0.007
+      },
+      {
+        "seed": 69,
+        "success": true,
+        "steps": 43,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8566666666666667,
+        "elapsed_s": 0.025
+      },
+      {
+        "seed": 70,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.158
+      },
+      {
+        "seed": 71,
+        "success": true,
+        "steps": 24,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.92,
+        "elapsed_s": 0.011
+      },
+      {
+        "seed": 72,
+        "success": true,
+        "steps": 26,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9133333333333333,
+        "elapsed_s": 0.013
+      },
+      {
+        "seed": 73,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.13
+      },
+      {
+        "seed": 74,
+        "success": true,
+        "steps": 32,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8933333333333333,
+        "elapsed_s": 0.014
+      },
+      {
+        "seed": 75,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.122
+      },
+      {
+        "seed": 76,
+        "success": true,
+        "steps": 43,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8566666666666667,
+        "elapsed_s": 0.02
+      },
+      {
+        "seed": 77,
+        "success": true,
+        "steps": 38,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8733333333333333,
+        "elapsed_s": 0.021
+      },
+      {
+        "seed": 78,
+        "success": true,
+        "steps": 21,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9299999999999999,
+        "elapsed_s": 0.01
+      },
+      {
+        "seed": 79,
+        "success": true,
+        "steps": 39,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.87,
+        "elapsed_s": 0.02
+      },
+      {
+        "seed": 80,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.14
+      },
+      {
+        "seed": 81,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.14
+      },
+      {
+        "seed": 82,
+        "success": true,
+        "steps": 21,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9299999999999999,
+        "elapsed_s": 0.009
+      },
+      {
+        "seed": 83,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.169
+      },
+      {
+        "seed": 84,
+        "success": true,
+        "steps": 34,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8866666666666667,
+        "elapsed_s": 0.017
+      },
+      {
+        "seed": 85,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.125
+      },
+      {
+        "seed": 86,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.125
+      },
+      {
+        "seed": 87,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.132
+      },
+      {
+        "seed": 88,
+        "success": true,
+        "steps": 46,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8466666666666667,
+        "elapsed_s": 0.025
+      },
+      {
+        "seed": 89,
+        "success": true,
+        "steps": 20,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9333333333333333,
+        "elapsed_s": 0.011
+      },
+      {
+        "seed": 90,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.148
+      },
+      {
+        "seed": 91,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.14
+      },
+      {
+        "seed": 92,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.168
+      },
+      {
+        "seed": 93,
+        "success": true,
+        "steps": 34,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8866666666666667,
+        "elapsed_s": 0.017
+      },
+      {
+        "seed": 94,
+        "success": true,
+        "steps": 32,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8933333333333333,
+        "elapsed_s": 0.015
+      },
+      {
+        "seed": 95,
+        "success": true,
+        "steps": 21,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9299999999999999,
+        "elapsed_s": 0.009
+      },
+      {
+        "seed": 96,
+        "success": true,
+        "steps": 20,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9333333333333333,
+        "elapsed_s": 0.01
+      },
+      {
+        "seed": 97,
+        "success": true,
+        "steps": 22,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9266666666666666,
+        "elapsed_s": 0.012
+      },
+      {
+        "seed": 98,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.136
+      },
+      {
+        "seed": 99,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.13
+      },
+      {
+        "seed": 100,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.15
+      },
+      {
+        "seed": 101,
+        "success": true,
+        "steps": 52,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8266666666666667,
+        "elapsed_s": 0.027
+      },
+      {
+        "seed": 102,
+        "success": true,
+        "steps": 28,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9066666666666666,
+        "elapsed_s": 0.017
+      },
+      {
+        "seed": 103,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.146
+      },
+      {
+        "seed": 104,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.155
+      },
+      {
+        "seed": 105,
+        "success": true,
+        "steps": 19,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9366666666666666,
+        "elapsed_s": 0.01
+      },
+      {
+        "seed": 106,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.134
+      },
+      {
+        "seed": 107,
+        "success": true,
+        "steps": 38,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8733333333333333,
+        "elapsed_s": 0.021
+      },
+      {
+        "seed": 108,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.136
+      },
+      {
+        "seed": 109,
+        "success": true,
+        "steps": 16,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9466666666666667,
+        "elapsed_s": 0.008
+      },
+      {
+        "seed": 110,
+        "success": true,
+        "steps": 15,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.95,
+        "elapsed_s": 0.006
+      },
+      {
+        "seed": 111,
+        "success": true,
+        "steps": 21,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9299999999999999,
+        "elapsed_s": 0.009
+      },
+      {
+        "seed": 112,
+        "success": true,
+        "steps": 47,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8433333333333333,
+        "elapsed_s": 0.025
+      },
+      {
+        "seed": 113,
+        "success": true,
+        "steps": 23,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9233333333333333,
+        "elapsed_s": 0.011
+      },
+      {
+        "seed": 114,
+        "success": true,
+        "steps": 57,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.81,
+        "elapsed_s": 0.034
+      },
+      {
+        "seed": 115,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.141
+      },
+      {
+        "seed": 116,
+        "success": true,
+        "steps": 49,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8366666666666667,
+        "elapsed_s": 0.029
+      },
+      {
+        "seed": 117,
+        "success": true,
+        "steps": 29,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9033333333333333,
+        "elapsed_s": 0.016
+      },
+      {
+        "seed": 118,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.165
+      },
+      {
+        "seed": 119,
+        "success": true,
+        "steps": 35,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8833333333333333,
+        "elapsed_s": 0.023
+      },
+      {
+        "seed": 120,
+        "success": true,
+        "steps": 25,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9166666666666666,
+        "elapsed_s": 0.015
+      },
+      {
+        "seed": 121,
+        "success": true,
+        "steps": 23,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9233333333333333,
+        "elapsed_s": 0.012
+      },
+      {
+        "seed": 122,
+        "success": true,
+        "steps": 22,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9266666666666666,
+        "elapsed_s": 0.011
+      },
+      {
+        "seed": 123,
+        "success": true,
+        "steps": 37,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8766666666666667,
+        "elapsed_s": 0.02
+      },
+      {
+        "seed": 124,
+        "success": true,
+        "steps": 34,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8866666666666667,
+        "elapsed_s": 0.018
+      },
+      {
+        "seed": 125,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.133
+      },
+      {
+        "seed": 126,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.12
+      },
+      {
+        "seed": 127,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.148
+      },
+      {
+        "seed": 128,
+        "success": true,
+        "steps": 25,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9166666666666666,
+        "elapsed_s": 0.014
+      },
+      {
+        "seed": 129,
+        "success": true,
+        "steps": 18,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.94,
+        "elapsed_s": 0.008
+      },
+      {
+        "seed": 130,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.145
+      },
+      {
+        "seed": 131,
+        "success": true,
+        "steps": 27,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.91,
+        "elapsed_s": 0.013
+      },
+      {
+        "seed": 132,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.163
+      },
+      {
+        "seed": 133,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.147
+      },
+      {
+        "seed": 134,
+        "success": true,
+        "steps": 30,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9,
+        "elapsed_s": 0.014
+      },
+      {
+        "seed": 135,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.133
+      },
+      {
+        "seed": 136,
+        "success": true,
+        "steps": 33,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.89,
+        "elapsed_s": 0.015
+      },
+      {
+        "seed": 137,
+        "success": true,
+        "steps": 33,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.89,
+        "elapsed_s": 0.017
+      },
+      {
+        "seed": 138,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.139
+      },
+      {
+        "seed": 139,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.134
+      },
+      {
+        "seed": 140,
+        "success": true,
+        "steps": 43,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8566666666666667,
+        "elapsed_s": 0.021
+      },
+      {
+        "seed": 141,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.138
+      },
+      {
+        "seed": 142,
+        "success": true,
+        "steps": 30,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9,
+        "elapsed_s": 0.016
+      },
+      {
+        "seed": 143,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.141
+      },
+      {
+        "seed": 144,
+        "success": true,
+        "steps": 49,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8366666666666667,
+        "elapsed_s": 0.023
+      },
+      {
+        "seed": 145,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.147
+      },
+      {
+        "seed": 146,
+        "success": true,
+        "steps": 21,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9299999999999999,
+        "elapsed_s": 0.009
+      },
+      {
+        "seed": 147,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.14
+      },
+      {
+        "seed": 148,
+        "success": true,
+        "steps": 27,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.91,
+        "elapsed_s": 0.014
+      },
+      {
+        "seed": 149,
+        "success": true,
+        "steps": 35,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8833333333333333,
+        "elapsed_s": 0.018
+      },
+      {
+        "seed": 150,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.141
+      },
+      {
+        "seed": 151,
+        "success": true,
+        "steps": 28,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9066666666666666,
+        "elapsed_s": 0.014
+      },
+      {
+        "seed": 152,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.133
+      },
+      {
+        "seed": 153,
+        "success": true,
+        "steps": 23,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9233333333333333,
+        "elapsed_s": 0.011
+      },
+      {
+        "seed": 154,
+        "success": true,
+        "steps": 58,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8066666666666666,
+        "elapsed_s": 0.04
+      },
+      {
+        "seed": 155,
+        "success": true,
+        "steps": 42,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.86,
+        "elapsed_s": 0.027
+      },
+      {
+        "seed": 156,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.161
+      },
+      {
+        "seed": 157,
+        "success": true,
+        "steps": 48,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.84,
+        "elapsed_s": 0.022
+      },
+      {
+        "seed": 158,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.136
+      },
+      {
+        "seed": 159,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.124
+      },
+      {
+        "seed": 160,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.133
+      },
+      {
+        "seed": 161,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.133
+      },
+      {
+        "seed": 162,
+        "success": true,
+        "steps": 26,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9133333333333333,
+        "elapsed_s": 0.013
+      },
+      {
+        "seed": 163,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.14
+      },
+      {
+        "seed": 164,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.151
+      },
+      {
+        "seed": 165,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.135
+      },
+      {
+        "seed": 166,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.135
+      },
+      {
+        "seed": 167,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.149
+      },
+      {
+        "seed": 168,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.15
+      },
+      {
+        "seed": 169,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.14
+      },
+      {
+        "seed": 170,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.17
+      },
+      {
+        "seed": 171,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.198
+      },
+      {
+        "seed": 172,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.127
+      },
+      {
+        "seed": 173,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.156
+      },
+      {
+        "seed": 174,
+        "success": true,
+        "steps": 21,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9299999999999999,
+        "elapsed_s": 0.011
+      },
+      {
+        "seed": 175,
+        "success": true,
+        "steps": 40,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8666666666666667,
+        "elapsed_s": 0.025
+      },
+      {
+        "seed": 176,
+        "success": true,
+        "steps": 40,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8666666666666667,
+        "elapsed_s": 0.025
+      },
+      {
+        "seed": 177,
+        "success": true,
+        "steps": 24,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.92,
+        "elapsed_s": 0.011
+      },
+      {
+        "seed": 178,
+        "success": true,
+        "steps": 23,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9233333333333333,
+        "elapsed_s": 0.014
+      },
+      {
+        "seed": 179,
+        "success": true,
+        "steps": 22,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9266666666666666,
+        "elapsed_s": 0.011
+      },
+      {
+        "seed": 180,
+        "success": true,
+        "steps": 36,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.88,
+        "elapsed_s": 0.019
+      },
+      {
+        "seed": 181,
+        "success": true,
+        "steps": 21,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9299999999999999,
+        "elapsed_s": 0.01
+      },
+      {
+        "seed": 182,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.137
+      },
+      {
+        "seed": 183,
+        "success": true,
+        "steps": 30,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9,
+        "elapsed_s": 0.014
+      },
+      {
+        "seed": 184,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.179
+      },
+      {
+        "seed": 185,
+        "success": true,
+        "steps": 44,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8533333333333333,
+        "elapsed_s": 0.021
+      },
+      {
+        "seed": 186,
+        "success": true,
+        "steps": 35,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8833333333333333,
+        "elapsed_s": 0.016
+      },
+      {
+        "seed": 187,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.137
+      },
+      {
+        "seed": 188,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.129
+      },
+      {
+        "seed": 189,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.139
+      },
+      {
+        "seed": 190,
+        "success": true,
+        "steps": 34,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8866666666666667,
+        "elapsed_s": 0.015
+      },
+      {
+        "seed": 191,
+        "success": true,
+        "steps": 43,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8566666666666667,
+        "elapsed_s": 0.025
+      },
+      {
+        "seed": 192,
+        "success": true,
+        "steps": 25,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9166666666666666,
+        "elapsed_s": 0.013
+      },
+      {
+        "seed": 193,
+        "success": true,
+        "steps": 26,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9133333333333333,
+        "elapsed_s": 0.012
+      },
+      {
+        "seed": 194,
+        "success": true,
+        "steps": 33,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.89,
+        "elapsed_s": 0.016
+      },
+      {
+        "seed": 195,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.149
+      },
+      {
+        "seed": 196,
+        "success": true,
+        "steps": 60,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8,
+        "elapsed_s": 0.035
+      },
+      {
+        "seed": 197,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.149
+      },
+      {
+        "seed": 198,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.141
+      },
+      {
+        "seed": 199,
+        "success": false,
+        "steps": 270,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.15
+      }
+    ]
+  },
+  "exp111c_s5r3": {
+    "summary": {
+      "env": "BabyAI-KeyCorridorS5R3-v0",
+      "n_seeds": 200,
+      "max_steps": 750,
+      "success_rate": 0.395,
+      "successes": 79,
+      "mean_steps_success": 50.7,
+      "mean_subgoals": 2.2,
+      "min_subgoals_success": 5,
+      "max_subgoals_success": 6,
+      "total_elapsed_s": 79.9
+    },
+    "episodes": [
+      {
+        "seed": 0,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.608
+      },
+      {
+        "seed": 1,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.608
+      },
+      {
+        "seed": 2,
+        "success": true,
+        "steps": 73,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9124,
+        "elapsed_s": 0.068
+      },
+      {
+        "seed": 3,
+        "success": true,
+        "steps": 53,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9364,
+        "elapsed_s": 0.045
+      },
+      {
+        "seed": 4,
+        "success": true,
+        "steps": 39,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9532,
+        "elapsed_s": 0.036
+      },
+      {
+        "seed": 5,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.631
+      },
+      {
+        "seed": 6,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.669
+      },
+      {
+        "seed": 7,
+        "success": true,
+        "steps": 51,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9388,
+        "elapsed_s": 0.051
+      },
+      {
+        "seed": 8,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.559
+      },
+      {
+        "seed": 9,
+        "success": true,
+        "steps": 49,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9412,
+        "elapsed_s": 0.056
+      },
+      {
+        "seed": 10,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.652
+      },
+      {
+        "seed": 11,
+        "success": true,
+        "steps": 34,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9592,
+        "elapsed_s": 0.036
+      },
+      {
+        "seed": 12,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.648
+      },
+      {
+        "seed": 13,
+        "success": true,
+        "steps": 44,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9472,
+        "elapsed_s": 0.033
+      },
+      {
+        "seed": 14,
+        "success": true,
+        "steps": 33,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9604,
+        "elapsed_s": 0.024
+      },
+      {
+        "seed": 15,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.546
+      },
+      {
+        "seed": 16,
+        "success": true,
+        "steps": 84,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.8992,
+        "elapsed_s": 0.07
+      },
+      {
+        "seed": 17,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.526
+      },
+      {
+        "seed": 18,
+        "success": true,
+        "steps": 47,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9436,
+        "elapsed_s": 0.034
+      },
+      {
+        "seed": 19,
+        "success": true,
+        "steps": 46,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9448,
+        "elapsed_s": 0.041
+      },
+      {
+        "seed": 20,
+        "success": true,
+        "steps": 49,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9412,
+        "elapsed_s": 0.042
+      },
+      {
+        "seed": 21,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.597
+      },
+      {
+        "seed": 22,
+        "success": true,
+        "steps": 41,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9508,
+        "elapsed_s": 0.031
+      },
+      {
+        "seed": 23,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.592
+      },
+      {
+        "seed": 24,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.575
+      },
+      {
+        "seed": 25,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.669
+      },
+      {
+        "seed": 26,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.592
+      },
+      {
+        "seed": 27,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.616
+      },
+      {
+        "seed": 28,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.603
+      },
+      {
+        "seed": 29,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.557
+      },
+      {
+        "seed": 30,
+        "success": true,
+        "steps": 63,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9244,
+        "elapsed_s": 0.052
+      },
+      {
+        "seed": 31,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.611
+      },
+      {
+        "seed": 32,
+        "success": true,
+        "steps": 58,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9304,
+        "elapsed_s": 0.052
+      },
+      {
+        "seed": 33,
+        "success": true,
+        "steps": 47,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9436,
+        "elapsed_s": 0.039
+      },
+      {
+        "seed": 34,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.67
+      },
+      {
+        "seed": 35,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.617
+      },
+      {
+        "seed": 36,
+        "success": true,
+        "steps": 48,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9424,
+        "elapsed_s": 0.046
+      },
+      {
+        "seed": 37,
+        "success": true,
+        "steps": 34,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9592,
+        "elapsed_s": 0.033
+      },
+      {
+        "seed": 38,
+        "success": true,
+        "steps": 35,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.958,
+        "elapsed_s": 0.03
+      },
+      {
+        "seed": 39,
+        "success": true,
+        "steps": 33,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9604,
+        "elapsed_s": 0.027
+      },
+      {
+        "seed": 40,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.586
+      },
+      {
+        "seed": 41,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.639
+      },
+      {
+        "seed": 42,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.542
+      },
+      {
+        "seed": 43,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.589
+      },
+      {
+        "seed": 44,
+        "success": true,
+        "steps": 40,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.952,
+        "elapsed_s": 0.033
+      },
+      {
+        "seed": 45,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.608
+      },
+      {
+        "seed": 46,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.528
+      },
+      {
+        "seed": 47,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.683
+      },
+      {
+        "seed": 48,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.581
+      },
+      {
+        "seed": 49,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.651
+      },
+      {
+        "seed": 50,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.623
+      },
+      {
+        "seed": 51,
+        "success": true,
+        "steps": 56,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9328,
+        "elapsed_s": 0.044
+      },
+      {
+        "seed": 52,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.589
+      },
+      {
+        "seed": 53,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.634
+      },
+      {
+        "seed": 54,
+        "success": true,
+        "steps": 82,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9016,
+        "elapsed_s": 0.091
+      },
+      {
+        "seed": 55,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.605
+      },
+      {
+        "seed": 56,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.613
+      },
+      {
+        "seed": 57,
+        "success": true,
+        "steps": 61,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9268,
+        "elapsed_s": 0.06
+      },
+      {
+        "seed": 58,
+        "success": true,
+        "steps": 60,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9279999999999999,
+        "elapsed_s": 0.058
+      },
+      {
+        "seed": 59,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.667
+      },
+      {
+        "seed": 60,
+        "success": true,
+        "steps": 63,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9244,
+        "elapsed_s": 0.057
+      },
+      {
+        "seed": 61,
+        "success": true,
+        "steps": 66,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9208000000000001,
+        "elapsed_s": 0.052
+      },
+      {
+        "seed": 62,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.644
+      },
+      {
+        "seed": 63,
+        "success": true,
+        "steps": 34,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9592,
+        "elapsed_s": 0.025
+      },
+      {
+        "seed": 64,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.575
+      },
+      {
+        "seed": 65,
+        "success": true,
+        "steps": 78,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9064,
+        "elapsed_s": 0.081
+      },
+      {
+        "seed": 66,
+        "success": true,
+        "steps": 50,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.94,
+        "elapsed_s": 0.043
+      },
+      {
+        "seed": 67,
+        "success": true,
+        "steps": 39,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9532,
+        "elapsed_s": 0.039
+      },
+      {
+        "seed": 68,
+        "success": true,
+        "steps": 41,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9508,
+        "elapsed_s": 0.034
+      },
+      {
+        "seed": 69,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.609
+      },
+      {
+        "seed": 70,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.569
+      },
+      {
+        "seed": 71,
+        "success": true,
+        "steps": 36,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9568,
+        "elapsed_s": 0.032
+      },
+      {
+        "seed": 72,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.603
+      },
+      {
+        "seed": 73,
+        "success": true,
+        "steps": 46,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9448,
+        "elapsed_s": 0.042
+      },
+      {
+        "seed": 74,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.561
+      },
+      {
+        "seed": 75,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.605
+      },
+      {
+        "seed": 76,
+        "success": true,
+        "steps": 66,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9208000000000001,
+        "elapsed_s": 0.055
+      },
+      {
+        "seed": 77,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.629
+      },
+      {
+        "seed": 78,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.546
+      },
+      {
+        "seed": 79,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.641
+      },
+      {
+        "seed": 80,
+        "success": true,
+        "steps": 83,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9004,
+        "elapsed_s": 0.071
+      },
+      {
+        "seed": 81,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.548
+      },
+      {
+        "seed": 82,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.561
+      },
+      {
+        "seed": 83,
+        "success": true,
+        "steps": 36,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9568,
+        "elapsed_s": 0.034
+      },
+      {
+        "seed": 84,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.606
+      },
+      {
+        "seed": 85,
+        "success": true,
+        "steps": 36,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9568,
+        "elapsed_s": 0.026
+      },
+      {
+        "seed": 86,
+        "success": true,
+        "steps": 64,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9232,
+        "elapsed_s": 0.054
+      },
+      {
+        "seed": 87,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.628
+      },
+      {
+        "seed": 88,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.651
+      },
+      {
+        "seed": 89,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.654
+      },
+      {
+        "seed": 90,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.588
+      },
+      {
+        "seed": 91,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.582
+      },
+      {
+        "seed": 92,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.627
+      },
+      {
+        "seed": 93,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.574
+      },
+      {
+        "seed": 94,
+        "success": true,
+        "steps": 64,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9232,
+        "elapsed_s": 0.057
+      },
+      {
+        "seed": 95,
+        "success": true,
+        "steps": 53,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9364,
+        "elapsed_s": 0.053
+      },
+      {
+        "seed": 96,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.572
+      },
+      {
+        "seed": 97,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.56
+      },
+      {
+        "seed": 98,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.587
+      },
+      {
+        "seed": 99,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.622
+      },
+      {
+        "seed": 100,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.624
+      },
+      {
+        "seed": 101,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.61
+      },
+      {
+        "seed": 102,
+        "success": true,
+        "steps": 51,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9388,
+        "elapsed_s": 0.046
+      },
+      {
+        "seed": 103,
+        "success": true,
+        "steps": 67,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9196,
+        "elapsed_s": 0.071
+      },
+      {
+        "seed": 104,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.636
+      },
+      {
+        "seed": 105,
+        "success": true,
+        "steps": 32,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9616,
+        "elapsed_s": 0.029
+      },
+      {
+        "seed": 106,
+        "success": true,
+        "steps": 71,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9148000000000001,
+        "elapsed_s": 0.075
+      },
+      {
+        "seed": 107,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.578
+      },
+      {
+        "seed": 108,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.639
+      },
+      {
+        "seed": 109,
+        "success": true,
+        "steps": 33,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9604,
+        "elapsed_s": 0.029
+      },
+      {
+        "seed": 110,
+        "success": true,
+        "steps": 54,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9352,
+        "elapsed_s": 0.051
+      },
+      {
+        "seed": 111,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.558
+      },
+      {
+        "seed": 112,
+        "success": true,
+        "steps": 40,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.952,
+        "elapsed_s": 0.036
+      },
+      {
+        "seed": 113,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.562
+      },
+      {
+        "seed": 114,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.589
+      },
+      {
+        "seed": 115,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.635
+      },
+      {
+        "seed": 116,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.534
+      },
+      {
+        "seed": 117,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.677
+      },
+      {
+        "seed": 118,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.672
+      },
+      {
+        "seed": 119,
+        "success": true,
+        "steps": 56,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9328,
+        "elapsed_s": 0.051
+      },
+      {
+        "seed": 120,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.611
+      },
+      {
+        "seed": 121,
+        "success": true,
+        "steps": 41,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9508,
+        "elapsed_s": 0.039
+      },
+      {
+        "seed": 122,
+        "success": true,
+        "steps": 29,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9652,
+        "elapsed_s": 0.033
+      },
+      {
+        "seed": 123,
+        "success": true,
+        "steps": 39,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9532,
+        "elapsed_s": 0.036
+      },
+      {
+        "seed": 124,
+        "success": true,
+        "steps": 56,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9328,
+        "elapsed_s": 0.053
+      },
+      {
+        "seed": 125,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.596
+      },
+      {
+        "seed": 126,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.621
+      },
+      {
+        "seed": 127,
+        "success": true,
+        "steps": 63,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9244,
+        "elapsed_s": 0.065
+      },
+      {
+        "seed": 128,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.569
+      },
+      {
+        "seed": 129,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.664
+      },
+      {
+        "seed": 130,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.596
+      },
+      {
+        "seed": 131,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.595
+      },
+      {
+        "seed": 132,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.581
+      },
+      {
+        "seed": 133,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.578
+      },
+      {
+        "seed": 134,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.567
+      },
+      {
+        "seed": 135,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.603
+      },
+      {
+        "seed": 136,
+        "success": true,
+        "steps": 34,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9592,
+        "elapsed_s": 0.029
+      },
+      {
+        "seed": 137,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.63
+      },
+      {
+        "seed": 138,
+        "success": true,
+        "steps": 49,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9412,
+        "elapsed_s": 0.046
+      },
+      {
+        "seed": 139,
+        "success": true,
+        "steps": 35,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.958,
+        "elapsed_s": 0.028
+      },
+      {
+        "seed": 140,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.657
+      },
+      {
+        "seed": 141,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.711
+      },
+      {
+        "seed": 142,
+        "success": true,
+        "steps": 30,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.964,
+        "elapsed_s": 0.026
+      },
+      {
+        "seed": 143,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.705
+      },
+      {
+        "seed": 144,
+        "success": true,
+        "steps": 43,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9484,
+        "elapsed_s": 0.04
+      },
+      {
+        "seed": 145,
+        "success": true,
+        "steps": 74,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9112,
+        "elapsed_s": 0.076
+      },
+      {
+        "seed": 146,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.684
+      },
+      {
+        "seed": 147,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.623
+      },
+      {
+        "seed": 148,
+        "success": true,
+        "steps": 66,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9208000000000001,
+        "elapsed_s": 0.074
+      },
+      {
+        "seed": 149,
+        "success": true,
+        "steps": 40,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.952,
+        "elapsed_s": 0.041
+      },
+      {
+        "seed": 150,
+        "success": true,
+        "steps": 29,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9652,
+        "elapsed_s": 0.029
+      },
+      {
+        "seed": 151,
+        "success": true,
+        "steps": 69,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9172,
+        "elapsed_s": 0.058
+      },
+      {
+        "seed": 152,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.585
+      },
+      {
+        "seed": 153,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.587
+      },
+      {
+        "seed": 154,
+        "success": true,
+        "steps": 29,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9652,
+        "elapsed_s": 0.023
+      },
+      {
+        "seed": 155,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.569
+      },
+      {
+        "seed": 156,
+        "success": true,
+        "steps": 67,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9196,
+        "elapsed_s": 0.055
+      },
+      {
+        "seed": 157,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.556
+      },
+      {
+        "seed": 158,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.583
+      },
+      {
+        "seed": 159,
+        "success": true,
+        "steps": 46,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9448,
+        "elapsed_s": 0.043
+      },
+      {
+        "seed": 160,
+        "success": true,
+        "steps": 66,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9208000000000001,
+        "elapsed_s": 0.055
+      },
+      {
+        "seed": 161,
+        "success": true,
+        "steps": 42,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9496,
+        "elapsed_s": 0.041
+      },
+      {
+        "seed": 162,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.6
+      },
+      {
+        "seed": 163,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.606
+      },
+      {
+        "seed": 164,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.691
+      },
+      {
+        "seed": 165,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.6
+      },
+      {
+        "seed": 166,
+        "success": true,
+        "steps": 41,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9508,
+        "elapsed_s": 0.041
+      },
+      {
+        "seed": 167,
+        "success": true,
+        "steps": 45,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.946,
+        "elapsed_s": 0.041
+      },
+      {
+        "seed": 168,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.668
+      },
+      {
+        "seed": 169,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.631
+      },
+      {
+        "seed": 170,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.602
+      },
+      {
+        "seed": 171,
+        "success": true,
+        "steps": 67,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9196,
+        "elapsed_s": 0.064
+      },
+      {
+        "seed": 172,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.614
+      },
+      {
+        "seed": 173,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.607
+      },
+      {
+        "seed": 174,
+        "success": true,
+        "steps": 71,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9148000000000001,
+        "elapsed_s": 0.066
+      },
+      {
+        "seed": 175,
+        "success": true,
+        "steps": 60,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9279999999999999,
+        "elapsed_s": 0.058
+      },
+      {
+        "seed": 176,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.587
+      },
+      {
+        "seed": 177,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.613
+      },
+      {
+        "seed": 178,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.579
+      },
+      {
+        "seed": 179,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.557
+      },
+      {
+        "seed": 180,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.578
+      },
+      {
+        "seed": 181,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.6
+      },
+      {
+        "seed": 182,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.63
+      },
+      {
+        "seed": 183,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.627
+      },
+      {
+        "seed": 184,
+        "success": true,
+        "steps": 47,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9436,
+        "elapsed_s": 0.041
+      },
+      {
+        "seed": 185,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.64
+      },
+      {
+        "seed": 186,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.593
+      },
+      {
+        "seed": 187,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.635
+      },
+      {
+        "seed": 188,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.639
+      },
+      {
+        "seed": 189,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.689
+      },
+      {
+        "seed": 190,
+        "success": true,
+        "steps": 69,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9172,
+        "elapsed_s": 0.075
+      },
+      {
+        "seed": 191,
+        "success": true,
+        "steps": 58,
+        "subgoals_completed": 5,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9304,
+        "elapsed_s": 0.061
+      },
+      {
+        "seed": 192,
+        "success": true,
+        "steps": 53,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9364,
+        "elapsed_s": 0.044
+      },
+      {
+        "seed": 193,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.589
+      },
+      {
+        "seed": 194,
+        "success": true,
+        "steps": 28,
+        "subgoals_completed": 6,
+        "completed_names": [
+          "PICKUP_KEY",
+          "GOTO_KEY",
+          "OPEN_DOOR",
+          "GOTO_GOAL",
+          "DROP_KEY",
+          "PICKUP_GOAL"
+        ],
+        "reward": 0.9664,
+        "elapsed_s": 0.024
+      },
+      {
+        "seed": 195,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.58
+      },
+      {
+        "seed": 196,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.589
+      },
+      {
+        "seed": 197,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.636
+      },
+      {
+        "seed": 198,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.626
+      },
+      {
+        "seed": 199,
+        "success": false,
+        "steps": 750,
+        "subgoals_completed": 0,
+        "completed_names": [],
+        "reward": 0.0,
+        "elapsed_s": 0.626
+      }
+    ]
+  }
+}
