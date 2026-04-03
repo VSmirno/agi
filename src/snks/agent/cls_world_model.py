@@ -301,15 +301,14 @@ class CLSWorldModel:
             best_reward = -float("inf")
 
             for action in ["pickup", "toggle", "drop", "forward"]:
-                key = make_situation_key(state, action)
-                if key in self.neocortex:
-                    rule = self.neocortex[key]
-                    if rule.reward > best_reward:
-                        best_reward = rule.reward
-                        best_action = action
-                        best_outcome = rule.outcome
+                reward = self.query_reward(state, action)
+                if reward > best_reward:
+                    best_reward = reward
+                    best_action = action
+                    out, _, _ = self.query(state, action)
+                    best_outcome = out
 
-            if best_action is None or best_reward < 0:
+            if best_action is None or best_reward <= -1.0:
                 break
 
             plan.append({"action": best_action, "outcome": best_outcome})
@@ -362,10 +361,38 @@ class CLSWorldModel:
 
     def _apply_outcome(self, state: dict[str, str],
                        outcome: dict[str, str]) -> dict[str, str]:
+        """Apply outcome to state, inferring implicit changes."""
         new = dict(state)
+        result = outcome.get("result", "")
+
+        # Explicit fields
         for k, v in outcome.items():
             if k != "result":
                 new[k] = v
+
+        # Implicit state changes based on result
+        if result == "picked_up":
+            # Now carrying the object we were facing
+            new["carrying"] = state.get("facing_obj", "nothing")
+            new["carrying_color"] = state.get("obj_color", "")
+            new["facing_obj"] = "empty"
+            new["obj_color"] = ""
+            new["obj_state"] = "none"
+        elif result == "dropped":
+            new["carrying"] = "nothing"
+            new["carrying_color"] = ""
+        elif result in ("door_opened", "door_unlocked"):
+            new["obj_state"] = "open"
+            if result == "door_unlocked":
+                # Key consumed when unlocking
+                new["carrying"] = "nothing"
+                new["carrying_color"] = ""
+        elif result == "moved":
+            # After moving, we face empty (simplification)
+            new["facing_obj"] = "empty"
+            new["obj_color"] = ""
+            new["obj_state"] = "none"
+
         return new
 
     def get_stats(self) -> dict:
