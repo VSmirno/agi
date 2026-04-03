@@ -48,24 +48,32 @@ BFS Navigation (символическое, как в Stage 58)
 
 **ColorStateEncoder (VSA):**
 - Кодирует: agent_pos (quantized), has_key (bool), key_color (6 вариантов), door_colors (set), locked_door_color, exploration_pct
-- Output: 256-dim binary VSA vector
+- Output: 512-dim binary VSA vector (совпадает с VSACodebook default dim=512 из Stage 58)
 - Расширение AbstractStateEncoder из Stage 58, но с color awareness
 
 **SDM Color-Transition Memory:**
 - Locations: 1000 (как Stage 58)
-- Dimension: 256
-- Write: после каждого toggle двери записываем (key_color, door_color, success/fail)
-- Read: дано key_color → query SDM → получаем door_color с максимальным reward
+- Dimension: 512 (совпадает с VSACodebook)
+- API mapping на существующий SDMMemory interface:
+  - `state` = VSA(key_color) — закодированный цвет ключа
+  - `action` = VSA(door_color) — закодированный цвет двери
+  - `reward` = 1.0 (success) / -1.0 (fail)
+  - Write: `sdm.write(state=VSA(key_color), action=VSA(door_color), reward=±1.0)`
+  - Read: `sdm.read_reward(state=VSA(key_color), action=VSA(door_color))` для всех door_colors → argmax
 - Обобщение: SDM должен вывести паттерн same_color из ~50-100 exploration episodes
 
 **SDMLockedRoomAgent:**
 - Новый агент, не расширяет SDMDoorKeyAgent
 - Использует SpatialMap, FrontierExplorer, GridPathfinder из Stage 58
-- Subgoal chain: EXPLORE → FIND_KEY → GOTO_KEY → PICKUP → FIND_LOCKED_DOOR → GOTO_DOOR → TOGGLE → GOTO_GOAL
+- **Важно:** SpatialMap.find_objects() возвращает только первый объект каждого типа. Для LockedRoom нужен обход всех cells через `spatial_map.grid` для enumerate всех дверей/ключей с цветами.
+- Subgoal chain: EXPLORE → FIND_KEY → GOTO_KEY → PICKUP → FIND_LOCKED_DOOR → GOTO_DOOR → TOGGLE → (fail? DROP_KEY → EXPLORE) → GOTO_GOAL
+- DROP_KEY subgoal: если toggle не сработал (wrong color), drop ключ и вернуться к exploration
+- Max steps per episode: 1000 (19×19 grid с 6 комнатами требует ~500-800 шагов)
 
 **Mission Parser (Phase B only):**
-- Regex: `"get the (\w+) key from the (\w+) room"`
-- Извлекает target_key_color, target_room_color
+- Actual MiniGrid LockedRoom mission format: `"get the {color} key from the {color} room, unlock the {color} door and go to the goal"`
+- Regex: `r"get the (\w+) key from the (\w+) room, unlock the (\w+) door"`
+- Извлекает target_key_color, source_room_color, target_door_color
 - SDM использует как дополнительный signal
 
 ## Два этапа Proof
@@ -80,11 +88,14 @@ BFS Navigation (символическое, как в Stage 58)
    - SDM + parsed mission → направленный план
    - Метрика: success rate
 3. **Ablation:**
-   - Pure heuristic (random door) → expect ~16%
-   - SDM trained + mission → expect ≥70%
-   - SDM untrained + mission → expect ~16%
+   - Heuristic WITHOUT mission (random door choice) → expect ~16%
+   - Heuristic WITH mission parsing (парсит цвет, но без SDM memory) → ожидаем высокий baseline, это BFS+regex
+   - SDM trained + mission → expect ≥70%, должен быть >= heuristic+mission
+   - SDM untrained + mission → expect ≈ heuristic+mission
 
-### Phase A — без mission text (второй, сложнее)
+   **Примечание:** главный proof Phase B — не SDM > heuristic_random, а что SDM **запоминает** transitions и использует их. Реальный proof обучения — Phase A.
+
+### Phase A — без mission text (второй, сложнее — ГЛАВНЫЙ PROOF)
 
 1. **Exploration (training):** 100-200 seeds
    - Агент исследует LockedRoom, пробует ключи на дверях
@@ -102,10 +113,12 @@ BFS Navigation (символическое, как в Stage 58)
 ## Subgoal Chain
 
 ```
-EXPLORE_ROOMS → FIND_KEY → GOTO_KEY_ROOM → PICKUP_KEY → FIND_LOCKED_DOOR → GOTO_LOCKED_DOOR → TOGGLE_DOOR → GOTO_GOAL
+EXPLORE_ROOMS → FIND_KEY → GOTO_KEY → PICKUP_KEY → FIND_LOCKED_DOOR → GOTO_DOOR → TOGGLE_DOOR
+  ├─ success → GOTO_GOAL → DONE
+  └─ fail (wrong color) → DROP_KEY → EXPLORE_ROOMS (loop)
 ```
 
-8 subgoals. BFS handles navigation (HOW), SDM handles color selection (WHAT).
+8-10 subgoals (с retry loop). BFS handles navigation (HOW), SDM handles color selection (WHAT).
 
 ## Gate Criteria
 
@@ -139,9 +152,13 @@ EXPLORE_ROOMS → FIND_KEY → GOTO_KEY_ROOM → PICKUP_KEY → FIND_LOCKED_DOOR
 
 Все эксперименты запускаются на minipc (evo-x2). Деплой через git push/pull. CPU first.
 
+**Seed partitioning:** training seeds 0-99, eval seeds 1000-1199. Фазы B и A используют **отдельные** SDM instances (Phase A не наследует память Phase B).
+
+**Ожидаемое время:** ~5-10 мин на эксперимент (1000 steps × 200 seeds = 200K steps, CPU).
+
 | Exp | Phase | Config | Seeds | Gate |
 |-----|-------|--------|-------|------|
-| 113a | B (mission) | 50 train, 200 eval | unseen | ≥70% |
-| 113b | B ablation | heuristic vs trained vs untrained | 200 | p<0.05 |
-| 113c | A (no mission) | 100 train, 200 eval | unseen | ≥50% |
-| 113d | A ablation | heuristic vs trained vs untrained | 200 | p<0.05 |
+| 113a | B (mission) | 50 train, 200 eval, max_steps=1000 | train 0-49, eval 1000-1199 | ≥70% |
+| 113b | B ablation | heuristic±mission vs trained vs untrained | eval 1000-1199 | report |
+| 113c | A (no mission) | 100 train, 200 eval, max_steps=1000 | train 0-99, eval 1000-1199 | ≥50% |
+| 113d | A ablation | heuristic vs SDM trained vs untrained | eval 1000-1199 | p<0.05 |
