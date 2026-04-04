@@ -67,9 +67,9 @@ def main():
     print("CALIBRATION MEASUREMENT")
     tracker = CalibrationTracker(n_buckets=5)
 
-    # Test on MiniGrid scenarios
+    # Test on MiniGrid — train colors (should be high conf, high acc)
     mg_test_env = MiniGridSymbolicEnv(colors=TRAIN_COLORS, seed=999)
-    for _ in range(200):
+    for _ in range(100):
         mg_test_env.reset()
         situation = mg_test_env.observe()
         for action in mg_test_env.available_actions():
@@ -77,8 +77,34 @@ def main():
             actual_outcome, _ = mg_test_env.step(action)
             tracker.record(conf, predicted.get("result", "unknown"),
                           actual_outcome.get("result", "unknown"))
-            # Reset env to same state for next action
             mg_test_env.set_scenario(**situation)
+
+    # Test on MiniGrid — HELD-OUT colors (should be lower conf)
+    held_out_colors = ["purple", "yellow", "grey"]
+    mg_held_env = MiniGridSymbolicEnv(colors=held_out_colors, seed=888)
+    for _ in range(100):
+        mg_held_env.reset()
+        situation = mg_held_env.observe()
+        for action in mg_held_env.available_actions():
+            predicted, conf, source = model.query(situation, action)
+            actual_outcome, _ = mg_held_env.step(action)
+            tracker.record(conf, predicted.get("result", "unknown"),
+                          actual_outcome.get("result", "unknown"))
+            mg_held_env.set_scenario(**situation)
+
+    # Test on completely novel situations (should be conf ≈ 0)
+    from snks.agent.world_model_trainer import CARRYABLE
+    for novel_obj in ["lever", "switch", "crystal"]:
+        for color in TRAIN_COLORS:
+            for action in ["forward", "pickup", "toggle"]:
+                situation = {
+                    "facing_obj": novel_obj, "obj_color": color,
+                    "obj_state": "none", "carrying": "nothing",
+                    "carrying_color": "",
+                }
+                predicted, conf, source = model.query(situation, action)
+                # Novel objects: actual outcome unknown, treat as "unknown"
+                tracker.record(conf, predicted.get("result", "unknown"), "unknown")
 
     # Test on Crafter scenarios
     cr_test_env = CrafterSymbolicEnv(seed=999)
