@@ -25,7 +25,9 @@ from snks.agent.crafter_trainer import (
 )
 from snks.agent.crafter_env_symbolic import CrafterSymbolicEnv
 from snks.agent.minigrid_env_symbolic import MiniGridSymbolicEnv
-from snks.agent.curiosity_explorer import CuriosityExplorer, DirectedCrafterExplorer
+from snks.agent.curiosity_explorer import (
+    CuriosityExplorer, DirectedCrafterExplorer, DirectedMiniGridExplorer,
+)
 from snks.agent.world_model_trainer import extract_demo_transitions, TRAIN_COLORS
 
 
@@ -54,12 +56,14 @@ def main():
     print(f"Initial training: {initial_stats}")
     print(f"Initial neocortex rules: {initial_neocortex}")
 
-    # Phase 2a: MiniGrid curiosity exploration
+    # Phase 2a: MiniGrid directed curiosity exploration
     print(f"\n{'='*60}")
-    print("MINIGRID CURIOSITY EXPLORATION")
+    print("MINIGRID CURIOSITY EXPLORATION (directed)")
     mg_env = MiniGridSymbolicEnv(colors=TRAIN_COLORS, seed=42)
-    mg_explorer = CuriosityExplorer(model, explore_threshold=0.3, seed=42)
-    mg_discovered = mg_explorer.explore(mg_env, n_episodes=50, steps_per_episode=30)
+    mg_explorer = DirectedMiniGridExplorer(model, explore_threshold=0.3, seed=42)
+    mg_discovered = mg_explorer.explore_directed(
+        mg_env, n_episodes=30, steps_per_episode=30,
+    )
     print(f"MiniGrid discoveries: {len(mg_discovered)}")
     print(f"Neocortex after MG exploration: {len(model.neocortex)}")
 
@@ -70,7 +74,7 @@ def main():
     cr_explorer = DirectedCrafterExplorer(model, explore_threshold=0.3, seed=42)
 
     all_cr_discovered = []
-    for batch in range(5):
+    for batch in range(7):  # 7 batches for more discovery coverage
         discovered = cr_explorer.explore(cr_env, n_episodes=20,
                                           steps_per_episode=80)
         all_cr_discovered.extend(discovered)
