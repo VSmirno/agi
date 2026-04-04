@@ -169,7 +169,8 @@ class AbstractionEngine:
             if obj_type in cat.members:
                 return cat.outcome, 0.80
 
-        # Unknown object: SDM generalization — scaled down
+        # Unknown object: SDM generalization — heavily scaled down
+        # (SDM generalizes to unseen objects but accuracy is ~40%)
         for cat in self.categories.values():
             if cat.action != action_key:
                 continue
@@ -177,7 +178,7 @@ class AbstractionEngine:
             result_vec, conf = self.sdm.read_next(key_vec, self._zeros)
             if conf > 0.01:
                 outcome = self._decode_outcome(result_vec)
-                return outcome, conf * 0.7
+                return outcome, conf * 0.4
 
         return "unknown", 0.0
 
