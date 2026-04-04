@@ -124,25 +124,32 @@ class VQPatchEncoder(nn.Module):
             return EncoderOutput(z_real.squeeze(0), z_vsa.squeeze(0), indices.squeeze(0))
         return EncoderOutput(z_real, z_vsa, indices)
 
-    def _build_vsa(self, indices: torch.Tensor) -> torch.Tensor:
-        """Build binary VSA vector from codebook indices via bind + bundle.
+    # Central 4×4 patch indices (rows 2-5, cols 2-5 in the 8×8 grid)
+    # Agent is at center of 64×64 frame. Central patches capture nearby objects.
+    # Peripheral patches are distant terrain — noisy for SDM matching.
+    CENTRAL_PATCHES: list[int] = [
+        r * 8 + c for r in range(2, 6) for c in range(2, 6)
+    ]  # 16 patches
 
-        For each patch p at position pos:
-            bound = XOR(codebook_vsa[idx_p], position_roles[pos])
-        Bundle all 64 bound vectors via majority vote.
+    def _build_vsa(self, indices: torch.Tensor) -> torch.Tensor:
+        """Build binary VSA vector from CENTRAL codebook indices via bind + bundle.
+
+        Uses only central 4×4 patches (16 out of 64) for scene-invariant encoding.
+        Peripheral terrain is ignored — only nearby objects matter for SDM matching.
         """
         B = indices.shape[0]
         bound_vecs = []
 
-        for p in range(self.n_patches):
+        for p in self.CENTRAL_PATCHES:
             cb_vecs = self.codebook_vsa[indices[:, p]]  # (B, vsa_dim)
             pos_vec = self.position_roles[p]             # (vsa_dim,)
             bound = (cb_vecs + pos_vec.unsqueeze(0)) % 2  # XOR bind
             bound_vecs.append(bound)
 
-        stacked = torch.stack(bound_vecs, dim=1)  # (B, 64, vsa_dim)
+        n_central = len(self.CENTRAL_PATCHES)
+        stacked = torch.stack(bound_vecs, dim=1)  # (B, 16, vsa_dim)
         summed = stacked.sum(dim=1)                 # (B, vsa_dim)
-        z_vsa = (summed > self.n_patches / 2).float()  # majority vote
+        z_vsa = (summed > n_central / 2).float()    # majority vote
         return z_vsa
 
     @torch.no_grad()

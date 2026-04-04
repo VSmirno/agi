@@ -81,11 +81,11 @@ class DecodeHead(nn.Module):
         near_idx = near_probs.argmax().item()
         near_name = NEAR_CLASSES[near_idx]
 
-        # Inventory (threshold at 0.5)
+        # Inventory (high threshold to reduce false positives)
         inv_probs = torch.sigmoid(out["inventory_logits"])
         inv_items: dict[str, int] = {}
         for i, item in enumerate(INVENTORY_ITEMS):
-            if inv_probs[i].item() > 0.5:
+            if inv_probs[i].item() > 0.8:
                 inv_items[item] = 1  # binary presence (count not decoded)
 
         # Build situation key (compatible with make_crafter_key format)
