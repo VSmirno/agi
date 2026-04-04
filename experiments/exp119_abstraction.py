@@ -7,6 +7,12 @@ Gate A:
 - ≥3 auto-discovered categories
 """
 
+import sys
+from pathlib import Path
+
+# Allow importing from experiments/ directory
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 import json
 import torch
 
