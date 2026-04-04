@@ -8,7 +8,7 @@ import torch
 import numpy as np
 
 from snks.device import get_device
-from snks.encoder.vq_patch_encoder import VQPatchEncoder
+from snks.encoder.vq_patch_encoder import VQPatchEncoder  # noqa: used for AGENT_PATCHES
 from snks.encoder.predictive_trainer import JEPAPredictor, PredictiveTrainer
 from snks.agent.decode_head import (
     DecodeHead, symbolic_to_gt_tensors, NEAR_CLASSES, INVENTORY_ITEMS,
@@ -55,13 +55,15 @@ def main():
     head = DecodeHead().to(device)
     optimizer = torch.optim.Adam(head.parameters(), lr=1e-3)
     encoder.eval()
-    all_z, all_near, all_inv = [], [], []
+    all_agent_idx, all_z_local, all_near, all_inv = [], [], [], []
     with torch.no_grad():
         for i in range(0, len(pt), 256):
             batch = pt[i:i+256].to(device)
             out = encoder(batch)
-            all_z.append(out.z_local)  # z_local for decode head
-    all_z = torch.cat(all_z)
+            all_agent_idx.append(out.indices[:, VQPatchEncoder.AGENT_PATCHES])
+            all_z_local.append(out.z_local)
+    all_agent_idx = torch.cat(all_agent_idx)
+    all_z_local = torch.cat(all_z_local)
     for sym in syms:
         ni, iv = symbolic_to_gt_tensors(sym)
         all_near.append(ni)
@@ -69,10 +71,11 @@ def main():
     gt_near = torch.tensor(all_near, device=device)
     gt_inv = torch.tensor(all_inv, device=device)
     for epoch in range(10):
-        perm = torch.randperm(len(all_z), device=device)
-        for i in range(0, len(all_z), 256):
+        perm = torch.randperm(len(all_agent_idx), device=device)
+        for i in range(0, len(all_agent_idx), 256):
             idx = perm[i:i+256]
-            head.train_step(all_z[idx], gt_near[idx], gt_inv[idx], optimizer)
+            head.train_step(all_agent_idx[idx], gt_near[idx], gt_inv[idx], optimizer,
+                            z_local=all_z_local[idx])
 
     # === Phase 4: Train CLS from symbolic ===
     print("\n=== Phase 4: Train CLS ===")
@@ -105,15 +108,16 @@ def main():
     print(f"  z_vsa mean: {out.z_vsa.mean().item():.2f}")
     print(f"  indices[:10]: {out.indices[:10].tolist()}")
 
-    # Layer 2: Decode head (uses z_local, not z_real)
-    key_base, certainty = head.decode_situation_key(out.z_local)
+    # Layer 2: Decode head (uses agent-adjacent patch indices)
+    agent_indices = out.indices[VQPatchEncoder.AGENT_PATCHES]
+    key_base, certainty = head.decode_situation_key(agent_indices, out.z_local)
     print(f"\nLayer 2 — Decode head:")
     print(f"  key_base: '{key_base}'")
     print(f"  certainty: {certainty:.3f}")
 
     # What does decode head predict?
     with torch.no_grad():
-        logits = head(out.z_local)
+        logits = head(agent_indices, out.z_local)
     near_probs = torch.softmax(logits["near_logits"], dim=-1)
     inv_probs = torch.sigmoid(logits["inventory_logits"])
     top5_near = near_probs.topk(5)
