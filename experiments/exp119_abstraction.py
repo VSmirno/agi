@@ -161,7 +161,7 @@ def main():
     # Also run MiniGrid QA from exp118 for regression
     print(f"\n{'='*60}")
     print("MINIGRID QA (regression)")
-    from experiments.exp118_world_model_qa import (
+    from exp118_world_model_qa import (
         level1_object_identity, level2_preconditions,
         level3_consequences, level4_planning,
     )
