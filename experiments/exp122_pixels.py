@@ -44,7 +44,8 @@ def phase1_collect(
     all_near, all_inv = [], []
 
     for traj in range(n_trajectories):
-        env = CrafterPixelEnv(seed=seed + traj)
+        # Different seed per trajectory — encoder must generalize across maps
+        env = CrafterPixelEnv(seed=seed + traj * 7)
         pixels, sym = env.reset()
 
         for step in range(steps_per_traj):
@@ -126,14 +127,14 @@ def phase3_train_decode_head(
     head = DecodeHead().to(device)
     optimizer = torch.optim.Adam(head.parameters(), lr=1e-3)
 
-    # Pre-encode all frames
+    # Pre-encode all frames — use z_local (scene-invariant) for decode head
     encoder.eval()
     all_z = []
     with torch.no_grad():
         for i in range(0, len(dataset["pixels_t"]), batch_size):
             batch = dataset["pixels_t"][i:i + batch_size].to(device)
             out = encoder(batch)
-            all_z.append(out.z_real)
+            all_z.append(out.z_local)
     all_z = torch.cat(all_z)
 
     gt_near = dataset["gt_near"].to(device)
@@ -224,6 +225,7 @@ def phase4_train_cls(
     cls.train(symbolic_transitions)
 
     print(f"Phase 4 done: neocortex={len(cls.neocortex)} rules")
+    print(f"  Keys: {sorted(cls.neocortex.keys())}")
     return cls
 
 
