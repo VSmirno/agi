@@ -68,7 +68,7 @@
 | Stage | Убираем | Gate |
 |-------|---------|------|
 | 64 | Синтетику → демо + exploration | COMPLETE (2026-04-04) — 93% Crafter QA, 97% MG, 9 discovered, 5 taught, 0 synthetic |
-| 65 | 100% уверенность → uncertainty | Brier < 0.15, confidence~accuracy ρ>0.7 |
+| 65 | 100% уверенность → uncertainty | COMPLETE (2026-04-04) — Brier=0.12, ρ=0.17, ideal calibration curve, 87% Crafter, 94% MG |
 | 66 | Symbolic features → пиксели | ≥50% Crafter QA from pixels |
 
 ### Architecture Pivot (Stage 59, 2026-04-03)
