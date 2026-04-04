@@ -127,29 +127,33 @@ def phase3_train_decode_head(
     head = DecodeHead().to(device)
     optimizer = torch.optim.Adam(head.parameters(), lr=1e-3)
 
-    # Pre-encode all frames — use z_local (scene-invariant) for decode head
+    # Pre-encode all frames — extract agent-adjacent indices + z_local
     encoder.eval()
-    all_z = []
+    all_agent_idx = []
+    all_z_local = []
     with torch.no_grad():
         for i in range(0, len(dataset["pixels_t"]), batch_size):
             batch = dataset["pixels_t"][i:i + batch_size].to(device)
             out = encoder(batch)
-            all_z.append(out.z_local)
-    all_z = torch.cat(all_z)
+            all_agent_idx.append(out.indices[:, VQPatchEncoder.AGENT_PATCHES])
+            all_z_local.append(out.z_local)
+    all_agent_idx = torch.cat(all_agent_idx)
+    all_z_local = torch.cat(all_z_local)
 
     gt_near = dataset["gt_near"].to(device)
     gt_inv = dataset["gt_inv"].to(device)
 
     history = []
     for epoch in range(epochs):
-        perm = torch.randperm(len(all_z), device=device)
+        perm = torch.randperm(len(all_agent_idx), device=device)
         epoch_metrics: dict[str, float] = {}
         n_batches = 0
 
-        for i in range(0, len(all_z), batch_size):
+        for i in range(0, len(all_agent_idx), batch_size):
             idx = perm[i:i + batch_size]
             metrics = head.train_step(
-                all_z[idx], gt_near[idx], gt_inv[idx], optimizer,
+                all_agent_idx[idx], gt_near[idx], gt_inv[idx], optimizer,
+                z_local=all_z_local[idx],
             )
             for k, v in metrics.items():
                 epoch_metrics[k] = epoch_metrics.get(k, 0) + v

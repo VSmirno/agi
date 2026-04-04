@@ -103,15 +103,16 @@ class TestJEPAPredictor:
 class TestDecodeHead:
     def test_forward(self):
         head = DecodeHead()
-        z = torch.randn(4, 2048)
-        out = head(z)
+        agent_idx = torch.randint(0, 4096, (4, 9))
+        z_local = torch.randn(4, 2048)
+        out = head(agent_idx, z_local)
         assert out["near_logits"].shape == (4, len(NEAR_CLASSES))
         assert out["inventory_logits"].shape == (4, len(INVENTORY_ITEMS))
 
     def test_decode_situation_key(self):
         head = DecodeHead()
-        z = torch.randn(2048)
-        key, certainty = head.decode_situation_key(z)
+        agent_idx = torch.randint(0, 4096, (9,))
+        key, certainty = head.decode_situation_key(agent_idx)
         assert isinstance(key, str)
         assert key.startswith("crafter_")
         assert 0.0 <= certainty <= 1.0
@@ -127,10 +128,11 @@ class TestDecodeHead:
         head = DecodeHead()
         opt = torch.optim.Adam(head.parameters())
         metrics = head.train_step(
-            torch.randn(4, 2048),
+            torch.randint(0, 4096, (4, 9)),
             torch.randint(0, len(NEAR_CLASSES), (4,)),
             torch.randint(0, 2, (4, len(INVENTORY_ITEMS))).float(),
             opt,
+            z_local=torch.randn(4, 2048),
         )
         assert metrics["near_acc"] >= 0.0
 
