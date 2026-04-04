@@ -95,6 +95,45 @@ CRAFTER_FAILURES = [
 ]
 
 
+# Stage 64: Teacher demonstrations — subset of rules the agent is "taught"
+# Agent must discover the rest through curiosity exploration
+CRAFTER_TAUGHT = [
+    # Basic resource collection
+    {"action": "do", "near": "tree", "requires": {}, "gives": "wood",
+     "result": "collected"},
+    {"action": "do", "near": "water", "requires": {}, "gives": "drink",
+     "result": "collected"},
+    # Placing
+    {"action": "place_table", "near": "empty", "requires": {"wood": 2},
+     "gives": "table", "result": "placed"},
+    # Basic crafting
+    {"action": "make_wood_pickaxe", "near": "table", "requires": {"wood": 1},
+     "gives": "wood_pickaxe", "result": "crafted"},
+    # Tool-gated collection (one example)
+    {"action": "do", "near": "stone", "requires": {"wood_pickaxe": 1},
+     "gives": "stone", "result": "collected"},
+]
+
+
+def generate_taught_transitions() -> list[Transition]:
+    """Generate transitions from teacher demonstrations only (≤10 rules)."""
+    transitions = []
+    for rule in CRAFTER_TAUGHT:
+        situation: dict[str, str] = {
+            "domain": "crafter",
+            "near": rule["near"],
+            "action": rule["action"],
+        }
+        for item, count in rule.get("requires", {}).items():
+            situation[f"has_{item}"] = str(count)
+        outcome = {"result": rule["result"], "gives": rule["gives"]}
+        transitions.append(Transition(
+            situation=situation, action=rule["action"],
+            outcome=outcome, reward=1.0,
+        ))
+    return transitions
+
+
 def generate_crafter_transitions() -> list[Transition]:
     """Generate transitions from Crafter tech tree rules."""
     transitions = []
