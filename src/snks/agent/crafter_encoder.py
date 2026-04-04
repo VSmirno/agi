@@ -11,9 +11,13 @@ from __future__ import annotations
 
 
 def make_crafter_key(situation: dict[str, str], action: str) -> str:
-    """Build neocortex key for Crafter transition."""
+    """Build neocortex key for Crafter transition.
+
+    Note: 'missing' is NOT part of the key — it's an explanation in the outcome,
+    not a situation feature. Query callers don't know what's missing; they only
+    know what they have (inventory) and where they are (near).
+    """
     near = situation.get("near", "empty")
-    missing = situation.get("missing", "")
 
     # Include key inventory items
     has_parts = []
@@ -22,6 +26,5 @@ def make_crafter_key(situation: dict[str, str], action: str) -> str:
             has_parts.append(f"{k}={v}")
 
     has_str = "_".join(has_parts) if has_parts else "noinv"
-    miss_str = f"_miss_{missing}" if missing else ""
 
-    return f"crafter_{near}_{has_str}{miss_str}_{action}"
+    return f"crafter_{near}_{has_str}_{action}"
