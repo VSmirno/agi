@@ -74,9 +74,9 @@ def main():
     cr_explorer = DirectedCrafterExplorer(model, explore_threshold=0.3, seed=42)
 
     all_cr_discovered = []
-    for batch in range(7):  # 7 batches for more discovery coverage
+    for batch in range(12):  # 12 batches for full discovery coverage
         discovered = cr_explorer.explore(cr_env, n_episodes=20,
-                                          steps_per_episode=80)
+                                          steps_per_episode=100)
         all_cr_discovered.extend(discovered)
         print(f"  Batch {batch+1}: +{len(discovered)} discoveries, "
               f"neocortex={len(model.neocortex)}")
