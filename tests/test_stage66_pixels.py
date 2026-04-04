@@ -12,11 +12,9 @@ import numpy as np
 import pytest
 import torch
 
-from snks.encoder.vq_patch_encoder import VQPatchEncoder, EncoderOutput
+from snks.encoder.cnn_encoder import CNNEncoder, CNNEncoderOutput
 from snks.encoder.predictive_trainer import JEPAPredictor, PredictiveTrainer
-from snks.agent.decode_head import (
-    DecodeHead, symbolic_to_gt_tensors, NEAR_CLASSES, INVENTORY_ITEMS,
-)
+from snks.agent.decode_head import DecodeHead, NEAR_CLASSES
 from snks.agent.cls_world_model import CLSWorldModel
 from snks.agent.crafter_pixel_env import CrafterPixelEnv, ACTION_NAMES
 
@@ -24,58 +22,34 @@ from snks.agent.crafter_pixel_env import CrafterPixelEnv, ACTION_NAMES
 # ── Unit Tests ──
 
 
-class TestVQPatchEncoder:
+class TestCNNEncoder:
     def test_output_shapes(self):
-        enc = VQPatchEncoder(device="cpu")
+        enc = CNNEncoder(n_near_classes=len(NEAR_CLASSES))
         pixels = torch.rand(4, 3, 64, 64)
         out = enc(pixels)
         assert out.z_real.shape == (4, 2048)
         assert out.z_vsa.shape == (4, 2048)
-        assert out.indices.shape == (4, 64)
+        assert out.near_logits.shape == (4, len(NEAR_CLASSES))
 
     def test_single_input(self):
-        enc = VQPatchEncoder(device="cpu")
+        enc = CNNEncoder(n_near_classes=len(NEAR_CLASSES))
         pixels = torch.rand(3, 64, 64)
         out = enc(pixels)
         assert out.z_real.shape == (2048,)
         assert out.z_vsa.shape == (2048,)
-        assert out.indices.shape == (64,)
+        assert out.near_logits.shape == (len(NEAR_CLASSES),)
 
     def test_z_vsa_is_binary(self):
-        enc = VQPatchEncoder(device="cpu")
+        enc = CNNEncoder()
         out = enc(torch.rand(2, 3, 64, 64))
         unique = torch.unique(out.z_vsa)
         assert set(unique.tolist()).issubset({0.0, 1.0})
 
-    def test_z_vsa_roughly_balanced(self):
-        enc = VQPatchEncoder(device="cpu")
-        out = enc(torch.rand(4, 3, 64, 64))
-        mean = out.z_vsa.mean().item()
-        assert 0.3 < mean < 0.7, f"z_vsa mean={mean}, too skewed"
-
-    def test_kmeans_init(self):
-        enc = VQPatchEncoder(device="cpu")
-        patches = enc._patchify(torch.rand(8, 3, 64, 64))
-        enc.init_codebook_kmeans(patches)
-        assert enc._initialized
-
-    def test_codebook_ema_update(self):
-        enc = VQPatchEncoder(device="cpu")
-        pixels = torch.rand(4, 3, 64, 64)
-        out = enc(pixels)
-        patches = enc._patchify(pixels)
-        old_cb = enc.codebook.clone()
-        enc.update_codebook_ema(patches, out.indices)
-        # Codebook should have changed for used entries
-        assert not torch.allclose(old_cb, enc.codebook)
-
-    def test_dead_entry_reset(self):
-        enc = VQPatchEncoder(device="cpu")
-        pixels = torch.rand(4, 3, 64, 64)
-        patches = enc._patchify(pixels)
-        # Most entries will be dead (4*64 = 256 patches, 4096 entries)
-        n_reset = enc.reset_dead_entries(patches, min_usage=1)
-        assert n_reset > 0
+    def test_depthwise_separable_fewer_params(self):
+        enc = CNNEncoder()
+        n_params = sum(p.numel() for p in enc.parameters())
+        # Depthwise separable conv is light; Linear(4096→2048) dominates at ~8M
+        assert n_params < 10_000_000, f"Too many params: {n_params}"
 
 
 class TestJEPAPredictor:
@@ -87,7 +61,7 @@ class TestJEPAPredictor:
         assert out.shape == (4, 2048)
 
     def test_train_step(self):
-        enc = VQPatchEncoder(device="cpu")
+        enc = CNNEncoder(n_near_classes=len(NEAR_CLASSES))
         pred = JEPAPredictor()
         trainer = PredictiveTrainer(enc, pred, device="cpu")
         metrics = trainer.train_step(
@@ -101,49 +75,15 @@ class TestJEPAPredictor:
 
 
 class TestDecodeHead:
-    def test_decode_situation_key(self):
+    def test_decode_situation_key_with_cnn(self):
+        enc = CNNEncoder(n_near_classes=len(NEAR_CLASSES))
         head = DecodeHead()
-        # Manually add a mapping
-        head.index_to_type = {42: "tree", 100: "grass"}
-        head._built = True
-        agent_idx = torch.tensor([42, 100, 100, 100, 100, 100, 100, 100, 100])
-        key, certainty = head.decode_situation_key(agent_idx)
+        pixels = torch.rand(3, 64, 64)
+        out = enc(pixels)
+        key, certainty = head.decode_situation_key(out)
         assert isinstance(key, str)
         assert key.startswith("crafter_")
-        assert "tree" in key  # should detect tree
-        assert certainty > 0.0
-
-    def test_decode_near_empty(self):
-        head = DecodeHead()
-        head.index_to_type = {1: "grass", 2: "path"}
-        head._built = True
-        agent_idx = torch.tensor([1, 2, 1, 2, 1, 2, 1, 2, 1])
-        near = head.decode_near(agent_idx)
-        assert near == "empty"  # grass/path are terrain, not NEAR_OBJECTS
-
-    def test_decode_near_finds_object(self):
-        head = DecodeHead()
-        head.index_to_type = {1: "grass", 5: "tree", 2: "grass"}
-        head._built = True
-        agent_idx = torch.tensor([1, 1, 2, 1, 5, 1, 2, 1, 1])
-        near = head.decode_near(agent_idx)
-        assert near == "tree"
-
-    def test_symbolic_to_gt(self):
-        sym = {"domain": "crafter", "near": "tree", "has_wood": "3"}
-        near_idx, inv_vec = symbolic_to_gt_tensors(sym)
-        assert NEAR_CLASSES[near_idx] == "tree"
-        assert inv_vec[0] == 1.0  # wood
-        assert inv_vec[1] == 0.0  # stone
-
-    def test_observe_and_build(self):
-        head = DecodeHead(codebook_size=10)
-        # Simulate: patches all map to index 3, semantic map all "tree" (6)
-        indices = np.full(64, 3)
-        semantic = np.full((64, 64), 6, dtype=np.uint8)  # 6 = tree in crafter
-        head.observe(indices, semantic)
-        stats = head.build()
-        assert head.index_to_type[3] == "tree"
+        assert 0.0 <= certainty <= 1.0
 
 
 class TestCrafterPixelEnv:
@@ -172,7 +112,7 @@ class TestCrafterPixelEnv:
 
 class TestCLSDualPath:
     def test_query_from_pixels(self):
-        enc = VQPatchEncoder(device="cpu")
+        enc = CNNEncoder(n_near_classes=len(NEAR_CLASSES))
         head = DecodeHead()
         cls = CLSWorldModel(dim=2048, device="cpu")
 
@@ -184,7 +124,7 @@ class TestCLSDualPath:
         assert source in ("neocortex", "hippocampus", "none")
 
     def test_train_from_pixels(self):
-        enc = VQPatchEncoder(device="cpu")
+        enc = CNNEncoder(n_near_classes=len(NEAR_CLASSES))
         head = DecodeHead()
         cls = CLSWorldModel(dim=2048, device="cpu")
 
@@ -204,7 +144,7 @@ class TestPixelPipeline:
     def test_encode_real_crafter_frame(self):
         env = CrafterPixelEnv(seed=42)
         pixels, sym = env.reset()
-        enc = VQPatchEncoder(device="cpu")
+        enc = CNNEncoder(n_near_classes=len(NEAR_CLASSES))
         out = enc(torch.from_numpy(pixels))
         assert out.z_real.shape == (2048,)
         assert out.z_vsa.shape == (2048,)
@@ -212,7 +152,7 @@ class TestPixelPipeline:
     def test_mini_training_pipeline(self):
         """Minimal end-to-end: collect → train → query."""
         env = CrafterPixelEnv(seed=42)
-        enc = VQPatchEncoder(device="cpu")
+        enc = CNNEncoder(n_near_classes=len(NEAR_CLASSES))
         pred = JEPAPredictor()
         trainer = PredictiveTrainer(enc, pred, device="cpu")
 

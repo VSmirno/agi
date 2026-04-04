@@ -527,11 +527,8 @@ class CLSWorldModel:
         z_real, z_vsa = out.z_real, out.z_vsa
 
         # Path 1: Neocortex via decoded situation key
-        # Use agent-adjacent patch indices (scene-invariant) for near detection
         neo_outcome, neo_conf = None, 0.0
-        from snks.encoder.vq_patch_encoder import VQPatchEncoder
-        agent_indices = out.indices[VQPatchEncoder.AGENT_PATCHES]
-        key_base, certainty = decode_head.decode_situation_key(agent_indices, out.z_local)
+        key_base, certainty = decode_head.decode_situation_key(out)
         # key_base has no action — append it
         key = key_base + action
         if key in self.neocortex:
@@ -588,9 +585,7 @@ class CLSWorldModel:
             self.n_sdm_writes += 1
 
             # Neocortex: decode key → store rule
-            from snks.encoder.vq_patch_encoder import VQPatchEncoder
-            agent_idx = out.indices[VQPatchEncoder.AGENT_PATCHES]
-            key_base, certainty = decode_head.decode_situation_key(agent_idx, out.z_local)
+            key_base, certainty = decode_head.decode_situation_key(out)
             key = key_base + action_str
             if key not in self.neocortex and certainty > 0.3:
                 self.neocortex[key] = Rule(
