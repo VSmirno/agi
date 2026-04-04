@@ -67,7 +67,7 @@
 
 | Stage | Убираем | Gate |
 |-------|---------|------|
-| 64 | Синтетику → демо + exploration | ≥80% Crafter QA из ≤10 демо, 0 synthetic |
+| 64 | Синтетику → демо + exploration | COMPLETE (2026-04-04) — 93% Crafter QA, 97% MG, 9 discovered, 5 taught, 0 synthetic |
 | 65 | 100% уверенность → uncertainty | Brier < 0.15, confidence~accuracy ρ>0.7 |
 | 66 | Symbolic features → пиксели | ≥50% Crafter QA from pixels |
 
