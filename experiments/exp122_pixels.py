@@ -114,60 +114,67 @@ def phase2_train_encoder(
     return encoder, predictor, history
 
 
-def phase3_train_decode_head(
+def phase3_build_decode_head(
     encoder: VQPatchEncoder,
-    dataset: dict[str, torch.Tensor],
-    epochs: int = 20,
-    batch_size: int = 256,
     device: torch.device = torch.device("cpu"),
-) -> tuple[DecodeHead, list]:
-    """Phase 3: Supervised decode head training."""
-    print(f"\nPhase 3: Training decode head ({epochs} epochs)...")
+    n_seeds: int = 20,
+    steps_per_seed: int = 100,
+) -> DecodeHead:
+    """Phase 3: Build lookup table from semantic maps.
 
-    head = DecodeHead().to(device)
-    optimizer = torch.optim.Adam(head.parameters(), lr=1e-3)
+    Runs Crafter with multiple seeds, collects (codebook_indices, semantic_map)
+    pairs, builds index → object_type mapping. No neural network.
+    """
+    print(f"\nPhase 3: Building decode head lookup table ({n_seeds} seeds)...")
 
-    # Pre-encode all frames — extract agent-adjacent indices + z_local
+    head = DecodeHead()
     encoder.eval()
-    all_agent_idx = []
-    all_z_local = []
-    with torch.no_grad():
-        for i in range(0, len(dataset["pixels_t"]), batch_size):
-            batch = dataset["pixels_t"][i:i + batch_size].to(device)
-            out = encoder(batch)
-            all_agent_idx.append(out.indices[:, VQPatchEncoder.AGENT_PATCHES])
-            all_z_local.append(out.z_local)
-    all_agent_idx = torch.cat(all_agent_idx)
-    all_z_local = torch.cat(all_z_local)
 
-    gt_near = dataset["gt_near"].to(device)
-    gt_inv = dataset["gt_inv"].to(device)
+    for seed in range(n_seeds):
+        env = CrafterPixelEnv(seed=seed * 13 + 7)
+        pixels, sym = env.reset()
 
-    history = []
-    for epoch in range(epochs):
-        perm = torch.randperm(len(all_agent_idx), device=device)
-        epoch_metrics: dict[str, float] = {}
-        n_batches = 0
+        for step in range(steps_per_seed):
+            action = np.random.RandomState(seed * 1000 + step).randint(0, 17)
+            pixels, sym, _, done = env.step(action)
 
-        for i in range(0, len(all_agent_idx), batch_size):
-            idx = perm[i:i + batch_size]
-            metrics = head.train_step(
-                all_agent_idx[idx], gt_near[idx], gt_inv[idx], optimizer,
-                z_local=all_z_local[idx],
-            )
-            for k, v in metrics.items():
-                epoch_metrics[k] = epoch_metrics.get(k, 0) + v
-            n_batches += 1
+            info = env.get_ground_truth()
+            semantic = info.get("semantic")
+            if semantic is None:
+                continue
 
-        epoch_metrics = {k: v / n_batches for k, v in epoch_metrics.items()}
-        history.append(epoch_metrics)
+            with torch.no_grad():
+                pix_t = torch.from_numpy(pixels).to(device)
+                out = encoder(pix_t)
 
-        if epoch % 5 == 0:
-            print(f"  epoch {epoch}: near_acc={epoch_metrics['near_acc']:.3f} "
-                  f"loss={epoch_metrics['total_loss']:.4f}")
+            head.observe(out.indices, semantic)
 
-    print(f"Phase 3 done: near_acc={history[-1]['near_acc']:.3f}")
-    return head, history
+            if done:
+                pixels, sym = env.reset()
+
+    stats = head.build()
+    print(f"Phase 3 done: {len(head.index_to_type)} indices mapped")
+    for obj, count in sorted(stats.items(), key=lambda x: -x[1])[:10]:
+        print(f"  {obj}: {count} indices")
+
+    # Quick accuracy check
+    correct, total = 0, 0
+    env = CrafterPixelEnv(seed=999)
+    pixels, sym = env.reset()
+    for _ in range(200):
+        pixels, sym, _, done = env.step(np.random.randint(0, 17))
+        with torch.no_grad():
+            out = encoder(torch.from_numpy(pixels).to(device))
+        predicted = head.decode_near(out.indices[VQPatchEncoder.AGENT_PATCHES])
+        actual = sym.get("near", "empty")
+        if predicted == actual:
+            correct += 1
+        total += 1
+        if done:
+            pixels, sym = env.reset()
+    print(f"  Accuracy on held-out seed=999: {correct}/{total} = {correct/total:.0%}")
+
+    return head
 
 
 def phase4_train_cls(
@@ -324,10 +331,8 @@ def main():
         dataset, epochs=100, device=device,
     )
 
-    # Phase 3: Train decode head
-    decode_head, head_hist = phase3_train_decode_head(
-        encoder, dataset, epochs=20, device=device,
-    )
+    # Phase 3: Build decode head lookup table
+    decode_head = phase3_build_decode_head(encoder, device=device)
 
     # Phase 4: Train CLS
     cls = phase4_train_cls(encoder, decode_head, device=device)
