@@ -526,9 +526,10 @@ class CLSWorldModel:
         out = encoder(pixels)
         z_real, z_vsa = out.z_real, out.z_vsa
 
-        # Path 1: Neocortex via decoded situation key
+        # Path 1: Neocortex via decoded situation key (use z_local for scene-invariance)
         neo_outcome, neo_conf = None, 0.0
-        key_base, certainty = decode_head.decode_situation_key(z_real)
+        z_local = out.z_local
+        key_base, certainty = decode_head.decode_situation_key(z_local)
         # key_base has no action — append it
         key = key_base + action
         if key in self.neocortex:
@@ -584,8 +585,8 @@ class CLSWorldModel:
                 self.hippocampus.write(out.z_vsa, self._zeros, out_vec, reward)
             self.n_sdm_writes += 1
 
-            # Neocortex: decode key → store rule
-            key_base, certainty = decode_head.decode_situation_key(out.z_real)
+            # Neocortex: decode key → store rule (use z_local for scene-invariance)
+            key_base, certainty = decode_head.decode_situation_key(out.z_local)
             key = key_base + action_str
             if key not in self.neocortex and certainty > 0.3:
                 self.neocortex[key] = Rule(

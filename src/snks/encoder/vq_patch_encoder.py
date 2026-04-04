@@ -16,9 +16,10 @@ import torch.nn as nn
 
 
 class EncoderOutput(NamedTuple):
-    z_real: torch.Tensor   # (B, embed_dim) float — for predictor + decode head
-    z_vsa: torch.Tensor    # (B, vsa_dim) binary {0,1} — for SDM hippocampus
-    indices: torch.Tensor  # (B, n_patches) int — codebook indices
+    z_real: torch.Tensor    # (B, embed_dim) float — mean of ALL patches, for predictor
+    z_vsa: torch.Tensor     # (B, vsa_dim) binary {0,1} — for SDM hippocampus
+    indices: torch.Tensor   # (B, n_patches) int — codebook indices
+    z_local: torch.Tensor   # (B, embed_dim) float — mean of AGENT-ADJACENT patches, for decode head
 
 
 class VQPatchEncoder(nn.Module):
@@ -117,16 +118,29 @@ class VQPatchEncoder(nn.Module):
         embeds = self.embeddings(indices)  # (B, 64, 2048)
         z_real = embeds.mean(dim=1)        # (B, 2048)
 
+        # z_local: mean of agent-adjacent patches only (scene-invariant)
+        # Agent is at center (32,32) → patch grid (4,4). Adjacent = 3×3 around center.
+        z_local = embeds[:, self.AGENT_PATCHES, :].mean(dim=1)  # (B, 2048)
+
         # Binary VSA address from codebook indices
         z_vsa = self._build_vsa(indices)  # (B, 2048)
 
         if single:
-            return EncoderOutput(z_real.squeeze(0), z_vsa.squeeze(0), indices.squeeze(0))
-        return EncoderOutput(z_real, z_vsa, indices)
+            return EncoderOutput(
+                z_real.squeeze(0), z_vsa.squeeze(0),
+                indices.squeeze(0), z_local.squeeze(0),
+            )
+        return EncoderOutput(z_real, z_vsa, indices, z_local)
+
+    # Agent-adjacent patches: 3×3 around center (row 3-5, col 3-5 in 8×8 grid)
+    # Agent at pixel (32,32) = patch (4,4). "Near" objects are in adjacent patches.
+    # These patches are scene-invariant — same object type → same embedding.
+    AGENT_PATCHES: list[int] = [
+        r * 8 + c for r in range(3, 6) for c in range(3, 6)
+    ]  # 9 patches around agent
 
     # Central 4×4 patch indices (rows 2-5, cols 2-5 in the 8×8 grid)
-    # Agent is at center of 64×64 frame. Central patches capture nearby objects.
-    # Peripheral patches are distant terrain — noisy for SDM matching.
+    # Used for z_vsa — wider context than AGENT_PATCHES but still local.
     CENTRAL_PATCHES: list[int] = [
         r * 8 + c for r in range(2, 6) for c in range(2, 6)
     ]  # 16 patches

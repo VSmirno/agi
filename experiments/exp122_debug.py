@@ -60,7 +60,7 @@ def main():
         for i in range(0, len(pt), 256):
             batch = pt[i:i+256].to(device)
             out = encoder(batch)
-            all_z.append(out.z_real)
+            all_z.append(out.z_local)  # z_local for decode head
     all_z = torch.cat(all_z)
     for sym in syms:
         ni, iv = symbolic_to_gt_tensors(sym)
@@ -105,15 +105,15 @@ def main():
     print(f"  z_vsa mean: {out.z_vsa.mean().item():.2f}")
     print(f"  indices[:10]: {out.indices[:10].tolist()}")
 
-    # Layer 2: Decode head
-    key_base, certainty = head.decode_situation_key(out.z_real)
+    # Layer 2: Decode head (uses z_local, not z_real)
+    key_base, certainty = head.decode_situation_key(out.z_local)
     print(f"\nLayer 2 — Decode head:")
     print(f"  key_base: '{key_base}'")
     print(f"  certainty: {certainty:.3f}")
 
     # What does decode head predict?
     with torch.no_grad():
-        logits = head(out.z_real)
+        logits = head(out.z_local)
     near_probs = torch.softmax(logits["near_logits"], dim=-1)
     inv_probs = torch.sigmoid(logits["inventory_logits"])
     top5_near = near_probs.topk(5)
