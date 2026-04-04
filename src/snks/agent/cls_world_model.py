@@ -101,6 +101,10 @@ class CLSWorldModel:
             n_amplify=10, seed=seed + 10,
         )
 
+        # SDM calibration params (sigmoid mapping)
+        self._sdm_cal_mu = 0.3
+        self._sdm_cal_sigma = 0.2
+
         # Stats
         self.n_sdm_writes = 0
         self.n_sdm_skipped = 0
@@ -206,16 +210,20 @@ class CLSWorldModel:
 
     def query(self, situation: dict[str, str],
               action: str) -> tuple[dict[str, str], float, str]:
-        """Predict outcome. Returns (outcome, confidence, source).
+        """Predict outcome. Returns (outcome, calibrated_confidence, source).
 
-        source: "neocortex", "neocortex_generalized", or "hippocampus"
+        Confidence is calibrated to [0, 1]:
+        - neocortex: Laplace smoothing, capped at 0.95
+        - abstract: 0.85 for known members, SDM*0.7 for unknown
+        - hippocampus: sigmoid-calibrated SDM magnitude
         """
         key = make_situation_key(situation, action)
 
         # Neocortex first (exact match)
         if key in self.neocortex:
             rule = self.neocortex[key]
-            return rule.outcome, 1.0, "neocortex"
+            conf = min(rule.confidence / (rule.confidence + 2), 0.95)
+            return rule.outcome, conf, "neocortex"
 
         # Abstract generalization via abstraction engine
         facing = situation.get("facing_obj", "empty")
@@ -229,12 +237,19 @@ class CLSWorldModel:
 
         # Hippocampus (fuzzy/generalization)
         sit_vec = self._encode_situation(situation, action)
-        predicted, confidence = self.hippocampus.read_next(sit_vec, self._zeros)
-        if confidence > 0.01:
+        predicted, raw_conf = self.hippocampus.read_next(sit_vec, self._zeros)
+        if raw_conf > 0.01:
             outcome = self._decode_outcome(predicted)
-            return outcome, confidence, "hippocampus"
+            calibrated = self._calibrate_sdm(raw_conf)
+            return outcome, calibrated, "hippocampus"
 
         return {"result": "unknown"}, 0.0, "none"
+
+    def _calibrate_sdm(self, raw_magnitude: float) -> float:
+        """Map raw SDM magnitude to calibrated probability via sigmoid."""
+        import math
+        x = (raw_magnitude - self._sdm_cal_mu) / max(self._sdm_cal_sigma, 0.01)
+        return 1.0 / (1.0 + math.exp(-x))
 
     def query_reward(self, situation: dict[str, str], action: str) -> float:
         """Get reward for situation+action."""
@@ -273,8 +288,10 @@ class CLSWorldModel:
             situation["carrying_color"] = "red"
             situation["facing_obj"] = "empty"
 
+        outcome, conf, _ = self.query(situation, action)
         reward = self.query_reward(situation, action)
-        return reward > 0
+        # With calibrated confidence, need conf > threshold for positive answer
+        return reward > 0 and conf > 0.2
 
     def qa_can_pass(self, obj_type: str, obj_state: str = "none") -> bool:
         """Level 1: Can you walk through <obj_type>?"""
