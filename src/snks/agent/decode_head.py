@@ -67,7 +67,9 @@ class DecodeHead:
                 patch_idx = r * grid + c
                 cb_idx = int(indices[patch_idx])
 
-                # Get majority object type in this patch from semantic map
+                # Get most interesting object in this patch from semantic map.
+                # Priority: non-terrain objects > terrain (grass/path/sand).
+                # If any pixel is tree/coal/iron/etc, the patch represents that.
                 sem_patch = semantic[
                     r * patch_size:(r + 1) * patch_size,
                     c * patch_size:(c + 1) * patch_size,
@@ -76,9 +78,20 @@ class DecodeHead:
                 for val in sem_patch.flat:
                     name = SEMANTIC_NAMES.get(int(val), "unknown")
                     types[name] += 1
-                majority_type = types.most_common(1)[0][0]
 
-                self.index_to_votes[cb_idx][majority_type] += 1
+                # Prefer non-terrain type if present
+                best_type = "unknown"
+                best_count = 0
+                for name, count in types.most_common():
+                    if name not in TERRAIN_TYPES:
+                        best_type = name
+                        best_count = count
+                        break
+                if best_type == "unknown" or best_count == 0:
+                    # All terrain — use majority
+                    best_type = types.most_common(1)[0][0]
+
+                self.index_to_votes[cb_idx][best_type] += 1
 
     def build(self) -> dict[str, int]:
         """Resolve lookup table from accumulated votes.
