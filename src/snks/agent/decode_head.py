@@ -1,107 +1,123 @@
-"""Stage 66: Decode head — z_real → situation key for neocortex.
+"""Stage 66: Decode head — codebook index → object type lookup table.
 
-Supervised classification heads that decode the VQ encoder's real-valued
-latent into symbolic situation components (near object, inventory).
+Instead of training a neural network, builds a direct mapping from
+VQ codebook indices to object types using semantic map ground truth.
+Zero-shot at test time: look up patch index → object type.
 """
 
 from __future__ import annotations
 
 import math
+from collections import Counter
 
 import torch
 import torch.nn as nn
+import numpy as np
 
-from snks.agent.crafter_pixel_env import NEAR_OBJECTS, INVENTORY_ITEMS
+from snks.agent.crafter_pixel_env import NEAR_OBJECTS, INVENTORY_ITEMS, SEMANTIC_NAMES
 
 
 # Include "empty" as a class for near/standing
 NEAR_CLASSES = ["empty"] + NEAR_OBJECTS
 NEAR_TO_IDX = {name: i for i, name in enumerate(NEAR_CLASSES)}
 
+# Terrain types that are NOT interesting for "near" detection
+TERRAIN_TYPES = {"grass", "path", "sand", "water", "lava", "unknown"}
 
-class DecodeHead(nn.Module):
-    """Decode agent-adjacent patch indices into symbolic situation.
 
-    Uses codebook indices of 9 patches around agent, NOT z_real/z_local.
-    Each codebook index maps to a learned embedding → classify near object.
-    Scene-invariant: same object type → same codebook index → same prediction.
+class DecodeHead:
+    """Lookup-table decoder: codebook index → object type.
 
-    Heads:
-    - near_object: what's adjacent to agent (softmax over NEAR_CLASSES)
-    - inventory: which items agent has (sigmoid per item, multi-label)
+    Built from (semantic_map, codebook_indices) pairs during training.
+    At test time: look up agent-adjacent patch indices → detect near object.
+
+    No neural network. No gradient. Pure counting.
     """
 
-    def __init__(
+    def __init__(self, codebook_size: int = 4096):
+        self.codebook_size = codebook_size
+        # For each codebook index: Counter of object types seen
+        self.index_to_votes: list[Counter] = [Counter() for _ in range(codebook_size)]
+        # Resolved mapping after build()
+        self.index_to_type: dict[int, str] = {}
+        self._built = False
+
+    def observe(
         self,
-        codebook_size: int = 4096,
-        n_agent_patches: int = 9,
-        patch_embed_dim: int = 32,
-        hidden: int = 128,
-        z_dim: int = 2048,
-    ):
-        super().__init__()
-        self.n_near = len(NEAR_CLASSES)
-        self.n_items = len(INVENTORY_ITEMS)
-        self.n_agent_patches = n_agent_patches
+        indices: np.ndarray | torch.Tensor,
+        semantic: np.ndarray,
+        patch_size: int = 8,
+    ) -> None:
+        """Record one frame's codebook indices + semantic map.
 
-        # Small embedding for each codebook entry (not the large 2048-dim one)
-        self.patch_embed = nn.Embedding(codebook_size, patch_embed_dim)
-
-        # Near head: from 9 patch embeddings
-        self.near_backbone = nn.Sequential(
-            nn.Linear(n_agent_patches * patch_embed_dim, hidden),
-            nn.ReLU(),
-        )
-        self.head_near = nn.Linear(hidden, self.n_near)
-
-        # Inventory head: from z_local (needs wider context than 9 patches)
-        self.inv_backbone = nn.Sequential(
-            nn.Linear(z_dim, hidden),
-            nn.ReLU(),
-        )
-        self.head_inventory = nn.Linear(hidden, self.n_items)
-
-    def forward(
-        self,
-        agent_indices: torch.Tensor,
-        z_local: torch.Tensor | None = None,
-    ) -> dict[str, torch.Tensor]:
-        """Forward pass.
+        For each patch, find the majority object type from the semantic map
+        and vote for that type on the codebook index.
 
         Args:
-            agent_indices: (B, 9) or (9,) codebook indices for agent-adjacent patches.
-            z_local: (B, z_dim) or (z_dim,) for inventory prediction. Optional.
+            indices: (64,) codebook indices for each patch.
+            semantic: (64, 64) semantic map from Crafter info.
+            patch_size: patch size (8).
+        """
+        if isinstance(indices, torch.Tensor):
+            indices = indices.cpu().numpy()
+
+        grid = 64 // patch_size  # 8
+        for r in range(grid):
+            for c in range(grid):
+                patch_idx = r * grid + c
+                cb_idx = int(indices[patch_idx])
+
+                # Get majority object type in this patch from semantic map
+                sem_patch = semantic[
+                    r * patch_size:(r + 1) * patch_size,
+                    c * patch_size:(c + 1) * patch_size,
+                ]
+                types = Counter()
+                for val in sem_patch.flat:
+                    name = SEMANTIC_NAMES.get(int(val), "unknown")
+                    types[name] += 1
+                majority_type = types.most_common(1)[0][0]
+
+                self.index_to_votes[cb_idx][majority_type] += 1
+
+    def build(self) -> dict[str, int]:
+        """Resolve lookup table from accumulated votes.
 
         Returns:
-            {"near_logits": (B, n_near), "inventory_logits": (B, n_items)}
+            Stats: {object_type: count_of_indices_mapped}.
         """
-        single = agent_indices.dim() == 1
-        if single:
-            agent_indices = agent_indices.unsqueeze(0)
-            if z_local is not None:
-                z_local = z_local.unsqueeze(0)
+        self.index_to_type = {}
+        stats: dict[str, int] = Counter()
 
-        # Near: from patch codebook indices
-        patch_embs = self.patch_embed(agent_indices)  # (B, 9, patch_embed_dim)
-        patch_flat = patch_embs.view(patch_embs.shape[0], -1)  # (B, 9*32)
-        h_near = self.near_backbone(patch_flat)
-        near_logits = self.head_near(h_near)
+        for idx in range(self.codebook_size):
+            votes = self.index_to_votes[idx]
+            if not votes:
+                continue
+            majority = votes.most_common(1)[0][0]
+            self.index_to_type[idx] = majority
+            stats[majority] += 1
 
-        # Inventory: from z_local if available
-        if z_local is not None:
-            h_inv = self.inv_backbone(z_local)
-            inv_logits = self.head_inventory(h_inv)
-        else:
-            inv_logits = torch.zeros(
-                agent_indices.shape[0], self.n_items,
-                device=agent_indices.device,
-            )
+        self._built = True
+        return dict(stats)
 
-        result = {"near_logits": near_logits, "inventory_logits": inv_logits}
+    def decode_near(self, agent_indices: torch.Tensor | np.ndarray) -> str:
+        """Detect nearest interesting object from agent-adjacent patch indices.
 
-        if single:
-            result = {k: v.squeeze(0) for k, v in result.items()}
-        return result
+        Args:
+            agent_indices: (9,) codebook indices for agent-adjacent patches.
+
+        Returns:
+            Name of nearest non-terrain object, or "empty".
+        """
+        if isinstance(agent_indices, torch.Tensor):
+            agent_indices = agent_indices.cpu().numpy()
+
+        for idx in agent_indices:
+            obj_type = self.index_to_type.get(int(idx), "unknown")
+            if obj_type in NEAR_OBJECTS:
+                return obj_type
+
+        return "empty"
 
     def decode_situation_key(
         self,
@@ -112,83 +128,32 @@ class DecodeHead(nn.Module):
 
         Args:
             agent_indices: (9,) codebook indices for agent-adjacent patches.
-            z_local: (z_dim,) for inventory. Optional.
+            z_local: unused, kept for API compatibility.
 
         Returns:
             (key, certainty) where certainty ∈ [0, 1].
         """
-        with torch.no_grad():
-            out = self.forward(agent_indices, z_local)
+        near = self.decode_near(agent_indices)
+        certainty = 0.9 if near != "empty" else 0.5
 
-        # Near object
-        near_probs = torch.softmax(out["near_logits"], dim=-1)
-        near_idx = near_probs.argmax().item()
-        near_name = NEAR_CLASSES[near_idx]
-
-        # Inventory (high threshold to reduce false positives)
-        inv_probs = torch.sigmoid(out["inventory_logits"])
-        inv_items: dict[str, int] = {}
-        for i, item in enumerate(INVENTORY_ITEMS):
-            if inv_probs[i].item() > 0.8:
-                inv_items[item] = 1  # binary presence (count not decoded)
-
-        # Build situation key (compatible with make_crafter_key format)
-        situation: dict[str, str] = {"domain": "crafter", "near": near_name}
-        for item, count in sorted(inv_items.items()):
-            situation[f"has_{item}"] = str(count)
+        situation: dict[str, str] = {"domain": "crafter", "near": near}
 
         from snks.agent.crafter_encoder import make_crafter_key
-        key = make_crafter_key(situation, "")  # action added externally
-
-        # Decode certainty: 1 - normalized entropy of near head
-        entropy = -(near_probs * near_probs.clamp(min=1e-8).log()).sum()
-        max_entropy = math.log(self.n_near)
-        certainty = 1.0 - (entropy.item() / max_entropy)
+        key = make_crafter_key(situation, "")
 
         return key, certainty
 
-    def train_step(
-        self,
-        agent_indices: torch.Tensor,
-        gt_near: torch.Tensor,
-        gt_inventory: torch.Tensor,
-        optimizer: torch.optim.Optimizer,
-        z_local: torch.Tensor | None = None,
-    ) -> dict[str, float]:
-        """Supervised training step.
+    def parameters(self):
+        """API compatibility — no parameters."""
+        return []
 
-        Args:
-            agent_indices: (B, 9) codebook indices for agent-adjacent patches.
-            gt_near: (B,) int indices into NEAR_CLASSES.
-            gt_inventory: (B, n_items) float binary labels.
-            optimizer: optimizer for decode head params.
-            z_local: (B, z_dim) for inventory. Optional.
+    def to(self, device):
+        """API compatibility — nothing to move."""
+        return self
 
-        Returns:
-            Dict with losses.
-        """
-        out = self.forward(agent_indices, z_local)
-
-        near_loss = nn.functional.cross_entropy(out["near_logits"], gt_near)
-        inv_loss = nn.functional.binary_cross_entropy_with_logits(
-            out["inventory_logits"], gt_inventory,
-        )
-
-        total = near_loss + inv_loss
-
-        optimizer.zero_grad()
-        total.backward()
-        optimizer.step()
-
-        # Accuracy
-        near_acc = (out["near_logits"].argmax(dim=1) == gt_near).float().mean()
-
-        return {
-            "near_loss": near_loss.item(),
-            "inv_loss": inv_loss.item(),
-            "total_loss": total.item(),
-            "near_acc": near_acc.item(),
-        }
+    def train_step(self, *args, **kwargs):
+        """API compatibility — no training needed."""
+        return {"near_acc": 0.0, "near_loss": 0.0, "inv_loss": 0.0, "total_loss": 0.0}
 
 
 def symbolic_to_gt_tensors(

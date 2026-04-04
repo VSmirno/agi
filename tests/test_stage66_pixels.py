@@ -101,21 +101,33 @@ class TestJEPAPredictor:
 
 
 class TestDecodeHead:
-    def test_forward(self):
-        head = DecodeHead()
-        agent_idx = torch.randint(0, 4096, (4, 9))
-        z_local = torch.randn(4, 2048)
-        out = head(agent_idx, z_local)
-        assert out["near_logits"].shape == (4, len(NEAR_CLASSES))
-        assert out["inventory_logits"].shape == (4, len(INVENTORY_ITEMS))
-
     def test_decode_situation_key(self):
         head = DecodeHead()
-        agent_idx = torch.randint(0, 4096, (9,))
+        # Manually add a mapping
+        head.index_to_type = {42: "tree", 100: "grass"}
+        head._built = True
+        agent_idx = torch.tensor([42, 100, 100, 100, 100, 100, 100, 100, 100])
         key, certainty = head.decode_situation_key(agent_idx)
         assert isinstance(key, str)
         assert key.startswith("crafter_")
-        assert 0.0 <= certainty <= 1.0
+        assert "tree" in key  # should detect tree
+        assert certainty > 0.0
+
+    def test_decode_near_empty(self):
+        head = DecodeHead()
+        head.index_to_type = {1: "grass", 2: "path"}
+        head._built = True
+        agent_idx = torch.tensor([1, 2, 1, 2, 1, 2, 1, 2, 1])
+        near = head.decode_near(agent_idx)
+        assert near == "empty"  # grass/path are terrain, not NEAR_OBJECTS
+
+    def test_decode_near_finds_object(self):
+        head = DecodeHead()
+        head.index_to_type = {1: "grass", 5: "tree", 2: "grass"}
+        head._built = True
+        agent_idx = torch.tensor([1, 1, 2, 1, 5, 1, 2, 1, 1])
+        near = head.decode_near(agent_idx)
+        assert near == "tree"
 
     def test_symbolic_to_gt(self):
         sym = {"domain": "crafter", "near": "tree", "has_wood": "3"}
@@ -124,17 +136,14 @@ class TestDecodeHead:
         assert inv_vec[0] == 1.0  # wood
         assert inv_vec[1] == 0.0  # stone
 
-    def test_train_step(self):
-        head = DecodeHead()
-        opt = torch.optim.Adam(head.parameters())
-        metrics = head.train_step(
-            torch.randint(0, 4096, (4, 9)),
-            torch.randint(0, len(NEAR_CLASSES), (4,)),
-            torch.randint(0, 2, (4, len(INVENTORY_ITEMS))).float(),
-            opt,
-            z_local=torch.randn(4, 2048),
-        )
-        assert metrics["near_acc"] >= 0.0
+    def test_observe_and_build(self):
+        head = DecodeHead(codebook_size=10)
+        # Simulate: patches all map to index 3, semantic map all "tree" (6)
+        indices = np.full(64, 3)
+        semantic = np.full((64, 64), 6, dtype=np.uint8)  # 6 = tree in crafter
+        head.observe(indices, semantic)
+        stats = head.build()
+        assert head.index_to_type[3] == "tree"
 
 
 class TestCrafterPixelEnv:
