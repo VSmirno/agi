@@ -162,14 +162,14 @@ class AbstractionEngine:
         elif action == "pickup":
             action_key = "pickup_empty" if carrying == "nothing" else "pickup_carrying"
 
-        # Known categories: direct lookup (no SDM noise)
+        # Known categories: direct lookup — high but not perfect confidence
         for cat in self.categories.values():
             if cat.action != action_key:
                 continue
             if obj_type in cat.members:
-                return cat.outcome, 1.0
+                return cat.outcome, 0.85
 
-        # Unknown object: SDM generalization
+        # Unknown object: SDM generalization — scaled down
         for cat in self.categories.values():
             if cat.action != action_key:
                 continue
@@ -177,7 +177,7 @@ class AbstractionEngine:
             result_vec, conf = self.sdm.read_next(key_vec, self._zeros)
             if conf > 0.01:
                 outcome = self._decode_outcome(result_vec)
-                return outcome, conf
+                return outcome, conf * 0.7
 
         return "unknown", 0.0
 
