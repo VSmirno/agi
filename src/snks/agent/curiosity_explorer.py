@@ -91,6 +91,77 @@ class CuriosityExplorer:
         return all_discovered
 
 
+class DirectedMiniGridExplorer(CuriosityExplorer):
+    """MiniGrid explorer that systematically tests key scenarios.
+
+    Random exploration misses rare combos like carrying key + locked door.
+    This explorer sets up specific scenarios and tries all actions.
+    """
+
+    def explore_directed(self, env: SymbolicEnv,
+                         n_episodes: int = 30,
+                         steps_per_episode: int = 30) -> list[Transition]:
+        """Run random exploration + directed scenarios."""
+        from snks.agent.minigrid_env_symbolic import MiniGridSymbolicEnv
+        assert isinstance(env, MiniGridSymbolicEnv)
+
+        discovered: list[Transition] = []
+
+        # Phase 1: Random exploration
+        random_disc = self.explore(env, n_episodes=n_episodes,
+                                   steps_per_episode=steps_per_episode)
+        discovered.extend(random_disc)
+
+        # Phase 2: Directed scenarios — systematically test combos
+        from snks.agent.world_model_trainer import (
+            CARRYABLE, COLORS, OBJ_TYPES, ACTIONS, DOOR_STATES,
+        )
+        colors = env.colors
+
+        scenarios = []
+        # Locked door + carrying key (same and different colors)
+        for door_color in colors:
+            for key_color in colors:
+                scenarios.append({
+                    "facing_obj": "door", "obj_color": door_color,
+                    "obj_state": "locked",
+                    "carrying": "key", "carrying_color": key_color,
+                })
+        # Carrying something + facing carryable (failed_carrying)
+        for obj in CARRYABLE:
+            for carried in CARRYABLE:
+                scenarios.append({
+                    "facing_obj": obj, "obj_color": colors[0],
+                    "obj_state": "none",
+                    "carrying": carried, "carrying_color": colors[0],
+                })
+        # Wall/solid blocking
+        for obj in ("wall", "door", "key", "ball", "box"):
+            state = "closed" if obj == "door" else "none"
+            scenarios.append({
+                "facing_obj": obj, "obj_color": colors[0],
+                "obj_state": state,
+                "carrying": "nothing", "carrying_color": "",
+            })
+
+        for scenario in scenarios:
+            env.set_scenario(**scenario)
+            situation = env.observe()
+            for action in ACTIONS:
+                outcome, reward = env.step(action)
+                t = Transition(situation=situation, action=action,
+                               outcome=outcome, reward=reward)
+                known, conf, _ = self.wm.query(situation, action)
+                if (conf < self.explore_threshold
+                        or known.get("result") != outcome.get("result")):
+                    discovered.append(t)
+                self.wm.train([t])
+                # Reset to same scenario for next action
+                env.set_scenario(**scenario)
+
+        return discovered
+
+
 class DirectedCrafterExplorer(CuriosityExplorer):
     """Crafter-specific explorer that builds inventory before crafting.
 
