@@ -92,21 +92,35 @@ def main():
                           actual_outcome.get("result", "unknown"))
             mg_held_env.set_scenario(**situation)
 
-    # Test on completely novel situations (should be conf ≈ 0, predictions wrong)
-    # Novel objects don't exist in env, so actual = "nothing_happened"
-    for novel_obj in ["lever", "switch", "crystal"]:
-        for color in TRAIN_COLORS:
-            for action in ["forward", "pickup", "toggle"]:
+    # Test on novel objects — model generalizes but may be wrong
+    for novel_obj in ["lever", "switch", "crystal", "gem", "torch",
+                      "rope", "shield", "potion", "scroll", "hammer"]:
+        for color in TRAIN_COLORS + held_out_colors:
+            for action in ["forward", "pickup", "toggle", "drop"]:
                 situation = {
                     "facing_obj": novel_obj, "obj_color": color,
                     "obj_state": "none", "carrying": "nothing",
                     "carrying_color": "",
                 }
                 predicted, conf, source = model.query(situation, action)
-                # Novel objects: model may predict something but it's likely wrong
-                # Actual would be "nothing_happened" since object doesn't exist
                 if predicted.get("result", "unknown") != "unknown":
+                    # Novel objects: abstract may predict based on category
+                    # but actual is "nothing_happened"
                     tracker.record(conf, predicted.get("result"), "nothing_happened")
+
+    # Test on held-out Crafter combos (never seen inventory combos)
+    novel_crafter = [
+        {"domain": "crafter", "near": "table", "has_diamond": "1"},
+        {"domain": "crafter", "near": "furnace", "has_coal": "1"},
+        {"domain": "crafter", "near": "table", "has_stone": "5", "has_iron": "3"},
+        {"domain": "crafter", "near": "empty", "has_wood": "10"},
+    ]
+    for sit in novel_crafter:
+        for action in CrafterSymbolicEnv.ALL_ACTIONS:
+            predicted, conf, source = model.query(sit, action)
+            if predicted.get("result", "unknown") != "unknown":
+                # Most of these combos produce "nothing_happened"
+                tracker.record(conf, predicted.get("result"), "nothing_happened")
 
     # Test on Crafter scenarios
     cr_test_env = CrafterSymbolicEnv(seed=999)
