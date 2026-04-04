@@ -506,3 +506,89 @@ class CLSWorldModel:
             "sdm_skipped": self.n_sdm_skipped,
             "consolidated": self.n_consolidated,
         }
+
+    # ── Stage 66: Pixel Path ──
+
+    def query_from_pixels(
+        self,
+        pixels: "torch.Tensor",
+        action: str,
+        encoder: "VQPatchEncoder",
+        decode_head: "DecodeHead",
+    ) -> tuple[dict[str, str], float, str]:
+        """Dual-path query from pixel observation.
+
+        Path 1 (neocortex): decode_head → situation key → dict lookup
+        Path 2 (hippocampus): z_vsa → SDM read
+
+        Returns (outcome, confidence, source).
+        """
+        out = encoder(pixels)
+        z_real, z_vsa = out.z_real, out.z_vsa
+
+        # Path 1: Neocortex via decoded situation key
+        neo_outcome, neo_conf = None, 0.0
+        key_base, certainty = decode_head.decode_situation_key(z_real)
+        # key_base has no action — append it
+        key = key_base + action
+        if key in self.neocortex:
+            rule = self.neocortex[key]
+            neo_outcome = rule.outcome
+            neo_conf = 0.95 * certainty
+
+        # Path 2: Hippocampus via binary VSA
+        hippo_outcome, hippo_conf = None, 0.0
+        predicted, raw_conf = self.hippocampus.read_next(z_vsa, self._zeros)
+        if raw_conf > 0.01:
+            hippo_outcome = self._decode_outcome(predicted)
+            hippo_conf = self._calibrate_sdm(raw_conf)
+
+        # Return best
+        if neo_outcome and neo_conf >= hippo_conf:
+            return neo_outcome, neo_conf, "neocortex"
+        if hippo_outcome and hippo_conf > 0.01:
+            return hippo_outcome, hippo_conf, "hippocampus"
+        if neo_outcome:
+            return neo_outcome, neo_conf, "neocortex"
+
+        return {"result": "unknown"}, 0.0, "none"
+
+    def train_from_pixels(
+        self,
+        pixel_transitions: list,
+        encoder: "VQPatchEncoder",
+        decode_head: "DecodeHead",
+    ) -> dict:
+        """Train CLS from pixel transitions.
+
+        Each transition: (pixels, action_str, outcome_dict, reward).
+        Writes to both hippocampus (z_vsa) and neocortex (decoded key).
+        """
+        from snks.agent.world_model_trainer import Transition
+
+        for pixels, action_str, outcome, reward in pixel_transitions:
+            out = encoder(pixels)
+
+            # Hippocampus: write z_vsa → outcome
+            out_vec = self._encode_outcome(outcome)
+            for _ in range(self.n_amplify):
+                self.hippocampus.write(out.z_vsa, self._zeros, out_vec, reward)
+            self.n_sdm_writes += 1
+
+            # Neocortex: decode key → store rule
+            key_base, certainty = decode_head.decode_situation_key(out.z_real)
+            key = key_base + action_str
+            if key not in self.neocortex and certainty > 0.3:
+                self.neocortex[key] = Rule(
+                    situation_key=key,
+                    outcome=outcome,
+                    reward=reward,
+                    confidence=1,
+                    source="pixel_direct",
+                )
+                self.n_consolidated += 1
+
+        return {
+            "sdm_writes": self.n_sdm_writes,
+            "neocortex_size": len(self.neocortex),
+        }
