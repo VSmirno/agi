@@ -173,12 +173,12 @@ class CLSWorldModel:
             predicted, confidence = self.hippocampus.read_next(sit_vec, self._zeros)
 
             if confidence < 0.01:
-                # SDM has no signal — store directly with moderate confidence
+                # SDM has no signal — store directly
                 self.neocortex[key] = Rule(
                     situation_key=key,
                     outcome=t.outcome,
                     reward=t.reward,
-                    confidence=2,
+                    confidence=1,
                     source="direct",
                 )
                 self.n_consolidated += 1
@@ -196,12 +196,12 @@ class CLSWorldModel:
                 )
                 self.n_consolidated += 1
             else:
-                # SDM wrong — store ground truth with lower confidence
+                # SDM wrong — store ground truth directly
                 self.neocortex[key] = Rule(
                     situation_key=key,
                     outcome=t.outcome,
                     reward=t.reward,
-                    confidence=2,
+                    confidence=1,
                     source="direct_override",
                 )
                 self.n_consolidated += 1
@@ -212,18 +212,17 @@ class CLSWorldModel:
               action: str) -> tuple[dict[str, str], float, str]:
         """Predict outcome. Returns (outcome, calibrated_confidence, source).
 
-        Confidence is calibrated to [0, 1]:
-        - neocortex: Laplace smoothing, capped at 0.95
-        - abstract: 0.85 for known members, SDM*0.7 for unknown
+        Confidence reflects source reliability:
+        - neocortex: 0.95 (exact match, verified rule — always correct)
+        - abstract: 0.80 for known members, SDM*0.7 for unknown
         - hippocampus: sigmoid-calibrated SDM magnitude
         """
         key = make_situation_key(situation, action)
 
-        # Neocortex first (exact match)
+        # Neocortex first (exact match — verified, always correct)
         if key in self.neocortex:
             rule = self.neocortex[key]
-            conf = min(rule.confidence / (rule.confidence + 2), 0.95)
-            return rule.outcome, conf, "neocortex"
+            return rule.outcome, 0.95, "neocortex"
 
         # Abstract generalization via abstraction engine
         facing = situation.get("facing_obj", "empty")

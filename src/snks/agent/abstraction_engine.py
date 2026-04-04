@@ -162,12 +162,12 @@ class AbstractionEngine:
         elif action == "pickup":
             action_key = "pickup_empty" if carrying == "nothing" else "pickup_carrying"
 
-        # Known categories: direct lookup — high but not perfect confidence
+        # Known categories: direct lookup — lower than neocortex (category, not exact)
         for cat in self.categories.values():
             if cat.action != action_key:
                 continue
             if obj_type in cat.members:
-                return cat.outcome, 0.85
+                return cat.outcome, 0.80
 
         # Unknown object: SDM generalization — scaled down
         for cat in self.categories.values():

@@ -76,8 +76,8 @@ class TestCalibratedConfidence:
         m.train(mg + cr)
         return m
 
-    def test_neocortex_confidence_below_one(self, model):
-        """Neocortex confidence should be < 1.0 (calibrated)."""
+    def test_neocortex_confidence_095(self, model):
+        """Neocortex exact match always returns 0.95."""
         situation = {
             "facing_obj": "key", "obj_color": "red",
             "obj_state": "none", "carrying": "nothing",
@@ -85,37 +85,29 @@ class TestCalibratedConfidence:
         }
         outcome, conf, source = model.query(situation, "pickup")
         assert source == "neocortex"
-        assert 0.0 < conf <= 0.95
+        assert conf == 0.95
 
-    def test_neocortex_confidence_increases_with_evidence(self, model):
-        """More confirmations → higher confidence."""
-        # Rule with confidence=1 vs confidence=10
-        key1 = "test_low_conf_pickup"
-        key2 = "test_high_conf_pickup"
-        from snks.agent.cls_world_model import Rule
-        model.neocortex[key1] = Rule(key1, {"result": "moved"}, 1.0,
-                                      confidence=1, source="test")
-        model.neocortex[key2] = Rule(key2, {"result": "moved"}, 1.0,
-                                      confidence=10, source="test")
-        # confidence = min(N / (N+2), 0.95)
-        # N=1 → 0.33, N=10 → 0.83
-        conf1 = min(1 / (1 + 2), 0.95)
-        conf2 = min(10 / (10 + 2), 0.95)
-        assert conf1 < conf2
-        assert conf1 == pytest.approx(0.333, abs=0.01)
-        assert conf2 == pytest.approx(0.833, abs=0.01)
-        # Cleanup
-        del model.neocortex[key1]
-        del model.neocortex[key2]
-
-    def test_abstract_confidence_085(self, model):
-        """Abstract known member should return 0.85."""
-        # door is in "openable" category
+    def test_abstract_confidence_080(self, model):
+        """Abstract known member should return 0.80."""
         outcome, conf = model.abstraction.query_abstract(
             "door", "toggle", "closed", "nothing"
         )
         assert outcome == "door_opened"
-        assert conf == 0.85
+        assert conf == 0.80
+
+    def test_confidence_ordering(self, model):
+        """Neocortex > abstract > SDM/unknown."""
+        # Neocortex
+        sit = {"facing_obj": "key", "obj_color": "red",
+               "obj_state": "none", "carrying": "nothing",
+               "carrying_color": ""}
+        _, neo_conf, neo_src = model.query(sit, "pickup")
+        assert neo_src == "neocortex"
+        # Abstract known member confidence
+        abs_conf = 0.80
+        # SDM calibrated
+        sdm_conf = model._calibrate_sdm(0.3)  # typical raw value
+        assert neo_conf > abs_conf > sdm_conf
 
     def test_sdm_calibrated_range(self, model):
         """SDM calibrated confidence should be in (0, 1)."""
