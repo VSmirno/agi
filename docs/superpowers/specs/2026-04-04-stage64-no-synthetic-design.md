@@ -16,7 +16,7 @@ and iron_pickaxe on its own.
 
 - ≥80% Crafter QA
 - ≤10 taught rules (teacher demos)
-- ≥10 self-discovered rules through curiosity exploration (out of ~20+ unknown)
+- ≥9 self-discovered rules through curiosity exploration (some recipes unreachable without rare resources like sapling)
 - 0 calls to generate_synthetic_transitions()
 - MiniGrid regression ≥90% (from demo transitions only)
 
