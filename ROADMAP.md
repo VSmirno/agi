@@ -59,7 +59,17 @@
 | 59 | VSA Causal Induction | COMPLETE (2026-04-03) | **100% generalization unseen colors**, bind(X,X)=identity proof |
 | 60 | World Model via Demos | COMPLETE (2026-04-03) | **100% QA-A/B/C**, causal world model из 5 синтетических демо |
 | 61 | Demo-Guided Agent | COMPLETE (2026-04-03) | **100% DoorKey + 100% LockedRoom**, causal planning + BFS, ablation delta=100% |
-| 62 | M4 Integration Test | | ≥50% BabyAI BossLevel с инструкцией |
+| 62 | CLS World Model | COMPLETE (2026-04-04) | **100% QA L1-L4**, neocortex+hippocampus+consolidation, 2-tier CLS |
+| 63 | Abstraction + Crafter | COMPLETE (2026-04-04) | **100% Crafter QA**, 25 auto-categories, 97% MiniGrid regression |
+
+### Roadmap v4: Scaffolding Removal (2026-04-04)
+**Crafter = основной домен.** MiniGrid — только regression.
+
+| Stage | Убираем | Gate |
+|-------|---------|------|
+| 64 | Синтетику → демо + exploration | ≥80% Crafter QA из ≤10 демо, 0 synthetic |
+| 65 | 100% уверенность → uncertainty | Brier < 0.15, confidence~accuracy ρ>0.7 |
+| 66 | Symbolic features → пиксели | ≥50% Crafter QA from pixels |
 
 ### Architecture Pivot (Stage 59, 2026-04-03)
 **Stages 47-58: символический BFS + SDM = тупик.** SDM паразитирует на BFS — либо BFS решает всё (SDM не нужен), либо BFS не справляется (SDM не получает данных).
