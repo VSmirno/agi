@@ -53,7 +53,14 @@ CANONICAL_OUTCOMES = [
 
 
 def make_situation_key(situation: dict[str, str], action: str) -> str:
-    """Build compound key from situation + action."""
+    """Build compound key from situation + action. Supports multiple domains."""
+    domain = situation.get("domain", "minigrid")
+
+    if domain == "crafter":
+        from snks.agent.crafter_encoder import make_crafter_key
+        return make_crafter_key(situation, action)
+
+    # MiniGrid (default)
     facing = situation.get("facing_obj", "empty")
     color = situation.get("obj_color", "none")
     state = situation.get("obj_state", "none")
@@ -330,6 +337,39 @@ class CLSWorldModel:
         """Level 3: What happens if you <action> in <situation>?"""
         outcome, _, _ = self.query(situation, action)
         return outcome
+
+    # ── Crafter QA ──
+
+    def qa_crafter_can_do(self, action: str, near: str,
+                          inventory: dict[str, int] | None = None) -> bool:
+        """Can you do <action> near <near> with given inventory?"""
+        situation = {"domain": "crafter", "near": near, "action": action}
+        if inventory:
+            for item, count in inventory.items():
+                situation[f"has_{item}"] = str(count)
+        reward = self.query_reward(situation, action)
+        return reward > 0
+
+    def qa_crafter_result(self, action: str, near: str,
+                          inventory: dict[str, int] | None = None
+                          ) -> dict[str, str]:
+        """What happens when you <action> near <near>?"""
+        situation = {"domain": "crafter", "near": near, "action": action}
+        if inventory:
+            for item, count in inventory.items():
+                situation[f"has_{item}"] = str(count)
+        outcome, _, _ = self.query(situation, action)
+        return outcome
+
+    def qa_crafter_needs(self, action: str, near: str = "table") -> str:
+        """What do you need for <action>?"""
+        # Try with different inventory combos from known rules
+        from snks.agent.crafter_trainer import CRAFTER_RULES
+        for rule in CRAFTER_RULES:
+            if rule["action"] == action and rule.get("near") == near:
+                reqs = rule.get("requires", {})
+                return ", ".join(f"{v} {k}" for k, v in reqs.items()) if reqs else "nothing"
+        return "unknown"
 
     def qa_plan(self, goal: str, current_state: dict[str, str],
                 max_steps: int = 6) -> list[dict]:
