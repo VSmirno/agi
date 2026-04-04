@@ -92,8 +92,8 @@ def main():
                           actual_outcome.get("result", "unknown"))
             mg_held_env.set_scenario(**situation)
 
-    # Test on completely novel situations (should be conf ≈ 0)
-    from snks.agent.world_model_trainer import CARRYABLE
+    # Test on completely novel situations (should be conf ≈ 0, predictions wrong)
+    # Novel objects don't exist in env, so actual = "nothing_happened"
     for novel_obj in ["lever", "switch", "crystal"]:
         for color in TRAIN_COLORS:
             for action in ["forward", "pickup", "toggle"]:
@@ -103,8 +103,10 @@ def main():
                     "carrying_color": "",
                 }
                 predicted, conf, source = model.query(situation, action)
-                # Novel objects: actual outcome unknown, treat as "unknown"
-                tracker.record(conf, predicted.get("result", "unknown"), "unknown")
+                # Novel objects: model may predict something but it's likely wrong
+                # Actual would be "nothing_happened" since object doesn't exist
+                if predicted.get("result", "unknown") != "unknown":
+                    tracker.record(conf, predicted.get("result"), "nothing_happened")
 
     # Test on Crafter scenarios
     cr_test_env = CrafterSymbolicEnv(seed=999)
