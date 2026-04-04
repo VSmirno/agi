@@ -18,10 +18,10 @@ import torch
 import numpy as np
 
 from snks.device import get_device
-from snks.encoder.vq_patch_encoder import VQPatchEncoder
+from snks.encoder.cnn_encoder import CNNEncoder
 from snks.encoder.predictive_trainer import JEPAPredictor, PredictiveTrainer
 from snks.agent.decode_head import (
-    DecodeHead, symbolic_to_gt_tensors, NEAR_CLASSES, INVENTORY_ITEMS,
+    DecodeHead, symbolic_to_gt_tensors, NEAR_CLASSES, NEAR_TO_IDX,
 )
 from snks.agent.crafter_pixel_env import CrafterPixelEnv, ACTION_TO_IDX
 from snks.agent.cls_world_model import CLSWorldModel
@@ -95,7 +95,7 @@ def phase2_train_encoder(
     """Phase 2: Self-supervised encoder + predictor training."""
     print(f"\nPhase 2: Training encoder + predictor ({epochs} epochs)...")
 
-    encoder = VQPatchEncoder(device=device).to(device)
+    encoder = CNNEncoder(n_near_classes=len(NEAR_CLASSES)).to(device)
     predictor = JEPAPredictor().to(device)
     trainer = PredictiveTrainer(encoder, predictor, device=device)
 
@@ -114,67 +114,99 @@ def phase2_train_encoder(
     return encoder, predictor, history
 
 
-def phase3_build_decode_head(
-    encoder: VQPatchEncoder,
+def phase3_train_near_head(
+    encoder: CNNEncoder,
     device: torch.device = torch.device("cpu"),
-    n_seeds: int = 20,
-    steps_per_seed: int = 100,
+    n_seeds: int = 30,
+    steps_per_seed: int = 200,
+    epochs: int = 10,
+    batch_size: int = 256,
 ) -> DecodeHead:
-    """Phase 3: Build lookup table from semantic maps.
+    """Phase 3: Train near classification head (part of CNN encoder).
 
-    Runs Crafter with multiple seeds, collects (codebook_indices, semantic_map)
-    pairs, builds index → object_type mapping. No neural network.
+    Collects (pixels, near_label) pairs from multiple seeds,
+    trains the near_head inside the CNN encoder supervised.
+    Encoder conv layers stay frozen — only near_head is trained.
     """
-    print(f"\nPhase 3: Building decode head lookup table ({n_seeds} seeds)...")
+    print(f"\nPhase 3: Training near head ({n_seeds} seeds × {steps_per_seed} steps)...")
 
-    head = DecodeHead()
-    encoder.eval()
-
+    # Collect data
+    all_pixels, all_near = [], []
     for seed in range(n_seeds):
         env = CrafterPixelEnv(seed=seed * 13 + 7)
         pixels, sym = env.reset()
-
         for step in range(steps_per_seed):
             action = np.random.RandomState(seed * 1000 + step).randint(0, 17)
             pixels, sym, _, done = env.step(action)
-
-            info = env.get_ground_truth()
-            semantic = info.get("semantic")
-            if semantic is None:
-                continue
-
-            with torch.no_grad():
-                pix_t = torch.from_numpy(pixels).to(device)
-                out = encoder(pix_t)
-
-            head.observe(out.indices, semantic)
-
+            near = sym.get("near", "empty")
+            near_idx = NEAR_TO_IDX.get(near, 0)
+            all_pixels.append(torch.from_numpy(pixels))
+            all_near.append(near_idx)
             if done:
                 pixels, sym = env.reset()
 
-    stats = head.build()
-    print(f"Phase 3 done: {len(head.index_to_type)} indices mapped")
-    for obj, count in sorted(stats.items(), key=lambda x: -x[1])[:10]:
-        print(f"  {obj}: {count} indices")
+    pt = torch.stack(all_pixels)
+    gt = torch.tensor(all_near)
+    print(f"  Collected {len(pt)} frames")
 
-    # Quick accuracy check
+    # Freeze conv layers, only train near_head
+    for p in encoder.conv.parameters():
+        p.requires_grad_(False)
+    for p in encoder.proj.parameters():
+        p.requires_grad_(False)
+    for p in encoder.ln.parameters():
+        p.requires_grad_(False)
+
+    optimizer = torch.optim.Adam(encoder.near_head.parameters(), lr=1e-3)
+
+    for epoch in range(epochs):
+        perm = torch.randperm(len(pt))
+        correct, total_loss, n = 0, 0.0, 0
+        for i in range(0, len(pt), batch_size):
+            idx = perm[i:i + batch_size]
+            batch_pix = pt[idx].to(device)
+            batch_gt = gt[idx].to(device)
+
+            out = encoder(batch_pix)
+            loss = nn.functional.cross_entropy(out.near_logits, batch_gt)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            correct += (out.near_logits.argmax(dim=1) == batch_gt).sum().item()
+            total_loss += loss.item()
+            n += 1
+
+        acc = correct / len(pt)
+        if epoch % 2 == 0:
+            print(f"  epoch {epoch}: near_acc={acc:.3f} loss={total_loss/n:.4f}")
+
+    # Unfreeze all
+    for p in encoder.parameters():
+        p.requires_grad_(True)
+
+    # Accuracy on held-out seed
     correct, total = 0, 0
     env = CrafterPixelEnv(seed=999)
     pixels, sym = env.reset()
+    encoder.eval()
     for _ in range(200):
         pixels, sym, _, done = env.step(np.random.randint(0, 17))
         with torch.no_grad():
             out = encoder(torch.from_numpy(pixels).to(device))
-        predicted = head.decode_near(out.indices[VQPatchEncoder.AGENT_PATCHES])
+        near_probs = torch.softmax(out.near_logits, dim=-1)
+        predicted = NEAR_CLASSES[near_probs.argmax().item()]
         actual = sym.get("near", "empty")
         if predicted == actual:
             correct += 1
         total += 1
         if done:
             pixels, sym = env.reset()
-    print(f"  Accuracy on held-out seed=999: {correct}/{total} = {correct/total:.0%}")
+    print(f"  Held-out seed=999 accuracy: {correct}/{total} = {correct/total:.0%}")
+    encoder.train()
 
-    return head
+    return DecodeHead()
 
 
 def phase4_train_cls(
@@ -331,8 +363,8 @@ def main():
         dataset, epochs=100, device=device,
     )
 
-    # Phase 3: Build decode head lookup table
-    decode_head = phase3_build_decode_head(encoder, device=device)
+    # Phase 3: Train near classification head
+    decode_head = phase3_train_near_head(encoder, device=device)
 
     # Phase 4: Train CLS
     cls = phase4_train_cls(encoder, decode_head, device=device)

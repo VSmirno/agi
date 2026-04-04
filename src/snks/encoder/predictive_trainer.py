@@ -11,9 +11,6 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from snks.encoder.vq_patch_encoder import VQPatchEncoder
-
-
 class JEPAPredictor(nn.Module):
     """Predict z_real[t+1] from z_real[t] + action embedding."""
 
@@ -51,7 +48,7 @@ class PredictiveTrainer:
 
     def __init__(
         self,
-        encoder: VQPatchEncoder,
+        encoder: nn.Module,
         predictor: JEPAPredictor,
         lr: float = 1e-3,
         vicreg_weight: float = 0.1,
@@ -62,9 +59,9 @@ class PredictiveTrainer:
         self.device = torch.device(device)
         self.vicreg_weight = vicreg_weight
 
-        # Only optimize trainable params (embeddings + predictor)
+        # Optimize all encoder params + predictor
         self.optimizer = torch.optim.Adam(
-            list(encoder.embeddings.parameters()) +
+            list(encoder.parameters()) +
             list(predictor.parameters()),
             lr=lr,
         )
@@ -109,10 +106,6 @@ class PredictiveTrainer:
         self.optimizer.zero_grad()
         total.backward()
         self.optimizer.step()
-
-        # EMA codebook update
-        patches_t = self.encoder._patchify(pixels_t)
-        self.encoder.update_codebook_ema(patches_t, out_t.indices)
 
         return {
             "pred_loss": pred_loss.item(),
@@ -170,23 +163,11 @@ class PredictiveTrainer:
         Returns:
             List of per-epoch metrics.
         """
-        # K-means init if needed
-        if not self.encoder._initialized:
-            all_patches = self.encoder._patchify(pixels_t[:batch_size].to(self.device))
-            self.encoder.init_codebook_kmeans(all_patches)
-
         history = []
         for epoch in range(epochs):
             metrics = self.train_epoch(pixels_t, pixels_t1, actions, batch_size)
             metrics["epoch"] = epoch
-            metrics["codebook_util"] = self.encoder.codebook_utilization
-
-            # Reset dead entries each epoch
-            sample_patches = self.encoder._patchify(
-                pixels_t[:batch_size].to(self.device)
-            )
-            n_reset = self.encoder.reset_dead_entries(sample_patches)
-            metrics["dead_reset"] = n_reset
+            metrics["codebook_util"] = getattr(self.encoder, 'codebook_utilization', 1.0)
 
             history.append(metrics)
 
@@ -194,8 +175,7 @@ class PredictiveTrainer:
                 print(
                     f"Epoch {epoch}: pred={metrics['pred_loss']:.4f} "
                     f"var={metrics['var_loss']:.4f} "
-                    f"util={metrics['codebook_util']:.2f} "
-                    f"reset={n_reset}"
+                    f"util={metrics['codebook_util']:.2f}"
                 )
 
         return history

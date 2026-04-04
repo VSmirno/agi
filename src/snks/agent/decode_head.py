@@ -134,22 +134,33 @@ class DecodeHead:
 
     def decode_situation_key(
         self,
-        agent_indices: torch.Tensor,
-        z_local: torch.Tensor | None = None,
+        encoder_output,
     ) -> tuple[str, float]:
         """Decode into (situation_key_string, decode_certainty).
 
         Args:
-            agent_indices: (9,) codebook indices for agent-adjacent patches.
-            z_local: unused, kept for API compatibility.
+            encoder_output: CNNEncoderOutput with .near_logits field,
+                            or any object with .near_logits.
 
         Returns:
             (key, certainty) where certainty ∈ [0, 1].
         """
-        near = self.decode_near(agent_indices)
-        certainty = 0.9 if near != "empty" else 0.5
+        import math
 
-        situation: dict[str, str] = {"domain": "crafter", "near": near}
+        near_logits = encoder_output.near_logits
+        if near_logits.dim() > 1:
+            near_logits = near_logits.squeeze(0)
+
+        near_probs = torch.softmax(near_logits, dim=-1)
+        near_idx = near_probs.argmax().item()
+        near_name = NEAR_CLASSES[near_idx]
+
+        # Certainty from entropy
+        entropy = -(near_probs * near_probs.clamp(min=1e-8).log()).sum()
+        max_entropy = math.log(len(NEAR_CLASSES))
+        certainty = 1.0 - (entropy.item() / max_entropy)
+
+        situation: dict[str, str] = {"domain": "crafter", "near": near_name}
 
         from snks.agent.crafter_encoder import make_crafter_key
         key = make_crafter_key(situation, "")
