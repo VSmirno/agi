@@ -4,7 +4,7 @@
 Gate:
 - ≥80% Crafter QA
 - ≤10 taught rules
-- ≥10 self-discovered rules through curiosity
+- ≥10 self-discovered Crafter rules through curiosity
 - 0 calls to generate_synthetic_transitions()
 - MiniGrid regression ≥90%
 """
@@ -24,8 +24,9 @@ from snks.agent.crafter_trainer import (
     CRAFTER_RULES,
 )
 from snks.agent.crafter_env_symbolic import CrafterSymbolicEnv
-from snks.agent.curiosity_explorer import CuriosityExplorer
-from snks.agent.world_model_trainer import extract_demo_transitions
+from snks.agent.minigrid_env_symbolic import MiniGridSymbolicEnv
+from snks.agent.curiosity_explorer import CuriosityExplorer, DirectedCrafterExplorer
+from snks.agent.world_model_trainer import extract_demo_transitions, TRAIN_COLORS
 
 
 def main():
@@ -38,7 +39,7 @@ def main():
 
     # Phase 1: Teacher demos only (NO synthetic!)
     taught = generate_taught_transitions()
-    print(f"Taught rules: {len(taught)} (max 10)")
+    print(f"Crafter taught rules: {len(taught)} (max 10)")
 
     # MiniGrid demos
     with open("_docs/demo_episodes_bosslevel.json") as f:
@@ -53,16 +54,26 @@ def main():
     print(f"Initial training: {initial_stats}")
     print(f"Initial neocortex rules: {initial_neocortex}")
 
-    # Phase 2: Curiosity exploration
+    # Phase 2a: MiniGrid curiosity exploration
     print(f"\n{'='*60}")
-    print("CURIOSITY EXPLORATION")
-    env = CrafterSymbolicEnv(seed=42)
-    explorer = CuriosityExplorer(model, explore_threshold=0.3, seed=42)
+    print("MINIGRID CURIOSITY EXPLORATION")
+    mg_env = MiniGridSymbolicEnv(colors=TRAIN_COLORS, seed=42)
+    mg_explorer = CuriosityExplorer(model, explore_threshold=0.3, seed=42)
+    mg_discovered = mg_explorer.explore(mg_env, n_episodes=50, steps_per_episode=30)
+    print(f"MiniGrid discoveries: {len(mg_discovered)}")
+    print(f"Neocortex after MG exploration: {len(model.neocortex)}")
 
-    all_discovered = []
-    for batch in range(5):  # 5 batches of 20 episodes
-        discovered = explorer.explore(env, n_episodes=20, steps_per_episode=80)
-        all_discovered.extend(discovered)
+    # Phase 2b: Directed Crafter curiosity exploration
+    print(f"\n{'='*60}")
+    print("CRAFTER CURIOSITY EXPLORATION (directed)")
+    cr_env = CrafterSymbolicEnv(seed=42)
+    cr_explorer = DirectedCrafterExplorer(model, explore_threshold=0.3, seed=42)
+
+    all_cr_discovered = []
+    for batch in range(5):
+        discovered = cr_explorer.explore(cr_env, n_episodes=20,
+                                          steps_per_episode=80)
+        all_cr_discovered.extend(discovered)
         print(f"  Batch {batch+1}: +{len(discovered)} discoveries, "
               f"neocortex={len(model.neocortex)}")
 
@@ -71,22 +82,21 @@ def main():
     model.abstraction.build_abstract_sdm()
 
     final_neocortex = len(model.neocortex)
-    new_rules = final_neocortex - initial_neocortex
-    print(f"\nTotal discoveries: {len(all_discovered)}")
-    print(f"Neocortex growth: {initial_neocortex} → {final_neocortex} (+{new_rules})")
+    print(f"\nFinal neocortex: {final_neocortex} (+{final_neocortex - initial_neocortex})")
+    print(f"Categories: {len(model.abstraction.categories)}")
 
-    # Identify which Crafter rules were discovered (not taught)
+    # Identify discovered Crafter rules
     taught_keys = {(r["action"], r["near"]) for r in CRAFTER_TAUGHT}
     all_rule_keys = {(r["action"], r["near"]) for r in CRAFTER_RULES}
     discovered_crafter = set()
-    for t in all_discovered:
+    for t in all_cr_discovered:
         if t.situation.get("domain") == "crafter":
             key = (t.action, t.situation.get("near", ""))
             if key not in taught_keys and key in all_rule_keys:
                 if t.outcome.get("result") not in ("nothing_happened",):
                     discovered_crafter.add(key)
 
-    print(f"Self-discovered Crafter rules: {len(discovered_crafter)}")
+    print(f"\nSelf-discovered Crafter rules: {len(discovered_crafter)}")
     for ak in sorted(discovered_crafter):
         print(f"  {ak[0]} near {ak[1]}")
 
@@ -97,7 +107,8 @@ def main():
     c_ok, c_total, c_fails = test_crafter_qa(model)
     for f in c_fails:
         print(f)
-    print(f"Crafter QA: {c_ok}/{c_total} = {c_ok*100//c_total}%  [gate ≥80%]")
+    crafter_pct = c_ok * 100 // c_total
+    print(f"Crafter QA: {c_ok}/{c_total} = {crafter_pct}%  [gate ≥80%]")
 
     # Phase 4: MiniGrid regression
     print(f"\n{'='*60}")
@@ -114,14 +125,13 @@ def main():
         print(f)
     mg_total = c3 + c4 + c5 + c6
     mg_max = t3 + t4 + t5 + t6
-    print(f"MiniGrid: {mg_total}/{mg_max} = {mg_total*100//mg_max}%")
+    mg_pct = mg_total * 100 // mg_max
+    print(f"MiniGrid: {mg_total}/{mg_max} = {mg_pct}%")
 
     # Summary
     print(f"\n{'='*60}")
     print("SUMMARY")
     print("=" * 60)
-    crafter_pct = c_ok * 100 // c_total
-    mg_pct = mg_total * 100 // mg_max
     print(f"Taught rules: {len(taught)} (gate ≤10)")
     print(f"Discovered Crafter rules: {len(discovered_crafter)} (gate ≥10)")
     print(f"Crafter QA: {c_ok}/{c_total} = {crafter_pct}%  (gate ≥80%)")
