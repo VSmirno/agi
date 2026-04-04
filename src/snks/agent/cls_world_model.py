@@ -535,6 +535,15 @@ class CLSWorldModel:
             rule = self.neocortex[key]
             neo_outcome = rule.outcome
             neo_conf = 0.95 * certainty
+        else:
+            # Fallback: try near-only key (without inventory)
+            # Inventory decode is noisy; near-only matches basic rules
+            near_name = key_base.split("_")[1] if "_" in key_base else "empty"
+            fallback_key = f"crafter_{near_name}_noinv_{action}"
+            if fallback_key in self.neocortex:
+                rule = self.neocortex[fallback_key]
+                neo_outcome = rule.outcome
+                neo_conf = 0.85 * certainty  # lower conf for fallback
 
         # Path 2: Hippocampus via binary VSA
         hippo_outcome, hippo_conf = None, 0.0
