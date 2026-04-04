@@ -173,12 +173,12 @@ class CLSWorldModel:
             predicted, confidence = self.hippocampus.read_next(sit_vec, self._zeros)
 
             if confidence < 0.01:
-                # SDM has no signal — store directly
+                # SDM has no signal — store directly with moderate confidence
                 self.neocortex[key] = Rule(
                     situation_key=key,
                     outcome=t.outcome,
                     reward=t.reward,
-                    confidence=1,
+                    confidence=2,
                     source="direct",
                 )
                 self.n_consolidated += 1
@@ -196,12 +196,12 @@ class CLSWorldModel:
                 )
                 self.n_consolidated += 1
             else:
-                # SDM wrong — store ground truth directly
+                # SDM wrong — store ground truth with lower confidence
                 self.neocortex[key] = Rule(
                     situation_key=key,
                     outcome=t.outcome,
                     reward=t.reward,
-                    confidence=1,
+                    confidence=2,
                     source="direct_override",
                 )
                 self.n_consolidated += 1
