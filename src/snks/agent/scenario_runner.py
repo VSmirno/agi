@@ -164,12 +164,32 @@ def _find_target_semantic(
                 if dist <= 1:
                     return torch.from_numpy(pixels_np), info, True
 
-                # Obstacle avoidance: random move if stuck for 3+ steps
-                if stuck_count >= 3:
-                    action = str(rng.choice(_ALL4))
+                dy, dx = ty - py, tx - px
+                if stuck_count >= 2:
+                    # Mining nav: dig toward target instead of random walk.
+                    # Coal/iron are often surrounded by stone — "do" mines obstacles.
+                    if abs(dy) >= abs(dx) and dy != 0:
+                        mine_dir = "move_down" if dy > 0 else "move_up"
+                    elif dx != 0:
+                        mine_dir = "move_right" if dx > 0 else "move_left"
+                    else:
+                        mine_dir = str(rng.choice(_ALL4))
+                    pixels_np, _, done, info = env.step(mine_dir)  # type: ignore
+                    if done:
+                        pixels_np, info = env.reset()  # type: ignore
+                        prev_pos = None
+                        stuck_count = 0
+                        continue
+                    pixels_np, _, done, info = env.step("do")  # type: ignore
+                    if done:
+                        pixels_np, info = env.reset()  # type: ignore
+                        prev_pos = None
+                        stuck_count = 0
+                        continue
+                    stuck_count = 0
+                    continue
                 else:
                     # Greedy step toward target
-                    dy, dx = ty - py, tx - px
                     moves = []
                     if dy > 0:
                         moves.append("move_down")
@@ -187,10 +207,7 @@ def _find_target_semantic(
 
         pixels_np, _, done, info = env.step(action)  # type: ignore[union-attr]
         if done:
-            # Episode ended during navigation — inventory is lost (e.g. pickaxe gone).
-            # Resetting here would allow continuing nav but would silently lose tools.
-            # Return False so the caller can decide (break repeat, skip to next seed).
-            return torch.from_numpy(pixels_np), info, False
+            pixels_np, info = env.reset()  # type: ignore[union-attr]
 
     return torch.from_numpy(pixels_np), info, False
 
@@ -264,6 +281,13 @@ class ScenarioRunner:
                         pixels_t.numpy() if isinstance(pixels_t, torch.Tensor) else pixels_t
                     )
                     window_buf.append(pixels_np)
+
+                    # Re-check prereqs: episode may have reset during navigation,
+                    # losing tools (e.g. wood_pickaxe needed for coal).
+                    if step.prerequisite_inv:
+                        inv_now = dict(info.get("inventory", {}))
+                        if not self._prereqs_met(inv_now, step.prerequisite_inv):
+                            break
 
                 # Action phase
                 if step.action == "do":
