@@ -18,7 +18,7 @@ import numpy as np
 
 from snks.encoder.cnn_encoder import CNNEncoder
 from snks.encoder.predictive_trainer import JEPAPredictor, PredictiveTrainer
-from snks.agent.decode_head import NEAR_CLASSES
+from snks.agent.decode_head import NEAR_CLASSES, NEAR_TO_IDX
 from snks.agent.crafter_pixel_env import (
     CrafterPixelEnv, ACTION_NAMES, NEAR_OBJECTS, SEMANTIC_NAMES, INVENTORY_ITEMS,
 )
@@ -89,6 +89,7 @@ def phase1_collect(
 
     all_pt, all_pt1, all_actions = [], [], []
     all_situation_labels = []
+    all_near_labels = []
     label_to_idx: dict[str, int] = {}
 
     for traj in range(n_trajectories):
@@ -111,6 +112,9 @@ def phase1_collect(
                 label_to_idx[sit_label] = len(label_to_idx)
             all_situation_labels.append(label_to_idx[sit_label])
 
+            # Near label for supervised near_head training
+            all_near_labels.append(NEAR_TO_IDX.get(sym.get("near", "empty"), 0))
+
             pixels = next_pixels
             sym = next_sym
 
@@ -128,6 +132,7 @@ def phase1_collect(
         "pixels_t1": torch.stack(all_pt1),
         "actions": torch.tensor(all_actions),
         "situation_labels": torch.tensor(all_situation_labels),
+        "near_labels": torch.tensor(all_near_labels, dtype=torch.long),
         "label_to_idx": label_to_idx,
     }
 
@@ -150,6 +155,7 @@ def phase2_train_encoder(
     trainer = PredictiveTrainer(
         encoder, predictor,
         contrastive_weight=0.5,
+        near_weight=1.0,
         device="cpu",
     )
 
@@ -158,6 +164,7 @@ def phase2_train_encoder(
         dataset["pixels_t1"],
         dataset["actions"],
         situation_labels=dataset["situation_labels"],
+        near_labels=dataset.get("near_labels"),
         epochs=epochs,
         batch_size=batch_size,
         log_every=10,

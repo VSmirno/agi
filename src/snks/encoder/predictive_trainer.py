@@ -99,6 +99,7 @@ class PredictiveTrainer:
         lr: float = 1e-3,
         vicreg_weight: float = 0.1,
         contrastive_weight: float = 0.0,
+        near_weight: float = 0.0,
         device: torch.device | str = "cpu",
     ):
         self.encoder = encoder
@@ -106,6 +107,7 @@ class PredictiveTrainer:
         self.device = torch.device(device)
         self.vicreg_weight = vicreg_weight
         self.contrastive_weight = contrastive_weight
+        self.near_weight = near_weight
 
         # Optimize all encoder params + predictor
         self.optimizer = torch.optim.Adam(
@@ -120,6 +122,7 @@ class PredictiveTrainer:
         pixels_t1: torch.Tensor,
         actions: torch.Tensor,
         situation_labels: torch.Tensor | None = None,
+        near_labels: torch.Tensor | None = None,
     ) -> dict[str, float]:
         """One training step.
 
@@ -128,9 +131,10 @@ class PredictiveTrainer:
             pixels_t1: (B, 3, 64, 64) next frame.
             actions: (B,) int action indices.
             situation_labels: (B,) int labels for SupCon (optional).
+            near_labels: (B,) int near class indices for cross-entropy (optional).
 
         Returns:
-            Dict with pred_loss, var_loss, con_loss, total_loss.
+            Dict with pred_loss, var_loss, con_loss, near_loss, total_loss.
         """
         self.encoder.train()
         self.predictor.train()
@@ -151,14 +155,21 @@ class PredictiveTrainer:
         std_z = z_t.std(dim=0)  # (2048,)
         var_loss = self.vicreg_weight * torch.relu(1.0 - std_z).mean()
 
+        total = pred_loss + var_loss
+
         # Supervised contrastive loss
         con_loss_val = 0.0
         if self.contrastive_weight > 0 and situation_labels is not None:
             con = supcon_loss(z_t, situation_labels)
             con_loss_val = con.item()
-            total = pred_loss + var_loss + self.contrastive_weight * con
-        else:
-            total = pred_loss + var_loss
+            total = total + self.contrastive_weight * con
+
+        # Near classification loss (cross-entropy on near_head output)
+        near_loss_val = 0.0
+        if self.near_weight > 0 and near_labels is not None:
+            near_ce = nn.functional.cross_entropy(out_t.near_logits, near_labels)
+            near_loss_val = near_ce.item()
+            total = total + self.near_weight * near_ce
 
         self.optimizer.zero_grad()
         total.backward()
@@ -168,6 +179,7 @@ class PredictiveTrainer:
             "pred_loss": pred_loss.item(),
             "var_loss": var_loss.item(),
             "con_loss": con_loss_val,
+            "near_loss": near_loss_val,
             "total_loss": total.item(),
         }
 
@@ -177,6 +189,7 @@ class PredictiveTrainer:
         pixels_t1: torch.Tensor,
         actions: torch.Tensor,
         situation_labels: torch.Tensor | None = None,
+        near_labels: torch.Tensor | None = None,
         batch_size: int = 256,
     ) -> dict[str, float]:
         """Train one epoch over dataset.
@@ -186,15 +199,22 @@ class PredictiveTrainer:
             pixels_t1: (N, 3, 64, 64) all next frames.
             actions: (N,) all action indices.
             situation_labels: (N,) int labels for SupCon (optional).
+            near_labels: (N,) int near class indices for cross-entropy (optional).
             batch_size: batch size.
 
         Returns:
             Averaged metrics over epoch.
         """
+        tensors = [pixels_t, pixels_t1, actions]
         if situation_labels is not None:
-            dataset = TensorDataset(pixels_t, pixels_t1, actions, situation_labels)
-        else:
-            dataset = TensorDataset(pixels_t, pixels_t1, actions)
+            tensors.append(situation_labels)
+        if near_labels is not None:
+            # Pad situation_labels slot if absent
+            if situation_labels is None:
+                tensors.append(torch.zeros(len(pixels_t), dtype=torch.long))
+            tensors.append(near_labels)
+
+        dataset = TensorDataset(*tensors)
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
         totals: dict[str, float] = {}
@@ -205,8 +225,9 @@ class PredictiveTrainer:
             batch_pt1 = batch[1].to(self.device)
             batch_a = batch[2].to(self.device)
             batch_sl = batch[3].to(self.device) if len(batch) > 3 else None
+            batch_nl = batch[4].to(self.device) if len(batch) > 4 else None
 
-            metrics = self.train_step(batch_pt, batch_pt1, batch_a, batch_sl)
+            metrics = self.train_step(batch_pt, batch_pt1, batch_a, batch_sl, batch_nl)
             for k, v in metrics.items():
                 totals[k] = totals.get(k, 0.0) + v
             n_batches += 1
@@ -219,6 +240,7 @@ class PredictiveTrainer:
         pixels_t1: torch.Tensor,
         actions: torch.Tensor,
         situation_labels: torch.Tensor | None = None,
+        near_labels: torch.Tensor | None = None,
         epochs: int = 100,
         batch_size: int = 256,
         log_every: int = 10,
@@ -231,7 +253,7 @@ class PredictiveTrainer:
         history = []
         for epoch in range(epochs):
             metrics = self.train_epoch(
-                pixels_t, pixels_t1, actions, situation_labels, batch_size,
+                pixels_t, pixels_t1, actions, situation_labels, near_labels, batch_size,
             )
             metrics["epoch"] = epoch
 
@@ -242,6 +264,8 @@ class PredictiveTrainer:
                 parts.append(f"var={metrics['var_loss']:.4f}")
                 if metrics.get("con_loss", 0) > 0:
                     parts.append(f"con={metrics['con_loss']:.4f}")
+                if metrics.get("near_loss", 0) > 0:
+                    parts.append(f"near={metrics['near_loss']:.4f}")
                 print(" ".join(parts))
 
         return history
