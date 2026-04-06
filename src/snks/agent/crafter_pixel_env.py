@@ -181,3 +181,35 @@ class CrafterControlledEnv(CrafterPixelEnv):
         self._last_obs = obs
         self._last_info = info
         return self._to_pixels(obs), dict(info)
+
+    def reset_with_items(
+        self,
+        inventory: dict[str, int],
+        no_enemies: bool = True,
+    ) -> tuple[np.ndarray, dict]:
+        """Reset env and set inventory without placing any materials.
+
+        Useful for collecting empty/table frames: player starts in natural
+        grassland context (same distribution as random walk) with enough
+        items to perform craft/place actions.
+
+        Args:
+            inventory: items to set (e.g. {"wood": 15}).
+            no_enemies: if True, disables enemy spawning.
+
+        Returns:
+            (pixels, info) after inventory update.
+        """
+        self.reset()
+        inner = self._env
+
+        for item, count in inventory.items():
+            inner._player.inventory[item] = count
+
+        if no_enemies:
+            inner._balance_chunk = lambda *args, **kwargs: None  # type: ignore
+
+        obs, _, _, info = inner.step(0)
+        self._last_obs = obs
+        self._last_info = info
+        return self._to_pixels(obs), dict(info)

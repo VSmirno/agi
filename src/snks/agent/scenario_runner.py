@@ -117,7 +117,7 @@ STONE_CHAIN: list[ScenarioStep] = [
                  use_semantic_nav=True, continue_on_probe_fail=True),
     ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 3}),
     ScenarioStep(None, "make_wood_pickaxe", "table"),
-    ScenarioStep("stone", "do", "stone", repeat=5, use_semantic_nav=True,
+    ScenarioStep("stone", "do", "stone", repeat=5, max_nav_steps=600, use_semantic_nav=True,
                  continue_on_probe_fail=True),
 ]
 

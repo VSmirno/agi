@@ -64,6 +64,13 @@ _IRON_CONTROLLED: list[ScenarioStep] = [
                  prerequisite_inv={"stone_pickaxe": 1}, repeat=3, do_retries=3),
 ]
 
+# Empty/table controlled chain: no material placed, just inventory pre-loaded.
+# Natural grassland context (no domain gap) — same as random walk "near empty".
+_EMPTY_TABLE_CONTROLLED: list[ScenarioStep] = [
+    ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 2}, repeat=5),
+    ScenarioStep(None, "make_wood_pickaxe", "table", prerequisite_inv={"wood": 1}, repeat=3),
+]
+
 from exp122_pixels import (
     phase1_collect,
     phase2_train_encoder,
@@ -162,6 +169,42 @@ def _run_controlled_batch(
     return all_labeled
 
 
+def _run_controlled_items_batch(
+    chain: list,
+    inventory: dict[str, int],
+    n_seeds: int,
+    seed_base: int,
+    label: str,
+) -> list[tuple[torch.Tensor, int]]:
+    """Collect labeled frames using CrafterControlledEnv.reset_with_items().
+
+    No material placed adjacent — player starts in natural grassland with
+    pre-loaded inventory. Used for empty/table frames: matching the visual
+    distribution of random walk (no domain gap from controlled material placement).
+    """
+    runner = ScenarioRunner()
+    labeler = OutcomeLabeler()
+    all_labeled: list[tuple[torch.Tensor, int]] = []
+    n_success = 0
+    t0 = time.time()
+
+    for seed_idx in range(n_seeds):
+        seed = seed_base + seed_idx * 11
+        env = CrafterControlledEnv(seed=seed)
+        env.reset_with_items(inventory)
+        rng = np.random.RandomState(seed)
+
+        labeled = runner.run_chain(env, None, labeler, chain, rng)
+        seed_classes = {NEAR_CLASSES[idx] for _, idx in labeled}
+        if label in seed_classes:
+            n_success += 1
+        all_labeled.extend(labeled)
+
+    elapsed = time.time() - t0
+    print(f"    {label} (items): {n_success}/{n_seeds} seeds ({elapsed:.0f}s)")
+    return all_labeled
+
+
 def _balance_classes(
     labeled: list[tuple[torch.Tensor, int]],
     max_ratio: float = 4.0,
@@ -194,11 +237,14 @@ def phase1_collect_scenarios(
     n_stone: int = 50,
     n_coal: int = 50,
     n_iron: int = 50,
+    n_empty_table: int = 100,
 ) -> dict:
     """Phase 1: Collect labeled frames via scenario chains + controlled envs.
 
     - TREE_CHAIN (natural): tree + empty + table (high success rate)
-    - Stone/Coal/Iron (controlled): CrafterControlledEnv places material adjacent
+    - Stone (natural nav, max_nav_steps=600): natural mountain context
+    - Coal/Iron (controlled): CrafterControlledEnv.reset_near places material adjacent
+    - Empty/Table (controlled items): reset_with_items — natural grassland, no domain gap
 
     Controlled collection bypasses navigation to rare/embedded materials,
     guaranteeing ~100% collection success vs. ~3% with natural chains.
@@ -223,7 +269,12 @@ def phase1_collect_scenarios(
     iron_labeled = _run_controlled_batch("iron", _IRON_CONTROLLED, {"stone_pickaxe": 1},
                                          n_iron, 26000, "iron")
 
-    all_labeled = tree_labeled + stone_labeled + coal_labeled + iron_labeled
+    print(f"  Empty/Table controlled ({n_empty_table} seeds)...")
+    empty_table_labeled = _run_controlled_items_batch(
+        _EMPTY_TABLE_CONTROLLED, {"wood": 15}, n_empty_table, 27000, "empty",
+    )
+
+    all_labeled = tree_labeled + stone_labeled + coal_labeled + iron_labeled + empty_table_labeled
 
     if not all_labeled:
         raise RuntimeError("No labeled frames — check NearDetector and ScenarioRunner")
@@ -253,7 +304,7 @@ def phase1_collect_scenarios(
         "class_counts": dict(class_counts),
         "seeds_reached_coal": seeds_reached_coal,
         "seeds_reached_iron": seeds_reached_iron,
-        "n_seeds": n_tree + n_stone + n_coal + n_iron,
+        "n_seeds": n_tree + n_stone + n_coal + n_iron + n_empty_table,
     }
 
 
@@ -481,6 +532,7 @@ def main() -> None:
         n_stone=100,
         n_coal=80,
         n_iron=80,
+        n_empty_table=100,
     )
 
     n_classes = len(outcome_data["trained_classes"])
@@ -510,7 +562,7 @@ def main() -> None:
     # Summary
     print("\n" + "=" * 60)
     print("STAGE 70 SUMMARY")
-    print(f"  Seeds:          {outcome_data['n_seeds']} total (80 tree + 150 coal + 150 iron)")
+    print(f"  Seeds:          {outcome_data['n_seeds']} total")
     print(f"  Coal frames:    {outcome_data['seeds_reached_coal']}")
     print(f"  Iron frames:    {outcome_data['seeds_reached_iron']}")
     print(f"  Classes:        {outcome_data['trained_classes']}")
