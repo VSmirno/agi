@@ -19,6 +19,7 @@ import torch
 from snks.agent.vsa_world_model import SDMMemory, VSACodebook
 from snks.agent.world_model_trainer import Transition
 from snks.agent.abstraction_engine import AbstractionEngine
+from snks.agent.prototype_memory import PrototypeMemory
 
 
 CARRYABLE_TYPES = {"key", "ball", "box"}
@@ -104,6 +105,9 @@ class CLSWorldModel:
         # SDM calibration params (sigmoid mapping)
         self._sdm_cal_mu = 0.3
         self._sdm_cal_sigma = 0.2
+
+        # Prototype memory: k-NN in continuous z_real space (pixel path)
+        self.prototype_memory = PrototypeMemory(dim=dim)
 
         # Stats
         self.n_sdm_writes = 0
@@ -513,93 +517,42 @@ class CLSWorldModel:
         self,
         pixels: "torch.Tensor",
         action: str,
-        encoder: "VQPatchEncoder",
-        decode_head: "DecodeHead",
+        encoder: "torch.nn.Module",
+        decode_head: "object | None" = None,
     ) -> tuple[dict[str, str], float, str]:
-        """Dual-path query from pixel observation.
+        """Query from pixel observation via prototype memory (k-NN).
 
-        Path 1 (neocortex): decode_head → situation key → dict lookup
-        Path 2 (hippocampus): z_vsa → SDM read
+        Args:
+            pixels: (3, 64, 64) or (B, 3, 64, 64) pixel tensor.
+            action: action name string.
+            encoder: CNN encoder module.
+            decode_head: unused, kept for backward compat.
 
         Returns (outcome, confidence, source).
         """
         out = encoder(pixels)
         z_real = out.z_real
-        z_vsa = out.z_vsa.to(self.device)  # encoder may be on CPU
 
-        # Path 1: Neocortex via decoded situation key
-        neo_outcome, neo_conf = None, 0.0
-        key_base, certainty = decode_head.decode_situation_key(out)
-        # key_base has no action — append it
-        key = key_base + action
-        if key in self.neocortex:
-            rule = self.neocortex[key]
-            neo_outcome = rule.outcome
-            neo_conf = 0.95 * certainty
-        else:
-            # Fallback: try near-only key (without inventory)
-            # Inventory decode is noisy; near-only matches basic rules
-            near_name = key_base.split("_")[1] if "_" in key_base else "empty"
-            fallback_key = f"crafter_{near_name}_noinv_{action}"
-            if fallback_key in self.neocortex:
-                rule = self.neocortex[fallback_key]
-                neo_outcome = rule.outcome
-                neo_conf = 0.85 * certainty  # lower conf for fallback
-
-        # Path 2: Hippocampus via binary VSA
-        hippo_outcome, hippo_conf = None, 0.0
-        predicted, raw_conf = self.hippocampus.read_next(z_vsa, self._zeros)
-        if raw_conf > 0.01:
-            hippo_outcome = self._decode_outcome(predicted)
-            hippo_conf = self._calibrate_sdm(raw_conf)
-
-        # Return best
-        if neo_outcome and neo_conf >= hippo_conf:
-            return neo_outcome, neo_conf, "neocortex"
-        if hippo_outcome and hippo_conf > 0.01:
-            return hippo_outcome, hippo_conf, "hippocampus"
-        if neo_outcome:
-            return neo_outcome, neo_conf, "neocortex"
-
-        return {"result": "unknown"}, 0.0, "none"
+        outcome, confidence = self.prototype_memory.query(z_real, action)
+        source = "prototype" if confidence > 0 else "none"
+        return outcome, confidence, source
 
     def train_from_pixels(
         self,
         pixel_transitions: list,
-        encoder: "VQPatchEncoder",
-        decode_head: "DecodeHead",
+        encoder: "torch.nn.Module",
+        decode_head: "object | None" = None,
     ) -> dict:
-        """Train CLS from pixel transitions.
+        """Train CLS from pixel transitions via prototype memory.
 
         Each transition: (pixels, action_str, outcome_dict, reward).
-        Writes to both hippocampus (z_vsa) and neocortex (decoded key).
+        Writes to prototype memory (k-NN in z_real space).
         """
-        from snks.agent.world_model_trainer import Transition
-
         for pixels, action_str, outcome, reward in pixel_transitions:
             out = encoder(pixels)
-
-            # Hippocampus: write z_vsa → outcome
-            z_vsa = out.z_vsa.to(self.device)  # encoder may be on CPU
-            out_vec = self._encode_outcome(outcome)
-            for _ in range(self.n_amplify):
-                self.hippocampus.write(z_vsa, self._zeros, out_vec, reward)
-            self.n_sdm_writes += 1
-
-            # Neocortex: decode key → store rule
-            key_base, certainty = decode_head.decode_situation_key(out)
-            key = key_base + action_str
-            if key not in self.neocortex and certainty > 0.3:
-                self.neocortex[key] = Rule(
-                    situation_key=key,
-                    outcome=outcome,
-                    reward=reward,
-                    confidence=1,
-                    source="pixel_direct",
-                )
-                self.n_consolidated += 1
+            self.prototype_memory.add(out.z_real, action_str, outcome)
 
         return {
-            "sdm_writes": self.n_sdm_writes,
+            "prototypes": len(self.prototype_memory),
             "neocortex_size": len(self.neocortex),
         }
