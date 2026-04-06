@@ -102,8 +102,8 @@ class PredictiveTrainer:
         near_weight: float = 0.0,
         device: torch.device | str = "cpu",
     ):
-        self.encoder = encoder
-        self.predictor = predictor
+        self.encoder = encoder.to(torch.device(device))
+        self.predictor = predictor.to(torch.device(device))
         self.device = torch.device(device)
         self.vicreg_weight = vicreg_weight
         self.contrastive_weight = contrastive_weight
