@@ -160,3 +160,37 @@ def test_controlled_env_coal_minable() -> None:
         info = info_after
 
     assert mined, "Should be able to mine coal placed by reset_near with wood_pickaxe"
+
+
+def test_controlled_env_reset_with_items_no_material_placed() -> None:
+    """reset_with_items sets inventory without placing material adjacent."""
+    env = CrafterControlledEnv(seed=42)
+    pixels, info = env.reset_with_items({"wood": 9})
+    assert pixels.shape == (3, 64, 64)
+    inv = info["inventory"]
+    assert inv.get("wood", 0) > 0, "Wood should be in inventory"
+
+
+def test_controlled_env_reset_with_items_place_table() -> None:
+    """Player with wood can place a table using reset_with_items."""
+    from snks.agent.outcome_labeler import OutcomeLabeler
+    labeler = OutcomeLabeler()
+
+    env = CrafterControlledEnv(seed=42)
+    _, info = env.reset_with_items({"wood": 9})
+
+    placed = False
+    for _ in range(15):
+        inv_before = dict(info.get("inventory", {}))
+        if inv_before.get("wood", 0) < 2:
+            break
+        _, _, done, info_after = env.step("place_table")
+        inv_after = dict(info_after.get("inventory", {}))
+        label = labeler.label("place_table", inv_before, inv_after)
+        if label == "empty":
+            placed = True
+            break
+        info = info_after
+        env.step("move_right")  # reposition
+
+    assert placed, "Should be able to place table with pre-loaded wood inventory"
