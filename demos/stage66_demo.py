@@ -199,18 +199,24 @@ def navigate_toward(player_pos: np.ndarray,
                     target_pos: tuple[int, int]) -> int:
     """Return a move action to get closer to target.
 
+    Crafter coordinate system (verified empirically):
+      player_pos[0] = game X (horizontal) — increases with move_right
+      player_pos[1] = game Y (vertical)   — decreases with move_up
+    semantic is indexed [X, Y], i.e. semantic[player_pos[0], player_pos[1]] = player tile.
+
     Returns action index.
     """
-    py, px = int(player_pos[0]), int(player_pos[1])
-    ty, tx = target_pos
+    px = int(player_pos[0])   # game X (horizontal)
+    py = int(player_pos[1])   # game Y (vertical)
+    tx, ty = target_pos[0], target_pos[1]
 
-    dy = ty - py
-    dx = tx - px
+    dx = tx - px  # positive → target is to the RIGHT
+    dy = ty - py  # positive → target is BELOW (Y increases downward)
 
-    if abs(dy) >= abs(dx):
-        return ACT["move_down"] if dy > 0 else ACT["move_up"]
-    else:
+    if abs(dx) >= abs(dy):
         return ACT["move_right"] if dx > 0 else ACT["move_left"]
+    else:
+        return ACT["move_down"] if dy > 0 else ACT["move_up"]
 
 
 def is_adjacent(player_pos: np.ndarray, target_pos: tuple[int, int],
