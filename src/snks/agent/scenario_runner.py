@@ -4,11 +4,14 @@ Runs scenario chains in Crafter environments to collect labeled training data
 for the outcome encoder. Guarantees coverage of rare objects (coal, iron)
 by following tool-dependency chains.
 
-No info["semantic"] used. Only:
-  - info["inventory"]  — proprioception
-  - info["player_pos"] — proprioception
-  - NearDetector       — perception (for navigation)
-  - OutcomeLabeler     — outcome detection (for labeling)
+Navigation modes per step:
+  - use_semantic_nav=False (default): NearDetector + CrafterSpatialMap
+  - use_semantic_nav=True: info["semantic"] direct lookup (scaffolding for rare objects)
+
+Labeling always uses OutcomeLabeler (no info["semantic"]) — this is the core
+contribution of Stage 70. Navigation to rare objects (stone/coal/iron) uses
+semantic fallback since the nav encoder was trained on random walk without tools.
+Stage 71 will remove this navigation scaffolding.
 
 Usage:
     runner = ScenarioRunner()
@@ -27,6 +30,7 @@ import torch
 from snks.agent.decode_head import NEAR_TO_IDX
 from snks.agent.outcome_labeler import OutcomeLabeler
 from snks.agent.crafter_spatial_map import CrafterSpatialMap, find_target_with_map
+from snks.agent.crafter_pixel_env import SEMANTIC_NAMES
 
 _ALL4 = ["move_up", "move_down", "move_left", "move_right"]
 WINDOW_SIZE = 5     # retrospective labeling window (frames before success)
@@ -56,6 +60,7 @@ class ScenarioStep:
     repeat: int = 1
     max_nav_steps: int = 300
     do_retries: int = DO_RETRIES
+    use_semantic_nav: bool = False  # use info["semantic"] for navigation (scaffolding)
 
 
 # ---------------------------------------------------------------------------
@@ -65,20 +70,22 @@ class ScenarioStep:
 #: Full dependency chain from wood to iron.
 #: Each step requires the previous steps to have been completed (inventory state).
 CRAFTER_CHAIN: list[ScenarioStep] = [
-    # S1: Harvest wood ×3 — no prerequisites
+    # S1: Harvest wood ×3 — NearDetector works (tree is common in random walk)
     ScenarioStep("tree", "do", "tree", repeat=3),
-    # S2: Place crafting table — requires ≥2 wood in inventory
+    # S2: Place crafting table — no navigation, try in place
     ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 2}),
-    # S3: Craft wood pickaxe — navigate to placed table
-    ScenarioStep("table", "make_wood_pickaxe", "table"),
-    # S4: Harvest stone ×4 — pickaxe not strictly required but part of the chain
-    ScenarioStep("stone", "do", "stone", repeat=4),
-    # S5: Craft stone pickaxe — requires ≥3 stone
-    ScenarioStep("table", "make_stone_pickaxe", "table", prerequisite_inv={"stone": 3}),
-    # S6: Harvest coal — requires wood_pickaxe
-    ScenarioStep("coal", "do", "coal", prerequisite_inv={"wood_pickaxe": 1}, repeat=2),
-    # S7: Harvest iron — requires stone_pickaxe
-    ScenarioStep("iron", "do", "iron", prerequisite_inv={"stone_pickaxe": 1}, repeat=2),
+    # S3: Craft wood pickaxe — no navigation (table just placed adjacent)
+    ScenarioStep(None, "make_wood_pickaxe", "table"),
+    # S4: Harvest stone ×4 — semantic nav (nav encoder doesn't detect stone reliably)
+    ScenarioStep("stone", "do", "stone", repeat=4, use_semantic_nav=True),
+    # S5: Craft stone pickaxe — no navigation (table nearby from S2)
+    ScenarioStep(None, "make_stone_pickaxe", "table", prerequisite_inv={"stone": 3}),
+    # S6: Harvest coal — semantic nav (requires wood_pickaxe)
+    ScenarioStep("coal", "do", "coal", prerequisite_inv={"wood_pickaxe": 1},
+                 repeat=2, use_semantic_nav=True),
+    # S7: Harvest iron — semantic nav (requires stone_pickaxe)
+    ScenarioStep("iron", "do", "iron", prerequisite_inv={"stone_pickaxe": 1},
+                 repeat=2, use_semantic_nav=True),
 ]
 
 #: Shorter chain for Phase 0 nav encoder bootstrap (tree+stone only, no tools needed).
@@ -86,6 +93,67 @@ BOOTSTRAP_CHAIN: list[ScenarioStep] = [
     ScenarioStep("tree", "do", "tree", repeat=3),
     ScenarioStep("stone", "do", "stone", repeat=3),
 ]
+
+
+# Reverse lookup: name → semantic ID
+_SEMANTIC_IDS = {v: k for k, v in SEMANTIC_NAMES.items()}
+
+
+def _find_target_semantic(
+    env: object,
+    target: str,
+    max_steps: int,
+    rng: np.random.RandomState,
+) -> tuple[torch.Tensor, dict, bool]:
+    """Navigate to target using info["semantic"] directly (scaffolding for rare objects).
+
+    Stage 71 will replace this with a purely perceptual approach.
+    """
+    target_id = _SEMANTIC_IDS.get(target)
+    if target_id is None:
+        return torch.zeros(3, 64, 64), {}, False
+
+    pixels_np, info = env.observe()  # type: ignore[union-attr]
+
+    for _ in range(max_steps):
+        semantic = info.get("semantic")
+        player_pos = info.get("player_pos", (32, 32))
+        py, px = int(player_pos[0]), int(player_pos[1])
+
+        if semantic is not None:
+            # Find nearest cell with target_id
+            ys, xs = np.where(np.array(semantic) == target_id)
+            if len(ys) > 0:
+                dists = np.abs(ys - py) + np.abs(xs - px)
+                best = int(np.argmin(dists))
+                ty, tx = int(ys[best]), int(xs[best])
+                dist = dists[best]
+
+                if dist <= 1:
+                    return torch.from_numpy(pixels_np), info, True
+
+                # Step toward target
+                dy, dx = ty - py, tx - px
+                moves = []
+                if dy > 0:
+                    moves.append("move_down")
+                elif dy < 0:
+                    moves.append("move_up")
+                if dx > 0:
+                    moves.append("move_right")
+                elif dx < 0:
+                    moves.append("move_left")
+                action = str(rng.choice(moves)) if moves else str(rng.choice(_ALL4))
+            else:
+                action = str(rng.choice(_ALL4))
+        else:
+            action = str(rng.choice(_ALL4))
+
+        pixels_np, _, done, info = env.step(action)  # type: ignore[union-attr]
+        if done:
+            pixels_np, info = env.reset()  # type: ignore[union-attr]
+
+    return torch.from_numpy(pixels_np), info, False
 
 
 class ScenarioRunner:
@@ -142,10 +210,15 @@ class ScenarioRunner:
 
                 # Navigation phase
                 if step.navigate_to is not None:
-                    pixels_t, info, found = find_target_with_map(
-                        env, detector, smap, step.navigate_to,
-                        max_steps=step.max_nav_steps, rng=rng,
-                    )
+                    if step.use_semantic_nav:
+                        pixels_t, info, found = _find_target_semantic(
+                            env, step.navigate_to, step.max_nav_steps, rng,
+                        )
+                    else:
+                        pixels_t, info, found = find_target_with_map(
+                            env, detector, smap, step.navigate_to,
+                            max_steps=step.max_nav_steps, rng=rng,
+                        )
                     if not found:
                         break
                     pixels_np = (
