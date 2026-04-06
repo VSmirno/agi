@@ -15,6 +15,7 @@ from __future__ import annotations
 import time
 
 import torch
+import torch.nn as nn
 import numpy as np
 
 from snks.device import get_device
