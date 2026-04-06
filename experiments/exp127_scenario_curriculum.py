@@ -51,6 +51,10 @@ from snks.agent.scenario_runner import (
 
 # Controlled scenario steps: target placed adjacent by CrafterControlledEnv,
 # no navigation needed. do_retries=3 covers all 4 cardinal directions.
+_STONE_CONTROLLED: list[ScenarioStep] = [
+    ScenarioStep(None, "do", "stone",
+                 prerequisite_inv={"wood_pickaxe": 1}, repeat=3, do_retries=3),
+]
 _COAL_CONTROLLED: list[ScenarioStep] = [
     ScenarioStep(None, "do", "coal",
                  prerequisite_inv={"wood_pickaxe": 1}, repeat=3, do_retries=3),
@@ -187,17 +191,17 @@ def _balance_classes(
 def phase1_collect_scenarios(
     detector: NearDetector,
     n_tree: int = 80,
+    n_stone: int = 50,
     n_coal: int = 50,
     n_iron: int = 50,
 ) -> dict:
     """Phase 1: Collect labeled frames via scenario chains + controlled envs.
 
-    - TREE_CHAIN (natural): tree + stone + empty + table (high success rate)
-    - Coal (controlled): CrafterControlledEnv places coal adjacent, no navigation
-    - Iron (controlled): CrafterControlledEnv places iron adjacent, no navigation
+    - TREE_CHAIN (natural): tree + empty + table (high success rate)
+    - Stone/Coal/Iron (controlled): CrafterControlledEnv places material adjacent
 
-    Controlled collection bypasses the need to navigate to rare underground
-    materials — guarantees ~100% success vs. ~3% with natural chains.
+    Controlled collection bypasses navigation to rare/embedded materials,
+    guaranteeing ~100% collection success vs. ~3% with natural chains.
 
     Class balancing applied after collection (cap at 4× minority).
     Returns dict with 'pixels', 'near_labels', 'trained_classes'.
@@ -208,6 +212,10 @@ def phase1_collect_scenarios(
     print(f"  TREE_CHAIN ({n_tree} seeds)...")
     tree_labeled = _run_chain_batch(detector, TREE_CHAIN, n_tree, 20000, "tree")
 
+    print(f"  Stone controlled ({n_stone} seeds)...")
+    stone_labeled = _run_controlled_batch("stone", _STONE_CONTROLLED, {"wood_pickaxe": 1},
+                                          n_stone, 24000, "stone")
+
     print(f"  Coal controlled ({n_coal} seeds)...")
     coal_labeled = _run_controlled_batch("coal", _COAL_CONTROLLED, {"wood_pickaxe": 1},
                                          n_coal, 25000, "coal")
@@ -216,7 +224,7 @@ def phase1_collect_scenarios(
     iron_labeled = _run_controlled_batch("iron", _IRON_CONTROLLED, {"stone_pickaxe": 1},
                                          n_iron, 26000, "iron")
 
-    all_labeled = tree_labeled + coal_labeled + iron_labeled
+    all_labeled = tree_labeled + stone_labeled + coal_labeled + iron_labeled
 
     if not all_labeled:
         raise RuntimeError("No labeled frames — check NearDetector and ScenarioRunner")
@@ -246,7 +254,7 @@ def phase1_collect_scenarios(
         "class_counts": dict(class_counts),
         "seeds_reached_coal": seeds_reached_coal,
         "seeds_reached_iron": seeds_reached_iron,
-        "n_seeds": n_tree + n_coal + n_iron,
+        "n_seeds": n_tree + n_stone + n_coal + n_iron,
     }
 
 
@@ -471,8 +479,9 @@ def main() -> None:
     outcome_data = phase1_collect_scenarios(
         nav_detector,
         n_tree=60,
-        n_coal=150,
-        n_iron=200,
+        n_stone=60,
+        n_coal=60,
+        n_iron=60,
     )
 
     n_classes = len(outcome_data["trained_classes"])

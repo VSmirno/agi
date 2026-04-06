@@ -377,17 +377,24 @@ class ScenarioRunner:
     ) -> tuple[bool, dict, np.ndarray]:
         """Simple retry loop for craft/place actions.
 
+        Adds WINDOW_SIZE frames on success (pre-action context), matching
+        the behavior of _probe_do so craft/place classes have comparable
+        frame counts to harvest classes.
+
         Returns:
             (success, info_after, pixels_np_after)
         """
+        recent: deque = deque(maxlen=WINDOW_SIZE)
         for _ in range(ACTION_RETRIES):
+            recent.append(pixels_np)
             inv_before = dict(info.get("inventory", {}))
             pix_np, _, done, info_after = env.step(action)
             inv_after = dict(info_after.get("inventory", {}))
 
             label = labeler.label(action, inv_before, inv_after)
             if label == target_near:
-                labeled.append((torch.from_numpy(pixels_np), near_idx))
+                for frame in recent:
+                    labeled.append((torch.from_numpy(frame), near_idx))
                 return True, info_after, pix_np
 
             if done:
