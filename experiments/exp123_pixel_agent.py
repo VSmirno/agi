@@ -6,7 +6,7 @@ Phases:
 2. QA gate: Crafter QA L1-L4 with CNN near (≥90%)
 3. Regression: exp122 gate test (≥90%, Stage 66 achieved 100%)
 
-Run on minipc. CNN training on GPU (torch.backends.cudnn.enabled=False for ROCm).
+Run on minipc. CNN trains on GPU via disable_rocm_conv() (AMD ROCm fallback kernel).
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def phase0_train_encoder(
     """Phase 0: Train encoder and create NearDetector.
 
     Uses same pipeline as exp122 (JEPA + SupCon + VICReg).
-    Runs on CPU (Conv2d incompatible with ROCm).
+    GPU training via exp122.phase2_train_encoder (disable_rocm_conv called there).
     """
     print("Phase 0: Training encoder (JEPA + SupCon)...")
     dataset = phase1_collect(n_trajectories=n_trajectories, steps_per_traj=steps_per_traj)

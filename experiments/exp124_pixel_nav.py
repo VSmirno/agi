@@ -6,7 +6,7 @@ Phases:
 2. QA gate: Crafter QA L1-L4 using spatial map navigation (no info["semantic"]).
 3. Regression: exp123 pipeline (Stage 67), gate ≥90%.
 
-Run on minipc (GPU). CNN on CPU (Conv2d incompatible with ROCm).
+Run on minipc. CNN trains on GPU via disable_rocm_conv() (AMD ROCm fallback kernel).
 """
 
 from __future__ import annotations
