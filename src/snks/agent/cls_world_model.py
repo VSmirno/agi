@@ -524,7 +524,8 @@ class CLSWorldModel:
         Returns (outcome, confidence, source).
         """
         out = encoder(pixels)
-        z_real, z_vsa = out.z_real, out.z_vsa
+        z_real = out.z_real
+        z_vsa = out.z_vsa.to(self.device)  # encoder may be on CPU
 
         # Path 1: Neocortex via decoded situation key
         neo_outcome, neo_conf = None, 0.0
@@ -579,9 +580,10 @@ class CLSWorldModel:
             out = encoder(pixels)
 
             # Hippocampus: write z_vsa → outcome
+            z_vsa = out.z_vsa.to(self.device)  # encoder may be on CPU
             out_vec = self._encode_outcome(outcome)
             for _ in range(self.n_amplify):
-                self.hippocampus.write(out.z_vsa, self._zeros, out_vec, reward)
+                self.hippocampus.write(z_vsa, self._zeros, out_vec, reward)
             self.n_sdm_writes += 1
 
             # Neocortex: decode key → store rule
