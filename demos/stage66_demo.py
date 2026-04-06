@@ -112,110 +112,58 @@ GOALS = [
 
 # ── Planner ───────────────────────────────────────────────────────────────────
 
+def _s(label: str, target: str | None, action: str | None) -> dict:
+    """Helper to build a plan step."""
+    return {"label": label, "target": target, "action": action, "done": False}
+
+
 def compute_plan(goal_idx: int, inventory: dict[str, int]) -> list[dict]:
     """Compute dependency chain for a goal given current inventory.
 
-    Returns list of step dicts:
-        {"label": str, "target": str|None, "action": str|None, "done": bool}
+    Each step: {"label", "target", "action", "done"}.
+    Navigation is implicit: agent navigates to target, then executes action.
+    No navigation-only steps (they caused the agent to freeze on arrival).
     """
     goal_name, target_obj, final_action, requires = GOALS[goal_idx]
 
     if goal_name == "free_explore":
-        return [{"label": "random walk", "target": None, "action": None, "done": False}]
+        return [_s("random walk", None, None)]
 
     steps = []
 
-    # Check dependencies
-    if goal_name == "collect_stone" or goal_name == "collect_coal":
-        # Need wood_pickaxe → need wood + table
+    if goal_name in ("collect_stone", "collect_coal"):
         if not inventory.get("wood_pickaxe", 0):
             if not inventory.get("wood", 0):
-                steps.append({
-                    "label": "collect_wood (for pickaxe)",
-                    "target": "tree", "action": "do", "done": False,
-                })
-            if not _has_nearby_table_in_plan():
-                steps.append({
-                    "label": "place_table",
-                    "target": None, "action": "place_table", "done": False,
-                })
-            steps.append({
-                "label": "make_wood_pickaxe",
-                "target": "table", "action": "make_wood_pickaxe", "done": False,
-            })
+                steps.append(_s("collect wood (for pickaxe)", "tree", "do"))
+            steps.append(_s("place table", None, "place_table"))
+            steps.append(_s("make wood pickaxe", "table", "make_wood_pickaxe"))
 
     elif goal_name == "collect_iron":
-        # Need stone_pickaxe → need wood + stone + table
         if not inventory.get("stone_pickaxe", 0):
             if not inventory.get("wood_pickaxe", 0):
                 if not inventory.get("wood", 0):
-                    steps.append({
-                        "label": "collect_wood",
-                        "target": "tree", "action": "do", "done": False,
-                    })
-                steps.append({
-                    "label": "place_table",
-                    "target": None, "action": "place_table", "done": False,
-                })
-                steps.append({
-                    "label": "make_wood_pickaxe",
-                    "target": "table", "action": "make_wood_pickaxe", "done": False,
-                })
+                    steps.append(_s("collect wood", "tree", "do"))
+                steps.append(_s("place table", None, "place_table"))
+                steps.append(_s("make wood pickaxe", "table", "make_wood_pickaxe"))
             if not inventory.get("stone", 0):
-                steps.append({
-                    "label": "collect_stone",
-                    "target": "stone", "action": "do", "done": False,
-                })
-            steps.append({
-                "label": "make_stone_pickaxe",
-                "target": "table", "action": "make_stone_pickaxe", "done": False,
-            })
+                steps.append(_s("collect stone", "stone", "do"))
+            steps.append(_s("place table (for stone pickaxe)", None, "place_table"))
+            steps.append(_s("make stone pickaxe", "table", "make_stone_pickaxe"))
 
-    elif goal_name in ("make_wood_pickaxe", "make_stone_pickaxe",
-                       "make_wood_sword"):
-        # Need wood + possibly stone
+    elif goal_name in ("make_wood_pickaxe", "make_stone_pickaxe", "make_wood_sword"):
         if not inventory.get("wood", 0):
-            steps.append({
-                "label": "collect_wood",
-                "target": "tree", "action": "do", "done": False,
-            })
+            steps.append(_s("collect wood", "tree", "do"))
         if "stone" in requires and not inventory.get("stone", 0):
-            steps.append({
-                "label": "collect_stone",
-                "target": "stone", "action": "do", "done": False,
-            })
-        # Need a table
-        steps.append({
-            "label": f"navigate to table for {goal_name}",
-            "target": "table", "action": None, "done": False,
-        })
+            steps.append(_s("collect stone", "stone", "do"))
+        steps.append(_s("place table", None, "place_table"))
 
     elif goal_name == "place_table":
         if inventory.get("wood", 0) < 2:
-            steps.append({
-                "label": "collect_wood (need 2)",
-                "target": "tree", "action": "do", "done": False,
-            })
+            steps.append(_s("collect wood (need 2)", "tree", "do"))
 
-    # Final step
-    if target_obj is not None:
-        steps.append({
-            "label": f"navigate to {target_obj}",
-            "target": target_obj, "action": None, "done": False,
-        })
-    steps.append({
-        "label": goal_name,
-        "target": target_obj,
-        "action": final_action,
-        "done": False,
-    })
-
+    # Final goal step
+    steps.append(_s(goal_name, target_obj, final_action))
     return steps
-
-
-def _has_nearby_table_in_plan() -> bool:
-    """Placeholder — always assume we need a table unless inventory says we have one."""
-    return False
 
 
 # ── Navigator ─────────────────────────────────────────────────────────────────
@@ -558,8 +506,27 @@ class DemoState:
         self.wm_pred = ""
 
 
+def _advance_step(state: DemoState, goal_name: str) -> None:
+    """Mark current plan step done and advance. Sets status=done if plan complete."""
+    state.plan[state.plan_step]["done"] = True
+    state.plan_step += 1
+    if state.plan_step >= len(state.plan):
+        state.status = "done"
+        state.thought = f"Goal '{goal_name}' achieved!"
+    else:
+        state.status = "navigating"
+        state.nav_stuck_count = 0
+        state.last_player_pos = None
+
+
 def agent_step(state: DemoState, encoder: CNNEncoder, cls: CLSWorldModel):
-    """Execute one agent step: navigate or act."""
+    """Execute one agent step.
+
+    Logic per step:
+      - target=None, action=None  → free explore (random move)
+      - target=None, action=X     → execute X immediately (place_table etc.)
+      - target=T,   action=X      → navigate toward T; when adjacent execute X
+    """
     if state.paused or state.status in ("done", "failed", "idle"):
         return
 
@@ -569,107 +536,74 @@ def agent_step(state: DemoState, encoder: CNNEncoder, cls: CLSWorldModel):
         return
 
     step = state.plan[state.plan_step]
-    goal_name, _, _, _ = GOALS[state.goal_idx]
-    semantic = state.get_semantic()
+    goal_name = GOALS[state.goal_idx][0]
+    semantic   = state.get_semantic()
     player_pos = state.get_player_pos()
-
-    # Free explore: random walk
-    if goal_name == "free_explore":
-        action_idx = random.choice([ACT["move_left"], ACT["move_right"],
-                                    ACT["move_up"], ACT["move_down"]])
-        state.thought = "Free exploring (random walk)"
-        _env_step(state, action_idx, encoder, cls, step)
-        return
-
     target_obj = step.get("target")
     action_str = step.get("action")
 
-    # If no target and no action, skip step
+    # ── Free explore ────────────────────────────────────────────────────────
+    if goal_name == "free_explore":
+        state.thought = "Free exploring..."
+        _env_step(state, random.choice(list(MOVE_ACTIONS.values())), encoder, cls)
+        return
+
+    # ── No target, no action → skip ─────────────────────────────────────────
     if target_obj is None and action_str is None:
-        state.plan[state.plan_step]["done"] = True
-        state.plan_step += 1
+        _advance_step(state, goal_name)
         return
 
-    # Handle "place_table" — just do it in place (no specific target needed)
-    if action_str == "place_table" and target_obj is None:
-        state.status = "acting"
-        state.thought = "Placing table..."
-        _wm_query(state, encoder, cls, "place_table")
-        action_idx = ACT["place_table"]
-        obs, r, done, info = state.env.step(action_idx)
-        state.obs = obs
-        state.info = info
-        state.step_count += 1
-        if done:
-            state.reset_env()
-            return
-        # Check if table is now in semantic map
-        sem = state.get_semantic()
-        has_table = (sem == OBJ_ID["table"]).any()
-        if has_table or r > 0:
-            state.plan[state.plan_step]["done"] = True
-            state.plan_step += 1
-            state.status = "navigating"
-            # Rebuild plan with new inventory
-            old_idx = state.goal_idx
-            state.goal_idx = old_idx
-            state._rebuild_plan()
-        return
-
-    # Navigate to target
-    if target_obj is not None:
-        target_pos = find_nearest_object(semantic, player_pos, target_obj)
-
-        if target_pos is None:
-            # Target not visible — random walk to explore
-            state.status = "navigating"
-            state.thought = f"Searching for {target_obj}..."
-            action_idx = random.choice([ACT["move_left"], ACT["move_right"],
-                                        ACT["move_up"], ACT["move_down"]])
-            _env_step(state, action_idx, encoder, cls, step)
-            return
-
-        if not is_adjacent(player_pos, target_pos, threshold=2):
-            # Move toward target
-            state.status = "navigating"
-            state.thought = f"Moving toward {target_obj}..."
-            move_idx = navigate_toward(player_pos, target_pos)
-
-            # Stuck detection
-            pp = tuple(player_pos.tolist())
-            if state.last_player_pos is not None:
-                lp = tuple(state.last_player_pos.tolist())
-                if pp == lp:
-                    state.nav_stuck_count += 1
-                else:
-                    state.nav_stuck_count = 0
-            state.last_player_pos = player_pos.copy()
-
-            if state.nav_stuck_count > 8:
-                # Unstick: random move
-                move_idx = random.choice([ACT["move_left"], ACT["move_right"],
-                                          ACT["move_up"], ACT["move_down"]])
-                state.nav_stuck_count = 0
-
-            _env_step(state, move_idx, encoder, cls, step)
-            return
-
-    # Adjacent to target (or no navigation needed) — execute action
-    if action_str is not None:
+    # ── No target, but action exists → execute in place ─────────────────────
+    if target_obj is None:
         state.status = "acting"
         state.thought = f"Executing: {action_str}"
         _wm_query(state, encoder, cls, action_str)
-        action_idx = ACT.get(action_str, ACT["do"])
-        _env_step(state, action_idx, encoder, cls, step)
-        # Mark step as done (optimistically — check next iteration)
-        inv = state.get_inventory()
-        # Simple check: did something change / reward signal?
-        state.plan[state.plan_step]["done"] = True
-        state.plan_step += 1
+        _env_step(state, ACT.get(action_str, 0), encoder, cls)
+        _advance_step(state, goal_name)
+        return
+
+    # ── Has target: navigate → then act ─────────────────────────────────────
+    target_pos = find_nearest_object(semantic, player_pos, target_obj)
+
+    if target_pos is None:
+        # Object not visible → explore until found
         state.status = "navigating"
-        if state.plan_step >= len(state.plan):
-            state.status = "done"
-            state.thought = f"Goal '{goal_name}' complete!"
+        state.thought = f"Searching for {target_obj}..."
+        _env_step(state, random.choice(list(MOVE_ACTIONS.values())), encoder, cls)
+        return
+
+    py, px = int(player_pos[0]), int(player_pos[1])
+    ty, tx = target_pos
+    dist = abs(py - ty) + abs(px - tx)
+
+    if dist > 1:
+        # Move toward target
+        state.status = "navigating"
+        state.thought = f"→ {target_obj}  dist={dist}"
+        move_idx = navigate_toward(player_pos, target_pos)
+
+        # Stuck detection: same position for >6 steps → random kick
+        cur = (py, px)
+        if state.last_player_pos == cur:
+            state.nav_stuck_count += 1
+        else:
+            state.nav_stuck_count = 0
+        state.last_player_pos = cur
+
+        if state.nav_stuck_count > 6:
+            move_idx = random.choice(list(MOVE_ACTIONS.values()))
+            state.nav_stuck_count = 0
+
+        _env_step(state, move_idx, encoder, cls)
+
+    else:
+        # Adjacent → execute action
+        if action_str is not None:
+            state.status = "acting"
+            state.thought = f"{action_str} near {target_obj}"
+            _wm_query(state, encoder, cls, action_str)
+            _env_step(state, ACT.get(action_str, ACT["do"]), encoder, cls)
+        _advance_step(state, goal_name)
 
 
 def _wm_query(state: DemoState, encoder: CNNEncoder,
@@ -695,8 +629,8 @@ def _wm_query(state: DemoState, encoder: CNNEncoder,
 
 
 def _env_step(state: DemoState, action_idx: int,
-              encoder: CNNEncoder, cls: CLSWorldModel, step: dict):
-    """Execute action in env, update state."""
+              encoder: CNNEncoder, cls: CLSWorldModel) -> float:
+    """Execute action in env, update state. Returns reward."""
     obs, r, done, info = state.env.step(action_idx)
     state.obs = obs
     state.info = info
@@ -704,6 +638,7 @@ def _env_step(state: DemoState, action_idx: int,
     if done:
         state.thought = "Episode done — resetting..."
         state.reset_env()
+    return r
 
 
 # ── Rendering ──────────────────────────────────────────────────────────────────
