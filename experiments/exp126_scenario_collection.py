@@ -53,7 +53,8 @@ from exp123_pixel_agent import phase3_regression
 # ---------------------------------------------------------------------------
 
 WINDOW_SIZE = 5   # number of frames to retrospectively label after a success
-DO_RETRIES = 25   # max "do" attempts per approach
+DO_RETRIES = 25   # max "do" attempts per approach (each = 4 directional probes)
+_ALL4 = ["move_up", "move_down", "move_left", "move_right"]
 
 
 # ---------------------------------------------------------------------------
@@ -92,40 +93,51 @@ def _do_with_window(
     near_idx: int,
     labeled: list,
 ) -> bool:
-    """Try "do" up to DO_RETRIES times near target.
+    """Try "do" near target using directional probing.
 
-    Each attempt: do + check inventory. On success, label the last WINDOW_SIZE
-    frames from window_buf as target_near.
-    Between attempts: small random move to adjust position.
+    Strategy: cycle through all 4 facing directions (move→do) near the target.
+    "do" in Crafter only acts in the player's current facing direction, so we
+    must face each direction before trying. After one full cycle, do one random
+    move to adjust position and repeat.
 
+    On success: label the last WINDOW_SIZE frames from window_buf.
     Returns True if at least one label was collected.
     """
     pixels = _pixels_to_tensor(pixels_now)
     info = info_now
 
     for attempt in range(DO_RETRIES):
-        inv_before = dict(info.get("inventory", {}))
-        pixels_after_np, _, done, info_after = env.step("do")
-        inv_after = dict(info_after.get("inventory", {}))
+        # Probe all 4 directions: face→do
+        for direction in _ALL4:
+            # Face the direction
+            pix_face_np, _, done, info = env.step(direction)
+            pixels = _pixels_to_tensor(pix_face_np)
+            window_buf.append(pix_face_np)
+            if done:
+                return False
 
-        label = labeler.label("do", inv_before, inv_after)
-        if label == target_near:
-            # Retrospective window labeling
-            window_frames = list(window_buf)
-            for frame_pixels in window_frames[-WINDOW_SIZE:]:
-                labeled.append((_pixels_to_tensor(frame_pixels), near_idx))
-            # Also label current frame
-            labeled.append((pixels, near_idx))
-            return True
+            # Try do in this facing direction
+            inv_before = dict(info.get("inventory", {}))
+            pix_do_np, _, done, info_after = env.step("do")
+            inv_after = dict(info_after.get("inventory", {}))
 
-        if done:
-            return False
+            label = labeler.label("do", inv_before, inv_after)
+            if label == target_near:
+                # Retrospective window labeling
+                for frame_pixels in list(window_buf)[-WINDOW_SIZE:]:
+                    labeled.append((_pixels_to_tensor(frame_pixels), near_idx))
+                labeled.append((pixels, near_idx))
+                return True
 
-        # Adjust position slightly
-        move = rng.choice(["move_left", "move_right", "move_up", "move_down"])
-        pixels_np, _, done, info = env.step(move)
-        pixels = _pixels_to_tensor(pixels_np)
-        window_buf.append(pixels_np)
+            info = info_after
+            if done:
+                return False
+
+        # One random move to reposition between full direction cycles
+        move = rng.choice(_ALL4)
+        pix_np, _, done, info = env.step(move)
+        pixels = _pixels_to_tensor(pix_np)
+        window_buf.append(pix_np)
         if done:
             return False
 
@@ -146,6 +158,8 @@ def _scenario_harvest(
     Strategy: navigate to target using spatial map, then try do with window labeling.
     """
     labeled: list = []
+    n_found = 0
+    n_labeled = 0
 
     for seed_idx in range(n_seeds):
         seed = seed_base + seed_idx * 17
@@ -153,7 +167,7 @@ def _scenario_harvest(
         env.reset()
         smap = CrafterSpatialMap()
         rng = np.random.RandomState(seed)
-        window_buf: deque = deque(maxlen=WINDOW_SIZE + DO_RETRIES)
+        window_buf: deque = deque(maxlen=WINDOW_SIZE + DO_RETRIES * 5)
 
         # Phase A: navigate to target
         pixels_t, info, found = find_target_with_map(
@@ -162,16 +176,21 @@ def _scenario_harvest(
         )
         if not found:
             continue
+        n_found += 1
 
         # Collect window frames during approach
         window_buf.append(pixels_t.numpy() if isinstance(pixels_t, torch.Tensor) else pixels_t)
 
-        # Phase B: try do with window
+        # Phase B: directional probing
+        prev_len = len(labeled)
         _do_with_window(
             env, pixels_t, info, labeler, target_near, rng,
             window_buf, near_idx, labeled,
         )
+        if len(labeled) > prev_len:
+            n_labeled += 1
 
+    print(f"    navigate_found={n_found}/{n_seeds}, do_success={n_labeled}/{n_found}")
     return labeled
 
 
