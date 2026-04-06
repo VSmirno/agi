@@ -43,8 +43,9 @@ class NearDetector:
             Falls back to "empty" if index is out of range.
         """
         self._encoder.eval()
+        device = next(self._encoder.parameters()).device
         with torch.no_grad():
-            out = self._encoder(pixels)  # encoder handles single (3,64,64) input
+            out = self._encoder(pixels.to(device))
         # single input → near_logits shape: (n_classes,)
         idx = int(out.near_logits.argmax().item())
         if idx < len(NEAR_CLASSES):
