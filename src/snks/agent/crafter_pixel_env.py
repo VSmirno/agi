@@ -132,3 +132,52 @@ class CrafterPixelEnv:
     def get_ground_truth(self) -> dict:
         """Full ground truth for current state (for debugging/testing)."""
         return dict(self._last_info)
+
+
+class CrafterControlledEnv(CrafterPixelEnv):
+    """Crafter env with programmatic world editing for controlled data collection.
+
+    Bypasses navigation by placing specific materials adjacent to the player
+    and setting inventory directly. Useful for collecting labeled frames of
+    rare objects (coal, iron) that are hard to reach via natural chains.
+    """
+
+    def reset_near(
+        self,
+        target: str,
+        inventory: dict[str, int] | None = None,
+        no_enemies: bool = True,
+    ) -> tuple[np.ndarray, dict]:
+        """Reset and place target material at all 4 cardinal neighbors.
+
+        Args:
+            target: material name to place (e.g. "coal", "iron", "stone").
+            inventory: items to add to player inventory (e.g. {"wood_pickaxe": 1}).
+                       Health/food/drink/energy are preserved.
+            no_enemies: if True, patches _balance_chunk to disable zombie/skeleton spawning.
+
+        Returns:
+            (pixels, info) with target material adjacent and inventory set.
+        """
+        self.reset()
+        inner = self._env
+        py, px = int(inner._player.pos[0]), int(inner._player.pos[1])
+
+        # Place target at all 4 cardinal adjacent cells (overwrites existing material)
+        for dy, dx in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+            inner._world[py + dy, px + dx] = target
+
+        # Set inventory items (preserve health/food/drink/energy)
+        if inventory:
+            for item, count in inventory.items():
+                inner._player.inventory[item] = count
+
+        # Disable enemy spawning for this episode
+        if no_enemies:
+            inner._balance_chunk = lambda *args, **kwargs: None  # type: ignore
+
+        # Noop step to refresh semantic map with the newly placed materials
+        obs, _, _, info = inner.step(0)
+        self._last_obs = obs
+        self._last_info = info
+        return self._to_pixels(obs), dict(info)
