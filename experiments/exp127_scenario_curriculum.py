@@ -46,7 +46,7 @@ from snks.agent.cls_world_model import CLSWorldModel
 from snks.agent.crafter_trainer import CRAFTER_RULES
 from snks.agent.crafter_pixel_env import CrafterControlledEnv
 from snks.agent.scenario_runner import (
-    ScenarioRunner, ScenarioStep, TREE_CHAIN, COAL_CHAIN, IRON_CHAIN,
+    ScenarioRunner, ScenarioStep, TREE_CHAIN, STONE_CHAIN, COAL_CHAIN, IRON_CHAIN,
 )
 
 # Controlled scenario steps: target placed adjacent by CrafterControlledEnv,
@@ -212,9 +212,8 @@ def phase1_collect_scenarios(
     print(f"  TREE_CHAIN ({n_tree} seeds)...")
     tree_labeled = _run_chain_batch(detector, TREE_CHAIN, n_tree, 20000, "tree")
 
-    print(f"  Stone controlled ({n_stone} seeds)...")
-    stone_labeled = _run_controlled_batch("stone", _STONE_CONTROLLED, {"wood_pickaxe": 1},
-                                          n_stone, 24000, "stone")
+    print(f"  STONE_CHAIN ({n_stone} seeds, natural nav)...")
+    stone_labeled = _run_chain_batch(detector, STONE_CHAIN, n_stone, 23000, "stone")
 
     print(f"  Coal controlled ({n_coal} seeds)...")
     coal_labeled = _run_controlled_batch("coal", _COAL_CONTROLLED, {"wood_pickaxe": 1},
@@ -478,10 +477,10 @@ def main() -> None:
     # Phase 1: Independent chains per material class
     outcome_data = phase1_collect_scenarios(
         nav_detector,
-        n_tree=60,
-        n_stone=60,
-        n_coal=60,
-        n_iron=60,
+        n_tree=100,
+        n_stone=100,
+        n_coal=80,
+        n_iron=80,
     )
 
     n_classes = len(outcome_data["trained_classes"])
