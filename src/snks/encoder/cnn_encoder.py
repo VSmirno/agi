@@ -5,7 +5,7 @@ Replaces VQ Patch Codebook encoder. Single CNN for all three outputs:
 - z_vsa (2048 binary): for SDM hippocampus (binarized z_real)
 - near_logits: classification head for nearest object detection
 
-Depthwise separable convolutions for minimal GPU compute.
+Standard convolutions (depthwise causes ROCm segfault with groups).
 """
 
 from __future__ import annotations
@@ -22,29 +22,26 @@ class CNNEncoderOutput(NamedTuple):
     near_logits: torch.Tensor  # (B, n_classes) — near object classification
 
 
-class DepthwiseSeparableConv(nn.Module):
-    """Depthwise separable conv: much fewer FLOPs than standard conv."""
+class SimpleConv(nn.Module):
+    """Standard conv block — avoids ROCm segfault with groups/depthwise."""
 
     def __init__(self, in_ch: int, out_ch: int, kernel: int = 3,
                  stride: int = 1, padding: int = 1):
         super().__init__()
-        self.depthwise = nn.Conv2d(
-            in_ch, in_ch, kernel, stride=stride, padding=padding, groups=in_ch,
-        )
-        self.pointwise = nn.Conv2d(in_ch, out_ch, 1)
+        self.conv = nn.Conv2d(in_ch, out_ch, kernel, stride=stride, padding=padding)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.pointwise(self.depthwise(x))
+        return self.conv(x)
 
 
 class CNNEncoder(nn.Module):
     """CNN encoder: (3, 64, 64) → z_real + z_vsa + near_logits.
 
-    Architecture (depthwise separable for low GPU compute):
-        DWSConv(3→32, 3×3, stride=2)  → (32, 32, 32)
-        DWSConv(32→64, 3×3, stride=2) → (64, 16, 16)
-        DWSConv(64→128, 3×3, stride=2) → (128, 8, 8)
-        DWSConv(128→256, 3×3, stride=2) → (256, 4, 4)
+    Architecture:
+        Conv(3→32, 3×3, stride=2)  → (32, 32, 32)
+        Conv(32→64, 3×3, stride=2) → (64, 16, 16)
+        Conv(64→128, 3×3, stride=2) → (128, 8, 8)
+        Conv(128→256, 3×3, stride=2) → (256, 4, 4)
         Flatten → Linear(4096, 2048) → z_real
 
     Near detection from center features:
@@ -63,16 +60,16 @@ class CNNEncoder(nn.Module):
         self.vsa_threshold = vsa_threshold
 
         self.conv = nn.Sequential(
-            DepthwiseSeparableConv(3, 32, 3, stride=2, padding=1),
+            SimpleConv(3, 32, 3, stride=2, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
-            DepthwiseSeparableConv(32, 64, 3, stride=2, padding=1),
+            SimpleConv(32, 64, 3, stride=2, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
-            DepthwiseSeparableConv(64, 128, 3, stride=2, padding=1),
+            SimpleConv(64, 128, 3, stride=2, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            DepthwiseSeparableConv(128, 256, 3, stride=2, padding=1),
+            SimpleConv(128, 256, 3, stride=2, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(),
         )
