@@ -110,6 +110,17 @@ IRON_CHAIN: list[ScenarioStep] = [
 #: Alias for backward compatibility / simple use.
 CRAFTER_CHAIN = IRON_CHAIN
 
+#: Stone chain: tree → wood_pickaxe → stone harvest (natural nav, no domain gap).
+#: Used for stone class data — controlled env has domain gap (grassland vs mountains).
+STONE_CHAIN: list[ScenarioStep] = [
+    ScenarioStep("tree", "do", "tree", repeat=5,
+                 use_semantic_nav=True, continue_on_probe_fail=True),
+    ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 3}),
+    ScenarioStep(None, "make_wood_pickaxe", "table"),
+    ScenarioStep("stone", "do", "stone", repeat=5, use_semantic_nav=True,
+                 continue_on_probe_fail=True),
+]
+
 #: Bootstrap chain for Phase 0 nav encoder (no tools needed).
 BOOTSTRAP_CHAIN: list[ScenarioStep] = [
     ScenarioStep("tree", "do", "tree", repeat=3),
