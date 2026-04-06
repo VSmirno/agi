@@ -79,6 +79,47 @@ from exp122_pixels import (
 from exp123_pixel_agent import phase3_regression
 
 
+def _collect_empty_walk_frames(
+    n_seeds: int,
+    seed_base: int,
+    frames_per_seed: int = 30,
+) -> list[tuple[torch.Tensor, int]]:
+    """Collect 'near empty' frames from random walk using semantic GT labels.
+
+    Exactly matches smoke test distribution — no domain gap.
+    Uses info["semantic"] to label frames where no named object is adjacent.
+    """
+    from snks.agent.decode_head import NEAR_TO_IDX
+    empty_idx = NEAR_TO_IDX.get("empty")
+    if empty_idx is None:
+        return []
+
+    all_labeled: list[tuple[torch.Tensor, int]] = []
+
+    for seed_idx in range(n_seeds):
+        seed = seed_base + seed_idx * 7
+        env = CrafterPixelEnv(seed=seed)
+        pixels, info = env.reset()
+        rng = np.random.RandomState(seed)
+        count = 0
+        budget = frames_per_seed * 15  # search budget to find frames_per_seed empty frames
+
+        for _ in range(budget):
+            near = _detect_near_from_info(info)
+            if near == "empty":
+                all_labeled.append((torch.from_numpy(pixels), empty_idx))
+                count += 1
+                if count >= frames_per_seed:
+                    break
+
+            action = int(rng.randint(0, 17))
+            pixels, _, done, info = env.step(action)
+            if done:
+                pixels, info = env.reset()
+
+    return all_labeled
+
+
 # ---------------------------------------------------------------------------
 # Phase 0: Navigation encoder (Stage 68 bootstrap)
 # ---------------------------------------------------------------------------
@@ -234,17 +275,21 @@ def _balance_classes(
 def phase1_collect_scenarios(
     detector: NearDetector,
     n_tree: int = 80,
-    n_stone: int = 50,
+    n_stone_natural: int = 50,
+    n_stone_controlled: int = 80,
     n_coal: int = 50,
     n_iron: int = 50,
     n_empty_table: int = 100,
+    n_empty_walk: int = 100,
 ) -> dict:
     """Phase 1: Collect labeled frames via scenario chains + controlled envs.
 
-    - TREE_CHAIN (natural): tree + empty + table (high success rate)
-    - Stone (natural nav, max_nav_steps=600): natural mountain context
+    - TREE_CHAIN (natural): tree + table (high success rate)
+    - Stone natural (natural nav, max_nav_steps=600): natural mountain context
+    - Stone controlled (reset_near): volume boost for stone class
     - Coal/Iron (controlled): CrafterControlledEnv.reset_near places material adjacent
-    - Empty/Table (controlled items): reset_with_items — natural grassland, no domain gap
+    - Empty/Table (controlled items): reset_with_items — natural grassland
+    - Empty walk (random walk + semantic GT): exact match for smoke test distribution
 
     Controlled collection bypasses navigation to rare/embedded materials,
     guaranteeing ~100% collection success vs. ~3% with natural chains.
@@ -258,8 +303,13 @@ def phase1_collect_scenarios(
     print(f"  TREE_CHAIN ({n_tree} seeds)...")
     tree_labeled = _run_chain_batch(detector, TREE_CHAIN, n_tree, 20000, "tree")
 
-    print(f"  STONE_CHAIN ({n_stone} seeds, natural nav)...")
-    stone_labeled = _run_chain_batch(detector, STONE_CHAIN, n_stone, 23000, "stone")
+    print(f"  STONE_CHAIN natural ({n_stone_natural} seeds, natural nav)...")
+    stone_natural = _run_chain_batch(detector, STONE_CHAIN, n_stone_natural, 23000, "stone")
+
+    print(f"  Stone controlled ({n_stone_controlled} seeds)...")
+    stone_controlled = _run_controlled_batch("stone", _STONE_CONTROLLED, {"wood_pickaxe": 1},
+                                             n_stone_controlled, 28000, "stone")
+    stone_labeled = stone_natural + stone_controlled
 
     print(f"  Coal controlled ({n_coal} seeds)...")
     coal_labeled = _run_controlled_batch("coal", _COAL_CONTROLLED, {"wood_pickaxe": 1},
@@ -271,10 +321,16 @@ def phase1_collect_scenarios(
 
     print(f"  Empty/Table controlled ({n_empty_table} seeds)...")
     empty_table_labeled = _run_controlled_items_batch(
-        _EMPTY_TABLE_CONTROLLED, {"wood": 15}, n_empty_table, 27000, "empty",
+        _EMPTY_TABLE_CONTROLLED, {"wood": 9}, n_empty_table, 27000, "empty",
     )
 
-    all_labeled = tree_labeled + stone_labeled + coal_labeled + iron_labeled + empty_table_labeled
+    print(f"  Empty random walk ({n_empty_walk} seeds)...")
+    t_empty = time.time()
+    empty_walk = _collect_empty_walk_frames(n_empty_walk, 29000, frames_per_seed=30)
+    print(f"    empty (walk): {len(empty_walk)} frames ({time.time()-t_empty:.0f}s)")
+
+    all_labeled = (tree_labeled + stone_labeled + coal_labeled + iron_labeled
+                   + empty_table_labeled + empty_walk)
 
     if not all_labeled:
         raise RuntimeError("No labeled frames — check NearDetector and ScenarioRunner")
@@ -304,7 +360,7 @@ def phase1_collect_scenarios(
         "class_counts": dict(class_counts),
         "seeds_reached_coal": seeds_reached_coal,
         "seeds_reached_iron": seeds_reached_iron,
-        "n_seeds": n_tree + n_stone + n_coal + n_iron + n_empty_table,
+        "n_seeds": n_tree + n_stone_natural + n_stone_controlled + n_coal + n_iron + n_empty_table + n_empty_walk,
     }
 
 
@@ -529,10 +585,12 @@ def main() -> None:
     outcome_data = phase1_collect_scenarios(
         nav_detector,
         n_tree=100,
-        n_stone=100,
+        n_stone_natural=100,
+        n_stone_controlled=80,
         n_coal=80,
         n_iron=80,
         n_empty_table=100,
+        n_empty_walk=100,
     )
 
     n_classes = len(outcome_data["trained_classes"])
