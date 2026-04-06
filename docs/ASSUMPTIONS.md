@@ -110,3 +110,22 @@
 - coal/iron/diamond: 1/0/0 из 50 seed — редкие объекты не покрыты навигацией.
 - make_* прототипов 0 — table не создаётся при random walk (нет wood в инвентаре).
 - near_labels для обучения CNN по-прежнему из символики (circular dependency: Stage 69).
+
+---
+
+## Stage 70 — ScenarioCurriculum (2026-04-06)
+**Что сделано:** FSM-цепочки сценариев с OutcomeLabeler. 6 классов (empty/tree/stone/coal/iron/table). Smoke=68.8%, QA=100%, regression=100%.
+**Компоненты:**
+- ScenarioRunner: FSM executor с directional probing (do в 4 направлениях), window labeling W=5.
+- CrafterControlledEnv: прямое редактирование мира — reset_near() и reset_with_items().
+- _collect_empty_walk_frames(): random walk + semantic GT для "empty" (соответствие test distribution).
+- STONE/COAL/IRON_CHAIN: controlled env для редких объектов (100% success vs ~3% natural).
+
+**Допущения/ограничения:**
+- **Nav encoder Phase 0** по-прежнему через exp122 (Stage 68 pipeline, символьные траектории). Circular dependency не устранена на уровне nav encoder. Stage 71 устраняет.
+- **Stone в smoke=4.5%** из-за domain gap: controlled stone помещается в grassland, а в random walk stone появляется в горах. Smoke проходит за счёт empty=97.5%.
+- **use_semantic_nav=True** используется в TREE/STONE/COAL/IRON_CHAIN для навигации — semantic scaffolding. Stage 71 убирает.
+- **_balance_chunk monkeypatching**: отключение врагов через lambda. Работает, но хрупко.
+- **table smoke=0/0**: таблицы не встречаются в random walk (только player-placed), поэтому GT=0 для table в smoke test.
+- **do near coal 6/50, iron 17/50** в QA: coal/iron embedded в камне, навигатор не находит их за 300 шагов. QA проходит за счёт controlled prototype collection в phase4.
+
