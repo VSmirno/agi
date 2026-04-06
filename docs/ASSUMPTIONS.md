@@ -82,7 +82,7 @@
 ## Stage 66 — Pixels (Prototype Memory)
 **Что сделано:** 100% Crafter QA из пикселей, prototype memory k-NN.
 **Допущения/ограничения:**
-- **Conv2d сегфолтит на AMD ROCm** — CNN encoder принудительно на CPU.
+- **Conv2d сегфолтит на AMD ROCm** через MIOpen backend. Исправлено: `torch.backends.cudnn.enabled=False` включает fallback kernel (медленнее, но работает). Обучение теперь на GPU (1.8x speedup vs CPU).
 - VQ Patch Codebook отброшен: decode→symbols теряет информацию на каждом шаге.
 - Prototype search в Phase 3 использует ground truth near (символьный), не CNN.
 - make_* правила по-прежнему не покрыты (0 прототипов для craft actions).

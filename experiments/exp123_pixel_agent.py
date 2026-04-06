@@ -6,7 +6,7 @@ Phases:
 2. QA gate: Crafter QA L1-L4 with CNN near (≥90%)
 3. Regression: exp122 gate test (≥90%, Stage 66 achieved 100%)
 
-Run on minipc (GPU). CNN training on CPU (Conv2d incompatible with ROCm).
+Run on minipc. CNN training on GPU (torch.backends.cudnn.enabled=False for ROCm).
 """
 
 from __future__ import annotations

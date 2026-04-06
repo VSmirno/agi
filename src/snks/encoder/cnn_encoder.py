@@ -5,7 +5,10 @@ Replaces VQ Patch Codebook encoder. Single CNN for all three outputs:
 - z_vsa (2048 binary): for SDM hippocampus (binarized z_real)
 - near_logits: classification head for nearest object detection
 
-Standard convolutions (depthwise causes ROCm segfault with groups).
+ROCm note: MIOpen (ROCm conv backend) segfaults on this GPU.
+Workaround: torch.backends.cudnn.enabled = False routes convs through
+the fallback kernel (slow path but correct). Call disable_rocm_conv()
+once at startup when running on ROCm GPU.
 """
 
 from __future__ import annotations
@@ -14,6 +17,16 @@ from typing import NamedTuple
 
 import torch
 import torch.nn as nn
+
+
+def disable_rocm_conv() -> None:
+    """Disable MIOpen backend so Conv2d uses fallback kernel on AMD ROCm.
+
+    MIOpen segfaults on gfx1151 (Radeon 890M / evo-x2). Disabling cudnn
+    routes convolutions through a slower but stable path. Call once at
+    process startup when device is ROCm GPU.
+    """
+    torch.backends.cudnn.enabled = False
 
 
 class CNNEncoderOutput(NamedTuple):
