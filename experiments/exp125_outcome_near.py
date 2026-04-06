@@ -105,14 +105,26 @@ def _collect_do_labels(
             if not found:
                 continue
 
-            inv_before = dict(info.get("inventory", {}))
-            _, _, _, info_after = env.step("do")
-            inv_after = dict(info_after.get("inventory", {}))
-
-            near_label = labeler.label("do", inv_before, inv_after)
-            if near_label is not None and near_label in NEAR_TO_IDX:
-                labeled.append((pixels_t, NEAR_TO_IDX[near_label]))
-                found_count += 1
+            # Try "do" up to 8 times with small moves between attempts.
+            # NearDetector may fire 1-2 tiles away; moving closer helps.
+            got_label = False
+            for attempt in range(8):
+                inv_before = dict(info.get("inventory", {}))
+                pixels_after, _, done, info_after = env.step("do")
+                inv_after = dict(info_after.get("inventory", {}))
+                near_label = labeler.label("do", inv_before, inv_after)
+                if near_label is not None and near_label in NEAR_TO_IDX:
+                    labeled.append((pixels_t, NEAR_TO_IDX[near_label]))
+                    found_count += 1
+                    got_label = True
+                    break
+                if done:
+                    break
+                # Move slightly and retry
+                move = seed_rng.choice(["move_left", "move_right", "move_up", "move_down"])
+                pixels_t, _, done, info = env.step(move)
+                if done:
+                    break
 
         print(f"    near={target_near}: {found_count}/{n_seeds} labeled frames")
 

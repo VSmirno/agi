@@ -55,6 +55,7 @@ def phase0_load_encoder(
     print("Phase 0: Training encoder (JEPA + SupCon)...")
     dataset = phase1_collect(n_trajectories=n_trajectories, steps_per_traj=steps_per_traj)
     encoder, _, _ = phase2_train_encoder(dataset, epochs=epochs)
+    encoder.eval().cpu()  # move to CPU for inference (trained on GPU)
     detector = NearDetector(encoder)
     print(f"Phase 0 done: NearDetector ready, {len(NEAR_CLASSES)} classes")
     return encoder, detector
