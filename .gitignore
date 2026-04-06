@@ -51,6 +51,9 @@ htmlcov/
 checkpoints/
 results/
 data/MNIST/
+# Track directory structure but not binaries
+!demos/checkpoints/
+demos/checkpoints/*.pt
 
 # Claude Code
 .agents/
