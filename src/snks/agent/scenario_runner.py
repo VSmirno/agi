@@ -74,15 +74,19 @@ class ScenarioStep:
 
 #: Tree + empty + table labels (short, high success rate).
 TREE_CHAIN: list[ScenarioStep] = [
-    ScenarioStep("tree", "do", "tree", repeat=5, continue_on_probe_fail=True),
-    ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 2}),
+    # Semantic nav for tree: guarantees dist=1 so directional probe mines reliably
+    ScenarioStep("tree", "do", "tree", repeat=5,
+                 use_semantic_nav=True, continue_on_probe_fail=True),
+    ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 3}),
     ScenarioStep(None, "make_wood_pickaxe", "table"),  # labels table
 ]
 
 #: Coal chain: wood_pickaxe → coal. Skips stone_pickaxe (coal only needs wood_pickaxe).
 COAL_CHAIN: list[ScenarioStep] = [
-    ScenarioStep("tree", "do", "tree", repeat=5, continue_on_probe_fail=True),
-    ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 2}),
+    ScenarioStep("tree", "do", "tree", repeat=5,
+                 use_semantic_nav=True, continue_on_probe_fail=True),
+    # prereq=3: place_table costs 2 wood, make_wood_pickaxe costs 1 → need ≥3 total
+    ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 3}),
     ScenarioStep(None, "make_wood_pickaxe", "table"),
     ScenarioStep("coal", "do", "coal", prerequisite_inv={"wood_pickaxe": 1},
                  repeat=3, use_semantic_nav=True, continue_on_probe_fail=True),
@@ -90,10 +94,11 @@ COAL_CHAIN: list[ScenarioStep] = [
 
 #: Stone + iron chain: requires stone_pickaxe (full crafting chain).
 IRON_CHAIN: list[ScenarioStep] = [
-    ScenarioStep("tree", "do", "tree", repeat=5, continue_on_probe_fail=True),
-    ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 2}),
+    ScenarioStep("tree", "do", "tree", repeat=5,
+                 use_semantic_nav=True, continue_on_probe_fail=True),
+    ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 3}),
     ScenarioStep(None, "make_wood_pickaxe", "table"),
-    # S4: harvest stone ×5 — continue even if some probes fail (collect as much as possible)
+    # Stone harvest: semantic nav for reliable adjacency
     ScenarioStep("stone", "do", "stone", repeat=5, use_semantic_nav=True,
                  continue_on_probe_fail=True),
     ScenarioStep("table", "make_stone_pickaxe", "table", prerequisite_inv={"stone": 3},
@@ -131,11 +136,21 @@ def _find_target_semantic(
         return torch.zeros(3, 64, 64), {}, False
 
     pixels_np, info = env.observe()  # type: ignore[union-attr]
+    prev_pos: tuple[int, int] | None = None
+    stuck_count = 0
 
     for _ in range(max_steps):
         semantic = info.get("semantic")
         player_pos = info.get("player_pos", (32, 32))
         py, px = int(player_pos[0]), int(player_pos[1])
+
+        # Detect stuck: position didn't change → obstacle in the way
+        cur_pos = (py, px)
+        if cur_pos == prev_pos:
+            stuck_count += 1
+        else:
+            stuck_count = 0
+        prev_pos = cur_pos
 
         if semantic is not None:
             # Find nearest cell with target_id
@@ -149,18 +164,22 @@ def _find_target_semantic(
                 if dist <= 1:
                     return torch.from_numpy(pixels_np), info, True
 
-                # Step toward target
-                dy, dx = ty - py, tx - px
-                moves = []
-                if dy > 0:
-                    moves.append("move_down")
-                elif dy < 0:
-                    moves.append("move_up")
-                if dx > 0:
-                    moves.append("move_right")
-                elif dx < 0:
-                    moves.append("move_left")
-                action = str(rng.choice(moves)) if moves else str(rng.choice(_ALL4))
+                # Obstacle avoidance: random move if stuck for 3+ steps
+                if stuck_count >= 3:
+                    action = str(rng.choice(_ALL4))
+                else:
+                    # Greedy step toward target
+                    dy, dx = ty - py, tx - px
+                    moves = []
+                    if dy > 0:
+                        moves.append("move_down")
+                    elif dy < 0:
+                        moves.append("move_up")
+                    if dx > 0:
+                        moves.append("move_right")
+                    elif dx < 0:
+                        moves.append("move_left")
+                    action = str(rng.choice(moves)) if moves else str(rng.choice(_ALL4))
             else:
                 action = str(rng.choice(_ALL4))
         else:
