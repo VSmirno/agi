@@ -187,7 +187,10 @@ def _find_target_semantic(
 
         pixels_np, _, done, info = env.step(action)  # type: ignore[union-attr]
         if done:
-            pixels_np, info = env.reset()  # type: ignore[union-attr]
+            # Episode ended during navigation — inventory is lost (e.g. pickaxe gone).
+            # Resetting here would allow continuing nav but would silently lose tools.
+            # Return False so the caller can decide (break repeat, skip to next seed).
+            return torch.from_numpy(pixels_np), info, False
 
     return torch.from_numpy(pixels_np), info, False
 
