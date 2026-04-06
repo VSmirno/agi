@@ -61,6 +61,7 @@ class ScenarioStep:
     max_nav_steps: int = 300
     do_retries: int = DO_RETRIES
     use_semantic_nav: bool = False  # use info["semantic"] for navigation (scaffolding)
+    continue_on_probe_fail: bool = False  # don't break chain if probe fails (for repeat harvests)
 
 
 # ---------------------------------------------------------------------------
@@ -92,11 +93,13 @@ IRON_CHAIN: list[ScenarioStep] = [
     ScenarioStep("tree", "do", "tree", repeat=4),
     ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 2}),
     ScenarioStep(None, "make_wood_pickaxe", "table"),
-    ScenarioStep("stone", "do", "stone", repeat=4, use_semantic_nav=True),
+    # S4: harvest stone ×4 — continue even if some probes fail (collect as much as possible)
+    ScenarioStep("stone", "do", "stone", repeat=4, use_semantic_nav=True,
+                 continue_on_probe_fail=True),
     ScenarioStep("table", "make_stone_pickaxe", "table", prerequisite_inv={"stone": 3},
                  use_semantic_nav=True),
     ScenarioStep("iron", "do", "iron", prerequisite_inv={"stone_pickaxe": 1},
-                 repeat=3, use_semantic_nav=True),
+                 repeat=3, use_semantic_nav=True, continue_on_probe_fail=True),
 ]
 
 #: Alias for backward compatibility / simple use.
@@ -252,7 +255,7 @@ class ScenarioRunner:
                         near_idx, pixels_np, rng, labeled,
                     )
 
-                if not success:
+                if not success and not step.continue_on_probe_fail:
                     break  # step failed, stop chain
 
         return labeled

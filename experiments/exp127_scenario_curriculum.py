@@ -418,9 +418,9 @@ def main() -> None:
     # Phase 1: Independent chains per material class
     outcome_data = phase1_collect_scenarios(
         nav_detector,
-        n_tree=80,
+        n_tree=60,
         n_coal=150,
-        n_iron=150,
+        n_iron=200,
     )
 
     n_classes = len(outcome_data["trained_classes"])
