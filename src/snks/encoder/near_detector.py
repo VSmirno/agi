@@ -17,8 +17,6 @@ class NearDetector:
 
     Wraps CNNEncoder.near_head output → argmax → NEAR_CLASSES string.
     Replaces the symbolic _to_symbolic()["near"] path (Stage 67).
-
-    Stage 68 TODO: add inventory head to replace info["inventory"].
     """
 
     def __init__(self, encoder: CNNEncoder) -> None:

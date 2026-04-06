@@ -92,9 +92,20 @@
 ## Stage 67 — Symbolic Near → CNN Near
 **Что сделано:** NearDetector (CNN→argmax), CrafterPixelEnv без _to_symbolic(), smoke 99%, QA 100%.
 **Допущения/ограничения:**
-- **Инвентарь** берётся из `info["inventory"]` среды, не из пикселей (проприоцепция). Stage 68 TODO.
-- **Навигация** остаётся символической (BFS по info["semantic"]). Stage 68 TODO.
+- **Инвентарь** берётся из `info["inventory"]` — проприоцепция (агент помнит что взял). Менять не нужно.
+- **Навигация** — случайный walk + `_detect_near_from_info(info["semantic"])`. Stage 68 убирает info["semantic"].
 - near_labels для обучения CNN = ground truth из той же символики (circular dependency: убираем символику, обучаясь на ней).
 - Prototype collection в Phase 3 использует ground truth near для поиска ситуаций, не NearDetector.
 - make_* правила по-прежнему не покрыты.
 - Smoke test 99% оптимистичен: большинство кадров — пустое поле (easy "empty" class).
+
+---
+
+## Stage 68 — Pixel Navigation (когнитивная карта)
+**Что сделано:** CrafterSpatialMap + find_target_with_map, 23/23 тестов, exp124 готов к запуску на minipc.
+**Допущения/ограничения:**
+- `info["player_pos"]` остаётся — проприоцепция (агент знает где его тело).
+- `info["inventory"]` остаётся — проприоцепция (агент помнит что взял).
+- `CrafterSpatialMap` хранит near_str на позицию (one label per cell, не полная карта).
+- Greedy step-toward навигация, не оптимальный путь — может ходить кружными путями.
+- near_labels для обучения CNN по-прежнему из символики (circular dependency: Stage 69).

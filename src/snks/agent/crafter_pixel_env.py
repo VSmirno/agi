@@ -1,12 +1,15 @@
-"""Stage 67: Pixel Crafter environment wrapper.
+"""Stage 68: Pixel Crafter environment wrapper.
 
 Wraps real crafter.Env to provide:
 - Pixel observations (3, 64, 64) float32 [0, 1]
 - Native Crafter info dict (inventory, semantic map, player_pos, etc.)
 
 Stage 67: near detection moved to NearDetector (CNN-based).
-Stage 68 TODO: replace info["inventory"] with visual inventory head (CNN).
-Stage 68 TODO: replace symbolic navigation map with pixel-based spatial memory.
+Stage 68: object-finding navigation moved to CrafterSpatialMap (cognitive map).
+
+Proprioception kept (not replaced by CNN):
+- info["player_pos"]  — agent knows where its body is
+- info["inventory"]   — agent knows what it carries
 """
 
 from __future__ import annotations
@@ -98,7 +101,7 @@ class CrafterPixelEnv:
         """Step env. Returns (pixels, reward, done, info).
 
         Stage 67: near detection moved to NearDetector (CNN-based).
-        Stage 68 TODO: replace info["inventory"] with visual inventory head.
+        Stage 68: object-finding navigation moved to CrafterSpatialMap.
 
         Args:
             action: int index or action name string.
