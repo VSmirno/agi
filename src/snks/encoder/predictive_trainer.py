@@ -1,14 +1,14 @@
-"""Stage 66: Mini-JEPA predictive trainer.
+"""Stage 66: Mini-JEPA predictive trainer + supervised contrastive.
 
-Self-supervised training: predict next-frame latent from current latent + action.
-Trains the VQ Patch Encoder embeddings via straight-through gradient
-and the predictor MLP directly.
+Self-supervised JEPA: predict next-frame latent from current latent + action.
+Supervised contrastive (SupCon): cluster z_real by situation label.
 """
 
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 class JEPAPredictor(nn.Module):
@@ -43,6 +43,52 @@ class JEPAPredictor(nn.Module):
         return self.mlp(torch.cat([z, a], dim=1))
 
 
+def supcon_loss(
+    z: torch.Tensor,
+    labels: torch.Tensor,
+    temperature: float = 0.1,
+) -> torch.Tensor:
+    """Supervised Contrastive Loss (SupCon).
+
+    Args:
+        z: (B, D) L2-normalized embeddings.
+        labels: (B,) integer class labels.
+        temperature: scaling temperature.
+
+    Returns:
+        Scalar loss.
+    """
+    B = z.shape[0]
+    if B < 2:
+        return torch.tensor(0.0, device=z.device)
+
+    z = F.normalize(z, dim=1)
+    sim = z @ z.T / temperature  # (B, B)
+
+    # Mask: same label (excluding self)
+    label_eq = labels.unsqueeze(0) == labels.unsqueeze(1)  # (B, B)
+    self_mask = ~torch.eye(B, dtype=torch.bool, device=z.device)
+    pos_mask = label_eq & self_mask
+
+    # Check that at least some positives exist
+    has_pos = pos_mask.any(dim=1)
+    if not has_pos.any():
+        return torch.tensor(0.0, device=z.device)
+
+    # Log-softmax over non-self entries
+    logits = sim - sim.max(dim=1, keepdim=True).values  # stability
+    exp_logits = torch.exp(logits) * self_mask.float()
+    log_prob = logits - torch.log(exp_logits.sum(dim=1, keepdim=True) + 1e-8)
+
+    # Mean log-prob over positives
+    pos_log_prob = (log_prob * pos_mask.float()).sum(dim=1)
+    n_pos = pos_mask.float().sum(dim=1).clamp(min=1)
+    loss = -(pos_log_prob / n_pos)
+
+    # Average only over samples that have positives
+    return loss[has_pos].mean()
+
+
 class PredictiveTrainer:
     """Train VQ encoder + JEPA predictor on transition pairs."""
 
@@ -52,12 +98,14 @@ class PredictiveTrainer:
         predictor: JEPAPredictor,
         lr: float = 1e-3,
         vicreg_weight: float = 0.1,
+        contrastive_weight: float = 0.0,
         device: torch.device | str = "cpu",
     ):
         self.encoder = encoder
         self.predictor = predictor
         self.device = torch.device(device)
         self.vicreg_weight = vicreg_weight
+        self.contrastive_weight = contrastive_weight
 
         # Optimize all encoder params + predictor
         self.optimizer = torch.optim.Adam(
@@ -71,6 +119,7 @@ class PredictiveTrainer:
         pixels_t: torch.Tensor,
         pixels_t1: torch.Tensor,
         actions: torch.Tensor,
+        situation_labels: torch.Tensor | None = None,
     ) -> dict[str, float]:
         """One training step.
 
@@ -78,9 +127,10 @@ class PredictiveTrainer:
             pixels_t: (B, 3, 64, 64) current frame.
             pixels_t1: (B, 3, 64, 64) next frame.
             actions: (B,) int action indices.
+            situation_labels: (B,) int labels for SupCon (optional).
 
         Returns:
-            Dict with pred_loss, var_loss, total_loss.
+            Dict with pred_loss, var_loss, con_loss, total_loss.
         """
         self.encoder.train()
         self.predictor.train()
@@ -101,7 +151,14 @@ class PredictiveTrainer:
         std_z = z_t.std(dim=0)  # (2048,)
         var_loss = self.vicreg_weight * torch.relu(1.0 - std_z).mean()
 
-        total = pred_loss + var_loss
+        # Supervised contrastive loss
+        con_loss_val = 0.0
+        if self.contrastive_weight > 0 and situation_labels is not None:
+            con = supcon_loss(z_t, situation_labels)
+            con_loss_val = con.item()
+            total = pred_loss + var_loss + self.contrastive_weight * con
+        else:
+            total = pred_loss + var_loss
 
         self.optimizer.zero_grad()
         total.backward()
@@ -110,6 +167,7 @@ class PredictiveTrainer:
         return {
             "pred_loss": pred_loss.item(),
             "var_loss": var_loss.item(),
+            "con_loss": con_loss_val,
             "total_loss": total.item(),
         }
 
@@ -118,6 +176,7 @@ class PredictiveTrainer:
         pixels_t: torch.Tensor,
         pixels_t1: torch.Tensor,
         actions: torch.Tensor,
+        situation_labels: torch.Tensor | None = None,
         batch_size: int = 256,
     ) -> dict[str, float]:
         """Train one epoch over dataset.
@@ -126,23 +185,28 @@ class PredictiveTrainer:
             pixels_t: (N, 3, 64, 64) all current frames.
             pixels_t1: (N, 3, 64, 64) all next frames.
             actions: (N,) all action indices.
+            situation_labels: (N,) int labels for SupCon (optional).
             batch_size: batch size.
 
         Returns:
             Averaged metrics over epoch.
         """
-        dataset = TensorDataset(pixels_t, pixels_t1, actions)
+        if situation_labels is not None:
+            dataset = TensorDataset(pixels_t, pixels_t1, actions, situation_labels)
+        else:
+            dataset = TensorDataset(pixels_t, pixels_t1, actions)
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
         totals: dict[str, float] = {}
         n_batches = 0
 
-        for batch_pt, batch_pt1, batch_a in loader:
-            batch_pt = batch_pt.to(self.device)
-            batch_pt1 = batch_pt1.to(self.device)
-            batch_a = batch_a.to(self.device)
+        for batch in loader:
+            batch_pt = batch[0].to(self.device)
+            batch_pt1 = batch[1].to(self.device)
+            batch_a = batch[2].to(self.device)
+            batch_sl = batch[3].to(self.device) if len(batch) > 3 else None
 
-            metrics = self.train_step(batch_pt, batch_pt1, batch_a)
+            metrics = self.train_step(batch_pt, batch_pt1, batch_a, batch_sl)
             for k, v in metrics.items():
                 totals[k] = totals.get(k, 0.0) + v
             n_batches += 1
@@ -154,6 +218,7 @@ class PredictiveTrainer:
         pixels_t: torch.Tensor,
         pixels_t1: torch.Tensor,
         actions: torch.Tensor,
+        situation_labels: torch.Tensor | None = None,
         epochs: int = 100,
         batch_size: int = 256,
         log_every: int = 10,
@@ -165,17 +230,18 @@ class PredictiveTrainer:
         """
         history = []
         for epoch in range(epochs):
-            metrics = self.train_epoch(pixels_t, pixels_t1, actions, batch_size)
+            metrics = self.train_epoch(
+                pixels_t, pixels_t1, actions, situation_labels, batch_size,
+            )
             metrics["epoch"] = epoch
-            metrics["codebook_util"] = getattr(self.encoder, 'codebook_utilization', 1.0)
 
             history.append(metrics)
 
             if log_every and epoch % log_every == 0:
-                print(
-                    f"Epoch {epoch}: pred={metrics['pred_loss']:.4f} "
-                    f"var={metrics['var_loss']:.4f} "
-                    f"util={metrics['codebook_util']:.2f}"
-                )
+                parts = [f"Epoch {epoch}: pred={metrics['pred_loss']:.4f}"]
+                parts.append(f"var={metrics['var_loss']:.4f}")
+                if metrics.get("con_loss", 0) > 0:
+                    parts.append(f"con={metrics['con_loss']:.4f}")
+                print(" ".join(parts))
 
         return history
