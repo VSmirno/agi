@@ -6,7 +6,8 @@ Phases:
 3. Collect prototypes: encode pixels → store (z, action, outcome) in memory
 4. Gate test: ≥50% Crafter QA from pixels via k-NN
 
-All on CPU (Conv2d incompatible with ROCm on AMD GPU).
+GPU note: Conv2d works on AMD ROCm with torch.backends.cudnn.enabled=False.
+Training runs on GPU if available (1.8x speedup), inference on CPU.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import time
 import torch
 import numpy as np
 
-from snks.encoder.cnn_encoder import CNNEncoder
+from snks.encoder.cnn_encoder import CNNEncoder, disable_rocm_conv
 from snks.encoder.predictive_trainer import JEPAPredictor, PredictiveTrainer
 from snks.agent.decode_head import NEAR_CLASSES, NEAR_TO_IDX
 from snks.agent.crafter_pixel_env import (
@@ -148,7 +149,10 @@ def phase2_train_encoder(
     batch_size: int = 256,
 ) -> tuple[CNNEncoder, JEPAPredictor, list]:
     """Phase 2: JEPA + supervised contrastive + VICReg training."""
-    print(f"\nPhase 2: Training encoder (JEPA + SupCon, {epochs} epochs)...")
+    train_device = "cuda" if torch.cuda.is_available() else "cpu"
+    if train_device == "cuda":
+        disable_rocm_conv()
+    print(f"\nPhase 2: Training encoder (JEPA + SupCon, {epochs} epochs, device={train_device})...")
 
     encoder = CNNEncoder(n_near_classes=len(NEAR_CLASSES))
     predictor = JEPAPredictor()
@@ -156,7 +160,7 @@ def phase2_train_encoder(
         encoder, predictor,
         contrastive_weight=0.5,
         near_weight=1.0,
-        device="cpu",
+        device=train_device,
     )
 
     history = trainer.train_full(
@@ -310,7 +314,7 @@ def phase4_gate_test(
 
 def main():
     print("Stage 66 v2: Prototype Memory Pipeline")
-    print("All on CPU (Conv2d incompatible with ROCm)")
+    print(f"GPU available: {torch.cuda.is_available()}")
 
     # Phase 1: Collect data
     dataset = phase1_collect(n_trajectories=50, steps_per_traj=200)
