@@ -902,9 +902,9 @@ def run_interactive_demo(screen, fonts, encoder: CNNEncoder, cls: CLSWorldModel)
             agent_step(state, encoder, cls)
             last_agent_step = now
 
-            # Auto-reset after "done" status for a bit
+            # Auto-reset after "done" — pause so user can see result
             if state.status == "done":
-                pygame.time.wait(800)
+                pygame.time.wait(3000)   # 3 sec to read inventory
                 state.reset_env()
 
         render(screen, state, fonts)
