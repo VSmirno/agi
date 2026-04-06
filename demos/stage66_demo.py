@@ -117,12 +117,21 @@ def _s(label: str, target: str | None, action: str | None) -> dict:
     return {"label": label, "target": target, "action": action, "done": False}
 
 
+def _wood_steps(have: int, need: int, label: str = "collect wood") -> list[dict]:
+    """Return (need - have) wood collection steps, at least 0."""
+    return [_s(f"{label} {i+1}/{need}", "tree", "do") for i in range(max(0, need - have))]
+
+
 def compute_plan(goal_idx: int, inventory: dict[str, int]) -> list[dict]:
     """Compute dependency chain for a goal given current inventory.
 
     Each step: {"label", "target", "action", "done"}.
-    Navigation is implicit: agent navigates to target, then executes action.
-    No navigation-only steps (they caused the agent to freeze on arrival).
+    Navigation is implicit: navigate to target, face it, execute action.
+
+    Wood accounting (verified against Crafter env):
+      place_table  = 2 wood consumed
+      make_*       = 1 wood consumed
+      → need 3 wood total for any goal that places table + crafts
     """
     goal_name, target_obj, final_action, requires = GOALS[goal_idx]
 
@@ -130,36 +139,41 @@ def compute_plan(goal_idx: int, inventory: dict[str, int]) -> list[dict]:
         return [_s("random walk", None, None)]
 
     steps = []
+    wood = inventory.get("wood", 0)
 
     if goal_name in ("collect_stone", "collect_coal"):
         if not inventory.get("wood_pickaxe", 0):
-            if not inventory.get("wood", 0):
-                steps.append(_s("collect wood (for pickaxe)", "tree", "do"))
+            # Need 3 wood: 2 for table + 1 for pickaxe
+            steps += _wood_steps(wood, 3, "collect wood (for pickaxe+table)")
             steps.append(_s("place table", None, "place_table"))
             steps.append(_s("make wood pickaxe", "table", "make_wood_pickaxe"))
 
     elif goal_name == "collect_iron":
         if not inventory.get("stone_pickaxe", 0):
             if not inventory.get("wood_pickaxe", 0):
-                if not inventory.get("wood", 0):
-                    steps.append(_s("collect wood", "tree", "do"))
+                steps += _wood_steps(wood, 3, "collect wood (for wood pickaxe)")
                 steps.append(_s("place table", None, "place_table"))
                 steps.append(_s("make wood pickaxe", "table", "make_wood_pickaxe"))
             if not inventory.get("stone", 0):
                 steps.append(_s("collect stone", "stone", "do"))
+            # After wood_pickaxe: need 2+1=3 more wood for table+stone_pickaxe
+            steps += _wood_steps(0, 3, "collect wood (for stone pickaxe)")
             steps.append(_s("place table (for stone pickaxe)", None, "place_table"))
             steps.append(_s("make stone pickaxe", "table", "make_stone_pickaxe"))
 
-    elif goal_name in ("make_wood_pickaxe", "make_stone_pickaxe", "make_wood_sword"):
-        if not inventory.get("wood", 0):
-            steps.append(_s("collect wood", "tree", "do"))
-        if "stone" in requires and not inventory.get("stone", 0):
+    elif goal_name in ("make_wood_pickaxe", "make_wood_sword"):
+        # Need 3 wood: 2 for table + 1 for item
+        steps += _wood_steps(wood, 3, "collect wood")
+        steps.append(_s("place table", None, "place_table"))
+
+    elif goal_name == "make_stone_pickaxe":
+        steps += _wood_steps(wood, 3, "collect wood")
+        if not inventory.get("stone", 0):
             steps.append(_s("collect stone", "stone", "do"))
         steps.append(_s("place table", None, "place_table"))
 
     elif goal_name == "place_table":
-        if inventory.get("wood", 0) < 2:
-            steps.append(_s("collect wood (need 2)", "tree", "do"))
+        steps += _wood_steps(wood, 2, "collect wood (for table)")
 
     # Final goal step
     steps.append(_s(goal_name, target_obj, final_action))
@@ -603,7 +617,12 @@ def agent_step(state: DemoState, encoder: CNNEncoder, cls: CLSWorldModel):
         _env_step(state, move_idx, encoder, cls)
 
     else:
-        # Adjacent → execute action
+        # Adjacent → face target first (sets player direction), then execute action.
+        # In Crafter "do" acts on the FACING tile, not just any adjacent tile.
+        # Moving toward a solid object is blocked but updates facing direction.
+        face_idx = navigate_toward(player_pos, target_pos)
+        _env_step(state, face_idx, encoder, cls)   # sets facing, may be blocked
+
         if action_str is not None:
             state.status = "acting"
             state.thought = f"{action_str} near {target_obj}"
