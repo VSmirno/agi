@@ -78,8 +78,9 @@ CRAFTER_CHAIN: list[ScenarioStep] = [
     ScenarioStep(None, "make_wood_pickaxe", "table"),
     # S4: Harvest stone ×4 — semantic nav (nav encoder doesn't detect stone reliably)
     ScenarioStep("stone", "do", "stone", repeat=4, use_semantic_nav=True),
-    # S5: Craft stone pickaxe — no navigation (table nearby from S2)
-    ScenarioStep(None, "make_stone_pickaxe", "table", prerequisite_inv={"stone": 3}),
+    # S5: Craft stone pickaxe — semantic nav to table (player wandered from table during S4)
+    ScenarioStep("table", "make_stone_pickaxe", "table", prerequisite_inv={"stone": 3},
+                 use_semantic_nav=True),
     # S6: Harvest coal — semantic nav (requires wood_pickaxe)
     ScenarioStep("coal", "do", "coal", prerequisite_inv={"wood_pickaxe": 1},
                  repeat=2, use_semantic_nav=True),
