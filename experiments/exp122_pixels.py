@@ -19,9 +19,52 @@ import numpy as np
 from snks.encoder.cnn_encoder import CNNEncoder
 from snks.encoder.predictive_trainer import JEPAPredictor, PredictiveTrainer
 from snks.agent.decode_head import NEAR_CLASSES
-from snks.agent.crafter_pixel_env import CrafterPixelEnv, ACTION_NAMES
+from snks.agent.crafter_pixel_env import (
+    CrafterPixelEnv, ACTION_NAMES, NEAR_OBJECTS, SEMANTIC_NAMES, INVENTORY_ITEMS,
+)
 from snks.agent.cls_world_model import CLSWorldModel
 from snks.agent.crafter_trainer import CRAFTER_TAUGHT, CRAFTER_RULES
+
+
+def _detect_near_from_info(info: dict) -> str:
+    """Detect nearest relevant object from native Crafter info dict.
+
+    Replicates the logic previously in CrafterPixelEnv._detect_nearby().
+    Used only in exp122/exp123 for ground truth labelling and prototype search.
+    """
+    semantic = info.get("semantic")
+    player_pos = info.get("player_pos")
+    if semantic is None or player_pos is None:
+        return "empty"
+    py, px = int(player_pos[0]), int(player_pos[1])
+    h, w = semantic.shape
+    best_obj = "empty"
+    best_dist = float("inf")
+    for dy in range(-2, 3):
+        for dx in range(-2, 3):
+            ny, nx = py + dy, px + dx
+            if 0 <= ny < h and 0 <= nx < w:
+                sid = int(semantic[ny, nx])
+                name = SEMANTIC_NAMES.get(sid, "unknown")
+                if name in NEAR_OBJECTS:
+                    dist = abs(dy) + abs(dx)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_obj = name
+    return best_obj
+
+
+def _situation_from_info(info: dict) -> dict[str, str]:
+    """Build old-style situation dict from native Crafter info dict."""
+    situation: dict[str, str] = {
+        "domain": "crafter",
+        "near": _detect_near_from_info(info),
+    }
+    for item in INVENTORY_ITEMS:
+        count = info.get("inventory", {}).get(item, 0)
+        if count > 0:
+            situation[f"has_{item}"] = str(count)
+    return situation
 
 
 def make_situation_label(sym_obs: dict) -> str:
@@ -50,11 +93,13 @@ def phase1_collect(
 
     for traj in range(n_trajectories):
         env = CrafterPixelEnv(seed=seed + traj * 7)
-        pixels, sym = env.reset()
+        pixels, info = env.reset()
+        sym = _situation_from_info(info)
 
         for step in range(steps_per_traj):
             action_idx = np.random.RandomState(seed + traj * 1000 + step).randint(0, 17)
-            next_pixels, next_sym, reward, done = env.step(action_idx)
+            next_pixels, reward, done, next_info = env.step(action_idx)
+            next_sym = _situation_from_info(next_info)
 
             all_pt.append(torch.from_numpy(pixels))
             all_pt1.append(torch.from_numpy(next_pixels))
@@ -70,7 +115,8 @@ def phase1_collect(
             sym = next_sym
 
             if done:
-                pixels, sym = env.reset()
+                pixels, info = env.reset()
+                sym = _situation_from_info(info)
 
         elapsed = time.time() - t0
         eta = elapsed / (traj + 1) * (n_trajectories - traj - 1)
@@ -143,19 +189,19 @@ def phase3_collect_prototypes(
             seed = 1000 + seed_idx * 13  # different from Phase 1 seeds
 
             env = CrafterPixelEnv(seed=seed)
-            pixels, sym = env.reset()
+            pixels, info = env.reset()
 
             # Random walk to find target near object
             found = False
             for _ in range(300):
-                pixels, sym, _, done = env.step(
+                pixels, _, done, info = env.step(
                     np.random.choice(["move_left", "move_right", "move_up", "move_down"])
                 )
-                if sym.get("near") == rule["near"]:
+                if _detect_near_from_info(info) == rule["near"]:
                     found = True
                     break
                 if done:
-                    pixels, sym = env.reset()
+                    pixels, info = env.reset()
 
             if not found:
                 n_skipped += 1
@@ -195,19 +241,19 @@ def phase4_gate_test(
     for rule in CRAFTER_RULES:
         # Use a seed not used in Phase 3
         env = CrafterPixelEnv(seed=9999)
-        pixels, sym = env.reset()
+        pixels, info = env.reset()
 
         # Search for target object
         found = False
         for _ in range(300):
-            pixels, sym, _, done = env.step(
+            pixels, _, done, info = env.step(
                 np.random.choice(["move_left", "move_right", "move_up", "move_down"])
             )
-            if sym.get("near") == rule["near"]:
+            if _detect_near_from_info(info) == rule["near"]:
                 found = True
                 break
             if done:
-                pixels, sym = env.reset()
+                pixels, info = env.reset()
 
         if not found:
             continue
