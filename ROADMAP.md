@@ -69,7 +69,7 @@
 |-------|---------|------|
 | 64 | Синтетику → демо + exploration | COMPLETE (2026-04-04) — 93% Crafter QA, 97% MG, 9 discovered, 5 taught, 0 synthetic |
 | 65 | 100% уверенность → uncertainty | COMPLETE (2026-04-04) — Brier=0.12, ρ=0.17, ideal calibration curve, 87% Crafter, 94% MG |
-| 66 | Symbolic features → пиксели | ≥50% Crafter QA from pixels |
+| 66 | Symbolic features → пиксели | COMPLETE (2026-04-06) — 100% Crafter QA (7/7) from pixels, prototype memory k-NN, JEPA+SupCon encoder |
 
 ### Architecture Pivot (Stage 59, 2026-04-03)
 **Stages 47-58: символический BFS + SDM = тупик.** SDM паразитирует на BFS — либо BFS решает всё (SDM не нужен), либо BFS не справляется (SDM не получает данных).
