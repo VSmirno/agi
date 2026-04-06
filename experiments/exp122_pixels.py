@@ -255,8 +255,8 @@ def phase4_train_cls(
             print(f"  Warning: could not find '{rule['near']}' for teaching")
             continue
 
-        # Execute the taught action
-        pix_tensor = torch.from_numpy(pixels).to(device)
+        # Execute the taught action — pixels stay on CPU for CNN encoder
+        pix_tensor = torch.from_numpy(pixels)
         outcome = {"result": rule["result"], "gives": rule["gives"]}
         transitions = [(pix_tensor, rule["action"], outcome, 1.0)]
         cls.train_from_pixels(transitions, encoder, decode_head)
@@ -306,7 +306,7 @@ def phase5_gate_test(
         if not found:
             continue
 
-        pix_tensor = torch.from_numpy(pixels).to(device)
+        pix_tensor = torch.from_numpy(pixels)  # CPU for CNN encoder
         outcome, conf, source = cls.query_from_pixels(
             pix_tensor, rule["action"], encoder, decode_head,
         )
@@ -352,25 +352,28 @@ def phase5_gate_test(
 
 
 def main():
-    device = get_device()
-    print(f"Device: {device}")
+    gpu_device = get_device()
+    # CNN encoder stays on CPU — Conv2d segfaults on ROCm
+    cpu_device = torch.device("cpu")
+    print(f"GPU device: {gpu_device} (for CLS/SDM)")
+    print(f"CNN encoder: CPU (Conv2d incompatible with ROCm)")
 
     # Phase 1: Collect data
     dataset = phase1_collect(n_trajectories=50, steps_per_traj=200)
 
-    # Phase 2: Train encoder
+    # Phase 2: Train encoder (CPU — conv layers)
     encoder, predictor, enc_hist = phase2_train_encoder(
-        dataset, epochs=100, device=device,
+        dataset, epochs=100, device=cpu_device,
     )
 
-    # Phase 3: Train near classification head
-    decode_head = phase3_train_near_head(encoder, device=device)
+    # Phase 3: Train near classification head (CPU)
+    decode_head = phase3_train_near_head(encoder, device=cpu_device)
 
-    # Phase 4: Train CLS
-    cls = phase4_train_cls(encoder, decode_head, device=device)
+    # Phase 4: Train CLS (GPU for SDM, encoder stays CPU)
+    cls = phase4_train_cls(encoder, decode_head, device=gpu_device)
 
     # Phase 5: Gate test
-    gate = phase5_gate_test(cls, encoder, decode_head, device=device)
+    gate = phase5_gate_test(cls, encoder, decode_head, device=gpu_device)
 
     return gate
 
