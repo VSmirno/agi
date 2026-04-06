@@ -122,7 +122,8 @@ def _collect_do_labels(
                     break
                 # Move slightly and retry
                 move = seed_rng.choice(["move_left", "move_right", "move_up", "move_down"])
-                pixels_t, _, done, info = env.step(move)
+                pix_np, _, done, info = env.step(move)
+                pixels_t = torch.from_numpy(pix_np)
                 if done:
                     break
 
