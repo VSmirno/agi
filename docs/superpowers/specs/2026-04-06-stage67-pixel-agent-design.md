@@ -50,16 +50,26 @@ env.step() → pixels + info
 **Новые сигнатуры:**
 ```python
 def reset(self) -> tuple[np.ndarray, dict]:
-    """Returns (pixels (3,64,64) float32, info dict)."""
+    """Returns (pixels (3,64,64) float32 [0,1], native Crafter info dict).
+    
+    Noop step сохраняется — Crafter не возвращает info на reset(),
+    поэтому один шаг noop по-прежнему нужен для получения info["inventory"].
+    """
 
 def step(self, action: int | str) -> tuple[np.ndarray, float, bool, dict]:
-    """Returns (pixels, reward, done, info)."""
+    """Returns (pixels, reward, done, info).
+    
+    Было: (pixels, symbolic_obs: dict[str, str], reward, done)
+    Стало: (pixels, reward, done, info: dict)  — нативный Crafter info dict.
+    info["inventory"] всегда присутствует (dict[str, int]).
+    """
 
 def observe(self) -> tuple[np.ndarray, dict]:
     """Returns (pixels, info) without stepping."""
 ```
 
-**Удаляем:** `_to_symbolic()`, `_detect_nearby()`, константу `INVENTORY_ITEMS` (если используется только в `_to_symbolic`).
+**Удаляем:** `_to_symbolic()`, `_detect_nearby()`.  
+**Оставляем:** `INVENTORY_ITEMS` — используется также в `decode_head.py`, не трогаем.
 
 **Сохраняем:** `_to_pixels()`, `SEMANTIC_NAMES`, `NEAR_OBJECTS`, `ACTION_NAMES`, `ACTION_TO_IDX`.
 
@@ -76,13 +86,19 @@ def observe(self) -> tuple[np.ndarray, dict]:
 ### 2. `NearDetector` (новый файл `src/snks/encoder/near_detector.py`)
 
 ```python
+from snks.agent.decode_head import NEAR_CLASSES  # ["empty", "tree", "stone", ...]
+
 class NearDetector:
-    def __init__(self, encoder: CNNEncoder, idx_to_near: dict[int, str]):
+    def __init__(self, encoder: CNNEncoder):
         """
         Args:
             encoder: обученный CNNEncoder (Stage 66 checkpoint).
-            idx_to_near: маппинг {class_idx: near_str}, например {0: "empty", 1: "tree"}.
         """
+        assert encoder.near_head[-1].out_features == len(NEAR_CLASSES), (
+            f"Encoder n_near_classes={encoder.near_head[-1].out_features} "
+            f"!= len(NEAR_CLASSES)={len(NEAR_CLASSES)}"
+        )
+        self._encoder = encoder
 
     def detect(self, pixels: torch.Tensor) -> str:
         """Определить ближайший объект из пикселей.
@@ -91,15 +107,18 @@ class NearDetector:
             pixels: (3, 64, 64) float32 [0, 1].
 
         Returns:
-            near_str из idx_to_near, или "empty" если idx не найден.
+            near_str из NEAR_CLASSES, или "empty" если idx вне диапазона.
         """
         with torch.no_grad():
-            out = self._encoder(pixels.unsqueeze(0))
-        idx = int(out.near_logits.argmax(dim=-1).item())
-        return self._idx_to_near.get(idx, "empty")
+            out = self._encoder(pixels)  # encoder сам обрабатывает single input
+        # single input → near_logits shape: (n_classes,)
+        idx = int(out.near_logits.argmax().item())
+        if idx < len(NEAR_CLASSES):
+            return NEAR_CLASSES[idx]
+        return "empty"
 ```
 
-**`idx_to_near`:** строится инверсией `label_to_idx` из Phase 1 `exp122`. Сохраняется в `checkpoints/stage67_idx_to_near.json` при первом построении.
+**`NEAR_CLASSES`:** уже определён в `decode_head.py` как `["empty"] + NEAR_OBJECTS` (12 классов). Никакого JSON-файла не нужно — это константа.
 
 **Загрузка:** `NearDetector` принимает уже загруженный encoder — не загружает сам (разделение ответственности).
 
@@ -144,7 +163,7 @@ def _build_situation(self, pixels: torch.Tensor, info: dict) -> dict[str, str]:
 Gate: ≥ 90% accuracy (L1-L4 avg)
 ```
 
-**Phase 3: Regression** — вызвать exp122 gate-тест и убедиться что ≥ 50% (Stage 66 gate не сломался).
+**Phase 3: Regression** — вызвать exp122 gate-тест и убедиться что ≥ 90% (Stage 66 достиг 100%, регрессионный порог = 90%).
 
 ---
 
@@ -163,7 +182,7 @@ Gate: ≥ 90% accuracy (L1-L4 avg)
 ### End-to-end (`exp123_pixel_agent.py`)
 - Phase 1 smoke: ≥ 70% совпадение CNN near vs ground truth
 - Phase 2 gate: ≥ 90% QA accuracy
-- Phase 3 regression: exp122 ≥ 50%
+- Phase 3 regression: exp122 ≥ 90%
 
 ---
 
@@ -185,7 +204,7 @@ Gate: ≥ 90% accuracy (L1-L4 avg)
 ```
 Phase 1 smoke:  CNN near accuracy vs ground truth ≥ 70%
 Phase 2 gate:   Crafter QA L1-L4 avg ≥ 90%
-Phase 3 reg:    exp122 gate ≥ 50% (не сломали Stage 66)
+Phase 3 reg:    exp122 gate ≥ 90% (Stage 66 достиг 100%, порог регрессии)
 ```
 
 При прохождении всех трёх: Stage 67 COMPLETE.
