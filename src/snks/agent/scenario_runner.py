@@ -67,32 +67,45 @@ class ScenarioStep:
 # Standard Crafter scenario chain (S1→S7)
 # ---------------------------------------------------------------------------
 
-#: Full dependency chain from wood to iron.
-#: Each step requires the previous steps to have been completed (inventory state).
-CRAFTER_CHAIN: list[ScenarioStep] = [
-    # S1: Harvest wood ×3 — NearDetector works (tree is common in random walk)
-    ScenarioStep("tree", "do", "tree", repeat=3),
-    # S2: Place crafting table — no navigation, try in place
+# ---------------------------------------------------------------------------
+# Scenario chain library
+# ---------------------------------------------------------------------------
+
+#: Tree + empty + table labels (short, high success rate).
+TREE_CHAIN: list[ScenarioStep] = [
+    ScenarioStep("tree", "do", "tree", repeat=5),
     ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 2}),
-    # S3: Craft wood pickaxe — no navigation (table just placed adjacent)
-    ScenarioStep(None, "make_wood_pickaxe", "table"),
-    # S4: Harvest stone ×4 — semantic nav (nav encoder doesn't detect stone reliably)
-    ScenarioStep("stone", "do", "stone", repeat=4, use_semantic_nav=True),
-    # S5: Craft stone pickaxe — semantic nav to table (player wandered from table during S4)
-    ScenarioStep("table", "make_stone_pickaxe", "table", prerequisite_inv={"stone": 3},
-                 use_semantic_nav=True),
-    # S6: Harvest coal — semantic nav (requires wood_pickaxe)
-    ScenarioStep("coal", "do", "coal", prerequisite_inv={"wood_pickaxe": 1},
-                 repeat=2, use_semantic_nav=True),
-    # S7: Harvest iron — semantic nav (requires stone_pickaxe)
-    ScenarioStep("iron", "do", "iron", prerequisite_inv={"stone_pickaxe": 1},
-                 repeat=2, use_semantic_nav=True),
+    ScenarioStep(None, "make_wood_pickaxe", "table"),  # labels table
 ]
 
-#: Shorter chain for Phase 0 nav encoder bootstrap (tree+stone only, no tools needed).
+#: Coal chain: wood_pickaxe → coal. Skips stone_pickaxe (coal only needs wood_pickaxe).
+COAL_CHAIN: list[ScenarioStep] = [
+    ScenarioStep("tree", "do", "tree", repeat=4),
+    ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 2}),
+    ScenarioStep(None, "make_wood_pickaxe", "table"),
+    ScenarioStep("coal", "do", "coal", prerequisite_inv={"wood_pickaxe": 1},
+                 repeat=3, use_semantic_nav=True),
+]
+
+#: Stone + iron chain: requires stone_pickaxe (full crafting chain).
+IRON_CHAIN: list[ScenarioStep] = [
+    ScenarioStep("tree", "do", "tree", repeat=4),
+    ScenarioStep(None, "place_table", "empty", prerequisite_inv={"wood": 2}),
+    ScenarioStep(None, "make_wood_pickaxe", "table"),
+    ScenarioStep("stone", "do", "stone", repeat=4, use_semantic_nav=True),
+    ScenarioStep("table", "make_stone_pickaxe", "table", prerequisite_inv={"stone": 3},
+                 use_semantic_nav=True),
+    ScenarioStep("iron", "do", "iron", prerequisite_inv={"stone_pickaxe": 1},
+                 repeat=3, use_semantic_nav=True),
+]
+
+#: Alias for backward compatibility / simple use.
+CRAFTER_CHAIN = IRON_CHAIN
+
+#: Bootstrap chain for Phase 0 nav encoder (no tools needed).
 BOOTSTRAP_CHAIN: list[ScenarioStep] = [
     ScenarioStep("tree", "do", "tree", repeat=3),
-    ScenarioStep("stone", "do", "stone", repeat=3),
+    ScenarioStep("stone", "do", "stone", repeat=3, use_semantic_nav=True),
 ]
 
 
