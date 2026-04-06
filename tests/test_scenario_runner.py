@@ -12,6 +12,8 @@ from snks.agent.scenario_runner import (
     ScenarioRunner,
     ScenarioStep,
     CRAFTER_CHAIN,
+    COAL_CHAIN,
+    IRON_CHAIN,
     BOOTSTRAP_CHAIN,
     WINDOW_SIZE,
 )
@@ -159,21 +161,25 @@ class TestProbeAction:
 # ---------------------------------------------------------------------------
 
 class TestChainDefinitions:
-    def test_crafter_chain_steps(self):
-        labels = [s.near_label for s in CRAFTER_CHAIN]
+    def test_iron_chain_steps(self):
+        labels = [s.near_label for s in IRON_CHAIN]
         assert "tree" in labels
         assert "empty" in labels
         assert "table" in labels
         assert "stone" in labels
-        assert "coal" in labels
         assert "iron" in labels
 
+    def test_coal_chain_has_coal(self):
+        labels = [s.near_label for s in COAL_CHAIN]
+        assert "coal" in labels
+        assert "iron" not in labels  # coal chain skips iron
+
     def test_coal_requires_pickaxe(self):
-        coal_step = next(s for s in CRAFTER_CHAIN if s.near_label == "coal")
+        coal_step = next(s for s in COAL_CHAIN if s.near_label == "coal")
         assert coal_step.prerequisite_inv.get("wood_pickaxe", 0) >= 1
 
     def test_iron_requires_stone_pickaxe(self):
-        iron_step = next(s for s in CRAFTER_CHAIN if s.near_label == "iron")
+        iron_step = next(s for s in IRON_CHAIN if s.near_label == "iron")
         assert iron_step.prerequisite_inv.get("stone_pickaxe", 0) >= 1
 
     def test_bootstrap_chain_no_tools_required(self):
@@ -181,10 +187,11 @@ class TestChainDefinitions:
             assert step.prerequisite_inv == {}
 
     def test_all_near_labels_in_near_to_idx(self):
-        for step in CRAFTER_CHAIN:
-            assert step.near_label in NEAR_TO_IDX, (
-                f"near_label '{step.near_label}' not in NEAR_TO_IDX"
-            )
+        for chain in [COAL_CHAIN, IRON_CHAIN]:
+            for step in chain:
+                assert step.near_label in NEAR_TO_IDX, (
+                    f"near_label '{step.near_label}' not in NEAR_TO_IDX"
+                )
 
 
 # ---------------------------------------------------------------------------

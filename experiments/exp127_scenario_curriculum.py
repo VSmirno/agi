@@ -44,7 +44,9 @@ from snks.agent.crafter_spatial_map import CrafterSpatialMap, find_target_with_m
 from snks.agent.outcome_labeler import OutcomeLabeler
 from snks.agent.cls_world_model import CLSWorldModel
 from snks.agent.crafter_trainer import CRAFTER_RULES
-from snks.agent.scenario_runner import ScenarioRunner, CRAFTER_CHAIN
+from snks.agent.scenario_runner import (
+    ScenarioRunner, TREE_CHAIN, COAL_CHAIN, IRON_CHAIN,
+)
 
 from exp122_pixels import (
     phase1_collect,
@@ -77,79 +79,113 @@ def phase0_load_nav_encoder() -> tuple[CNNEncoder, NearDetector]:
 # Phase 1: Scenario-based collection (S1→S7)
 # ---------------------------------------------------------------------------
 
-def phase1_collect_scenarios(
+def _run_chain_batch(
     detector: NearDetector,
-    n_seeds: int = 100,
-    seed_base: int = 20000,
-) -> dict:
-    """Phase 1: Collect labeled frames via full scenario chain S1→S7.
-
-    Each seed runs the full CRAFTER_CHAIN in one episode:
-    wood → table → wood_pickaxe → stone → stone_pickaxe → coal → iron
-
-    Returns dict with 'pixels', 'near_labels', 'trained_classes'.
-    """
-    print(f"Phase 1: Scenario chain S1→S7 ({n_seeds} seeds)...")
-    t0 = time.time()
-
+    chain: list,
+    n_seeds: int,
+    seed_base: int,
+    label: str,
+) -> list[tuple[torch.Tensor, int]]:
+    """Run a scenario chain on n_seeds, return labeled frames."""
     runner = ScenarioRunner()
     labeler = OutcomeLabeler()
     all_labeled: list[tuple[torch.Tensor, int]] = []
-
-    # Per-step counters for reporting
-    class_counts: Counter = Counter()
-    seeds_completed = 0
-    seeds_reached_coal = 0
-    seeds_reached_iron = 0
+    t0 = time.time()
+    n_success = 0
 
     for seed_idx in range(n_seeds):
         seed = seed_base + seed_idx * 17
         env = CrafterPixelEnv(seed=seed)
         env.reset()
         rng = np.random.RandomState(seed)
-
-        labeled = runner.run_chain(env, detector, labeler, CRAFTER_CHAIN, rng)
+        labeled = runner.run_chain(env, detector, labeler, chain, rng)
         all_labeled.extend(labeled)
-
-        # Track coverage
         seed_classes = set(NEAR_CLASSES[idx] for _, idx in labeled)
-        seeds_completed += 1
-        if "coal" in seed_classes:
-            seeds_reached_coal += 1
-        if "iron" in seed_classes:
-            seeds_reached_iron += 1
-
-        for _, idx in labeled:
-            class_counts[NEAR_CLASSES[idx]] += 1
-
-        elapsed = time.time() - t0
-        eta = elapsed / seeds_completed * (n_seeds - seeds_completed)
-        if seeds_completed % 10 == 0:
-            print(
-                f"  [{seeds_completed}/{n_seeds}] "
-                f"frames={len(all_labeled)} "
-                f"coal_seeds={seeds_reached_coal} "
-                f"iron_seeds={seeds_reached_iron} "
-                f"ETA={eta:.0f}s"
-            )
+        if label in seed_classes:
+            n_success += 1
 
     elapsed = time.time() - t0
-    print(f"\nPhase 1 done in {elapsed:.0f}s")
-    print(f"  Seeds: {seeds_completed} total, "
-          f"{seeds_reached_coal} reached coal, "
-          f"{seeds_reached_iron} reached iron")
-    print(f"  Total frames: {len(all_labeled)}")
-    print(f"  Class distribution: {dict(class_counts)}")
+    print(f"    {label}: {n_success}/{n_seeds} seeds ({elapsed:.0f}s)")
+    return all_labeled
+
+
+def _balance_classes(
+    labeled: list[tuple[torch.Tensor, int]],
+    max_ratio: float = 4.0,
+) -> list[tuple[torch.Tensor, int]]:
+    """Cap majority classes to max_ratio × minority class count."""
+    from collections import defaultdict
+    import random
+    by_class: dict[int, list] = defaultdict(list)
+    for item in labeled:
+        by_class[item[1]].append(item)
+
+    if not by_class:
+        return labeled
+
+    min_count = min(len(v) for v in by_class.values())
+    cap = max(min_count, int(min_count * max_ratio))
+
+    result = []
+    for idx, items in by_class.items():
+        if len(items) > cap:
+            items = random.sample(items, cap)
+        result.extend(items)
+    random.shuffle(result)
+    return result
+
+
+def phase1_collect_scenarios(
+    detector: NearDetector,
+    n_tree: int = 80,
+    n_coal: int = 150,
+    n_iron: int = 150,
+) -> dict:
+    """Phase 1: Collect labeled frames via independent scenario chains.
+
+    Three separate chains run on dedicated seed batches:
+    - TREE_CHAIN: tree + empty + table (high success rate)
+    - COAL_CHAIN: tree → pickaxe → coal (medium chain)
+    - IRON_CHAIN: tree → pickaxe → stone × 3 → stone_pickaxe → iron (full chain)
+
+    Class balancing applied after collection (cap tree at 4× minority).
+
+    Returns dict with 'pixels', 'near_labels', 'trained_classes'.
+    """
+    print(f"Phase 1: Independent scenario chains...")
+    t0 = time.time()
+
+    print(f"  TREE_CHAIN ({n_tree} seeds)...")
+    tree_labeled = _run_chain_batch(detector, TREE_CHAIN, n_tree, 20000, "tree")
+
+    print(f"  COAL_CHAIN ({n_coal} seeds)...")
+    coal_labeled = _run_chain_batch(detector, COAL_CHAIN, n_coal, 21000, "coal")
+
+    print(f"  IRON_CHAIN ({n_iron} seeds)...")
+    iron_labeled = _run_chain_batch(detector, IRON_CHAIN, n_iron, 22000, "iron")
+
+    all_labeled = tree_labeled + coal_labeled + iron_labeled
 
     if not all_labeled:
         raise RuntimeError("No labeled frames — check NearDetector and ScenarioRunner")
 
+    # Balance classes
+    all_labeled = _balance_classes(all_labeled, max_ratio=4.0)
+
+    class_counts: Counter = Counter(NEAR_CLASSES[idx] for _, idx in all_labeled)
     trained_classes = [cls for cls, cnt in class_counts.items() if cnt > 0]
-    n_classes = len(trained_classes)
-    print(f"  Classes covered: {n_classes} — {trained_classes}")
+
+    elapsed = time.time() - t0
+    print(f"\nPhase 1 done in {elapsed:.0f}s")
+    print(f"  Total frames (after balance): {len(all_labeled)}")
+    print(f"  Class distribution: {dict(class_counts)}")
+    print(f"  Classes covered: {len(trained_classes)} — {trained_classes}")
 
     pixels_list = [p for p, _ in all_labeled]
     labels_list = [lbl for _, lbl in all_labeled]
+
+    seeds_reached_coal = sum(1 for _, idx in coal_labeled if NEAR_CLASSES[idx] == "coal")
+    seeds_reached_iron = sum(1 for _, idx in iron_labeled if NEAR_CLASSES[idx] == "iron")
 
     return {
         "pixels": torch.stack(pixels_list),
@@ -158,7 +194,7 @@ def phase1_collect_scenarios(
         "class_counts": dict(class_counts),
         "seeds_reached_coal": seeds_reached_coal,
         "seeds_reached_iron": seeds_reached_iron,
-        "n_seeds": n_seeds,
+        "n_seeds": n_tree + n_coal + n_iron,
     }
 
 
@@ -379,11 +415,12 @@ def main() -> None:
     # Phase 0: Navigation encoder (Stage 68 bootstrap)
     nav_encoder, nav_detector = phase0_load_nav_encoder()
 
-    # Phase 1: Full scenario chain S1→S7
+    # Phase 1: Independent chains per material class
     outcome_data = phase1_collect_scenarios(
         nav_detector,
-        n_seeds=100,
-        seed_base=20000,
+        n_tree=80,
+        n_coal=150,
+        n_iron=150,
     )
 
     n_classes = len(outcome_data["trained_classes"])
@@ -413,11 +450,9 @@ def main() -> None:
     # Summary
     print("\n" + "=" * 60)
     print("STAGE 70 SUMMARY")
-    print(f"  Seeds:          {outcome_data['n_seeds']} total")
-    print(f"  Coal seeds:     {outcome_data['seeds_reached_coal']} "
-          f"({outcome_data['seeds_reached_coal']/outcome_data['n_seeds']:.0%})")
-    print(f"  Iron seeds:     {outcome_data['seeds_reached_iron']} "
-          f"({outcome_data['seeds_reached_iron']/outcome_data['n_seeds']:.0%})")
+    print(f"  Seeds:          {outcome_data['n_seeds']} total (80 tree + 150 coal + 150 iron)")
+    print(f"  Coal frames:    {outcome_data['seeds_reached_coal']}")
+    print(f"  Iron frames:    {outcome_data['seeds_reached_iron']}")
     print(f"  Classes:        {outcome_data['trained_classes']}")
     print(f"  Frame counts:   {outcome_data['class_counts']}")
     print(f"  Phase 3 smoke:  {smoke['accuracy']:.1%} "
