@@ -96,3 +96,67 @@ def test_no_detect_nearby_method(env: CrafterPixelEnv) -> None:
     assert not hasattr(env, "_detect_nearby"), (
         "_detect_nearby still exists — Stage 67 migration incomplete"
     )
+
+
+# ---------------------------------------------------------------------------
+# CrafterControlledEnv tests
+# ---------------------------------------------------------------------------
+
+from snks.agent.crafter_pixel_env import CrafterControlledEnv
+
+
+def test_controlled_env_reset_near_pixels() -> None:
+    """reset_near returns valid pixels."""
+    env = CrafterControlledEnv(seed=42)
+    pixels, info = env.reset_near("coal", inventory={"wood_pickaxe": 1})
+    assert pixels.shape == (3, 64, 64)
+    assert pixels.dtype == np.float32
+
+
+def test_controlled_env_places_target_in_semantic() -> None:
+    """reset_near places coal at player's adjacent cells — visible in semantic map."""
+    import numpy as np
+    from snks.agent.crafter_pixel_env import SEMANTIC_NAMES
+    _SEMANTIC_IDS = {v: k for k, v in SEMANTIC_NAMES.items()}
+
+    env = CrafterControlledEnv(seed=42)
+    pixels, info = env.reset_near("coal", inventory={"wood_pickaxe": 1})
+
+    semantic = info.get("semantic")
+    assert semantic is not None
+    coal_id = _SEMANTIC_IDS["coal"]
+    ys, xs = np.where(np.array(semantic) == coal_id)
+    assert len(ys) >= 4, f"Expected ≥4 coal cells adjacent to player, found {len(ys)}"
+
+
+def test_controlled_env_sets_inventory() -> None:
+    """reset_near sets inventory items as requested."""
+    env = CrafterControlledEnv(seed=42)
+    _, info = env.reset_near("iron", inventory={"stone_pickaxe": 1, "wood_pickaxe": 1})
+    inv = info["inventory"]
+    assert inv.get("stone_pickaxe", 0) == 1
+    assert inv.get("wood_pickaxe", 0) == 1
+    assert inv.get("health", 0) > 0, "Health should be preserved"
+
+
+def test_controlled_env_coal_minable() -> None:
+    """Player with wood_pickaxe can mine coal placed by reset_near."""
+    from snks.agent.outcome_labeler import OutcomeLabeler
+    labeler = OutcomeLabeler()
+
+    env = CrafterControlledEnv(seed=42)
+    _, info = env.reset_near("coal", inventory={"wood_pickaxe": 1})
+
+    mined = False
+    for direction in ["move_up", "move_down", "move_left", "move_right"]:
+        inv_before = dict(info.get("inventory", {}))
+        env.step(direction)  # face direction
+        _, _, _, info_after = env.step("do")
+        inv_after = dict(info_after.get("inventory", {}))
+        label = labeler.label("do", inv_before, inv_after)
+        if label == "coal":
+            mined = True
+            break
+        info = info_after
+
+    assert mined, "Should be able to mine coal placed by reset_near with wood_pickaxe"

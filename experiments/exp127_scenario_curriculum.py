@@ -44,9 +44,21 @@ from snks.agent.crafter_spatial_map import CrafterSpatialMap, find_target_with_m
 from snks.agent.outcome_labeler import OutcomeLabeler
 from snks.agent.cls_world_model import CLSWorldModel
 from snks.agent.crafter_trainer import CRAFTER_RULES
+from snks.agent.crafter_pixel_env import CrafterControlledEnv
 from snks.agent.scenario_runner import (
-    ScenarioRunner, TREE_CHAIN, COAL_CHAIN, IRON_CHAIN,
+    ScenarioRunner, ScenarioStep, TREE_CHAIN, COAL_CHAIN, IRON_CHAIN,
 )
+
+# Controlled scenario steps: target placed adjacent by CrafterControlledEnv,
+# no navigation needed. do_retries=3 covers all 4 cardinal directions.
+_COAL_CONTROLLED: list[ScenarioStep] = [
+    ScenarioStep(None, "do", "coal",
+                 prerequisite_inv={"wood_pickaxe": 1}, repeat=3, do_retries=3),
+]
+_IRON_CONTROLLED: list[ScenarioStep] = [
+    ScenarioStep(None, "do", "iron",
+                 prerequisite_inv={"stone_pickaxe": 1}, repeat=3, do_retries=3),
+]
 
 from exp122_pixels import (
     phase1_collect,
@@ -109,6 +121,43 @@ def _run_chain_batch(
     return all_labeled
 
 
+def _run_controlled_batch(
+    target: str,
+    chain: list,
+    inventory: dict[str, int],
+    n_seeds: int,
+    seed_base: int,
+    label: str,
+) -> list[tuple[torch.Tensor, int]]:
+    """Collect labeled frames using CrafterControlledEnv (target placed adjacent).
+
+    Bypasses navigation — the target material is placed at all 4 cardinal
+    neighbors of the player start. Guarantees ~100% collection success rate
+    for rare objects (coal, iron) that are inaccessible via natural chains.
+    """
+    runner = ScenarioRunner()
+    labeler = OutcomeLabeler()
+    all_labeled: list[tuple[torch.Tensor, int]] = []
+    n_success = 0
+    t0 = time.time()
+
+    for seed_idx in range(n_seeds):
+        seed = seed_base + seed_idx * 13
+        env = CrafterControlledEnv(seed=seed)
+        env.reset_near(target, inventory=inventory)
+        rng = np.random.RandomState(seed)
+
+        labeled = runner.run_chain(env, None, labeler, chain, rng)
+        seed_classes = {NEAR_CLASSES[idx] for _, idx in labeled}
+        if label in seed_classes:
+            n_success += 1
+        all_labeled.extend(labeled)
+
+    elapsed = time.time() - t0
+    print(f"    {label} (controlled): {n_success}/{n_seeds} seeds ({elapsed:.0f}s)")
+    return all_labeled
+
+
 def _balance_classes(
     labeled: list[tuple[torch.Tensor, int]],
     max_ratio: float = 4.0,
@@ -138,18 +187,19 @@ def _balance_classes(
 def phase1_collect_scenarios(
     detector: NearDetector,
     n_tree: int = 80,
-    n_coal: int = 150,
-    n_iron: int = 150,
+    n_coal: int = 50,
+    n_iron: int = 50,
 ) -> dict:
-    """Phase 1: Collect labeled frames via independent scenario chains.
+    """Phase 1: Collect labeled frames via scenario chains + controlled envs.
 
-    Three separate chains run on dedicated seed batches:
-    - TREE_CHAIN: tree + empty + table (high success rate)
-    - COAL_CHAIN: tree → pickaxe → coal (medium chain)
-    - IRON_CHAIN: tree → pickaxe → stone × 3 → stone_pickaxe → iron (full chain)
+    - TREE_CHAIN (natural): tree + stone + empty + table (high success rate)
+    - Coal (controlled): CrafterControlledEnv places coal adjacent, no navigation
+    - Iron (controlled): CrafterControlledEnv places iron adjacent, no navigation
 
-    Class balancing applied after collection (cap tree at 4× minority).
+    Controlled collection bypasses the need to navigate to rare underground
+    materials — guarantees ~100% success vs. ~3% with natural chains.
 
+    Class balancing applied after collection (cap at 4× minority).
     Returns dict with 'pixels', 'near_labels', 'trained_classes'.
     """
     print(f"Phase 1: Independent scenario chains...")
@@ -158,11 +208,13 @@ def phase1_collect_scenarios(
     print(f"  TREE_CHAIN ({n_tree} seeds)...")
     tree_labeled = _run_chain_batch(detector, TREE_CHAIN, n_tree, 20000, "tree")
 
-    print(f"  COAL_CHAIN ({n_coal} seeds)...")
-    coal_labeled = _run_chain_batch(detector, COAL_CHAIN, n_coal, 21000, "coal")
+    print(f"  Coal controlled ({n_coal} seeds)...")
+    coal_labeled = _run_controlled_batch("coal", _COAL_CONTROLLED, {"wood_pickaxe": 1},
+                                         n_coal, 25000, "coal")
 
-    print(f"  IRON_CHAIN ({n_iron} seeds)...")
-    iron_labeled = _run_chain_batch(detector, IRON_CHAIN, n_iron, 22000, "iron")
+    print(f"  Iron controlled ({n_iron} seeds)...")
+    iron_labeled = _run_controlled_batch("iron", _IRON_CONTROLLED, {"stone_pickaxe": 1},
+                                         n_iron, 26000, "iron")
 
     all_labeled = tree_labeled + coal_labeled + iron_labeled
 
