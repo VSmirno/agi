@@ -102,10 +102,11 @@
 ---
 
 ## Stage 68 — Pixel Navigation (когнитивная карта)
-**Что сделано:** CrafterSpatialMap + find_target_with_map, 23/23 тестов, exp124 готов к запуску на minipc.
+**Что сделано:** CrafterSpatialMap + find_target_with_map. Nav smoke 72%, QA 100%, regression 100%.
 **Допущения/ограничения:**
-- `info["player_pos"]` остаётся — проприоцепция (агент знает где его тело).
-- `info["inventory"]` остаётся — проприоцепция (агент помнит что взял).
-- `CrafterSpatialMap` хранит near_str на позицию (one label per cell, не полная карта).
-- Greedy step-toward навигация, не оптимальный путь — может ходить кружными путями.
+- `info["player_pos"]` остаётся — проприоцепция.
+- `info["inventory"]` остаётся — проприоцепция.
+- CrafterSpatialMap: nav map=72% vs random=69% — небольшое преимущество (знакомые позиции).
+- coal/iron/diamond: 1/0/0 из 50 seed — редкие объекты не покрыты навигацией.
+- make_* прототипов 0 — table не создаётся при random walk (нет wood в инвентаре).
 - near_labels для обучения CNN по-прежнему из символики (circular dependency: Stage 69).
