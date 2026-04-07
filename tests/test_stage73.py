@@ -348,15 +348,22 @@ class TestGate4UniversalVerify:
 
 
 class TestGate5DriveProgression:
-    def test_wood_to_pickaxe(self):
-        """With wood=3 and no pickaxe, goal shifts to wood_pickaxe."""
+    def test_wood_to_sword(self):
+        """With wood=3 and no sword, first priority is sword."""
         store = _make_store()
         inv = {"food": 9, "drink": 9, "energy": 9, "wood": 3}
+        goal, plan = select_goal(inv, store)
+        assert goal == "wood_sword"
+
+    def test_sword_to_pickaxe(self):
+        """After sword, drive shifts to pickaxe."""
+        store = _make_store()
+        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 5, "wood_sword": 1}
         goal, plan = select_goal(inv, store)
         assert goal == "wood_pickaxe"
 
     def test_pickaxe_to_stone(self):
-        """With a pickaxe and stone=0, goal shifts to stone_item."""
+        """With sword+pickaxe, drive shifts to stone."""
         store = _make_store()
         inv = {
             "food": 9,
@@ -364,6 +371,7 @@ class TestGate5DriveProgression:
             "energy": 9,
             "wood": 5,
             "wood_pickaxe": 1,
+            "wood_sword": 1,
             "stone_item": 0,
         }
         goal, plan = select_goal(inv, store)
@@ -403,16 +411,15 @@ class TestGate5DriveProgression:
     def test_plan_returned_with_steps(self):
         """select_goal always returns a non-empty plan list."""
         store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 3}
+        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 3, "wood_sword": 1}
         goal, plan = select_goal(inv, store)
         assert isinstance(plan, list)
         assert len(plan) >= 1
 
-    def test_wood_pickaxe_plan_targets_tree_first(self):
-        """wood_pickaxe plan starts by gathering wood (tree)."""
+    def test_wood_sword_plan_has_steps(self):
+        """wood_sword plan contains craft steps."""
         store = _make_store()
         inv = {"food": 9, "drink": 9, "energy": 9, "wood": 3}
         goal, plan = select_goal(inv, store)
-        assert goal == "wood_pickaxe"
-        # First step of plan should target a resource, not craft directly
-        assert any(step.target == "tree" for step in plan)
+        assert goal == "wood_sword"
+        assert len(plan) >= 1

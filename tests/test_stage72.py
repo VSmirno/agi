@@ -260,17 +260,24 @@ class TestGate4DriveGoalSelection:
         assert plan[0].action == "do"
         assert plan[0].target == "tree"
 
-    def test_progression_wood_to_pickaxe(self):
-        """After getting wood, drive shifts to pickaxe."""
+    def test_progression_wood_to_sword(self):
+        """After getting wood, first priority is sword."""
         store = _make_store()
         inv = {"food": 9, "drink": 9, "energy": 9, "wood": 3}
+        goal, plan = select_goal(inv, store)
+        assert goal == "wood_sword"
+
+    def test_progression_sword_to_pickaxe(self):
+        """After sword, drive shifts to pickaxe."""
+        store = _make_store()
+        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 5, "wood_sword": 1}
         goal, plan = select_goal(inv, store)
         assert goal == "wood_pickaxe"
 
     def test_progression_pickaxe_to_stone(self):
         """After getting pickaxe, drive shifts to stone."""
         store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 5, "wood_pickaxe": 1}
+        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 5, "wood_pickaxe": 1, "wood_sword": 1}
         goal, plan = select_goal(inv, store)
         assert goal == "stone_item"
 

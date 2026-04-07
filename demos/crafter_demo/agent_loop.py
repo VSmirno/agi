@@ -310,7 +310,37 @@ def env_thread_loop(engine: DemoEngine) -> None:
                     grounding_log.append("damage→zombie")
             engine._prev_inv = dict(inv)
 
-            # ---- 2. REACTIVE CHECK (danger only) ----
+            # ---- 2. DAMAGE REFLEX (pain → fight/flee) ----
+            health_now = inv.get("health", 9)
+            health_prev = engine._prev_inv.get("health", 9) if hasattr(engine, '_prev_inv') else 9
+            took_damage = health_now < health_prev and inv.get("food", 9) > 0 and inv.get("drink", 9) > 0
+            if took_damage:
+                has_sword = inv.get("wood_sword", 0) + inv.get("stone_sword", 0)
+                if has_sword > 0:
+                    engine.log_event("DAMAGE REFLEX: attack!")
+                    pixels, _, done, info = env.step("do")
+                    if done:
+                        episode_done = True
+                    _build_snapshot(engine, "do", near_str, "reflex: attack",
+                                   _plan_to_ui(current_plan, plan_step_idx),
+                                   plan_step_idx, len(current_plan),
+                                   get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
+                    continue
+                else:
+                    engine.log_event("DAMAGE REFLEX: flee!")
+                    for _ in range(4):
+                        direction = _DIRECTIONS[rng.randint(0, 4)]
+                        pixels, _, done, info = env.step(direction)
+                        if done:
+                            episode_done = True
+                            break
+                    _build_snapshot(engine, "flee", near_str, "reflex: flee",
+                                   _plan_to_ui(current_plan, plan_step_idx),
+                                   plan_step_idx, len(current_plan),
+                                   get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
+                    continue
+
+            # ---- 2b. REACTIVE CHECK (perception-based) ----
             reactive_action = None
             with engine.model_lock:
                 reactive = engine.reactive
