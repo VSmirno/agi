@@ -146,6 +146,17 @@ class EpisodeMetrics:
     cur_encounters: int = 0
     cur_survived: int = 0
 
+    # Lifetime item stats (persist across episodes)
+    collected: dict[str, int] = field(default_factory=dict)  # gathered items
+    crafted: dict[str, int] = field(default_factory=dict)    # crafted/placed items
+
+    def record_collected(self, item: str) -> None:
+        self.collected[item] = self.collected.get(item, 0) + 1
+        self.cur_resources += 1
+
+    def record_crafted(self, item: str) -> None:
+        self.crafted[item] = self.crafted.get(item, 0) + 1
+
     def finish_episode(self, length: int) -> None:
         self.episode_lengths.append(length)
         self.resources_collected.append(self.cur_resources)
@@ -161,6 +172,8 @@ class EpisodeMetrics:
             "resources_collected": self.cur_resources,
             "zombie_encounters": self.cur_encounters,
             "zombie_survived": self.cur_survived,
+            "collected": dict(self.collected),
+            "crafted": dict(self.crafted),
             "history": {
                 "lengths": self.episode_lengths[-20:],
                 "resources": self.resources_collected[-20:],

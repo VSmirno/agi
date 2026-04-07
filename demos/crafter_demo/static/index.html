@@ -186,7 +186,10 @@ body {
 
 /* Bottom panels */
 .bottom-left {
-  grid-column: 1 / 3;
+  grid-column: 1 / 2;
+}
+.bottom-mid {
+  grid-column: 2 / 3;
 }
 .bottom-right {
   grid-column: 3 / 4;
@@ -205,6 +208,30 @@ body {
 .chart-row { margin-bottom: 8px; }
 .chart-label { font-size: 11px; color: var(--dim); margin-bottom: 2px; }
 .chart-canvas { width: 100%; height: 40px; }
+
+/* Item stats */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.stat-col h3 {
+  font-size: 11px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  font-size: 12px;
+}
+.stat-row .name { color: var(--text); }
+.stat-row .count { font-weight: 600; }
+.stat-row .count.collected { color: var(--green); }
+.stat-row .count.crafted { color: var(--orange); }
 
 /* Event log */
 .log-footer {
@@ -388,6 +415,21 @@ body {
   <div class="panel bottom-left">
     <h2>Causal Graph</h2>
     <svg id="causalSvg" viewBox="0 0 600 180"></svg>
+  </div>
+
+  <!-- Bottom mid: item stats -->
+  <div class="panel bottom-mid">
+    <h2>Item Stats (lifetime)</h2>
+    <div class="stats-grid">
+      <div class="stat-col">
+        <h3>Collected</h3>
+        <div id="statsCollected"></div>
+      </div>
+      <div class="stat-col">
+        <h3>Crafted / Placed</h3>
+        <div id="statsCrafted"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Bottom right: metrics -->
