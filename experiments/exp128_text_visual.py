@@ -23,9 +23,12 @@ from __future__ import annotations
 
 import time
 from collections import Counter
+from pathlib import Path
 
 import numpy as np
 import torch
+
+CHECKPOINT_DIR = Path("demos/checkpoints/exp128")
 
 from snks.encoder.cnn_encoder import CNNEncoder, disable_rocm_conv
 from snks.encoder.predictive_trainer import JEPAPredictor, PredictiveTrainer
@@ -495,6 +498,29 @@ def phase8_verification(store: ConceptStore) -> dict:
 # Main
 # ---------------------------------------------------------------------------
 
+def _save_checkpoint(
+    encoder: CNNEncoder | None = None,
+    detector: NearDetector | None = None,
+    store: ConceptStore | None = None,
+    tag: str = "final",
+) -> None:
+    """Save all components to CHECKPOINT_DIR/tag."""
+    d = CHECKPOINT_DIR / tag
+    d.mkdir(parents=True, exist_ok=True)
+
+    if encoder is not None:
+        torch.save(encoder.state_dict(), d / "encoder.pt")
+    if detector is not None:
+        torch.save({
+            "head": detector.head.state_dict(),
+            "encoder": detector.encoder.state_dict(),
+        }, d / "detector.pt")
+    if store is not None:
+        store.save(str(d / "concept_store"))
+
+    print(f"  Checkpoint saved → {d}")
+
+
 def main():
     disable_rocm_conv()
     print("=" * 60)
@@ -507,6 +533,7 @@ def main():
 
     # Phase 1: Textbook + grounding
     store, gen = phase1_textbook_grounding(nav_encoder)
+    _save_checkpoint(encoder=nav_encoder, store=store, tag="phase1")
 
     # Phase 2: Collect data via ChainGenerator
     dataset = phase2_collect_via_chains(detector, gen, store)
@@ -516,6 +543,7 @@ def main():
     encoder, detector_trained = phase2_train_outcome_encoder(dataset, epochs=150)
     encoder.eval().cpu()
     print("Phase 3 done\n")
+    _save_checkpoint(encoder=encoder, detector=detector_trained, store=store, tag="phase3")
 
     # Phase 4: Smoke test
     print("Phase 4: Smoke test...")
@@ -546,6 +574,9 @@ def main():
     # Phase 8: Verification loop
     verify_result = phase8_verification(store)
     print()
+
+    # Final checkpoint with everything
+    _save_checkpoint(encoder=encoder, detector=detector_trained, store=store, tag="final")
 
     # Summary
     elapsed = time.time() - t_start
