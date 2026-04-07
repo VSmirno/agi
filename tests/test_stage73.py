@@ -359,79 +359,75 @@ class TestGate4UniversalVerify:
 # ---------------------------------------------------------------------------
 
 
-class TestGate5DriveProgression:
-    def test_wood_to_sword(self):
-        """With wood=3 and no sword, first priority is sword."""
+class TestGate5HomeostaticDrives:
+    def test_all_ok_explores(self):
+        """When body is fine, curiosity dominates → explore."""
         store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 3}
+        inv = {"food": 9, "drink": 9, "energy": 9, "health": 9}
         goal, plan = select_goal(inv, store)
-        assert goal == "wood_sword"
+        assert goal == "explore"
 
-    def test_sword_to_pickaxe(self):
-        """After sword, drive shifts to pickaxe."""
+    def test_food_urgency(self):
+        """When food is dropping, agent seeks food restoration."""
+        from snks.agent.perception import HomeostaticTracker
+        from snks.agent.crafter_spatial_map import CrafterSpatialMap
         store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 5, "wood_sword": 1}
-        goal, plan = select_goal(inv, store)
-        assert goal == "wood_pickaxe"
-
-    def test_pickaxe_to_stone(self):
-        """With sword+pickaxe, drive shifts to stone."""
-        store = _make_store()
-        inv = {
-            "food": 9,
-            "drink": 9,
-            "energy": 9,
-            "wood": 5,
-            "wood_pickaxe": 1,
-            "wood_sword": 1,
-            "stone_item": 0,
-        }
-        goal, plan = select_goal(inv, store)
-        assert goal == "stone_item"
-
-    def test_survival_overrides_progression(self):
-        """Low food overrides resource progression: goal is restore_food."""
-        store = _make_store()
-        inv = {
-            "food": 1,
-            "drink": 9,
-            "energy": 9,
-            "wood": 3,
-        }
-        goal, plan = select_goal(inv, store)
+        tracker = HomeostaticTracker()
+        tracker.rates["food"] = -0.5  # food dropping fast
+        inv = {"food": 2, "drink": 9, "energy": 9, "health": 9}
+        sm = CrafterSpatialMap()
+        for i in range(100):  # fill map so curiosity is low
+            sm.update((i % 10, i // 10), "empty")
+        goal, plan = select_goal(inv, store, tracker=tracker, spatial_map=sm)
         assert goal == "restore_food"
 
-    def test_low_drink_overrides(self):
-        """Low drink overrides resource progression: goal is restore_drink."""
+    def test_drink_urgency(self):
+        from snks.agent.perception import HomeostaticTracker
+        from snks.agent.crafter_spatial_map import CrafterSpatialMap
         store = _make_store()
-        inv = {
-            "food": 9,
-            "drink": 1,
-            "energy": 9,
-            "wood": 3,
-        }
-        goal, plan = select_goal(inv, store)
+        tracker = HomeostaticTracker()
+        tracker.rates["drink"] = -0.5
+        inv = {"food": 9, "drink": 2, "energy": 9, "health": 9}
+        sm = CrafterSpatialMap()
+        for i in range(100):
+            sm.update((i % 10, i // 10), "empty")
+        goal, plan = select_goal(inv, store, tracker=tracker, spatial_map=sm)
         assert goal == "restore_drink"
 
-    def test_all_ok_no_wood_selects_wood(self):
-        """All survival stats OK and no resources → goal is wood."""
+    def test_zombie_causes_sword_plan(self):
+        """Zombie causes health drop → agent plans to kill zombie → needs sword."""
+        from snks.agent.perception import HomeostaticTracker
         store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 9}
-        goal, plan = select_goal(inv, store)
-        assert goal == "wood"
-
-    def test_plan_returned_with_steps(self):
-        """select_goal always returns a non-empty plan list."""
-        store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 3, "wood_sword": 1}
-        goal, plan = select_goal(inv, store)
-        assert isinstance(plan, list)
+        tracker = HomeostaticTracker()
+        tracker.conditional_rates[("zombie", "health")] = -2.0
+        inv = {"food": 9, "drink": 9, "energy": 9, "health": 4}
+        vf = type("VF", (), {"visible_concepts": lambda self: {"zombie"}})()
+        goal, plan = select_goal(inv, store, tracker=tracker, visual_field=vf)
+        # Should trace: health urgent → cause=zombie → kill_zombie → need sword
+        assert goal != "explore"
         assert len(plan) >= 1
 
-    def test_wood_sword_plan_has_steps(self):
-        """wood_sword plan contains craft steps."""
+    def test_curiosity_when_model_incomplete(self):
+        """High curiosity when few concepts grounded."""
+        from snks.agent.perception import compute_curiosity
+        from snks.agent.crafter_spatial_map import CrafterSpatialMap
         store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 3}
-        goal, plan = select_goal(inv, store)
-        assert goal == "wood_sword"
-        assert len(plan) >= 1
+        sm = CrafterSpatialMap()
+        curiosity = compute_curiosity(store, sm)
+        assert curiosity > 0.01  # model very incomplete, curiosity active
+
+    def test_curiosity_decreases_with_knowledge(self):
+        """Curiosity drops as concepts get grounded and confidence grows."""
+        from snks.agent.perception import compute_curiosity
+        from snks.agent.crafter_spatial_map import CrafterSpatialMap
+        store = _make_store()
+        # Ground all concepts and max confidence
+        for c in store.concepts.values():
+            c.visual = torch.randn(256)
+            for link in c.causal_links:
+                link.confidence = 1.0
+        sm = CrafterSpatialMap()
+        for i in range(100):
+            sm.update((i % 10, i // 10), "empty")
+        curiosity = compute_curiosity(store, sm)
+        assert curiosity < 0.3  # model mostly complete
