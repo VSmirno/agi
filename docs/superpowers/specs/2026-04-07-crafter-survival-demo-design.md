@@ -168,23 +168,58 @@ class GameSnapshot:
 
 ### Agent loop (EnvThread)
 
+**Important:** `ScenarioRunner.run_chain()` is a blocking loop that runs an entire chain synchronously. The demo needs tick-based execution (one `env.step()` per tick for real-time rendering). Therefore `agent_loop.py` must reimplement plan execution step-by-step — it cannot delegate to `ScenarioRunner`. The plan steps come from `ChainGenerator.generate()` (returns `list[ScenarioStep]`), but execution is tick-driven:
+
 ```
+state: (plan_index, nav_phase: bool, retry_count)
+
 each tick:
-  1. near = detector.detect(pixels)
-  2. reactive = rc.check_all(near, inventory)
-  3. if reactive.action:           # danger or survival need
-       execute reactive (flee/attack/seek/sleep)
+  1. pixels, info = env.observe()
+     near = detector.detect(pixels)
+     inv = info["inventory"]  # contains both items AND survival stats
+     survival = {k: inv[k] for k in ("health","food","drink","energy")}
+     items = {k: v for k, v in inv.items() if k not in survival}
+
+  2. reactive = rc.check_all(near, inv)  # returns dict, use reactive["action"]
+     if reactive["action"]:              # danger or survival need
+       execute one step of reactive (flee=one move, attack="do", seek=one move toward, sleep="sleep")
        log event
-  4. elif current_plan:
-       execute next plan step (navigate toward target, then act)
-       if step succeeds: advance plan_index, verify prediction, log
-       if step fails: retry or replan
-  5. else (no plan, no reactive):
-       survival mode: auto-plan based on lowest need or resource gathering
-       interactive mode: idle (wait for set_goal)
+       goto 6
+
+  3. elif current_plan and plan_index < len(plan):
+       step = plan[plan_index]
+       if nav_phase:
+         # Navigate toward step.navigate_to using semantic map
+         target_pos = find_nearest(info["semantic"], step.navigate_to)
+         if adjacent(player_pos, target_pos):
+           nav_phase = False  # arrived, switch to action
+         else:
+           move toward target_pos (one env.step)
+       else:
+         # Execute step.action
+         env.step(step.action)
+         check outcome via inventory delta
+         if success: plan_index++, nav_phase=True, verify prediction, log
+         if fail: retry_count++, if exceeded: skip step, log warning
+
+  4. else (no plan, no reactive):
+       survival mode: auto-plan = chain_gen.generate() for lowest need or next resource
+       interactive mode: idle (noop)
+
+  5. minimap = crop 9x9 from info["semantic"] centered on info["player_pos"],
+     map IDs via SEMANTIC_NAMES to colors, render to PNG
+
   6. update snapshot under lock
   7. if episode done: log cause, update metrics, auto-reset after 2s
 ```
+
+### Minimap extraction
+
+Crafter `info["semantic"]` is the full world grid. Demo crops a 9x9 window centered on `info["player_pos"]`, maps each cell ID to a color via `SEMANTIC_NAMES`, and renders to a small PNG (base64). Color palette is hardcoded (water=blue, grass=green, tree=dark green, stone=gray, coal=black, iron=brown, zombie=red, etc.).
+
+### Confidence flattening
+
+`ConceptStore` stores confidence per `CausalLink` object. For the WS frame, flatten to `{f"{concept_id}_{link.action}_{link.result}": link.confidence}` for all concepts with causal links.
 
 ### Train flow
 
@@ -192,8 +227,12 @@ each tick:
 2. FastAPI spawns TrainThread
 3. TrainThread: collect trajectories (random walk + controlled) → train encoder → callbacks update shared progress state
 4. WS reads progress state → streams `train_progress` messages
-5. On completion: atomic swap of encoder + detector under lock
-6. EnvThread picks up new model next tick
+5. On completion: acquire `engine.model_lock`, replace `engine.encoder` and `engine.detector`, release lock
+6. EnvThread reads `engine.encoder`/`engine.detector` through `model_lock` each tick (never caches locally)
+
+**Thread safety:** `DemoEngine` has two locks:
+- `snapshot_lock` — protects `GameSnapshot` (EnvThread writes, WS reads)
+- `model_lock` — protects `encoder`/`detector` references (TrainThread writes, EnvThread reads)
 
 ## Checkpoint Loading
 
