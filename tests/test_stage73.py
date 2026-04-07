@@ -63,7 +63,7 @@ class _MockEncoder:
         z = self._z.unsqueeze(0) if self._z.dim() == 1 else self._z
         feat = torch.randn(1, 256, 4, 4)
         if self._z.dim() == 1 and self._z.shape[0] >= 256:
-            feat[0, :, 1:3, 1:3] = self._z[:256].reshape(256, 1, 1).expand(256, 2, 2)
+            feat[0, :, 1:3, 1:3] = self._z[:256].reshape(256, 1, 1).expand(256, 2, 2)  # center = z[:256]
         return _EncoderOutput(
             z_real=z,
             z_vsa=(z > 0).float(),
@@ -73,7 +73,7 @@ class _MockEncoder:
 
 
 def _make_vf(z: torch.Tensor) -> VisualField:
-    """Create a VisualField with center_feature from z[:256]."""
+    """Create a VisualField with center_feature from z[:1024]."""
     vf = VisualField()
     vf.center_feature = z[:256] if z.shape[0] >= 256 else z
     return vf
