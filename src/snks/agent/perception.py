@@ -30,8 +30,8 @@ if TYPE_CHECKING:
     from snks.agent.outcome_labeler import OutcomeLabeler
 
 
-MIN_SIMILARITY = 0.5
-EMA_ALPHA = 0.1       # prototype refinement
+MIN_SIMILARITY = 0.4
+EMA_ALPHA = 0.2       # prototype refinement (faster convergence for 256-dim)
 RATE_EMA_ALPHA = 0.05  # homeostatic rate tracking (slow — body changes gradually)
 
 # The body — the ONLY hardcoded thing (the "DNA")
