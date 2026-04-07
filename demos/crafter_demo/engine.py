@@ -28,6 +28,7 @@ from snks.agent.crafter_pixel_env import (
     ACTION_NAMES,
     SEMANTIC_NAMES,
 )
+from snks.agent.crafter_spatial_map import CrafterSpatialMap
 from snks.agent.crafter_textbook import CrafterTextbook
 from snks.agent.reactive_check import ReactiveCheck
 from snks.encoder.cnn_encoder import CNNEncoder
@@ -82,6 +83,9 @@ class GameSnapshot:
     metrics: dict[str, Any] = field(default_factory=dict)
     minimap_b64: str = ""
     log_lines: list[str] = field(default_factory=list)
+    drives: dict[str, float] = field(default_factory=dict)
+    perception_sim: float = 0.0
+    grounding_events: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -106,6 +110,9 @@ class GameSnapshot:
             "metrics": self.metrics,
             "minimap": self.minimap_b64,
             "log": self.log_lines,
+            "drives": self.drives,
+            "perception_sim": self.perception_sim,
+            "grounding_events": self.grounding_events,
         }
 
 
@@ -244,6 +251,7 @@ class DemoEngine:
         self.store: ConceptStore = ConceptStore()
         self.chain_gen: ChainGenerator | None = None
         self.reactive: ReactiveCheck | None = None
+        self.spatial_map: CrafterSpatialMap = CrafterSpatialMap()
         self.model_lock = threading.Lock()
 
         # Env
@@ -345,7 +353,7 @@ class DemoEngine:
             self.encoder = encoder
             self.detector = detector
             self.store = store
-            self.chain_gen = ChainGenerator(store, use_semantic_nav=True)
+            self.chain_gen = ChainGenerator(store, use_semantic_nav=False)
             self.reactive = ReactiveCheck(store)
             self.has_model = True
 
@@ -367,7 +375,7 @@ class DemoEngine:
             self.encoder = encoder
             self.detector = detector
             self.store = store
-            self.chain_gen = ChainGenerator(store, use_semantic_nav=True)
+            self.chain_gen = ChainGenerator(store, use_semantic_nav=False)
             self.reactive = ReactiveCheck(store)
             self.has_model = True
 
@@ -377,7 +385,7 @@ class DemoEngine:
         self._init_textbook(store)
         with self.model_lock:
             self.store = store
-            self.chain_gen = ChainGenerator(store, use_semantic_nav=True)
+            self.chain_gen = ChainGenerator(store, use_semantic_nav=False)
             self.reactive = ReactiveCheck(store)
             self.has_model = False
 
@@ -396,6 +404,7 @@ class DemoEngine:
         self.last_info = info
         self.step_count = 0
         self.episode_count += 1
+        self.spatial_map.reset()
 
     def log_event(self, msg: str) -> None:
         """Add event to log."""
@@ -418,6 +427,9 @@ class DemoEngine:
         plan_step: int = 0,
         plan_total: int = 0,
         reactive_data: dict | None = None,
+        drives: dict[str, float] | None = None,
+        perception_sim: float = 0.0,
+        grounding_events: list[str] | None = None,
     ) -> GameSnapshot:
         """Build GameSnapshot from current state."""
         inv = dict(self.last_info.get("inventory", {}))
@@ -456,6 +468,9 @@ class DemoEngine:
             metrics=self.metrics.to_dict(),
             minimap_b64=minimap_b64,
             log_lines=self.drain_new_logs(),
+            drives=drives or {},
+            perception_sim=perception_sim,
+            grounding_events=grounding_events or [],
         )
 
     def send_cmd(self, cmd: dict) -> None:
@@ -509,7 +524,7 @@ class DemoEngine:
                 self.encoder = encoder
                 self.detector = detector
                 self.store = store
-                self.chain_gen = ChainGenerator(store, use_semantic_nav=True)
+                self.chain_gen = ChainGenerator(store, use_semantic_nav=False)
                 self.reactive = ReactiveCheck(store)
                 self.has_model = True
 

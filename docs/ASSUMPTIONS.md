@@ -155,3 +155,27 @@
 - **find_causal disambiguation** — при одинаковых requires выбирается наиболее специфичный match (по количеству requires items). Wood_sword/wood_pickaxe неразличимы по inventory.
 - **Zombie + Survival Gate 5 PASS** (exp128d) — zombie_deaths 41→1, episode length 169→446 (2.65x). Survival rules (food/drink/energy) = основной вклад в выживаемость. Zombie flee = дополнительный.
 
+---
+
+## Stage 72 — Perception Pivot (2026-04-07)
+**Что сделано:** Замена supervised NearDetector на ConceptStore.query_visual_scored() (cosine sim). Убран GT semantic nav. Автономный цикл perceive→decide→act→learn. Experiential grounding (one-shot + EMA). Drive-based goal selection. Prediction-verification loop.
+**Компоненты:**
+- perception.py: perceive(), on_action_outcome(), select_goal(), get_drive_strengths().
+- ConceptStore.query_visual_scored(): возвращает (concept, similarity) для детекции "unknown".
+- agent_loop.py: автономный цикл вместо ScenarioRunner chains.
+- engine.py: use_semantic_nav=False, spatial_map в engine state.
+
+**Допущения/ограничения:**
+- **CNN encoder frozen** (exp128) — не дообучается в runtime. Фичи могут быть недостаточны для stone vs coal.
+- **One-shot grounding noisy** — первый z_real может быть нетипичным. EMA сглаживает.
+- **Cosine threshold=0.5** — подобран эмпирически, не адаптивный.
+- **Spatial map cold start** — пустая карта в начале эпизода, random walk для заполнения.
+- **Drive competition = max()** — нет GWS winner-take-all, простой argmax по drive strengths.
+- **Sleep = 3 шага** — фиксированное количество, не адаптивное.
+- **Probing = 4 directions** — для "do" пробуем все стороны. Неэффективно, но надёжно.
+- **Replan interval=20** — фиксированный, не событийный.
+- **DAF/SKS не интегрированы** — ConceptStore.query_visual() заменяет оба. Oscillator perception deferred.
+- **info["player_pos"] остаётся** — проприоцепция.
+- **info["inventory"] остаётся** — проприоцепция.
+- **NearDetector code сохранён** — используется для backward compat (zombie tracking в wrapper).
+
