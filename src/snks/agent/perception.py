@@ -179,16 +179,26 @@ def perceive_field(
 
             best_concept = None
             best_sim = -1.0
+            second_sim = -1.0
             for concept in concept_store.concepts.values():
                 if concept.visual is None:
                     continue
                 c_norm = F.normalize(concept.visual.unsqueeze(0), dim=1)
                 sim = (feat_norm @ c_norm.T).item()
                 if sim > best_sim:
+                    second_sim = best_sim
                     best_sim = sim
                     best_concept = concept
+                elif sim > second_sim:
+                    second_sim = sim
 
-            if best_concept is not None and best_sim >= min_similarity:
+            # Relative matching: best must be above threshold AND
+            # significantly better than second-best (margin ≥ 0.1)
+            # This prevents "water vs tree both at ~0.55" confusion
+            margin = best_sim - max(second_sim, 0.0)
+            if (best_concept is not None
+                    and best_sim >= min_similarity
+                    and margin >= 0.1):
                 vf.detections.append((best_concept.id, best_sim, gy, gx))
                 if (gy, gx) in CENTER_POSITIONS and best_sim > vf.near_similarity:
                     vf.near_concept = best_concept.id
