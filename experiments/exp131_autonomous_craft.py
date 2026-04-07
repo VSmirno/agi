@@ -284,10 +284,9 @@ def run_autonomous_episode(
                 if done:
                     break
                 new_inv = dict(info.get("inventory", {}))
-                actual_near = labeler.label("do", old_inv, new_inv)
-                store.verify_after_action(prediction, "do", actual_near, near=near_str)
-                # Universal verify with actual outcome (gained item)
+                # Use actual outcome (gained item), not near label
                 do_outcome = outcome_to_verify("do", old_inv, new_inv)
+                store.verify_after_action(prediction, "do", do_outcome, near=near_str)
                 verify_outcome(near_str, "do", do_outcome, store)
                 if z_real is not None:
                     grounded = on_action_outcome("do", old_inv, new_inv, z_real, store, labeler)
@@ -322,6 +321,21 @@ def run_autonomous_episode(
                             print(f"    [{step}] PLAN-CRAFT→{grounded}")
                         spatial_map.update(player_pos, grounded)
                 if craft_out is not None:
+                    # Ground the RESULT visually — perceive after placing/crafting
+                    # e.g. after place_table, the tile now shows a table
+                    if plan_step.action == "place":
+                        pix_after = torch.from_numpy(pixels).float()
+                        if device.type != "cpu":
+                            pix_after = pix_after.to(device)
+                        _, z_after = perceive(pix_after, encoder, store)
+                        result_concept = store.query_text(plan_step.expected_gain)
+                        if result_concept is not None and result_concept.visual is None:
+                            z_n = F.normalize(z_after.unsqueeze(0), dim=1).squeeze(0)
+                            store.ground_visual(plan_step.expected_gain, z_n)
+                            grounding_events.append(f"place→{plan_step.expected_gain}")
+                            if verbose:
+                                print(f"    [{step}] PLACE-GROUND→{plan_step.expected_gain}")
+                            spatial_map.update(player_pos, plan_step.expected_gain)
                     plan_step_idx += 1
                     nav_steps = 0
                 else:
