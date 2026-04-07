@@ -39,6 +39,8 @@ from snks.agent.outcome_labeler import OutcomeLabeler
 from snks.agent.reactive_check import ReactiveCheck
 from snks.agent.perception import (
     perceive,
+    perceive_field,
+    VisualField,
     on_action_outcome,
     select_goal,
     get_drive_strengths,
@@ -132,50 +134,30 @@ def run_autonomous_episode(
         steps = step + 1
         inv = dict(info.get("inventory", {}))
 
-        # 1. PERCEIVE
+        # 1. PERCEIVE (spatial visual field)
         pix_tensor = torch.from_numpy(pixels).float()
         if device.type != "cpu":
             pix_tensor = pix_tensor.to(device)
 
-        near_concept, z_real = perceive(pix_tensor, encoder, store)
-        near_str = near_concept.id if near_concept is not None else "empty"
+        vf = perceive_field(pix_tensor, encoder, store)
+        near_str = vf.near_concept
 
         player_pos = info.get("player_pos", (32, 32))
         spatial_map.update(player_pos, near_str)
+        # Fill map from peripheral detections
+        for cid, _sim, gy, gx in vf.detections:
+            if (gy, gx) not in [(1,1),(1,2),(2,1),(2,2)]:
+                py, px = int(player_pos[0]), int(player_pos[1])
+                dy, dx = gy - 2, gx - 2
+                spatial_map.update((py + dy * 2, px + dx * 2), cid)
 
         # 1b. ZOMBIE GROUNDING (damage detection)
         if prev_inv:
-            if ground_zombie_on_damage(prev_inv, inv, z_real, store):
+            if ground_zombie_on_damage(prev_inv, inv, vf, store):
                 grounding_events.append("damage→zombie")
                 if verbose:
                     print(f"    [{step}] DAMAGE→zombie grounded")
         prev_inv = dict(inv)
-
-        # 2. DAMAGE REFLEX — pain → fight back, regardless of perception
-        health_now = inv.get("health", 9)
-        health_prev = prev_inv.get("health", 9) if prev_inv else 9
-        food_now = inv.get("food", 9)
-        drink_now = inv.get("drink", 9)
-        took_damage = health_now < health_prev and food_now > 0 and drink_now > 0
-        if took_damage:
-            has_sword = inv.get("wood_sword", 0) + inv.get("stone_sword", 0)
-            if has_sword > 0:
-                # Fight back — attack in current direction
-                pixels, _, done, info = env.step("do")
-                if done:
-                    break
-                verify_outcome("zombie", "do", "kill_zombie", store)
-                continue
-            else:
-                # No weapon — flee
-                for _ in range(4):
-                    d = _DIRECTIONS[rng.randint(0, 4)]
-                    pixels, _, done, info = env.step(d)
-                    if done:
-                        break
-                if done:
-                    break
-                continue
 
         # 2b. REACTIVE CHECK (perception-based)
         danger = reactive.check(near_str, inv)
@@ -199,7 +181,7 @@ def run_autonomous_episode(
         replan_counter += 1
         if not current_plan or replan_counter >= 20:
             replan_counter = 0
-            current_goal, current_plan = select_goal(inv, store)
+            current_goal, current_plan = select_goal(inv, store, visual_field=vf)
             plan_step_idx = 0
             nav_steps = 0
 
@@ -226,7 +208,8 @@ def run_autonomous_episode(
                 pix_t = torch.from_numpy(pixels).float()
                 if device.type != "cpu":
                     pix_t = pix_t.to(device)
-                _, z_before = perceive(pix_t, encoder, store)
+                vf_b = perceive_field(pix_t, encoder, store)
+                z_before = vf_b.center_feature
                 old_inv_b = dict(info.get("inventory", {}))
                 pixels, _, done, info = env.step("do")
                 if done:
@@ -258,7 +241,9 @@ def run_autonomous_episode(
                     break
                 new_inv_b = dict(info.get("inventory", {}))
                 grounded = on_action_outcome(
-                    craft_action, old_inv_b, new_inv_b, z_real, store, labeler)
+                    craft_action, old_inv_b, new_inv_b,
+                    vf.center_feature if vf.center_feature is not None else torch.zeros(256),
+                    store, labeler)
                 if grounded:
                     grounding_events.append(f"craft→{grounded}")
                     if verbose:
@@ -311,8 +296,8 @@ def run_autonomous_episode(
                 if success:
                     verify_outcome(near_str, "do",
                                    plan_step.expected_gain, store)
-                if z_real is not None:
-                    grounded = on_action_outcome("do", old_inv, new_inv, z_real, store, labeler)
+                if vf.center_feature is not None:
+                    grounded = on_action_outcome("do", old_inv, new_inv, vf.center_feature, store, labeler)
                     if grounded:
                         grounding_events.append(f"plan→{grounded}")
                 if success:
@@ -335,9 +320,9 @@ def run_autonomous_episode(
                 new_inv = dict(info.get("inventory", {}))
                 craft_out = outcome_to_verify(crafter_action, old_inv, new_inv)
                 verify_outcome(near_str, plan_step.action, craft_out, store)
-                if z_real is not None:
+                if vf.center_feature is not None:
                     grounded = on_action_outcome(
-                        crafter_action, old_inv, new_inv, z_real, store, labeler)
+                        crafter_action, old_inv, new_inv, vf.center_feature, store, labeler)
                     if grounded:
                         grounding_events.append(f"craft→{grounded}")
                         if verbose:
@@ -385,7 +370,8 @@ def run_autonomous_episode(
                 pix_t = torch.from_numpy(pixels).float()
                 if device.type != "cpu":
                     pix_t = pix_t.to(device)
-                _, z_before = perceive(pix_t, encoder, store)
+                vf_b = perceive_field(pix_t, encoder, store)
+                z_before = vf_b.center_feature
                 old_inv_b = dict(info.get("inventory", {}))
                 pixels, _, done, info = env.step("do")
                 if done:
@@ -414,7 +400,9 @@ def run_autonomous_episode(
                     break
                 new_inv_b = dict(info.get("inventory", {}))
                 grounded = on_action_outcome(
-                    craft_action, old_inv_b, new_inv_b, z_real, store, labeler)
+                    craft_action, old_inv_b, new_inv_b,
+                    vf.center_feature if vf.center_feature is not None else torch.zeros(256),
+                    store, labeler)
                 if grounded:
                     grounding_events.append(f"nav-craft→{grounded}")
                     spatial_map.update(
