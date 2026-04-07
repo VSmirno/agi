@@ -186,7 +186,6 @@ def verify_outcome(
     action: str,
     actual_outcome: str | None,
     concept_store: ConceptStore,
-    _debug: bool = False,
 ) -> None:
     """After any action with outcome, confirm the causal rule.
 
@@ -199,7 +198,7 @@ def verify_outcome(
     """
     if near_label is None or actual_outcome is None:
         return
-    concept_store.verify(near_label, action, actual_outcome, _debug=_debug)
+    concept_store.verify(near_label, action, actual_outcome)
 
 
 def outcome_to_verify(

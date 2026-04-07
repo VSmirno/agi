@@ -283,11 +283,10 @@ def run_autonomous_episode(
                         break
                 if done:
                     break
-                new_inv = dict(info.get("inventory", {}))
-                # Use actual outcome (gained item), not near label
-                do_outcome = outcome_to_verify("do", old_inv, new_inv)
-                store.verify_after_action(prediction, "do", do_outcome, near=near_str)
-                verify_outcome(near_str, "do", do_outcome, store)
+                # Verify ONCE with probe result, not per-direction
+                if success:
+                    verify_outcome(near_str, "do",
+                                   plan_step.expected_gain, store)
                 if z_real is not None:
                     grounded = on_action_outcome("do", old_inv, new_inv, z_real, store, labeler)
                     if grounded:
@@ -430,7 +429,7 @@ def run_autonomous_episode(
 # Phases
 # ---------------------------------------------------------------------------
 
-def phase2_tree_nav(encoder, store, n=10, max_steps=1500):  # DEBUG: n=10
+def phase2_tree_nav(encoder, store, n=50, max_steps=1500):
     print(f"Phase 2: Tree navigation ({n} episodes, enemies ON)...")
     t0 = time.time()
     labeler = OutcomeLabeler()
