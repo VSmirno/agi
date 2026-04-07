@@ -187,8 +187,14 @@ def run_autonomous_episode(
             continue
 
         # 3. GOAL SELECTION
+        # Only replan when: no plan, plan completed, OR periodic check when exploring
         replan_counter += 1
-        if not current_plan or replan_counter >= 20:
+        needs_replan = (
+            not current_plan
+            or plan_step_idx >= len(current_plan)
+            or (current_goal == "explore" and replan_counter >= 20)
+        )
+        if needs_replan:
             replan_counter = 0
             old_goal = current_goal
             current_goal, current_plan = select_goal(
