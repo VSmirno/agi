@@ -288,6 +288,15 @@ def run_autonomous_episode(
             print(f"    [{step}] plan[{plan_step_idx}/{len(current_plan)}]: "
                   f"{plan_step.action} {plan_step.target} (near={near_str})")
 
+        # Skip plan steps targeting dangerous concepts — let reactive handle
+        # Agent doesn't navigate TO zombie, zombie comes to agent
+        target_concept = store.query_text(plan_step.target) if store else None
+        if target_concept and target_concept.attributes.get("dangerous"):
+            plan_step_idx += 1
+            if plan_step_idx >= len(current_plan):
+                current_plan = []
+            continue
+
         # Check if at target
         if near_str == plan_step.target:
             if plan_step.action == "do":
@@ -614,8 +623,8 @@ def main_diagnostic():
     print(f"Tracker rates: {tracker.rates}")
     crs = {k: f'{v:.3f}' for k, v in tracker.conditional_rates.items() if abs(v) > 0.001}
     print(f"Conditional rates: {crs}\n")
-    # Survival diagnostic with full verbose
-    phase5_survival(encoder, store, tracker, n=10, max_steps=1500)
+    # Survival diagnostic
+    phase5_survival(encoder, store, tracker, n=50, max_steps=1500)
 
 
 def main():
