@@ -63,7 +63,7 @@ class _MockEncoder:
         # Feature map: place z[:256] into center of 4×4 grid
         feat = torch.randn(1, 256, 4, 4)
         if self._z.dim() == 1 and self._z.shape[0] >= 256:
-            feat[0, :, 1:3, 1:3] = self._z[:256].reshape(256, 1, 1).expand(256, 2, 2)
+            feat[0, :, 1:3, 1:3] = self._z[:256].reshape(256, 1, 1).expand(256, 2, 2)  # center = z[:256]
         return _EncoderOutput(
             z_real=z,
             z_vsa=(z > 0).float(),

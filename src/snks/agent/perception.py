@@ -170,7 +170,7 @@ def perceive_field(
             fmap = fmap.squeeze(0)
 
     vf = VisualField()
-    vf.center_feature = fmap[:, 1:3, 1:3].mean(dim=(1, 2))
+    vf.center_feature = fmap[:, 1:3, 1:3].mean(dim=(1, 2))  # (256,)
 
     for gy in range(4):
         for gx in range(4):
