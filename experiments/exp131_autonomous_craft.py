@@ -151,7 +151,33 @@ def run_autonomous_episode(
                     print(f"    [{step}] DAMAGE→zombie grounded")
         prev_inv = dict(inv)
 
-        # 2. REACTIVE CHECK
+        # 2. DAMAGE REFLEX — pain → fight back, regardless of perception
+        health_now = inv.get("health", 9)
+        health_prev = prev_inv.get("health", 9) if prev_inv else 9
+        food_now = inv.get("food", 9)
+        drink_now = inv.get("drink", 9)
+        took_damage = health_now < health_prev and food_now > 0 and drink_now > 0
+        if took_damage:
+            has_sword = inv.get("wood_sword", 0) + inv.get("stone_sword", 0)
+            if has_sword > 0:
+                # Fight back — attack in current direction
+                pixels, _, done, info = env.step("do")
+                if done:
+                    break
+                verify_outcome("zombie", "do", "kill_zombie", store)
+                continue
+            else:
+                # No weapon — flee
+                for _ in range(4):
+                    d = _DIRECTIONS[rng.randint(0, 4)]
+                    pixels, _, done, info = env.step(d)
+                    if done:
+                        break
+                if done:
+                    break
+                continue
+
+        # 2b. REACTIVE CHECK (perception-based)
         danger = reactive.check(near_str, inv)
         if danger == "flee":
             for _ in range(4):
@@ -163,12 +189,9 @@ def run_autonomous_episode(
                 break
             continue
         if danger == "do":
-            old_inv = dict(info.get("inventory", {}))
             pixels, _, done, info = env.step("do")
             if done:
                 break
-            # Verify combat
-            new_inv = dict(info.get("inventory", {}))
             verify_outcome(near_str, "do", "kill_zombie", store)
             continue
 

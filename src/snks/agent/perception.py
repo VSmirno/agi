@@ -320,24 +320,37 @@ def select_goal(
     wood = inventory.get("wood", 0)
     stone = inventory.get("stone_item", 0)
     has_pickaxe = inventory.get("wood_pickaxe", 0) + inventory.get("stone_pickaxe", 0)
+    has_sword = inventory.get("wood_sword", 0) + inventory.get("stone_sword", 0)
 
+    # Survival drives (highest priority when critical)
     drives: dict[str, float] = {
         "restore_food": max(0, 5 - food) * 2.0,
         "restore_drink": max(0, 5 - drink) * 2.0,
         "restore_energy": max(0, 4 - energy) * 2.0,
     }
 
-    if wood < 5:
-        drives["wood"] = max(0.2, 2.0 - wood * 0.3)
+    # Weapon drive — first resource priority. Without sword, zombie kills.
+    if has_sword == 0:
+        if wood >= 3:
+            # Enough wood for table(2) + sword(1) — craft NOW
+            drives["wood_sword"] = 3.0
+        else:
+            # Need wood first to make sword
+            drives["wood"] = 2.5
+        drives["stone_item"] = 0.1
     else:
-        drives["wood"] = 0.1
+        # Armed — normal resource progression
+        if wood < 5:
+            drives["wood"] = max(0.2, 2.0 - wood * 0.3)
+        else:
+            drives["wood"] = 0.1
 
-    if wood >= 3 and has_pickaxe == 0:
-        drives["wood_pickaxe"] = 1.5
-    elif has_pickaxe > 0 and stone < 2:
-        drives["stone_item"] = 1.5
-    else:
-        drives["stone_item"] = 0.3
+        if wood >= 3 and has_pickaxe == 0:
+            drives["wood_pickaxe"] = 1.5
+        elif has_pickaxe > 0 and stone < 2:
+            drives["stone_item"] = 1.5
+        else:
+            drives["stone_item"] = 0.3
 
     goal = max(drives, key=drives.get)  # type: ignore[arg-type]
     if drives[goal] <= 0:
@@ -355,14 +368,19 @@ def get_drive_strengths(inventory: dict[str, int]) -> dict[str, float]:
     wood = inventory.get("wood", 0)
     stone = inventory.get("stone_item", 0)
     has_pickaxe = inventory.get("wood_pickaxe", 0) + inventory.get("stone_pickaxe", 0)
+    has_sword = inventory.get("wood_sword", 0) + inventory.get("stone_sword", 0)
 
     drives = {
         "restore_food": max(0, 5 - food) * 2.0,
         "restore_drink": max(0, 5 - drink) * 2.0,
         "restore_energy": max(0, 4 - energy) * 2.0,
-        "wood": max(0.1, 2.0 - wood * 0.3) if wood < 5 else 0.1,
-        "stone_item": 1.5 if (has_pickaxe > 0 and stone < 2) else 0.3,
     }
-    if wood >= 3 and has_pickaxe == 0:
-        drives["wood_pickaxe"] = 1.5
+    if has_sword == 0:
+        drives["wood_sword"] = 3.0 if wood >= 3 else 0.0
+        drives["wood"] = 2.5 if wood < 3 else 0.1
+    else:
+        drives["wood"] = max(0.1, 2.0 - wood * 0.3) if wood < 5 else 0.1
+        if wood >= 3 and has_pickaxe == 0:
+            drives["wood_pickaxe"] = 1.5
+        drives["stone_item"] = 1.5 if (has_pickaxe > 0 and stone < 2) else 0.3
     return drives
