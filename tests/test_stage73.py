@@ -22,6 +22,8 @@ from snks.agent.crafter_textbook import CrafterTextbook
 from snks.agent.outcome_labeler import OutcomeLabeler
 from snks.agent.perception import (
     perceive,
+    perceive_field,
+    VisualField,
     ground_empty_on_start,
     ground_zombie_on_damage,
     on_action_outcome,
@@ -47,11 +49,11 @@ def _make_store() -> ConceptStore:
     return store
 
 
-_EncoderOutput = namedtuple("_EncoderOutput", ["z_real", "z_vsa", "near_logits"])
+_EncoderOutput = namedtuple("_EncoderOutput", ["z_real", "z_vsa", "near_logits", "feature_map"])
 
 
 class _MockEncoder:
-    """Returns a fixed z_real vector."""
+    """Returns a fixed z_real vector + feature map."""
 
     def __init__(self, z_real: torch.Tensor | None = None, dim: int = 2048):
         self.dim = dim
@@ -59,11 +61,22 @@ class _MockEncoder:
 
     def __call__(self, pixels: torch.Tensor) -> _EncoderOutput:
         z = self._z.unsqueeze(0) if self._z.dim() == 1 else self._z
+        feat = torch.randn(1, 256, 4, 4)
+        if self._z.dim() == 1 and self._z.shape[0] >= 256:
+            feat[0, :, 1:3, 1:3] = self._z[:256].reshape(256, 1, 1).expand(256, 2, 2)
         return _EncoderOutput(
             z_real=z,
             z_vsa=(z > 0).float(),
             near_logits=torch.zeros(1, 12),
+            feature_map=feat,
         )
+
+
+def _make_vf(z: torch.Tensor) -> VisualField:
+    """Create a VisualField with center_feature from z[:256]."""
+    vf = VisualField()
+    vf.center_feature = z[:256] if z.shape[0] >= 256 else z
+    return vf
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +102,7 @@ class TestGate1EmptyGrounding:
     def test_skips_if_already_grounded(self):
         """If empty already has a visual, returns False and does not overwrite."""
         store = _make_store()
-        z_first = F.normalize(torch.randn(2048).unsqueeze(0), dim=1).squeeze(0)
+        z_first = F.normalize(torch.randn(256).unsqueeze(0), dim=1).squeeze(0)
         store.ground_visual("empty", z_first)
 
         z_second = torch.randn(2048)
@@ -99,20 +112,19 @@ class TestGate1EmptyGrounding:
         result = ground_empty_on_start(pixels, encoder, store)
 
         assert result is False
-        # Visual should remain the original, not z_second
         concept = store.query_text("empty")
         assert torch.allclose(concept.visual, z_first)
 
     def test_empty_is_perceivable(self):
-        """After grounding empty, perceive with the same z_real returns the empty concept."""
+        """After grounding empty, perceive returns the empty concept."""
         store = _make_store()
-        z = F.normalize(torch.randn(2048).unsqueeze(0), dim=1).squeeze(0)
+        z = torch.randn(2048)
         encoder = _MockEncoder(z_real=z)
         pixels = torch.randn(3, 64, 64)
 
         ground_empty_on_start(pixels, encoder, store)
 
-        concept, z_real = perceive(pixels, encoder, store)
+        concept, cf = perceive(pixels, encoder, store)
         assert concept is not None
         assert concept.id == "empty"
 
@@ -131,7 +143,7 @@ class TestGate2ZombieGrounding:
         inv_before = {"health": 9, "food": 5, "drink": 5}
         inv_after = {"health": 7, "food": 5, "drink": 5}
 
-        result = ground_zombie_on_damage(inv_before, inv_after, z, store)
+        result = ground_zombie_on_damage(inv_before, inv_after, _make_vf(z), store)
 
         assert result is True
         concept = store.query_text("zombie")
@@ -146,7 +158,7 @@ class TestGate2ZombieGrounding:
         inv_before = {"health": 9, "food": 0, "drink": 5}
         inv_after = {"health": 8, "food": 0, "drink": 5}
 
-        result = ground_zombie_on_damage(inv_before, inv_after, z, store)
+        result = ground_zombie_on_damage(inv_before, inv_after, _make_vf(z), store)
 
         assert result is False
         concept = store.query_text("zombie")
@@ -160,7 +172,7 @@ class TestGate2ZombieGrounding:
         inv_before = {"health": 9, "food": 5, "drink": 0}
         inv_after = {"health": 8, "food": 5, "drink": 0}
 
-        result = ground_zombie_on_damage(inv_before, inv_after, z, store)
+        result = ground_zombie_on_damage(inv_before, inv_after, _make_vf(z), store)
 
         assert result is False
 
@@ -168,15 +180,15 @@ class TestGate2ZombieGrounding:
         """Second damage encounter updates zombie visual via EMA."""
         store = _make_store()
 
-        z1 = F.normalize(torch.randn(2048).unsqueeze(0), dim=1).squeeze(0)
+        z1 = F.normalize(torch.randn(256).unsqueeze(0), dim=1).squeeze(0)
         inv_before = {"health": 9, "food": 5, "drink": 5}
         inv_mid = {"health": 7, "food": 5, "drink": 5}
-        ground_zombie_on_damage(inv_before, inv_mid, z1, store)
+        ground_zombie_on_damage(inv_before, inv_mid, _make_vf(z1), store)
         visual_after_first = store.query_text("zombie").visual.clone()
 
-        z2 = F.normalize(torch.randn(2048).unsqueeze(0), dim=1).squeeze(0)
+        z2 = F.normalize(torch.randn(256).unsqueeze(0), dim=1).squeeze(0)
         inv_after = {"health": 5, "food": 5, "drink": 5}
-        ground_zombie_on_damage(inv_mid, inv_after, z2, store)
+        ground_zombie_on_damage(inv_mid, inv_after, _make_vf(z2), store)
         visual_after_second = store.query_text("zombie").visual
 
         # Visual must have changed after second encounter
@@ -199,7 +211,7 @@ class TestGate2ZombieGrounding:
         inv_before = {"health": 7, "food": 5, "drink": 5}
         inv_after = {"health": 7, "food": 5, "drink": 5}
 
-        result = ground_zombie_on_damage(inv_before, inv_after, z, store)
+        result = ground_zombie_on_damage(inv_before, inv_after, _make_vf(z), store)
         assert result is False
 
     def test_reactive_after_grounding(self):
@@ -209,7 +221,7 @@ class TestGate2ZombieGrounding:
 
         inv_before = {"health": 9, "food": 5, "drink": 5}
         inv_after = {"health": 7, "food": 5, "drink": 5}
-        ground_zombie_on_damage(inv_before, inv_after, z, store)
+        ground_zombie_on_damage(inv_before, inv_after, _make_vf(z), store)
 
         rc = ReactiveCheck(store)
         # No weapon → should flee

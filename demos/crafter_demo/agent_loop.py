@@ -22,6 +22,8 @@ from snks.agent.crafter_spatial_map import CrafterSpatialMap, _step_toward, MOVE
 from snks.agent.outcome_labeler import OutcomeLabeler
 from snks.agent.perception import (
     perceive,
+    perceive_field,
+    VisualField,
     on_action_outcome,
     select_goal,
     get_drive_strengths,
@@ -280,10 +282,9 @@ def env_thread_loop(engine: DemoEngine) -> None:
             inv = _get_inv(info)
             inv_items = {k: v for k, v in inv.items() if k not in SURVIVAL_KEYS}
 
-            # ---- 1. PERCEIVE ----
-            near_concept = None
+            # ---- 1. PERCEIVE (spatial visual field) ----
+            vf = VisualField()
             near_str = "empty"
-            z_real = None
 
             with engine.model_lock:
                 encoder = engine.encoder
@@ -291,56 +292,29 @@ def env_thread_loop(engine: DemoEngine) -> None:
 
             if encoder is not None:
                 pix_tensor = torch.from_numpy(pixels).float()
-                near_concept, z_real = perceive(pix_tensor, encoder, store)
-                if near_concept is not None:
-                    near_str = near_concept.id
-                    _, sim = store.query_visual_scored(z_real)
-                    last_perception_sim = sim
-                else:
-                    last_perception_sim = 0.0
+                vf = perceive_field(pix_tensor, encoder, store)
+                near_str = vf.near_concept
+                last_perception_sim = vf.near_similarity
 
-            # Update spatial map
+            # Update spatial map from ALL visible concepts
             player_pos = info.get("player_pos", (32, 32))
             spatial_map.update(player_pos, near_str)
+            # Peripheral detections also fill the map (approximate positions)
+            for cid, _sim, gy, gx in vf.detections:
+                if (gy, gx) not in [(1,1),(1,2),(2,1),(2,2)]:
+                    # Offset from player based on grid position
+                    py, px = int(player_pos[0]), int(player_pos[1])
+                    dy, dx = gy - 2, gx - 2  # center is ~(1.5,1.5)
+                    spatial_map.update((py + dy * 2, px + dx * 2), cid)
 
             # ---- 1b. ZOMBIE GROUNDING (damage detection) ----
-            if z_real is not None and hasattr(engine, '_prev_inv'):
-                if ground_zombie_on_damage(engine._prev_inv, inv, z_real, store):
+            if hasattr(engine, '_prev_inv'):
+                if ground_zombie_on_damage(engine._prev_inv, inv, vf, store):
                     engine.log_event("DISCOVERY: grounded 'zombie' from damage")
                     grounding_log.append("damage→zombie")
             engine._prev_inv = dict(inv)
 
-            # ---- 2. DAMAGE REFLEX (pain → fight/flee) ----
-            health_now = inv.get("health", 9)
-            health_prev = engine._prev_inv.get("health", 9) if hasattr(engine, '_prev_inv') else 9
-            took_damage = health_now < health_prev and inv.get("food", 9) > 0 and inv.get("drink", 9) > 0
-            if took_damage:
-                has_sword = inv.get("wood_sword", 0) + inv.get("stone_sword", 0)
-                if has_sword > 0:
-                    engine.log_event("DAMAGE REFLEX: attack!")
-                    pixels, _, done, info = env.step("do")
-                    if done:
-                        episode_done = True
-                    _build_snapshot(engine, "do", near_str, "reflex: attack",
-                                   _plan_to_ui(current_plan, plan_step_idx),
-                                   plan_step_idx, len(current_plan),
-                                   get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
-                    continue
-                else:
-                    engine.log_event("DAMAGE REFLEX: flee!")
-                    for _ in range(4):
-                        direction = _DIRECTIONS[rng.randint(0, 4)]
-                        pixels, _, done, info = env.step(direction)
-                        if done:
-                            episode_done = True
-                            break
-                    _build_snapshot(engine, "flee", near_str, "reflex: flee",
-                                   _plan_to_ui(current_plan, plan_step_idx),
-                                   plan_step_idx, len(current_plan),
-                                   get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
-                    continue
-
-            # ---- 2b. REACTIVE CHECK (perception-based) ----
+            # ---- 2. REACTIVE CHECK (perception-based, drives decide) ----
             reactive_action = None
             with engine.model_lock:
                 reactive = engine.reactive
@@ -380,7 +354,7 @@ def env_thread_loop(engine: DemoEngine) -> None:
             # ---- 3. GOAL SELECTION (re-evaluate periodically) ----
             if not current_plan or steps_since_replan >= REPLAN_INTERVAL:
                 old_goal = current_goal
-                current_goal, current_plan = select_goal(inv, store)
+                current_goal, current_plan = select_goal(inv, store, visual_field=vf)
                 plan_step_idx = 0
                 nav_steps = 0
                 steps_since_replan = 0
@@ -416,20 +390,21 @@ def env_thread_loop(engine: DemoEngine) -> None:
                     if done:
                         episode_done = True
                         continue
+                    # Capture center feature BEFORE "do" for grounding
+                    cf_before = None
                     if encoder is not None:
                         pix_t = torch.from_numpy(pixels).float()
-                        _, z_before = perceive(pix_t, encoder, store)
-                    else:
-                        z_before = None
+                        vf_b = perceive_field(pix_t, encoder, store)
+                        cf_before = vf_b.center_feature
                     old_inv_b = _get_inv(info)
                     pixels, _, done, info = env.step("do")
                     if done:
                         episode_done = True
                         continue
                     new_inv_b = _get_inv(info)
-                    if z_before is not None:
+                    if cf_before is not None:
                         grounded = on_action_outcome(
-                            "do", old_inv_b, new_inv_b, z_before, store, labeler)
+                            "do", old_inv_b, new_inv_b, cf_before, store, labeler)
                         if grounded:
                             grounding_log.append(f"babble→{grounded}")
                             engine.log_event(f"DISCOVERY: babble→{grounded}")
@@ -454,7 +429,8 @@ def env_thread_loop(engine: DemoEngine) -> None:
                     new_inv_b = _get_inv(info)
                     grounded = on_action_outcome(
                         craft_action, old_inv_b, new_inv_b,
-                        z_real if z_real is not None else torch.zeros(1), store, labeler)
+                        vf.center_feature if vf.center_feature is not None else torch.zeros(256),
+                        store, labeler)
                     if grounded:
                         grounding_log.append(f"craft-babble→{grounded}")
                         engine.log_event(f"DISCOVERY: craft→{grounded}")
@@ -528,8 +504,8 @@ def env_thread_loop(engine: DemoEngine) -> None:
                     store.verify_after_action(prediction, "do", do_out, near=near_str)
 
                     # Experiential grounding
-                    if z_real is not None:
-                        grounded = on_action_outcome("do", old_inv, new_inv, z_real, store, labeler)
+                    if vf.center_feature is not None:
+                        grounded = on_action_outcome("do", old_inv, new_inv, vf.center_feature, store, labeler)
                         if grounded:
                             grounding_log.append(f"grounded: {grounded}")
                             engine.log_event(f"grounded: {grounded}")
@@ -567,17 +543,17 @@ def env_thread_loop(engine: DemoEngine) -> None:
                         direction = _DIRECTIONS[rng.randint(0, 4)]
                         pixels, _, done, info = env.step(direction)
                         if not done:
+                            cf_b = None
                             if encoder is not None:
                                 pix_t = torch.from_numpy(pixels).float()
-                                _, z_b = perceive(pix_t, encoder, store)
-                            else:
-                                z_b = None
+                                vf_b = perceive_field(pix_t, encoder, store)
+                                cf_b = vf_b.center_feature
                             old_inv_b = _get_inv(info)
                             pixels, _, done, info = env.step("do")
-                            if not done and z_b is not None:
+                            if not done and cf_b is not None:
                                 new_inv_b = _get_inv(info)
                                 grounded = on_action_outcome(
-                                    "do", old_inv_b, new_inv_b, z_b, store, labeler)
+                                    "do", old_inv_b, new_inv_b, cf_b, store, labeler)
                                 if grounded:
                                     grounding_log.append(f"nav-babble→{grounded}")
                                     engine.log_event(f"DISCOVERY: {grounded}")

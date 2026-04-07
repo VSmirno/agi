@@ -33,6 +33,7 @@ class CNNEncoderOutput(NamedTuple):
     z_real: torch.Tensor     # (B, 2048) float — for predictor
     z_vsa: torch.Tensor      # (B, 2048) binary {0,1} — for SDM
     near_logits: torch.Tensor  # (B, n_classes) — near object classification
+    feature_map: torch.Tensor  # (B, 256, 4, 4) — spatial features (retinotopic)
 
 
 class SimpleConv(nn.Module):
@@ -128,8 +129,9 @@ class CNNEncoder(nn.Module):
         if single:
             return CNNEncoderOutput(
                 z_real.squeeze(0), z_vsa.squeeze(0), near_logits.squeeze(0),
+                features.squeeze(0),
             )
-        return CNNEncoderOutput(z_real, z_vsa, near_logits)
+        return CNNEncoderOutput(z_real, z_vsa, near_logits, features)
 
     @property
     def codebook_utilization(self) -> float:
