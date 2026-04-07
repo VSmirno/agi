@@ -49,6 +49,10 @@ class Concept:
     attributes: dict[str, Any]     # {category: "resource", dangerous: False}
     causal_links: list[CausalLink] # do → gives(wood)
     confidence: float              # общая confidence концепта
+
+    def find_causal(self, action: str,
+                    check_requires: dict | None = None) -> CausalLink | None:
+        """Найти каузальную связь по action, опционально проверив requires"""
 ```
 
 ### Интерфейс ConceptStore
@@ -77,6 +81,7 @@ class ConceptStore:
     # Верификация
     def verify(self, concept_id: str, action: str,
                actual_outcome: str | None) -> None     # PE → confidence update
+    def record_surprise(self, outcome: str, action: str) -> None  # log unexpected
     
     # Persistence
     def save(self, path: str) -> None
@@ -119,6 +124,7 @@ class ConceptStore:
 domain: crafter
 
 vocabulary:
+  # Видимые объекты (визуально заземляемые)
   - { id: tree, category: resource }
   - { id: stone, category: resource }
   - { id: coal, category: resource }
@@ -126,7 +132,11 @@ vocabulary:
   - { id: table, category: crafted }
   - { id: empty, category: terrain }
   - { id: zombie, category: enemy, dangerous: true }
+  # Инвентарные предметы (только текстовый grounding)
   - { id: wood, category: item }
+  - { id: stone_item, category: item }
+  - { id: coal_item, category: item }
+  - { id: iron_item, category: item }
   - { id: wood_pickaxe, category: tool }
   - { id: stone_pickaxe, category: tool }
   - { id: wood_sword, category: weapon }
@@ -156,10 +166,12 @@ class CrafterTextbook:
     @property
     def rules(self) -> list[str]
 
-    def load_into(self, store: ConceptStore,
-                  parser: InstructionParser) -> None:
+    def load_into(self, store: ConceptStore) -> None:
         """Parse vocabulary → register concepts,
-           parse rules → add causal links"""
+           parse rules → add causal links.
+           Парсинг правил формата 'do tree gives wood requires X'
+           встроен в CrafterTextbook (regex, не RuleBasedChunker —
+           формат правил фиксированный, SVO chunker для него избыточен)."""
 ```
 
 ### Переносимость
@@ -338,12 +350,12 @@ while not done:
     verify(prediction, outcome)
 ```
 
-### NearDetector — 7-й класс
+### NearDetector — zombie training data
 
-Добавить "zombie" в NEAR_CLASSES. Обучение:
-- GroundingSession заземляет zombie визуально
-- ScenarioRunner с включёнными врагами собирает zombie frames
-- Отключаем `_balance_chunk` monkeypatch (enemies ON)
+Zombie уже есть в NEAR_OBJECTS/NEAR_CLASSES. Проблема не в классе, а в отсутствии training data (enemies отключены через `_balance_chunk` monkeypatch). Решение:
+- Отключаем monkeypatch (enemies ON) для сбора zombie frames
+- GroundingSession заземляет zombie визуально через spawn
+- ScenarioRunner с включёнными врагами собирает zombie frames для NearDetector
 
 ---
 
@@ -483,8 +495,8 @@ def verify_after_action(self, prediction: Prediction | None,
 │    CrafterControlledEnv, CrafterSpatialMap                   │
 │                                                              │
 │  Расширяемые:                                                │
-│    NearDetector (+zombie class), ScenarioRunner (+reactive), │
-│    InstructionParser (+Crafter vocabulary)                    │
+│    NearDetector (+zombie training data), ScenarioRunner      │
+│    (+reactive layer)                                         │
 │                                                              │
 │  Новые:                                                      │
 │    ConceptStore, CrafterTextbook, ChainGenerator,            │
