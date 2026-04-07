@@ -179,6 +179,11 @@
 - **info["inventory"] остаётся** — проприоцепция.
 - **NearDetector code сохранён** — используется для backward compat (zombie tracking в wrapper).
 - **exp130 результаты:** tree nav 60% PASS, stone 0%, coal not grounded, survival 74, verification 0.
+- **exp131 результаты (Stage 74, homeostatic):** tree nav 50.5% PASS, 7 concepts grounded (incl stone), survival 138, verification 3 PASS.
+  - HomeostaticTracker: body rates from observation, preparation drive (proactive sword craft).
+  - Relative matching (margin ≥0.1): fixes 256-dim inter-class confusion.
+  - Sword emergence: plan reaches step 2/4 (make sword near table) but table recognition fails.
+  - Root cause: 256-dim inter-class similarity too high (stone vs water: 0.82).
   - 3 концепта grounded из опыта: tree, water, cow.
   - Motor babbling (15% prob) → action outcome → one-shot grounding → perception bootstrap.
   - Survival +50% (49→74) через grounding cow/water для еды/питья.
