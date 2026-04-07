@@ -419,3 +419,119 @@ class ScenarioRunner:
             pixels_np = pix_np
 
         return False, info, pixels_np
+
+    def run_chain_with_concepts(
+        self,
+        env: object,
+        detector: object,
+        labeler: OutcomeLabeler,
+        chain: list[ScenarioStep],
+        rng: np.random.RandomState,
+        concept_store: object | None = None,
+        reactive: object | None = None,
+    ) -> list[tuple[torch.Tensor, int]]:
+        """Execute scenario chain with ConceptStore integration.
+
+        Extends run_chain with:
+        - Reactive layer: checks for danger before each planned action
+        - Prediction error loop: predicts outcome, verifies after action
+
+        Args:
+            concept_store: ConceptStore for prediction/verification (optional)
+            reactive: ReactiveCheck for danger handling (optional)
+
+        Falls back to run_chain behavior if concept_store/reactive are None.
+        """
+        if concept_store is None and reactive is None:
+            return self.run_chain(env, detector, labeler, chain, rng)
+
+        smap = CrafterSpatialMap()
+        pixels_np, info = env.observe()
+        window_buf: deque = deque(maxlen=WINDOW_SIZE + DO_RETRIES * 5)
+        window_buf.append(pixels_np)
+        labeled: list[tuple[torch.Tensor, int]] = []
+
+        for step in chain:
+            near_idx = NEAR_TO_IDX.get(step.near_label)
+            if near_idx is None:
+                continue
+
+            for _ in range(step.repeat):
+                inv = dict(info.get("inventory", {}))
+                if not self._prereqs_met(inv, step.prerequisite_inv):
+                    break
+
+                # --- Reactive layer: check for danger ---
+                if reactive is not None and detector is not None:
+                    det_pixels = torch.from_numpy(pixels_np).float()
+                    near_str = detector.detect(det_pixels)
+                    override = reactive.check(near_str, inv)
+                    if override == "do":
+                        pixels_np, _, done, info = env.step("do")
+                        if done:
+                            pixels_np, info = env.reset()
+                        continue
+                    if override == "flee":
+                        reactive.flee_action(env, rng)
+                        pixels_np, info = env.observe()
+                        continue
+
+                # Navigation phase
+                if step.navigate_to is not None:
+                    if step.use_semantic_nav:
+                        pixels_t, info, found = _find_target_semantic(
+                            env, step.navigate_to, step.max_nav_steps, rng,
+                        )
+                    else:
+                        pixels_t, info, found = find_target_with_map(
+                            env, detector, smap, step.navigate_to,
+                            max_steps=step.max_nav_steps, rng=rng,
+                        )
+                    if not found:
+                        break
+                    pixels_np = (
+                        pixels_t.numpy() if isinstance(pixels_t, torch.Tensor) else pixels_t
+                    )
+                    window_buf.append(pixels_np)
+
+                    if step.prerequisite_inv:
+                        inv_now = dict(info.get("inventory", {}))
+                        if not self._prereqs_met(inv_now, step.prerequisite_inv):
+                            break
+
+                # --- Prediction (top-down) ---
+                prediction = None
+                if concept_store is not None:
+                    inv_before_pred = dict(info.get("inventory", {}))
+                    det_near = step.near_label  # we know what we're near from the step
+                    prediction = concept_store.predict_before_action(
+                        det_near, step.action.split("_")[0], inv_before_pred
+                    )
+
+                # Action phase
+                if step.action == "do":
+                    success, info = self._probe_do(
+                        env, info, labeler, step.near_label, near_idx,
+                        rng, window_buf, labeled, step.do_retries,
+                    )
+                else:
+                    success, info, pixels_np = self._probe_action(
+                        env, info, labeler, step.action, step.near_label,
+                        near_idx, pixels_np, rng, labeled,
+                    )
+
+                # --- Verification (bottom-up) ---
+                if concept_store is not None:
+                    inv_after_ver = dict(info.get("inventory", {}))
+                    actual = labeler.label(
+                        step.action, inv_before_pred, inv_after_ver
+                    ) if success else None
+                    concept_store.verify_after_action(
+                        prediction, step.action.split("_")[0], actual,
+                        near=step.near_label,
+                    )
+
+                if not success and not step.continue_on_probe_fail:
+                    break
+
+        return labeled

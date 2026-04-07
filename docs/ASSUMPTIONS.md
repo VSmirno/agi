@@ -129,3 +129,28 @@
 - **table smoke=0/0**: таблицы не встречаются в random walk (только player-placed), поэтому GT=0 для table в smoke test.
 - **do near coal 6/50, iron 17/50** в QA: coal/iron embedded в камне, навигатор не находит их за 300 шагов. QA проходит за счёт controlled prototype collection в phase4.
 
+---
+
+## Stage 71 — Text-Visual Integration (2026-04-07)
+**Что сделано:** Соединение текстового и визуального пайплайнов. ConceptStore как единое омнимодальное хранилище. Каузальные правила из текстового "учебника" (YAML), visual grounding через co-activation, backward chaining planner, reactive zombie handling.
+**Компоненты:**
+- ConceptStore: unified Concept (visual + text_sdr + attributes + causal_links + confidence).
+- CrafterTextbook: YAML с 10 атомарными правилами, regex-парсер, load_into(store).
+- ChainGenerator: backward chaining через ConceptStore.plan() → ScenarioStep.
+- GroundingSession: co-activation — K=5 visual samples + text SDR per concept.
+- ReactiveCheck: zombie nearby → sword? attack : flee.
+- ScenarioRunner.run_chain_with_concepts(): reactive layer + prediction error loop.
+
+**Допущения/ограничения:**
+- **PrototypeMemory не интегрирован** в ConceptStore — ConceptStore хранит 1 z_real на концепт, PrototypeMemory хранит тысячи экземпляров. Разные задачи.
+- **Confidence delta фиксированный** (±0.15), не байесовский update.
+- **Surprise только логируется** — неожиданные события не порождают новые правила автоматически. Требует отдельной проработки.
+- **Flee = простая эвристика** (3-5 случайных шагов от врага).
+- **Один тип врага** (zombie). Skeleton, arrow — будущий stage.
+- **Нет стратегии "сначала крафт меча"** — reactive слой не планирует заранее.
+- **Нет decay правил** — confidence не падает со временем.
+- **Planner не оптимизирует порядок** — может собирать wood дважды.
+- **Nav encoder Phase 0 на exp122** — фокус этого stage = text-visual, не nav cleanup.
+- **use_semantic_nav=True остаётся** для редких объектов.
+- **find_causal disambiguation** — при одинаковых requires выбирается наиболее специфичный match (по количеству requires items). Wood_sword/wood_pickaxe неразличимы по inventory.
+
