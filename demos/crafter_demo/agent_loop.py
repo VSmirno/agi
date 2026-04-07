@@ -26,6 +26,9 @@ from snks.agent.perception import (
     select_goal,
     get_drive_strengths,
     explore_action,
+    ground_empty_on_start,
+    ground_zombie_on_damage,
+    verify_outcome,
     MIN_SIMILARITY,
 )
 
@@ -260,6 +263,13 @@ def env_thread_loop(engine: DemoEngine) -> None:
 
         engine.log_event(f"episode {engine.episode_count} start (autonomous)")
 
+        # --- Bootstrap: ground "empty" from first frame ---
+        with engine.model_lock:
+            if engine.encoder is not None:
+                pix_t = torch.from_numpy(pixels).float()
+                if ground_empty_on_start(pix_t, engine.encoder, engine.store):
+                    engine.log_event("BOOTSTRAP: grounded 'empty' from first frame")
+
         while engine._running and not episode_done:
             _process_commands(engine)
             if engine.state == "paused":
@@ -291,6 +301,13 @@ def env_thread_loop(engine: DemoEngine) -> None:
             # Update spatial map
             player_pos = info.get("player_pos", (32, 32))
             spatial_map.update(player_pos, near_str)
+
+            # ---- 1b. ZOMBIE GROUNDING (damage detection) ----
+            if z_real is not None and hasattr(engine, '_prev_inv'):
+                if ground_zombie_on_damage(engine._prev_inv, inv, z_real, store):
+                    engine.log_event("DISCOVERY: grounded 'zombie' from damage")
+                    grounding_log.append("damage→zombie")
+            engine._prev_inv = dict(inv)
 
             # ---- 2. REACTIVE CHECK (danger only) ----
             reactive_action = None
@@ -359,17 +376,15 @@ def env_thread_loop(engine: DemoEngine) -> None:
             # ---- 4. EXECUTE PLAN ----
             if not current_plan:
                 # No plan → curiosity-driven exploration (motor babbling + spatial)
-                action_str = explore_action(rng, store)
+                action_str = explore_action(rng, store, inventory=inv)
 
                 if action_str == "babble_do":
                     # Motor babbling: face random direction + do
-                    # This is how the agent discovers objects without vision
                     direction = _DIRECTIONS[rng.randint(0, 4)]
                     pixels, _, done, info = env.step(direction)
                     if done:
                         episode_done = True
                         continue
-                    # Capture z_real BEFORE "do" — this is what we'll ground
                     if encoder is not None:
                         pix_t = torch.from_numpy(pixels).float()
                         _, z_before = perceive(pix_t, encoder, store)
@@ -381,25 +396,44 @@ def env_thread_loop(engine: DemoEngine) -> None:
                         episode_done = True
                         continue
                     new_inv_b = _get_inv(info)
-                    # Check if action had an effect → ground the visual
                     if z_before is not None:
                         grounded = on_action_outcome(
                             "do", old_inv_b, new_inv_b, z_before, store, labeler)
                         if grounded:
                             grounding_log.append(f"babble→{grounded}")
                             engine.log_event(f"DISCOVERY: babble→{grounded}")
-                            # Update map with newly discovered concept
-                            new_pos = info.get("player_pos", player_pos)
-                            spatial_map.update(new_pos, grounded)
-                        # Prediction error → verification
-                        prediction = store.predict_before_action(
-                            grounded or "empty", "do", old_inv_b)
+                            spatial_map.update(
+                                info.get("player_pos", player_pos), grounded)
+                        # Universal verification
                         actual = labeler.label("do", old_inv_b, new_inv_b)
-                        store.verify_after_action(prediction, "do", actual,
-                                                  near=grounded or "empty")
+                        verify_outcome(grounded or near_str, "do", actual, store)
                     _build_snapshot(engine, "babble", near_str, "curiosity: motor babbling",
                                    [], 0, 0,
                                    get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
+                    continue
+
+                elif action_str.startswith("babble_"):
+                    # Craft babbling: place_table or make_*
+                    craft_action = action_str.replace("babble_", "")
+                    old_inv_b = _get_inv(info)
+                    pixels, _, done, info = env.step(craft_action)
+                    if done:
+                        episode_done = True
+                        continue
+                    new_inv_b = _get_inv(info)
+                    grounded = on_action_outcome(
+                        craft_action, old_inv_b, new_inv_b,
+                        z_real if z_real is not None else torch.zeros(1), store, labeler)
+                    if grounded:
+                        grounding_log.append(f"craft-babble→{grounded}")
+                        engine.log_event(f"DISCOVERY: craft→{grounded}")
+                        spatial_map.update(
+                            info.get("player_pos", player_pos), grounded)
+                    actual = labeler.label(craft_action, old_inv_b, new_inv_b)
+                    verify_outcome(near_str, craft_action.split("_")[0], actual, store)
+                    _build_snapshot(engine, craft_action, near_str, "curiosity: craft babble",
+                                   [], 0, 0,
+                                   get_drive_strengths(new_inv_b), last_perception_sim, grounding_log[-3:])
                     continue
                 else:
                     # Spatial exploration — move to unvisited area
@@ -494,7 +528,7 @@ def env_thread_loop(engine: DemoEngine) -> None:
                         action_str = _step_toward(player_pos, known_pos, rng)
                     else:
                         # Target not in map — curiosity-driven exploration
-                        action_str = explore_action(rng, store)
+                        action_str = explore_action(rng, store, inventory=inv)
 
                     if action_str == "babble_do":
                         # Motor babbling during navigation
