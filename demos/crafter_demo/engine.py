@@ -317,9 +317,6 @@ class DemoEngine:
             det_encoder.load_state_dict(det_data["encoder"])
             det_encoder.eval()
             detector = NearDetector(det_encoder)
-            # head weights are already in the encoder's near_head
-            if "head" in det_data:
-                det_encoder.near_head.load_state_dict(det_data["head"])
         else:
             detector = NearDetector(encoder)
 

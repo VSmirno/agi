@@ -512,8 +512,7 @@ def _save_checkpoint(
         torch.save(encoder.state_dict(), d / "encoder.pt")
     if detector is not None:
         torch.save({
-            "head": detector.head.state_dict(),
-            "encoder": detector.encoder.state_dict(),
+            "encoder": detector._encoder.state_dict(),
         }, d / "detector.pt")
     if store is not None:
         store.save(str(d / "concept_store"))
