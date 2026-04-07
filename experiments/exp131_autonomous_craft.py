@@ -300,6 +300,66 @@ def run_autonomous_episode(
                 current_plan = []
             continue
 
+        # Check prerequisites before executing
+        if plan_step.requires:
+            has_reqs = all(
+                inv.get(r, 0) >= n for r, n in plan_step.requires.items()
+            )
+            if not has_reqs:
+                # Need more resources — go back to gathering
+                # Find which resource we need more of
+                for req_item, req_count in plan_step.requires.items():
+                    if inv.get(req_item, 0) < req_count:
+                        gather_plan = store.plan(req_item)
+                        if gather_plan:
+                            # Execute gather step inline (navigate + probe)
+                            # Don't advance plan_step_idx
+                            gs = gather_plan[0]
+                            if near_str == gs.target:
+                                # At gather target — probe
+                                old_inv_g = dict(info.get("inventory", {}))
+                                for d in _DIRECTIONS:
+                                    pixels, _, done, info = env.step(d)
+                                    if done:
+                                        break
+                                    pixels, _, done, info = env.step("do")
+                                    if done:
+                                        break
+                                if done:
+                                    break
+                            else:
+                                # Navigate to gather target
+                                known = spatial_map.find_nearest(gs.target, player_pos)
+                                if known:
+                                    action = _step_toward(player_pos, known, rng)
+                                else:
+                                    action = explore_action(rng, store, inventory=inv)
+                                    if action.startswith("babble"):
+                                        # Handle babble as before
+                                        direction = _DIRECTIONS[rng.randint(0, 4)]
+                                        pixels, _, done, info = env.step(direction)
+                                        if not done:
+                                            pix_t = torch.from_numpy(pixels).float()
+                                            if device.type != "cpu":
+                                                pix_t = pix_t.to(device)
+                                            vf_b = perceive_field(pix_t, encoder, store)
+                                            old_inv_b = dict(info.get("inventory", {}))
+                                            pixels, _, done, info = env.step("do")
+                                            if not done:
+                                                new_inv_b = dict(info.get("inventory", {}))
+                                                if vf_b.center_feature is not None:
+                                                    on_action_outcome(
+                                                        "do", old_inv_b, new_inv_b,
+                                                        vf_b.center_feature, store, labeler)
+                                        if done:
+                                            break
+                                        continue
+                                    else:
+                                        pixels, _, done, info = env.step(action)
+                                        if done:
+                                            break
+                            continue
+
         # Check if at target
         if near_str == plan_step.target:
             if plan_step.action == "do":
