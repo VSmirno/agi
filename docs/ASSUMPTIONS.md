@@ -153,5 +153,5 @@
 - **Nav encoder Phase 0 на exp122** — фокус этого stage = text-visual, не nav cleanup.
 - **use_semantic_nav=True остаётся** для редких объектов.
 - **find_causal disambiguation** — при одинаковых requires выбирается наиболее специфичный match (по количеству requires items). Wood_sword/wood_pickaxe неразличимы по inventory.
-- **Zombie Gate 5 FAIL** (1.07x вместо 1.5x) — NearDetector не обучен на zombie (нет training data). ReactiveCheck работает в unit-тестах, но в реальном Crafter detector не распознаёт zombie → check не срабатывает. Отдельная задача.
+- **Zombie Gate 5 PASS** (exp128c) — zombie_deaths 39→11 (3.5x reduction). NearDetector обучен на zombie (50 seeds, semantic GT). ReactiveCheck flee снижает смерти, но не увеличивает episode length (голод/жажда = основная причина смерти, не zombie).
 
