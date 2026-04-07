@@ -416,6 +416,24 @@ def run_autonomous_episode(
                 plan_step_idx += 1
                 nav_steps = 0
 
+    # Death cause analysis
+    final_inv = dict(info.get("inventory", {}))
+    health = final_inv.get("health", 0)
+    food = final_inv.get("food", 0)
+    drink = final_inv.get("drink", 0)
+    energy = final_inv.get("energy", 0)
+    death_cause = "timeout"
+    if steps < max_steps:
+        if health <= 0:
+            if food == 0 or drink == 0:
+                death_cause = "starvation"
+            else:
+                death_cause = "zombie"
+        else:
+            death_cause = "unknown"
+    if verbose:
+        print(f"    death={death_cause} h={health} f={food} d={drink} e={energy} @step={steps}")
+
     return {
         "length": steps,
         "resources": dict(resources),
@@ -423,6 +441,8 @@ def run_autonomous_episode(
         "nav_successes": nav_successes,
         "map_visited": spatial_map.n_visited,
         "map_objects": spatial_map.known_objects,
+        "death_cause": death_cause,
+        "final_stats": {"health": health, "food": food, "drink": drink, "energy": energy},
     }
 
 
@@ -490,17 +510,20 @@ def phase5_survival(encoder, store, n=50, max_steps=1500):
     t0 = time.time()
     labeler = OutcomeLabeler()
     lengths = []
+    death_causes = Counter()
     for i in range(n):
         result = run_autonomous_episode(
             encoder, store, labeler, 90000 + i * 7,
-            max_steps=max_steps, enemies=True)
+            max_steps=max_steps, enemies=True, verbose=(i < 5))
         lengths.append(result["length"])
+        death_causes[result.get("death_cause", "unknown")] += 1
         if (i + 1) % 10 == 0:
-            print(f"  [{i+1}/{n}] mean_length={np.mean(lengths):.0f}")
+            print(f"  [{i+1}/{n}] mean_length={np.mean(lengths):.0f} deaths={dict(death_causes)}")
     mean_len = np.mean(lengths)
     print(f"  Mean length: {mean_len:.0f} (gate: ≥200)")
+    print(f"  Death causes: {dict(death_causes)}")
     print(f"  Gate: {'PASS' if mean_len >= 200 else 'FAIL'} ({time.time()-t0:.0f}s)\n")
-    return {"mean_length": mean_len, "gate_pass": mean_len >= 200}
+    return {"mean_length": mean_len, "gate_pass": mean_len >= 200, "death_causes": dict(death_causes)}
 
 
 def phase6_verification(store):
@@ -528,6 +551,25 @@ def save_checkpoint(encoder, store, tag="final"):
     torch.save(encoder.state_dict(), d / "encoder.pt")
     store.save(str(d / "concept_store"))
     print(f"  Checkpoint → {d}")
+
+
+def main_diagnostic():
+    """Diagnostic: survival only, with death cause logging."""
+    disable_rocm_conv()
+    print("=" * 60)
+    print("exp131 DIAGNOSTIC: Survival death causes")
+    print("=" * 60)
+    encoder = phase0_load_encoder()
+    store = phase1_init_store()
+    # Quick bootstrap: run 5 tree episodes to ground basics
+    labeler = OutcomeLabeler()
+    for i in range(5):
+        run_autonomous_episode(encoder, store, labeler, 60000 + i * 7,
+                               max_steps=500, enemies=True, verbose=True)
+    grounded = [c.id for c in store.concepts.values() if c.visual is not None]
+    print(f"\nGrounded after bootstrap: {grounded}\n")
+    # Now survival diagnostic
+    phase5_survival(encoder, store, n=20, max_steps=1500)
 
 
 def main():
