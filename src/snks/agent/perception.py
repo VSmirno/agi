@@ -62,6 +62,13 @@ def perceive(
     return concept, z_real
 
 
+# Survival stat changes → what was nearby
+_STAT_GAIN_TO_NEAR: dict[str, str] = {
+    "food": "cow",
+    "drink": "water",
+}
+
+
 def on_action_outcome(
     action: str,
     inv_before: dict[str, int],
@@ -77,11 +84,24 @@ def on_action_outcome(
     (e.g. wood gained → tree was nearby). The visual embedding z_real
     captured BEFORE the action becomes the prototype for that concept.
 
+    Also detects survival stat changes (food/drink gained → cow/water nearby).
+    This extends the OutcomeLabeler which only handles item gains.
+
     One-shot grounding on first encounter, EMA refinement on subsequent.
 
     Returns label string if grounding happened, None otherwise.
     """
     label = labeler.label(action, inv_before, inv_after)
+
+    # Extend: detect survival stat restoration (food/drink from cow/water)
+    if label is None and action == "do":
+        for stat, near in _STAT_GAIN_TO_NEAR.items():
+            before_val = inv_before.get(stat, 0)
+            after_val = inv_after.get(stat, 0)
+            if after_val > before_val:
+                label = near
+                break
+
     if label is None:
         return None
 
