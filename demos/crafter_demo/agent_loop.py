@@ -491,10 +491,11 @@ def env_thread_loop(engine: DemoEngine) -> None:
                     done = False  # probe handles done internally
 
                     new_inv = _get_inv(info)
-                    actual = labeler.label("do", old_inv, new_inv)
+                    # Use actual outcome (gained item), not near label
+                    do_out = outcome_to_verify("do", old_inv, new_inv)
 
                     # Verify prediction
-                    store.verify_after_action(prediction, "do", actual, near=near_str)
+                    store.verify_after_action(prediction, "do", do_out, near=near_str)
 
                     # Experiential grounding
                     if z_real is not None:
@@ -616,12 +617,24 @@ def env_thread_loop(engine: DemoEngine) -> None:
                         episode_done = True
 
                     new_inv = _get_inv(info)
-                    actual = labeler.label(crafter_action, old_inv, new_inv)
+                    craft_out = outcome_to_verify(crafter_action, old_inv, new_inv)
 
-                    store.verify_after_action(prediction, step.action, actual, near=near_str)
+                    store.verify_after_action(prediction, step.action, craft_out, near=near_str)
 
-                    if actual is not None:
+                    if craft_out is not None:
                         engine.log_event(f"crafted {step.expected_gain}")
+                        # Ground result after place (perceive what's now here)
+                        if step.action == "place" and encoder is not None:
+                            pix_a = torch.from_numpy(pixels).float()
+                            _, z_a = perceive(pix_a, encoder, store)
+                            rc = store.query_text(step.expected_gain)
+                            if rc is not None and rc.visual is None:
+                                z_n = torch.nn.functional.normalize(
+                                    z_a.unsqueeze(0), dim=1).squeeze(0)
+                                store.ground_visual(step.expected_gain, z_n)
+                                grounding_log.append(f"place→{step.expected_gain}")
+                                engine.log_event(f"DISCOVERY: place→{step.expected_gain}")
+                                spatial_map.update(player_pos, step.expected_gain)
                         plan_step_idx += 1
                         nav_steps = 0
                     else:
