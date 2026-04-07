@@ -364,18 +364,39 @@ def phase7_zombie_survival(
                 if mode == "reactive":
                     near_det = detector.detect(torch.from_numpy(pixels).float())
                     inv = dict(info.get("inventory", {}))
-                    override = rc.check(near_det, inv)
 
-                    if override == "flee":
+                    result = rc.check_all(near_det, inv)
+
+                    if result["action"] == "flee":
                         rc.flee_action(env, rng, steps=4)
                         pixels, info = env.observe()
                         continue
-                    elif override == "do":
+                    elif result["action"] == "do":
                         pixels, _, done, info = env.step("do")
                         if done:
                             if near_gt == "zombie":
                                 deaths_from_zombie += 1
                             break
+                        continue
+                    elif result["action"] == "sleep":
+                        pixels, _, done, info = env.step("sleep")
+                        if done:
+                            break
+                        continue
+                    elif result["action"] == "seek":
+                        # Navigate toward survival resource (water/cow)
+                        from snks.agent.crafter_spatial_map import find_target_with_map, CrafterSpatialMap
+                        smap = CrafterSpatialMap()
+                        _, info_s, found = find_target_with_map(
+                            env, detector, smap, result["target"],
+                            max_steps=30, rng=rng,
+                        )
+                        if found:
+                            pixels, _, done, info = env.step("do")
+                            if done:
+                                break
+                        else:
+                            pixels, info = env.observe()
                         continue
 
                 action = int(rng.randint(0, 17))
