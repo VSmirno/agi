@@ -430,7 +430,7 @@ def run_autonomous_episode(
 # Phases
 # ---------------------------------------------------------------------------
 
-def phase2_tree_nav(encoder, store, n=50, max_steps=1500):
+def phase2_tree_nav(encoder, store, n=10, max_steps=1500):  # DEBUG: n=10
     print(f"Phase 2: Tree navigation ({n} episodes, enemies ON)...")
     t0 = time.time()
     labeler = OutcomeLabeler()

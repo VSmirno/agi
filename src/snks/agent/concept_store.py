@@ -250,7 +250,8 @@ class ConceptStore:
     # --- Verification ---
 
     def verify(
-        self, concept_id: str, action: str, actual_outcome: str | None
+        self, concept_id: str, action: str, actual_outcome: str | None,
+        _debug: bool = False,
     ) -> None:
         """Update confidence based on prediction vs actual outcome."""
         concept = self.query_text(concept_id)
@@ -262,8 +263,12 @@ class ConceptStore:
                 continue
             if actual_outcome == link.result:
                 link.confidence = min(1.0, link.confidence + CONFIRM_DELTA)
+                if _debug or concept_id == "tree":
+                    print(f"    [VERIFY] {concept_id}.{action}→{actual_outcome} CONFIRM → {link.confidence:.2f}")
             else:
                 link.confidence = max(0.0, link.confidence - REFUTE_DELTA)
+                if _debug or concept_id == "tree":
+                    print(f"    [VERIFY] {concept_id}.{action}→{actual_outcome} REFUTE (expected {link.result}) → {link.confidence:.2f}")
             return
 
     def record_surprise(self, outcome: str, action: str, near: str | None = None) -> None:
@@ -308,10 +313,14 @@ class ConceptStore:
                 prediction.link.confidence = min(
                     1.0, prediction.link.confidence + CONFIRM_DELTA
                 )
+                if prediction.concept_id == "tree":
+                    print(f"    [VERIFY_AFTER] tree.{action}→{actual_outcome} CONFIRM → {prediction.link.confidence:.2f}")
             else:
                 prediction.link.confidence = max(
                     0.0, prediction.link.confidence - REFUTE_DELTA
                 )
+                if prediction.concept_id == "tree":
+                    print(f"    [VERIFY_AFTER] tree.{action}→{actual_outcome} REFUTE (expected {prediction.expected}) → {prediction.link.confidence:.2f}")
 
     # --- Persistence ---
 
