@@ -37,7 +37,6 @@ class AgentState:
     plan_index: int = 0
     nav_phase: bool = True
     retry_count: int = 0
-    auto_reset_at: float = 0.0  # timestamp for delayed reset
     rng: np.random.RandomState = field(default_factory=lambda: np.random.RandomState(42))
     resource_index: int = 0  # which resource to pursue next
 
@@ -343,7 +342,17 @@ def tick(engine: DemoEngine, agent: AgentState) -> None:
         engine.log_event(f"episode {engine.episode_count} ended (step {engine.step_count})")
         agent.plan = None
         agent.plan_index = 0
-        agent.auto_reset_at = time.time() + 2.0
+        # Reset immediately — no dead-env ticks
+        engine.reset_env()
+        agent.rng = np.random.RandomState(engine.episode_count)
+        # Rebuild snapshot with fresh env state
+        snapshot = engine.build_snapshot(
+            agent_action="reset",
+            agent_near="empty",
+            agent_reason="new episode",
+        )
+        with engine.snapshot_lock:
+            engine.snapshot = snapshot
 
 
 def env_thread_loop(engine: DemoEngine) -> None:
@@ -382,12 +391,6 @@ def env_thread_loop(engine: DemoEngine) -> None:
                     engine.log_event(f"goal set: {goal}")
             elif action == "set_speed":
                 engine.target_fps = max(1, min(30, cmd.get("fps", 10)))
-
-        # Auto-reset after episode end
-        if agent.auto_reset_at and time.time() >= agent.auto_reset_at:
-            engine.reset_env()
-            agent = AgentState()
-            agent.auto_reset_at = 0.0
 
         # Tick
         if engine.state == "playing":
