@@ -306,13 +306,26 @@ def tick(engine: DemoEngine, agent: AgentState) -> None:
 
     new_pixels, reward, done, new_info = engine.env.step(action_idx)
 
-    # Track resources
+    # Track resources — distinguish gathered vs crafted
+    _CRAFT_ITEMS = {"wood_pickaxe", "stone_pickaxe", "iron_pickaxe",
+                    "wood_sword", "stone_sword", "iron_sword"}
+    _PLACE_ITEMS = {"table", "furnace"}  # these disappear from inv on place
     old_inv = _get_inv_items(info)
     new_inv = _get_inv_items(new_info)
     for k, v in new_inv.items():
-        if v > old_inv.get(k, 0):
-            engine.metrics.cur_resources += 1
-            engine.log_event(f"collected {k}")
+        delta = v - old_inv.get(k, 0)
+        if delta > 0:
+            if k in _CRAFT_ITEMS:
+                engine.metrics.record_crafted(k)
+                engine.log_event(f"crafted {k}")
+            else:
+                engine.metrics.record_collected(k)
+                engine.log_event(f"collected {k}")
+    # Detect place actions (item leaves inventory)
+    if action_name.startswith("place_"):
+        placed = action_name.replace("place_", "")
+        engine.metrics.record_crafted(placed)
+        engine.log_event(f"placed {placed}")
 
     # Track zombie encounters
     if near == "zombie":

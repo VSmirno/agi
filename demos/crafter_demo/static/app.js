@@ -118,6 +118,11 @@ function handleFrame(f) {
     updateSparklines(f.metrics.history);
   }
 
+  // Item stats
+  if (f.metrics) {
+    updateItemStats(f.metrics.collected || {}, f.metrics.crafted || {});
+  }
+
   // Log
   if (f.log && f.log.length > 0) {
     for (const line of f.log) {
@@ -169,6 +174,35 @@ function updateLogDisplay() {
   // Show last 8 entries
   const recent = logBuffer.slice(-8);
   container.innerHTML = recent.map(l => `<span class="log-entry">${l}</span>`).join(' &nbsp; ');
+}
+
+// --- Item stats ---
+
+function updateItemStats(collected, crafted) {
+  const colDiv = document.getElementById('statsCollected');
+  const craftDiv = document.getElementById('statsCrafted');
+
+  colDiv.innerHTML = '';
+  craftDiv.innerHTML = '';
+
+  const sorted = (obj) => Object.entries(obj).sort((a, b) => b[1] - a[1]);
+
+  for (const [name, count] of sorted(collected)) {
+    const el = document.createElement('div');
+    el.className = 'stat-row';
+    el.innerHTML = `<span class="name">${name}</span><span class="count collected">${count}</span>`;
+    colDiv.appendChild(el);
+  }
+
+  for (const [name, count] of sorted(crafted)) {
+    const el = document.createElement('div');
+    el.className = 'stat-row';
+    el.innerHTML = `<span class="name">${name}</span><span class="count crafted">${count}</span>`;
+    craftDiv.appendChild(el);
+  }
+
+  if (!Object.keys(collected).length) colDiv.innerHTML = '<div style="color:var(--dim);font-size:11px">—</div>';
+  if (!Object.keys(crafted).length) craftDiv.innerHTML = '<div style="color:var(--dim);font-size:11px">—</div>';
 }
 
 // --- Train progress ---
