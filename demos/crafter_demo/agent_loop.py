@@ -369,21 +369,17 @@ def env_thread_loop(engine: DemoEngine) -> None:
         wrapped.chain_name = f"chain #{chain_idx}"
         wrapped.current_step_idx = 0
 
-        # Run the chain using the REAL pipeline
+        # Run the chain — same as exp128 phase 2 (run_chain, NOT with_concepts)
         with engine.model_lock:
             detector = engine.detector
-            store = engine.store
-            reactive = engine.reactive
 
         try:
-            labeled = runner.run_chain_with_concepts(
+            labeled = runner.run_chain(
                 env=wrapped,
                 detector=detector,
                 labeler=labeler,
                 chain=chain,
                 rng=rng,
-                concept_store=store,
-                reactive=reactive,
             )
             engine.log_event(f"chain done: {len(labeled)} labeled frames")
         except Exception as e:
