@@ -33,16 +33,18 @@ Agent autonomously executes craft chain (wood → table → pickaxe → stone) t
 
 The agent's first visual experience IS empty terrain — the background against which all objects are recognized (figure/ground separation).
 
+**Where:** In `env_thread_loop` (agent_loop.py) and `run_autonomous_episode` (exp131), immediately after `env.reset()` returns `(pixels, info)`, before the main loop begins. Uses the existing `perceive()` helper for correct normalization:
+
 ```python
-# On episode start, before any actions:
-if concept_store.query_text("empty").visual is None:
-    pixels = env.observe()
-    z_real = encoder(pixels).z_real
-    z_norm = F.normalize(z_real)
+# After env.reset(), before main loop:
+concept = concept_store.query_text("empty")
+if concept is not None and concept.visual is None:
+    _, z_real = perceive(torch.from_numpy(pixels).float(), encoder, concept_store)
+    z_norm = F.normalize(z_real.unsqueeze(0), dim=1).squeeze(0)
     concept_store.ground_visual("empty", z_norm)
 ```
 
-One-time grounding per ConceptStore lifetime. After this, agent can:
+One-time grounding per ConceptStore lifetime (first episode only). After this, agent can:
 - Recognize empty tiles via perceive()
 - Navigate to empty for place_table
 - Distinguish empty from objects
@@ -51,8 +53,10 @@ One-time grounding per ConceptStore lifetime. After this, agent can:
 
 Textbook already registered "zombie" with `dangerous=true`. Agent knows the WORD and the DANGER, but not the FACE. Damage event gives the face.
 
+**Limitation:** `z_real` captures what's in the agent's facing direction, not necessarily the attacker's position. Zombie may attack from behind. This means the grounded prototype may be noisy (encoding the scene from the agent's perspective during attack, not a clean "zombie face"). EMA refinement across multiple damage events improves the prototype over time. This is acceptable — the agent learns "what the world looks like when I get hurt", not "what a zombie looks like in isolation".
+
 ```python
-# Every step, check for unexplained damage:
+# Every step, after perceive() produced z_real:
 health_before = inv_before.get("health", 9)
 health_after = inv_after.get("health", 9)
 food = inv_after.get("food", 0)
@@ -64,7 +68,14 @@ if health_after < health_before:
         # Damage from entity — ground as zombie
         concept = concept_store.query_text("zombie")
         if concept is not None and concept.visual is None:
-            concept_store.ground_visual("zombie", z_real)
+            z_norm = F.normalize(z_real.unsqueeze(0), dim=1).squeeze(0)
+            concept_store.ground_visual("zombie", z_norm)
+        elif concept is not None and concept.visual is not None:
+            # EMA refinement — improve prototype with each encounter
+            z_norm = F.normalize(z_real.unsqueeze(0), dim=1).squeeze(0)
+            concept.visual = F.normalize(
+                (0.9 * concept.visual + 0.1 * z_norm).unsqueeze(0), dim=1
+            ).squeeze(0)
 ```
 
 After grounding: ReactiveCheck recognizes zombie → flee/attack → survival improves.
@@ -74,8 +85,8 @@ After grounding: ReactiveCheck recognizes zombie → flee/attack → survival im
 Agent knows rules from textbook. When `select_goal` returns "wood_pickaxe" (wood≥2, no pickaxe), `store.plan("wood_pickaxe")` generates backward chain:
 
 1. `do tree → wood` (already works)
-2. `place table on empty requires wood:2` → navigate to "empty" (grounded from first frame) → `place_table` → outcome: lost wood:2 → **ground z_real as "table"**
-3. `make wood_pickaxe near table requires wood:1` → navigate to "table" (just grounded) → `make_wood_pickaxe` → gained pickaxe
+2. `place table on empty requires wood:2` → **"navigate to empty" means: the agent is almost always on empty terrain already** (most tiles are grass/path). If perceive() returns "empty" at current position, agent can place immediately. If not (near tree/stone), walk a few steps until perceive() returns "empty". `spatial_map.find_nearest("empty")` returns the nearest known empty tile — typically the agent's recent path. `place_table` → outcome: lost wood:2 → **ground z_real as "table"** (OutcomeLabeler already detects place actions)
+3. `make wood_pickaxe near table requires wood:1` → navigate to "table" (just grounded in previous step, position known in spatial_map) → `make_wood_pickaxe` → gained pickaxe
 
 After pickaxe: `select_goal` shifts to "stone_item" → navigate + babble on stone terrain → grounding "stone" → mine stone.
 
@@ -86,11 +97,22 @@ After pickaxe: `select_goal` shifts to "stone_item" → navigate + babble on sto
 Every successful action confirms a causal rule. No separate predict/verify pair needed:
 
 ```python
-def verify_outcome(action, label, outcome, concept_store):
-    """After any action with outcome, confirm the causal rule."""
-    if label is None or outcome is None:
+def verify_outcome(near_label, action, actual_outcome, concept_store):
+    """After any action with outcome, confirm the causal rule.
+    
+    Args:
+        near_label: concept_id of what was NEARBY (e.g. "tree")
+        action: what was done (e.g. "do")
+        actual_outcome: what was gained/produced (e.g. "wood")
+        concept_store: ConceptStore to update
+    
+    Note: near_label is the concept NEAR the agent (from perceive() or
+    outcome_labeler), not the outcome. ConceptStore.verify() updates
+    confidence on causal links of the near concept.
+    """
+    if near_label is None or actual_outcome is None:
         return
-    concept_store.verify(label, action, outcome)
+    concept_store.verify(near_label, action, actual_outcome)
 ```
 
 Called from:
@@ -158,6 +180,12 @@ Every step:
 | 10-20 | Zombie attack | zombie |
 | 15-30 | Mine stone (after pickaxe) | stone |
 | Total | | ≥7 concepts |
+
+## Environment Configuration
+
+All curriculum phases run with enemies ON. No scaffolding — the agent must learn to survive while crafting. This is Stage 73's key difference from Stage 72 which ran phases 1-3 without enemies.
+
+Experiment: exp131. Same autonomous loop as exp130 but with Stage 73 additions (empty grounding, zombie grounding, craft babbling, universal verification).
 
 ## Non-Goals
 
