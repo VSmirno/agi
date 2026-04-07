@@ -442,7 +442,7 @@ def phase2_tree_nav(
     encoder: CNNEncoder,
     store: ConceptStore,
     n_episodes: int = 50,
-    max_steps: int = 500,
+    max_steps: int = 1500,
 ) -> dict:
     """Phase 1 curriculum: tree nav success ≥50%."""
     print(f"Phase 2: Tree navigation ({n_episodes} episodes, no enemies)...")
@@ -459,6 +459,7 @@ def phase2_tree_nav(
             encoder, store, labeler, seed,
             max_steps=max_steps, enemies=False,
             target_resource="tree",
+            verbose=(i < 3),  # verbose first 3 episodes
         )
 
         wood = result["resources"].get("wood", 0)
@@ -467,9 +468,10 @@ def phase2_tree_nav(
             successes += 1
         all_grounding.extend(result["grounding_events"])
 
-        if (i + 1) % 10 == 0:
+        if (i + 1) % 10 == 0 or i < 3:
             print(f"  [{i+1}/{n_episodes}] success={successes}/{i+1} "
-                  f"wood={total_wood} grounded={len(set(all_grounding))}")
+                  f"wood={total_wood} grounded={len(set(all_grounding))} "
+                  f"map={result['map_visited']} objects={result['map_objects']}")
 
     rate = successes / n_episodes
     elapsed = time.time() - t0
@@ -498,7 +500,7 @@ def phase3_stone_nav(
     encoder: CNNEncoder,
     store: ConceptStore,
     n_episodes: int = 50,
-    max_steps: int = 800,
+    max_steps: int = 2000,
 ) -> dict:
     """Phase 2 curriculum: stone nav success ≥20%.
 
