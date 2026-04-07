@@ -1,12 +1,25 @@
 """Stage 72: Self-organized perception module.
 
-Replaces NearDetector (supervised near_head) with ConceptStore.query_visual()
-(cosine similarity matching against prototypes learned from experience).
+Core principle: concepts form from interaction, not injection.
+The agent starts with NO visual prototypes. Through motor babbling
+(curiosity-driven action diversity) and prediction error, it discovers
+what objects look like by observing the consequences of its actions.
 
-Components:
-- perceive(): pixels → concept + z_real via frozen CNN + ConceptStore
-- on_action_outcome(): experiential grounding (one-shot + EMA refinement)
-- select_goal(): drive-based goal selection → ConceptStore.plan()
+Pipeline:
+  pixels → frozen CNN → z_real → ConceptStore.query_visual_scored()
+  action outcome → OutcomeLabeler → on_action_outcome() → grounding
+  drives → select_goal() → ConceptStore.plan()
+  curiosity → explore_action() → motor babbling
+
+The bootstrap mechanism:
+  1. Agent walks randomly + occasionally tries "do" (motor babbling)
+  2. "do" near tree → inventory gains wood → OutcomeLabeler says "tree"
+  3. on_action_outcome() grounds z_real from BEFORE the action as "tree" prototype
+  4. Now perceive() can recognize trees → spatial map fills → navigation works
+  5. Agent transitions from babbling to goal-directed behavior
+
+This is developmental learning: action → consequence → concept formation.
+Not supervised: no labels, no teacher, no controlled environment.
 
 Design: docs/superpowers/specs/2026-04-07-stage72-perception-pivot-design.md
 """
@@ -15,6 +28,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -58,6 +72,11 @@ def on_action_outcome(
 ) -> str | None:
     """Experiential grounding: learn visual prototype from action outcome.
 
+    This is the core self-organization mechanism. When an action produces
+    an inventory change, the OutcomeLabeler infers what was nearby
+    (e.g. wood gained → tree was nearby). The visual embedding z_real
+    captured BEFORE the action becomes the prototype for that concept.
+
     One-shot grounding on first encounter, EMA refinement on subsequent.
 
     Returns label string if grounding happened, None otherwise.
@@ -76,7 +95,7 @@ def on_action_outcome(
         # First encounter — one-shot grounding
         concept_store.ground_visual(label, z_norm)
     else:
-        # Seen before — EMA update
+        # Seen before — EMA update (consolidation)
         concept.visual = F.normalize(
             ((1 - EMA_ALPHA) * concept.visual + EMA_ALPHA * z_norm).unsqueeze(0),
             dim=1,
@@ -84,6 +103,58 @@ def on_action_outcome(
 
     return label
 
+
+# ---------------------------------------------------------------------------
+# Curiosity / Motor Babbling
+# ---------------------------------------------------------------------------
+
+# Action diversity during exploration. Higher = more random actions tried.
+# Decays as more concepts get visually grounded (less need to babble).
+BABBLE_BASE_PROB = 0.15  # probability of trying "do" during exploration
+BABBLE_MIN_PROB = 0.02   # floor after many concepts grounded
+
+_ALL_ACTIONS = ["do", "sleep", "place_table", "make_wood_pickaxe"]
+_DIRECTIONS = ["move_up", "move_down", "move_left", "move_right"]
+
+
+def babble_probability(concept_store: ConceptStore) -> float:
+    """Curiosity-driven action probability.
+
+    High when few concepts grounded (lots to discover).
+    Low when many grounded (mostly exploit, rare babble).
+
+    Analogous to intrinsic motivation: r_int = 1/(1+count).
+    """
+    n_grounded = sum(1 for c in concept_store.concepts.values() if c.visual is not None)
+    # Decay: 0.15 → 0.02 as grounded concepts increase
+    prob = BABBLE_BASE_PROB / (1 + n_grounded * 0.3)
+    return max(BABBLE_MIN_PROB, prob)
+
+
+def explore_action(
+    rng: np.random.RandomState,
+    concept_store: ConceptStore,
+) -> str:
+    """Select an exploration action with curiosity-driven diversity.
+
+    Most of the time: random move (spatial exploration).
+    With babble_probability: try "do" (motor babbling for discovery).
+
+    This is the bootstrap mechanism — without visual prototypes,
+    motor babbling is the only way to discover what's in the world.
+    """
+    p = babble_probability(concept_store)
+    if rng.random() < p:
+        # Motor babble — try a random "do" to discover objects
+        # First face a random direction, then do
+        return "babble_do"
+    # Spatial exploration — move to unvisited area
+    return str(rng.choice(_DIRECTIONS))
+
+
+# ---------------------------------------------------------------------------
+# Drive-based goal selection
+# ---------------------------------------------------------------------------
 
 def select_goal(
     inventory: dict[str, int],
@@ -110,20 +181,7 @@ def select_goal(
     if drives[goal] <= 0:
         goal = "wood"
 
-    # Map survival drives to plannable concepts
-    _DRIVE_TO_GOAL: dict[str, str] = {
-        "restore_food": "restore_food",
-        "restore_drink": "restore_drink",
-        "restore_energy": "restore_energy",
-    }
-    plan_goal = _DRIVE_TO_GOAL.get(goal, goal)
-
-    plan = concept_store.plan(plan_goal)
-    if not plan and goal.startswith("restore_"):
-        # Fallback: survival goals may not have backward chains yet.
-        # Use direct seek behavior instead.
-        pass
-
+    plan = concept_store.plan(goal)
     return goal, plan
 
 

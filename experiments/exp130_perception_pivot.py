@@ -49,6 +49,7 @@ from snks.agent.perception import (
     on_action_outcome,
     select_goal,
     get_drive_strengths,
+    explore_action,
 )
 
 from exp122_pixels import _detect_near_from_info
@@ -232,17 +233,54 @@ def run_autonomous_episode(
 
         # 4. EXECUTE PLAN
         if not current_plan or plan_step_idx >= len(current_plan):
-            # Explore
-            unvisited = spatial_map.unvisited_neighbors(player_pos, radius=5)
-            if unvisited:
-                target = unvisited[rng.randint(len(unvisited))]
-                action = _step_toward(player_pos, target, rng)
+            # Curiosity-driven exploration with motor babbling
+            action = explore_action(rng, store)
+
+            if action == "babble_do":
+                # Motor babbling: face random dir + do → discover objects
+                direction = _DIRECTIONS[rng.randint(0, 4)]
+                pixels, _, done, info = env.step(direction)
+                if done:
+                    break
+                # Capture z_real BEFORE "do" for grounding
+                pix_t = torch.from_numpy(pixels).float()
+                if device.type != "cpu":
+                    pix_t = pix_t.to(device)
+                _, z_before = perceive(pix_t, encoder, store)
+                old_inv_b = dict(info.get("inventory", {}))
+                pixels, _, done, info = env.step("do")
+                if done:
+                    break
+                new_inv_b = dict(info.get("inventory", {}))
+                grounded = on_action_outcome(
+                    "do", old_inv_b, new_inv_b, z_before, store, labeler)
+                if grounded:
+                    grounding_events.append(grounded)
+                    if verbose:
+                        print(f"    [{step}] BABBLE→{grounded}")
+                    spatial_map.update(
+                        info.get("player_pos", player_pos), grounded)
+                    for k, v in new_inv_b.items():
+                        delta = v - old_inv_b.get(k, 0)
+                        if delta > 0 and k not in ("health", "food", "drink", "energy"):
+                            resources[k] += delta
+                # Prediction error → verification
+                actual = labeler.label("do", old_inv_b, new_inv_b)
+                prediction = store.predict_before_action(
+                    grounded or "empty", "do", old_inv_b)
+                store.verify_after_action(prediction, "do", actual,
+                                          near=grounded or "empty")
+                continue
             else:
-                action = str(rng.choice(MOVE_ACTIONS))
-            pixels, _, done, info = env.step(action)
-            if done:
-                break
-            continue
+                # Spatial exploration
+                unvisited = spatial_map.unvisited_neighbors(player_pos, radius=5)
+                if unvisited:
+                    target = unvisited[rng.randint(len(unvisited))]
+                    action = _step_toward(player_pos, target, rng)
+                pixels, _, done, info = env.step(action)
+                if done:
+                    break
+                continue
 
         plan_step = current_plan[plan_step_idx]
 

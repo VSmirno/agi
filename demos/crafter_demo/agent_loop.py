@@ -25,6 +25,7 @@ from snks.agent.perception import (
     on_action_outcome,
     select_goal,
     get_drive_strengths,
+    explore_action,
     MIN_SIMILARITY,
 )
 
@@ -357,22 +358,64 @@ def env_thread_loop(engine: DemoEngine) -> None:
 
             # ---- 4. EXECUTE PLAN ----
             if not current_plan:
-                # No plan available → explore (fills spatial map)
-                unvisited = spatial_map.unvisited_neighbors(player_pos, radius=5)
-                if unvisited:
-                    target = unvisited[rng.randint(len(unvisited))]
-                    action_str = _step_toward(player_pos, target, rng)
-                else:
-                    action_str = str(rng.choice(MOVE_ACTIONS))
+                # No plan → curiosity-driven exploration (motor babbling + spatial)
+                action_str = explore_action(rng, store)
 
-                old_inv = _get_inv(info)
-                pixels, _, done, info = env.step(action_str)
-                if done:
-                    episode_done = True
-                _build_snapshot(engine, action_str, near_str, f"explore ({current_goal})",
-                               [], 0, 0,
-                               get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
-                continue
+                if action_str == "babble_do":
+                    # Motor babbling: face random direction + do
+                    # This is how the agent discovers objects without vision
+                    direction = _DIRECTIONS[rng.randint(0, 4)]
+                    pixels, _, done, info = env.step(direction)
+                    if done:
+                        episode_done = True
+                        continue
+                    # Capture z_real BEFORE "do" — this is what we'll ground
+                    if encoder is not None:
+                        pix_t = torch.from_numpy(pixels).float()
+                        _, z_before = perceive(pix_t, encoder, store)
+                    else:
+                        z_before = None
+                    old_inv_b = _get_inv(info)
+                    pixels, _, done, info = env.step("do")
+                    if done:
+                        episode_done = True
+                        continue
+                    new_inv_b = _get_inv(info)
+                    # Check if action had an effect → ground the visual
+                    if z_before is not None:
+                        grounded = on_action_outcome(
+                            "do", old_inv_b, new_inv_b, z_before, store, labeler)
+                        if grounded:
+                            grounding_log.append(f"babble→{grounded}")
+                            engine.log_event(f"DISCOVERY: babble→{grounded}")
+                            # Update map with newly discovered concept
+                            new_pos = info.get("player_pos", player_pos)
+                            spatial_map.update(new_pos, grounded)
+                        # Prediction error → verification
+                        prediction = store.predict_before_action(
+                            grounded or "empty", "do", old_inv_b)
+                        actual = labeler.label("do", old_inv_b, new_inv_b)
+                        store.verify_after_action(prediction, "do", actual,
+                                                  near=grounded or "empty")
+                    _build_snapshot(engine, "babble", near_str, "curiosity: motor babbling",
+                                   [], 0, 0,
+                                   get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
+                    continue
+                else:
+                    # Spatial exploration — move to unvisited area
+                    unvisited = spatial_map.unvisited_neighbors(player_pos, radius=5)
+                    if unvisited:
+                        target = unvisited[rng.randint(len(unvisited))]
+                        action_str = _step_toward(player_pos, target, rng)
+                    # else: action_str is already a random direction from explore_action
+
+                    pixels, _, done, info = env.step(action_str)
+                    if done:
+                        episode_done = True
+                    _build_snapshot(engine, action_str, near_str, f"explore ({current_goal})",
+                                   [], 0, 0,
+                                   get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
+                    continue
 
             # We have a plan — work on current step
             if plan_step_idx >= len(current_plan):
@@ -443,23 +486,54 @@ def env_thread_loop(engine: DemoEngine) -> None:
                     continue
 
                 else:
-                    # Navigate toward target
+                    # Navigate toward target — with motor babbling for discovery
                     known_pos = spatial_map.find_nearest(target_concept, player_pos)
                     if known_pos is not None:
                         action_str = _step_toward(player_pos, known_pos, rng)
                     else:
-                        # Target not in map — explore
-                        unvisited = spatial_map.unvisited_neighbors(player_pos, radius=8)
-                        if unvisited:
-                            explore_target = unvisited[rng.randint(len(unvisited))]
-                            action_str = _step_toward(player_pos, explore_target, rng)
-                        else:
-                            action_str = str(rng.choice(MOVE_ACTIONS))
+                        # Target not in map — curiosity-driven exploration
+                        action_str = explore_action(rng, store)
 
-                    pixels, _, done, info = env.step(action_str)
-                    nav_steps += 1
-                    if done:
-                        episode_done = True
+                    if action_str == "babble_do":
+                        # Motor babbling during navigation
+                        direction = _DIRECTIONS[rng.randint(0, 4)]
+                        pixels, _, done, info = env.step(direction)
+                        if not done:
+                            if encoder is not None:
+                                pix_t = torch.from_numpy(pixels).float()
+                                _, z_b = perceive(pix_t, encoder, store)
+                            else:
+                                z_b = None
+                            old_inv_b = _get_inv(info)
+                            pixels, _, done, info = env.step("do")
+                            if not done and z_b is not None:
+                                new_inv_b = _get_inv(info)
+                                grounded = on_action_outcome(
+                                    "do", old_inv_b, new_inv_b, z_b, store, labeler)
+                                if grounded:
+                                    grounding_log.append(f"nav-babble→{grounded}")
+                                    engine.log_event(f"DISCOVERY: {grounded}")
+                                    spatial_map.update(
+                                        info.get("player_pos", player_pos), grounded)
+                        nav_steps += 2
+                        if done:
+                            episode_done = True
+                    else:
+                        # Normal navigation step
+                        if action_str in _MOVE_ACTIONS:
+                            pass  # already have direction
+                        else:
+                            unvisited = spatial_map.unvisited_neighbors(player_pos, radius=8)
+                            if unvisited:
+                                explore_target = unvisited[rng.randint(len(unvisited))]
+                                action_str = _step_toward(player_pos, explore_target, rng)
+                            else:
+                                action_str = str(rng.choice(MOVE_ACTIONS))
+
+                        pixels, _, done, info = env.step(action_str)
+                        nav_steps += 1
+                        if done:
+                            episode_done = True
 
                     if nav_steps > MAX_NAV_STEPS:
                         engine.log_event(f"nav timeout for {target_concept}")

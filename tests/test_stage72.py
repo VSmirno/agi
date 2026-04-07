@@ -26,8 +26,12 @@ from snks.agent.perception import (
     on_action_outcome,
     select_goal,
     get_drive_strengths,
+    explore_action,
+    babble_probability,
     MIN_SIMILARITY,
     EMA_ALPHA,
+    BABBLE_BASE_PROB,
+    BABBLE_MIN_PROB,
 )
 from snks.agent.reactive_check import ReactiveCheck
 
@@ -255,6 +259,58 @@ class TestGate4DriveGoalSelection:
         assert len(plan) >= 1
         assert plan[0].action == "do"
         assert plan[0].target == "tree"
+
+
+# ---------------------------------------------------------------------------
+# Gate 4b: Motor babbling / curiosity-driven exploration
+# ---------------------------------------------------------------------------
+
+
+class TestGate4bMotorBabbling:
+    def test_babble_probability_high_when_no_prototypes(self):
+        store = _make_store()
+        prob = babble_probability(store)
+        assert prob == BABBLE_BASE_PROB  # no grounded concepts
+
+    def test_babble_probability_decays_with_grounding(self):
+        store = _make_store()
+        # Ground 5 concepts
+        for cid in ["tree", "stone", "coal", "iron", "table"]:
+            store.ground_visual(cid, torch.randn(2048))
+        prob = babble_probability(store)
+        assert prob < BABBLE_BASE_PROB
+        assert prob >= BABBLE_MIN_PROB
+
+    def test_babble_probability_floor(self):
+        store = _make_store()
+        # Ground many concepts
+        for cid in store.concepts:
+            store.ground_visual(cid, torch.randn(2048))
+        prob = babble_probability(store)
+        assert prob >= BABBLE_MIN_PROB
+
+    def test_explore_action_returns_valid(self):
+        store = _make_store()
+        rng = np.random.RandomState(42)
+        actions = set()
+        for _ in range(200):
+            a = explore_action(rng, store)
+            actions.add(a)
+        # Should include both moves and babble_do
+        assert "babble_do" in actions
+        moves = actions - {"babble_do"}
+        assert len(moves) > 0  # has move actions too
+
+    def test_explore_mostly_moves_when_grounded(self):
+        store = _make_store()
+        for cid in store.concepts:
+            store.ground_visual(cid, torch.randn(2048))
+        rng = np.random.RandomState(42)
+        babble_count = sum(
+            1 for _ in range(1000) if explore_action(rng, store) == "babble_do"
+        )
+        # Should be rare when fully grounded
+        assert babble_count < 100  # < 10%
 
 
 # ---------------------------------------------------------------------------
