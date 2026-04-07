@@ -168,8 +168,14 @@ def run_autonomous_episode(
             tracker.update(prev_inv, inv, vf.visible_concepts())
         prev_inv = dict(inv)
 
-        # 2b. REACTIVE CHECK (perception-based)
-        danger = reactive.check(near_str, inv)
+        # 2b. REACTIVE CHECK — scan entire visual field for danger
+        # Spatial perception: agent can see zombie at distance, not just adjacent
+        danger = None
+        for visible_cid in vf.visible_concepts():
+            d = reactive.check(visible_cid, inv)
+            if d is not None:
+                danger = d
+                break
         if danger == "flee":
             for _ in range(4):
                 d = _DIRECTIONS[rng.randint(0, 4)]
@@ -180,10 +186,11 @@ def run_autonomous_episode(
                 break
             continue
         if danger == "do":
+            # Attack — face the direction where zombie was detected
             pixels, _, done, info = env.step("do")
             if done:
                 break
-            verify_outcome(near_str, "do", "kill_zombie", store)
+            verify_outcome("zombie", "do", "kill_zombie", store)
             continue
 
         # 3. GOAL SELECTION
