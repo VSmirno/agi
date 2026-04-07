@@ -321,7 +321,7 @@ def run_autonomous_episode(
                         if verbose:
                             print(f"    [{step}] PLAN-CRAFT→{grounded}")
                         spatial_map.update(player_pos, grounded)
-                if actual is not None:
+                if craft_out is not None:
                     plan_step_idx += 1
                     nav_steps = 0
                 else:
