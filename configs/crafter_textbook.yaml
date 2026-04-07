@@ -44,3 +44,12 @@ rules:
   - "do water restores drink"
   - "do cow restores food"
   - "sleep restores energy"
+
+# Body rules — innate knowledge, how the body works (the "DNA")
+# These initialize HomeostaticTracker conditional_rates before any experience.
+# Like a baby knowing pain = bad. Not learned, pre-wired.
+body:
+  - { concept: _background, variable: food, rate: -0.04 }    # food depletes slowly
+  - { concept: _background, variable: drink, rate: -0.04 }   # drink depletes slowly
+  - { concept: _background, variable: energy, rate: -0.03 }  # energy depletes slowly
+  - { concept: zombie, variable: health, rate: -2.0 }        # zombie hurts fast

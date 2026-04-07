@@ -229,65 +229,57 @@ class TestGate3ExperientialGrounding:
 
 
 class TestGate4DriveGoalSelection:
+    def _tracker_and_map(self):
+        from snks.agent.perception import HomeostaticTracker
+        from snks.agent.crafter_spatial_map import CrafterSpatialMap
+        t = HomeostaticTracker()
+        t.rates = {"health": 0.0, "food": -0.04, "drink": -0.04, "energy": -0.03}
+        sm = CrafterSpatialMap()
+        for i in range(100):  # low curiosity
+            sm.update((i % 10, i // 10), "empty")
+        return t, sm
+
     def test_low_food_selects_food(self):
         store = _make_store()
-        inv = {"food": 1, "drink": 9, "energy": 9}
-        goal, plan = select_goal(inv, store)
+        tracker, sm = self._tracker_and_map()
+        inv = {"food": 1, "drink": 9, "energy": 9, "health": 9}
+        goal, plan = select_goal(inv, store, tracker=tracker, spatial_map=sm)
         assert goal == "restore_food"
 
     def test_low_drink_selects_drink(self):
         store = _make_store()
-        inv = {"food": 9, "drink": 1, "energy": 9}
-        goal, plan = select_goal(inv, store)
+        tracker, sm = self._tracker_and_map()
+        inv = {"food": 9, "drink": 1, "energy": 9, "health": 9}
+        goal, plan = select_goal(inv, store, tracker=tracker, spatial_map=sm)
         assert goal == "restore_drink"
 
     def test_low_energy_selects_energy(self):
         store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 1}
-        goal, plan = select_goal(inv, store)
+        tracker, sm = self._tracker_and_map()
+        inv = {"food": 9, "drink": 9, "energy": 1, "health": 9}
+        goal, plan = select_goal(inv, store, tracker=tracker, spatial_map=sm)
         assert goal == "restore_energy"
 
-    def test_all_ok_selects_wood(self):
+    def test_all_ok_explores(self):
+        """When body is fine and no threats, curiosity dominates → explore."""
         store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 9}
+        inv = {"food": 9, "drink": 9, "energy": 9, "health": 9}
         goal, plan = select_goal(inv, store)
-        assert goal == "wood"
+        assert goal == "explore"
 
-    def test_drive_strengths(self):
-        strengths = get_drive_strengths({"food": 2, "drink": 9, "energy": 9})
-        assert strengths["restore_food"] == 6.0  # (5-2)*2
-        assert strengths["restore_drink"] == 0.0
-        assert strengths["wood"] > 0
-
-    def test_wood_plan_has_steps(self):
+    def test_health_urgency_with_tracker(self):
+        """When tracker shows health dropping fast, agent plans to fix it."""
+        from snks.agent.perception import HomeostaticTracker
         store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 9}
-        goal, plan = select_goal(inv, store)
-        assert goal == "wood"
-        assert len(plan) >= 1
-        assert plan[0].action == "do"
-        assert plan[0].target == "tree"
-
-    def test_progression_wood_to_sword(self):
-        """After getting wood, first priority is sword."""
-        store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 3}
-        goal, plan = select_goal(inv, store)
-        assert goal == "wood_sword"
-
-    def test_progression_sword_to_pickaxe(self):
-        """After sword, drive shifts to pickaxe."""
-        store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 5, "wood_sword": 1}
-        goal, plan = select_goal(inv, store)
-        assert goal == "wood_pickaxe"
-
-    def test_progression_pickaxe_to_stone(self):
-        """After getting pickaxe, drive shifts to stone."""
-        store = _make_store()
-        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 5, "wood_pickaxe": 1, "wood_sword": 1}
-        goal, plan = select_goal(inv, store)
-        assert goal == "stone_item"
+        tracker = HomeostaticTracker()
+        # Simulate zombie: health drops 2/step
+        tracker.conditional_rates[("zombie", "health")] = -2.0
+        inv = {"food": 9, "drink": 9, "energy": 9, "health": 3}
+        # With zombie visible, health urgency should be high
+        vf = type("VF", (), {"visible_concepts": lambda self: {"zombie"}})()
+        goal, plan = select_goal(inv, store, tracker=tracker, visual_field=vf)
+        # Should plan to address health (kill zombie via sword)
+        assert goal != "explore"
 
 
 # ---------------------------------------------------------------------------

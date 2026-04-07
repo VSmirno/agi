@@ -162,6 +162,11 @@ class CrafterTextbook:
     def domain(self) -> str:
         return self.data.get("domain", "unknown")
 
+    @property
+    def body_rules(self) -> list[dict[str, Any]]:
+        """Body rules — innate knowledge about how the body works."""
+        return self.data.get("body", [])
+
     def load_into(self, store: ConceptStore) -> int:
         """Parse vocabulary and rules, register into ConceptStore.
 

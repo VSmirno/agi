@@ -41,6 +41,7 @@ from snks.agent.perception import (
     perceive,
     perceive_field,
     VisualField,
+    HomeostaticTracker,
     on_action_outcome,
     select_goal,
     get_drive_strengths,
@@ -50,6 +51,7 @@ from snks.agent.perception import (
     verify_outcome,
     outcome_to_verify,
 )
+from snks.agent.crafter_textbook import CrafterTextbook
 
 _DIRECTIONS = ["move_up", "move_down", "move_left", "move_right"]
 
@@ -74,13 +76,17 @@ def phase0_load_encoder() -> CNNEncoder:
     raise FileNotFoundError(f"No encoder in {EXP128_CHECKPOINT}")
 
 
-def phase1_init_store() -> ConceptStore:
-    print("Phase 1: Init ConceptStore from textbook (no visual grounding)...")
+def phase1_init_store() -> tuple[ConceptStore, HomeostaticTracker]:
+    print("Phase 1: Init ConceptStore + HomeostaticTracker from textbook...")
     store = ConceptStore()
     tb = CrafterTextbook("configs/crafter_textbook.yaml")
     n_rules = tb.load_into(store)
+
+    tracker = HomeostaticTracker()
+    tracker.init_from_body_rules(tb.body_rules)
     print(f"  Loaded {n_rules} rules, {len(store.concepts)} concepts")
-    return store
+    print(f"  Body rules: {len(tb.body_rules)} innate rates")
+    return store, tracker
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +97,7 @@ def run_autonomous_episode(
     encoder: CNNEncoder,
     store: ConceptStore,
     labeler: OutcomeLabeler,
+    tracker: HomeostaticTracker,
     seed: int,
     max_steps: int = 1500,
     enemies: bool = True,
@@ -151,12 +158,14 @@ def run_autonomous_episode(
                 dy, dx = gy - 2, gx - 2
                 spatial_map.update((py + dy * 2, px + dx * 2), cid)
 
-        # 1b. ZOMBIE GROUNDING (damage detection)
+        # 1b. ZOMBIE GROUNDING + HOMEOSTATIC TRACKING
         if prev_inv:
             if ground_zombie_on_damage(prev_inv, inv, vf, store):
                 grounding_events.append("damage→zombie")
                 if verbose:
                     print(f"    [{step}] DAMAGE→zombie grounded")
+            # Track body rates — how each variable changes and what's visible
+            tracker.update(prev_inv, inv, vf.visible_concepts())
         prev_inv = dict(inv)
 
         # 2b. REACTIVE CHECK (perception-based)
@@ -181,7 +190,8 @@ def run_autonomous_episode(
         replan_counter += 1
         if not current_plan or replan_counter >= 20:
             replan_counter = 0
-            current_goal, current_plan = select_goal(inv, store, visual_field=vf)
+            current_goal, current_plan = select_goal(
+                inv, store, tracker=tracker, visual_field=vf, spatial_map=spatial_map)
             plan_step_idx = 0
             nav_steps = 0
 
@@ -461,14 +471,14 @@ def run_autonomous_episode(
 # Phases
 # ---------------------------------------------------------------------------
 
-def phase2_tree_nav(encoder, store, n=200, max_steps=1500):
+def phase2_tree_nav(encoder, store, tracker, n=200, max_steps=1500):
     print(f"Phase 2: Tree navigation ({n} episodes, enemies ON)...")
     t0 = time.time()
     labeler = OutcomeLabeler()
     successes, total_wood = 0, 0
     for i in range(n):
         result = run_autonomous_episode(
-            encoder, store, labeler, 60000 + i * 7,
+            encoder, store, labeler, tracker, 60000 + i * 7,
             max_steps=max_steps, enemies=True, verbose=(i < 3))
         wood = result["resources"].get("wood", 0)
         total_wood += wood
@@ -486,14 +496,14 @@ def phase2_tree_nav(encoder, store, n=200, max_steps=1500):
     return {"success_rate": rate, "gate_pass": rate >= 0.50, "grounded": grounded}
 
 
-def phase3_stone_nav(encoder, store, n=200, max_steps=2000):
+def phase3_stone_nav(encoder, store, tracker, n=200, max_steps=2000):
     print(f"Phase 3: Stone navigation ({n} episodes, enemies ON)...")
     t0 = time.time()
     labeler = OutcomeLabeler()
     successes, total_stone = 0, 0
     for i in range(n):
         result = run_autonomous_episode(
-            encoder, store, labeler, 70000 + i * 7,
+            encoder, store, labeler, tracker, 70000 + i * 7,
             max_steps=max_steps, enemies=True)
         stone = result["resources"].get("stone_item", 0) + result["resources"].get("stone", 0)
         total_stone += stone
@@ -516,7 +526,7 @@ def phase4_grounding_count(store):
     return {"grounded": grounded, "count": len(grounded), "gate_pass": gate}
 
 
-def phase5_survival(encoder, store, n=200, max_steps=1500):
+def phase5_survival(encoder, store, tracker, n=200, max_steps=1500):
     print(f"Phase 5: Survival with enemies ({n} episodes)...")
     t0 = time.time()
     labeler = OutcomeLabeler()
@@ -524,7 +534,7 @@ def phase5_survival(encoder, store, n=200, max_steps=1500):
     death_causes = Counter()
     for i in range(n):
         result = run_autonomous_episode(
-            encoder, store, labeler, 90000 + i * 7,
+            encoder, store, labeler, tracker, 90000 + i * 7,
             max_steps=max_steps, enemies=True, verbose=(i < 5))
         lengths.append(result["length"])
         death_causes[result.get("death_cause", "unknown")] += 1
@@ -571,38 +581,38 @@ def main_diagnostic():
     print("exp131 DIAGNOSTIC: Survival death causes")
     print("=" * 60)
     encoder = phase0_load_encoder()
-    store = phase1_init_store()
-    # Quick bootstrap: run 5 tree episodes to ground basics
+    store, tracker = phase1_init_store()
+    # Quick bootstrap: run 5 episodes to ground basics
     labeler = OutcomeLabeler()
     for i in range(5):
-        run_autonomous_episode(encoder, store, labeler, 60000 + i * 7,
+        run_autonomous_episode(encoder, store, labeler, tracker, 60000 + i * 7,
                                max_steps=500, enemies=True, verbose=True)
     grounded = [c.id for c in store.concepts.values() if c.visual is not None]
     print(f"\nGrounded after bootstrap: {grounded}\n")
     # Now survival diagnostic
-    phase5_survival(encoder, store, n=20, max_steps=1500)
+    phase5_survival(encoder, store, tracker, n=20, max_steps=1500)
 
 
 def main():
     disable_rocm_conv()
     print("=" * 60)
-    print("exp131: Stage 73 — Autonomous Craft")
+    print("exp131: Stage 74 — Homeostatic Agent")
     print("=" * 60)
     t_start = time.time()
 
     encoder = phase0_load_encoder()
-    store = phase1_init_store()
+    store, tracker = phase1_init_store()
     save_checkpoint(encoder, store, "phase1")
 
-    tree = phase2_tree_nav(encoder, store)
+    tree = phase2_tree_nav(encoder, store, tracker)
     save_checkpoint(encoder, store, "phase2")
 
-    stone = phase3_stone_nav(encoder, store)
+    stone = phase3_stone_nav(encoder, store, tracker)
     save_checkpoint(encoder, store, "phase3")
 
     grounding = phase4_grounding_count(store)
 
-    survival = phase5_survival(encoder, store)
+    survival = phase5_survival(encoder, store, tracker)
     save_checkpoint(encoder, store, "final")
 
     verify = phase6_verification(store)
