@@ -432,16 +432,51 @@ def select_goal(
             rate = 0.0
         urgencies[var] = compute_drive(var, float(value), rate)
 
+    # Preparation drive: known threats the agent can't yet handle
+    # "I know zombie hurts (from body rules/experience) but I have no sword"
+    # This creates urgency to PREPARE before the threat materializes
+    if tracker:
+        for (concept_id, var), rate in tracker.conditional_rates.items():
+            if var == "health" and rate < -0.5 and concept_id != "_background":
+                # Severe health threat known. Can we handle it?
+                cause_concept = concept_store.query_text(concept_id)
+                if cause_concept:
+                    for link in cause_concept.causal_links:
+                        if link.action == "do" and link.requires:
+                            # Need weapon/tool to handle this threat
+                            has_req = all(
+                                inventory.get(r, 0) >= n
+                                for r, n in link.requires.items()
+                            )
+                            if not has_req:
+                                # Can't handle threat → preparation urgency
+                                # Scale: proportional to threat severity
+                                urgencies["preparation"] = min(0.1, abs(rate) * 0.05)
+
     # Curiosity drive
     if spatial_map is not None:
         urgencies["curiosity"] = compute_curiosity(concept_store, spatial_map)
     else:
-        urgencies["curiosity"] = 0.5  # default moderate curiosity
+        urgencies["curiosity"] = 0.5
 
     # Most urgent need
     critical = max(urgencies, key=urgencies.get)  # type: ignore[arg-type]
 
     if critical == "curiosity":
+        return "explore", []
+
+    if critical == "preparation":
+        # Find what we need to prepare for the threat
+        if tracker:
+            for (concept_id, var), rate in tracker.conditional_rates.items():
+                if var == "health" and rate < -0.5 and concept_id != "_background":
+                    cause_concept = concept_store.query_text(concept_id)
+                    if cause_concept:
+                        for link in cause_concept.causal_links:
+                            if link.action == "do":
+                                plan = concept_store.plan(link.result)
+                                if plan:
+                                    return link.result, plan
         return "explore", []
 
     # Strategy 1: direct restore ("do cow restores food")
