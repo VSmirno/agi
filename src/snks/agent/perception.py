@@ -110,8 +110,8 @@ def on_action_outcome(
 
 # Action diversity during exploration. Higher = more random actions tried.
 # Decays as more concepts get visually grounded (less need to babble).
-BABBLE_BASE_PROB = 0.15  # probability of trying "do" during exploration
-BABBLE_MIN_PROB = 0.02   # floor after many concepts grounded
+BABBLE_BASE_PROB = 0.30  # probability of trying "do" during exploration
+BABBLE_MIN_PROB = 0.03   # floor after many concepts grounded
 
 _ALL_ACTIONS = ["do", "sleep", "place_table", "make_wood_pickaxe"]
 _DIRECTIONS = ["move_up", "move_down", "move_left", "move_right"]
@@ -164,18 +164,41 @@ def select_goal(
 
     Returns (goal_name, planned_steps). Drive competition picks
     the most urgent need; ConceptStore.plan() generates the chain.
+
+    Resource drives are inventory-dependent: once the agent has
+    enough wood, the drive shifts to stone, then coal, then iron.
+    This creates natural progression without hardcoded curriculum.
     """
     food = inventory.get("food", 9)
     drink = inventory.get("drink", 9)
     energy = inventory.get("energy", 9)
+    wood = inventory.get("wood", 0)
+    stone = inventory.get("stone_item", 0)
+    has_pickaxe = inventory.get("wood_pickaxe", 0) + inventory.get("stone_pickaxe", 0)
+    has_table = inventory.get("table", 0)  # placed tables not tracked, use wood threshold
 
+    # Survival drives (highest priority when low)
     drives: dict[str, float] = {
         "restore_food": max(0, 5 - food) * 2.0,
         "restore_drink": max(0, 5 - drink) * 2.0,
         "restore_energy": max(0, 4 - energy) * 2.0,
-        "wood": 1.0,
-        "stone_item": 0.5,
     }
+
+    # Resource drives: inversely proportional to how much we have
+    # Agent naturally progresses: wood → table → pickaxe → stone → ...
+    if wood < 5:
+        drives["wood"] = max(0.2, 2.0 - wood * 0.3)
+    else:
+        drives["wood"] = 0.1  # enough wood, low priority
+
+    if wood >= 2 and has_pickaxe == 0:
+        # Have wood, need pickaxe (requires table + craft)
+        drives["wood_pickaxe"] = 1.5
+    elif has_pickaxe > 0 and stone < 2:
+        # Have pickaxe, need stone
+        drives["stone_item"] = 1.5
+    else:
+        drives["stone_item"] = 0.3
 
     goal = max(drives, key=drives.get)  # type: ignore[arg-type]
     if drives[goal] <= 0:
@@ -190,10 +213,17 @@ def get_drive_strengths(inventory: dict[str, int]) -> dict[str, float]:
     food = inventory.get("food", 9)
     drink = inventory.get("drink", 9)
     energy = inventory.get("energy", 9)
-    return {
+    wood = inventory.get("wood", 0)
+    stone = inventory.get("stone_item", 0)
+    has_pickaxe = inventory.get("wood_pickaxe", 0) + inventory.get("stone_pickaxe", 0)
+
+    drives = {
         "restore_food": max(0, 5 - food) * 2.0,
         "restore_drink": max(0, 5 - drink) * 2.0,
         "restore_energy": max(0, 4 - energy) * 2.0,
-        "wood": 1.0,
-        "stone_item": 0.5,
+        "wood": max(0.1, 2.0 - wood * 0.3) if wood < 5 else 0.1,
+        "stone_item": 1.5 if (has_pickaxe > 0 and stone < 2) else 0.3,
     }
+    if wood >= 2 and has_pickaxe == 0:
+        drives["wood_pickaxe"] = 1.5
+    return drives
