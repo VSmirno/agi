@@ -153,5 +153,5 @@
 - **Nav encoder Phase 0 на exp122** — фокус этого stage = text-visual, не nav cleanup.
 - **use_semantic_nav=True остаётся** для редких объектов.
 - **find_causal disambiguation** — при одинаковых requires выбирается наиболее специфичный match (по количеству requires items). Wood_sword/wood_pickaxe неразличимы по inventory.
-- **Zombie Gate 5 PASS** (exp128c) — zombie_deaths 39→11 (3.5x reduction). NearDetector обучен на zombie (50 seeds, semantic GT). ReactiveCheck flee снижает смерти, но не увеличивает episode length (голод/жажда = основная причина смерти, не zombie).
+- **Zombie + Survival Gate 5 PASS** (exp128d) — zombie_deaths 41→1, episode length 169→446 (2.65x). Survival rules (food/drink/energy) = основной вклад в выживаемость. Zombie flee = дополнительный.
 
