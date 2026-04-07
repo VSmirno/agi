@@ -1,13 +1,13 @@
-"""Agent loop for Crafter Survival Demo.
+"""Stage 72: Autonomous agent loop for Crafter Survival Demo.
 
-Uses the REAL pipeline from experiments:
-- ScenarioRunner.run_chain_with_concepts() for execution
-- ChainGenerator for auto-generated chains
-- IRON_CHAIN / hardcoded chains as fallback
-- ReactiveCheck integrated via run_chain_with_concepts
+Perceive → Decide → Act → Learn. No chains, no ScenarioRunner.
 
-The env is wrapped so every env.step() updates the UI snapshot,
-tracks item stats, and respects play/pause/step/FPS controls.
+Architecture:
+  pixels → CNN encoder (frozen) → z_real → ConceptStore.query_visual_scored()
+  → concept + similarity → drive-based goal selection → ConceptStore.plan()
+  → CrafterSpatialMap navigation → action → outcome → experiential grounding
+
+Design: docs/superpowers/specs/2026-04-07-stage72-perception-pivot-design.md
 """
 
 from __future__ import annotations
@@ -18,49 +18,40 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import torch
 
-from snks.agent.crafter_pixel_env import CrafterPixelEnv, SEMANTIC_NAMES, ACTION_TO_IDX
+from snks.agent.crafter_spatial_map import CrafterSpatialMap, _step_toward, MOVE_ACTIONS
 from snks.agent.outcome_labeler import OutcomeLabeler
-from snks.agent.scenario_runner import (
-    ScenarioRunner, ScenarioStep, IRON_CHAIN, TREE_CHAIN, COAL_CHAIN,
+from snks.agent.perception import (
+    perceive,
+    on_action_outcome,
+    select_goal,
+    get_drive_strengths,
+    MIN_SIMILARITY,
 )
-from snks.agent.decode_head import NEAR_CLASSES
 
 if TYPE_CHECKING:
     from demos.crafter_demo.engine import DemoEngine
 
 SURVIVAL_KEYS = {"health", "food", "drink", "energy"}
 _MOVE_ACTIONS = {"move_up", "move_down", "move_left", "move_right"}
+_DIRECTIONS = ["move_up", "move_down", "move_left", "move_right"]
 
-_CRAFT_ITEMS = {
-    "wood_pickaxe", "stone_pickaxe", "iron_pickaxe",
-    "wood_sword", "stone_sword", "iron_sword",
-}
+# Probing: try all 4 directions when doing "do" action
+DO_PROBE_DIRS = ["move_up", "do", "move_down", "do", "move_left", "do", "move_right", "do"]
+
+# How often to re-evaluate goal (steps)
+REPLAN_INTERVAL = 20
+# Max nav steps before giving up on target
+MAX_NAV_STEPS = 200
+# Sleep duration (steps)
+SLEEP_STEPS = 3
 
 
 class DemoEnvWrapper:
-    """Wraps CrafterPixelEnv to hook every step() for UI updates.
+    """Wraps CrafterPixelEnv to hook every step() for UI updates."""
 
-    On each step():
-    - Updates engine.last_pixels / last_info / step_count
-    - Tracks collected/crafted items
-    - Infers current phase from action patterns
-    - Updates snapshot for WS streaming
-    - Waits for FPS timing
-    - Respects pause (blocks until resumed)
-    """
-
-    def __init__(self, env: CrafterPixelEnv, engine: DemoEngine) -> None:
+    def __init__(self, env: Any, engine: DemoEngine) -> None:
         self._env = env
         self._engine = engine
-        # Phase tracking — inferred from action patterns
-        self._phase = "idle"           # nav / probe / action / reactive / idle
-        self._phase_target = ""        # what we're navigating to / probing
-        self._move_streak = 0          # consecutive move actions
-        self._last_was_do = False
-        # Current chain info (set externally before run_chain)
-        self.chain_steps: list[ScenarioStep] = []
-        self.chain_name: str = ""
-        self.current_step_idx: int = 0  # approximate — updated by tracking
 
     def step(self, action: int | str) -> tuple[Any, float, bool, dict]:
         eng = self._engine
@@ -74,7 +65,7 @@ class DemoEnvWrapper:
             return eng.last_pixels, 0.0, True, eng.last_info
 
         old_info = eng.last_info
-        old_inv = _get_inv_items(old_info)
+        old_inv = _get_inv(old_info)
 
         pixels, reward, done, info = self._env.step(action)
 
@@ -83,62 +74,20 @@ class DemoEnvWrapper:
         eng.step_count += 1
 
         # Track items
-        new_inv = _get_inv_items(info)
+        new_inv = _get_inv(info)
         for k, v in new_inv.items():
+            if k in SURVIVAL_KEYS:
+                continue
             delta = v - old_inv.get(k, 0)
             if delta > 0:
-                if k in _CRAFT_ITEMS:
-                    eng.metrics.record_crafted(k)
-                    eng.log_event(f"crafted {k}")
-                else:
-                    eng.metrics.record_collected(k)
-                    eng.log_event(f"collected {k}")
+                eng.metrics.record_collected(k)
+                eng.log_event(f"collected {k}")
 
         action_str = action if isinstance(action, str) else str(action)
         if isinstance(action, str) and action.startswith("place_"):
             placed = action.replace("place_", "")
             eng.metrics.record_crafted(placed)
             eng.log_event(f"placed {placed}")
-
-        # Infer phase from action pattern
-        self._infer_phase(action_str, old_inv, new_inv)
-
-        # Track zombie
-        near = "empty"
-        with eng.model_lock:
-            if eng.detector is not None:
-                try:
-                    near = eng.detector.detect(torch.from_numpy(pixels).float())
-                except Exception:
-                    pass
-        if near == "zombie":
-            eng.metrics.cur_encounters += 1
-            old_health = old_info.get("inventory", {}).get("health", 9)
-            new_health = info.get("inventory", {}).get("health", 9)
-            if new_health >= old_health:
-                eng.metrics.cur_survived += 1
-
-        # Estimate which chain step we're on from inventory state
-        self._estimate_step_idx(info)
-
-        # Build plan UI from chain
-        plan_ui = self._build_plan_ui()
-
-        # Build snapshot
-        reason = self._phase
-        if self._phase_target:
-            reason = f"{self._phase}: {self._phase_target}"
-
-        snapshot = eng.build_snapshot(
-            agent_action=action_str,
-            agent_near=near,
-            agent_reason=reason,
-            plan_data=plan_ui,
-            plan_step=self.current_step_idx,
-            plan_total=len(self.chain_steps),
-        )
-        with eng.snapshot_lock:
-            eng.snapshot = snapshot
 
         # FPS throttle
         time.sleep(1.0 / max(1, eng.target_fps))
@@ -148,114 +97,6 @@ class DemoEnvWrapper:
             eng.state = "paused"
 
         return pixels, reward, done, info
-
-    def _infer_phase(self, action: str, old_inv: dict, new_inv: dict) -> None:
-        """Infer what ScenarioRunner is doing from the action."""
-        is_move = action in _MOVE_ACTIONS
-        is_do = action == "do"
-        is_sleep = action == "sleep"
-        is_craft = action.startswith("make_") or action.startswith("place_")
-
-        if is_sleep:
-            self._phase = "reactive"
-            self._phase_target = "sleep"
-            self._move_streak = 0
-            self._last_was_do = False
-            return
-
-        if is_craft:
-            self._phase = "action"
-            self._phase_target = action
-            self._move_streak = 0
-            self._last_was_do = False
-            return
-
-        if is_do and self._last_was_do:
-            # Consecutive do — shouldn't happen, probably reactive
-            self._phase = "reactive"
-            self._phase_target = "attack"
-            self._move_streak = 0
-            self._last_was_do = True
-            return
-
-        if is_do and self._move_streak >= 1:
-            # move→do pattern = directional probing
-            self._phase = "probe"
-            self._phase_target = "do (facing)"
-            self._move_streak = 0
-            self._last_was_do = True
-            # Check if do actually collected something
-            for k, v in new_inv.items():
-                if v > old_inv.get(k, 0):
-                    self._phase = "action"
-                    self._phase_target = f"collected {k}"
-                    break
-            return
-
-        if is_do:
-            self._phase = "probe"
-            self._phase_target = "do"
-            self._move_streak = 0
-            self._last_was_do = True
-            return
-
-        if is_move:
-            self._move_streak += 1
-            self._last_was_do = False
-            if self._move_streak >= 3:
-                self._phase = "navigate"
-                # Try to figure out where we're going from the chain
-                if self.chain_steps and self.current_step_idx < len(self.chain_steps):
-                    target = self.chain_steps[self.current_step_idx].navigate_to
-                    if target:
-                        self._phase_target = target
-                    else:
-                        self._phase_target = "repositioning"
-                else:
-                    self._phase_target = ""
-            return
-
-        self._move_streak = 0
-        self._last_was_do = False
-
-    def _estimate_step_idx(self, info: dict) -> None:
-        """Estimate which chain step we're on based on inventory."""
-        if not self.chain_steps:
-            return
-        inv = dict(info.get("inventory", {}))
-        # Walk through chain: a step is "done" if its prereqs are met
-        # and we've progressed past it
-        for i, step in enumerate(self.chain_steps):
-            if step.prerequisite_inv:
-                if not all(inv.get(k, 0) >= v for k, v in step.prerequisite_inv.items()):
-                    self.current_step_idx = max(0, i - 1)
-                    return
-        # If all prereqs met, we might be on the last step
-        self.current_step_idx = min(self.current_step_idx, len(self.chain_steps) - 1)
-
-    def _build_plan_ui(self) -> list[dict[str, str]]:
-        """Build plan UI from current chain."""
-        if not self.chain_steps:
-            return []
-        result = []
-        for i, step in enumerate(self.chain_steps):
-            label = f"{step.action}"
-            if step.navigate_to:
-                label = f"go to {step.navigate_to} → {step.action}"
-            if step.prerequisite_inv:
-                reqs = ", ".join(f"{k}:{v}" for k, v in step.prerequisite_inv.items())
-                label += f" (need {reqs})"
-            if step.repeat > 1:
-                label += f" ×{step.repeat}"
-
-            if i < self.current_step_idx:
-                status = "done"
-            elif i == self.current_step_idx:
-                status = "active"
-            else:
-                status = "pending"
-            result.append({"label": label, "status": status})
-        return result
 
     def observe(self) -> tuple[Any, dict]:
         return self._env.observe()
@@ -275,7 +116,12 @@ class DemoEnvWrapper:
         return self._env.action_names
 
 
+def _get_inv(info: dict) -> dict[str, int]:
+    return dict(info.get("inventory", {}))
+
+
 def _get_inv_items(info: dict) -> dict[str, int]:
+    """Inventory without survival keys."""
     inv = dict(info.get("inventory", {}))
     for k in SURVIVAL_KEYS:
         inv.pop(k, None)
@@ -309,82 +155,411 @@ def _process_commands(engine: DemoEngine) -> None:
             engine.start_training(epochs=cmd.get("epochs", 150))
 
 
+def _build_snapshot(
+    engine: DemoEngine,
+    action_str: str,
+    near_str: str,
+    reason: str,
+    plan_ui: list[dict],
+    plan_step: int,
+    plan_total: int,
+    drives: dict[str, float],
+    perception_sim: float,
+    grounding_events: list[str],
+) -> None:
+    """Build and set snapshot on engine."""
+    snapshot = engine.build_snapshot(
+        agent_action=action_str,
+        agent_near=near_str,
+        agent_reason=reason,
+        plan_data=plan_ui,
+        plan_step=plan_step,
+        plan_total=plan_total,
+        drives=drives,
+        perception_sim=perception_sim,
+        grounding_events=grounding_events,
+    )
+    with engine.snapshot_lock:
+        engine.snapshot = snapshot
+
+
+def _do_probe(
+    env: DemoEnvWrapper,
+    rng: np.random.RandomState,
+    labeler: OutcomeLabeler,
+    target_label: str,
+) -> tuple[bool, Any, dict]:
+    """Directional probe: face each direction + do, check if outcome matches.
+
+    Returns (success, pixels, info).
+    """
+    for direction in _DIRECTIONS:
+        pixels, _, done, info = env.step(direction)
+        if done:
+            return False, pixels, info
+        old_inv = _get_inv(info)
+        pixels, _, done, info = env.step("do")
+        if done:
+            return False, pixels, info
+        new_inv = _get_inv(info)
+        label = labeler.label("do", old_inv, new_inv)
+        if label == target_label:
+            return True, pixels, info
+    return False, pixels, info
+
+
+def _plan_to_ui(plan: list, current_step: int) -> list[dict[str, str]]:
+    """Convert plan steps to UI format."""
+    result = []
+    for i, step in enumerate(plan):
+        label = f"{step.action} → {step.expected_gain}"
+        if step.target:
+            label = f"go to {step.target} → {step.action} → {step.expected_gain}"
+        if step.requires:
+            reqs = ", ".join(f"{k}:{v}" for k, v in step.requires.items())
+            label += f" (need {reqs})"
+
+        if i < current_step:
+            status = "done"
+        elif i == current_step:
+            status = "active"
+        else:
+            status = "pending"
+        result.append({"label": label, "status": status})
+    return result
+
+
 def env_thread_loop(engine: DemoEngine) -> None:
-    """Main loop — runs ScenarioRunner chains exactly like experiments."""
-    runner = ScenarioRunner()
+    """Autonomous agent loop: perceive → decide → act → learn."""
     labeler = OutcomeLabeler()
     rng = np.random.RandomState(42)
-    chain_idx = 0
 
     while engine._running:
-        # Process commands
         _process_commands(engine)
 
-        # Wait if paused
         if engine.state == "paused":
             time.sleep(0.05)
             continue
 
-        # Create wrapped env
+        # --- Episode start ---
         engine.reset_env()
-        wrapped = DemoEnvWrapper(engine.env, engine)
+        env = DemoEnvWrapper(engine.env, engine)
+        spatial_map = engine.spatial_map
+        pixels, info = env.observe()
 
-        if engine.mode == "interactive" and hasattr(engine, "_pending_goal") and engine._pending_goal:
-            goal = engine._pending_goal
-            engine._pending_goal = ""
+        # State for this episode
+        current_goal = ""
+        current_plan: list = []
+        plan_step_idx = 0
+        nav_steps = 0
+        grounding_log: list[str] = []
+        last_perception_sim = 0.0
+        steps_since_replan = 0
+        episode_done = False
+
+        engine.log_event(f"episode {engine.episode_count} start (autonomous)")
+
+        while engine._running and not episode_done:
+            _process_commands(engine)
+            if engine.state == "paused":
+                time.sleep(0.05)
+                continue
+
+            inv = _get_inv(info)
+            inv_items = {k: v for k, v in inv.items() if k not in SURVIVAL_KEYS}
+
+            # ---- 1. PERCEIVE ----
+            near_concept = None
+            near_str = "empty"
+            z_real = None
+
             with engine.model_lock:
-                if engine.chain_gen:
-                    chain = engine.chain_gen.generate(goal)
-                    engine.log_event(f"goal: {goal} ({len(chain)} steps)")
+                encoder = engine.encoder
+                store = engine.store
+
+            if encoder is not None:
+                pix_tensor = torch.from_numpy(pixels).float()
+                near_concept, z_real = perceive(pix_tensor, encoder, store)
+                if near_concept is not None:
+                    near_str = near_concept.id
+                    _, sim = store.query_visual_scored(z_real)
+                    last_perception_sim = sim
                 else:
-                    chain = list(IRON_CHAIN)
-                    engine.log_event(f"goal: {goal} (fallback IRON_CHAIN)")
-        elif engine.mode == "survival":
-            # Use ChainGenerator for resource goals, cycling through them
-            chain = list(IRON_CHAIN)  # default fallback
+                    last_perception_sim = 0.0
+
+            # Update spatial map
+            player_pos = info.get("player_pos", (32, 32))
+            spatial_map.update(player_pos, near_str)
+
+            # ---- 2. REACTIVE CHECK (danger only) ----
+            reactive_action = None
             with engine.model_lock:
-                if engine.chain_gen:
-                    goals = engine.chain_gen.available_goals()
-                    resource_goals = [g for g in goals if g not in (
-                        "restore_drink", "restore_energy", "restore_food")]
-                    if resource_goals:
-                        goal = resource_goals[chain_idx % len(resource_goals)]
-                        gen_chain = engine.chain_gen.generate(goal)
-                        if gen_chain:
-                            chain = gen_chain
-                            engine.log_event(f"chain: {goal} ({len(chain)} steps)")
-                        else:
-                            engine.log_event(f"chain: IRON_CHAIN (fallback)")
+                reactive = engine.reactive
+            if reactive is not None:
+                danger = reactive.check(near_str, inv)
+                if danger == "do":
+                    reactive_action = "do"
+                elif danger == "flee":
+                    reactive_action = "flee"
+
+            if reactive_action == "flee":
+                engine.log_event("FLEE from danger")
+                for _ in range(4):
+                    direction = _DIRECTIONS[rng.randint(0, 4)]
+                    pixels, _, done, info = env.step(direction)
+                    if done:
+                        episode_done = True
+                        break
+                _build_snapshot(engine, "flee", near_str, "danger: flee",
+                               _plan_to_ui(current_plan, plan_step_idx),
+                               plan_step_idx, len(current_plan),
+                               get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
+                continue
+
+            if reactive_action == "do":
+                engine.log_event(f"ATTACK {near_str}")
+                old_inv = _get_inv(info)
+                pixels, _, done, info = env.step("do")
+                if done:
+                    episode_done = True
+                _build_snapshot(engine, "do", near_str, f"danger: attack {near_str}",
+                               _plan_to_ui(current_plan, plan_step_idx),
+                               plan_step_idx, len(current_plan),
+                               get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
+                continue
+
+            # ---- 3. GOAL SELECTION (re-evaluate periodically) ----
+            if not current_plan or steps_since_replan >= REPLAN_INTERVAL:
+                old_goal = current_goal
+                current_goal, current_plan = select_goal(inv, store)
+                plan_step_idx = 0
+                nav_steps = 0
+                steps_since_replan = 0
+
+                # Handle sleep directly
+                if current_goal == "restore_energy":
+                    engine.log_event("SLEEP (energy low)")
+                    for _ in range(SLEEP_STEPS):
+                        pixels, _, done, info = env.step("sleep")
+                        if done:
+                            episode_done = True
+                            break
+                    _build_snapshot(engine, "sleep", near_str, "sleep for energy",
+                                   [], 0, 0,
+                                   get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
+                    current_plan = []
+                    continue
+
+                if current_goal != old_goal:
+                    engine.log_event(f"goal: {current_goal} ({len(current_plan)} steps)")
+
+            steps_since_replan += 1
+
+            # ---- 4. EXECUTE PLAN ----
+            if not current_plan:
+                # No plan available → explore (fills spatial map)
+                unvisited = spatial_map.unvisited_neighbors(player_pos, radius=5)
+                if unvisited:
+                    target = unvisited[rng.randint(len(unvisited))]
+                    action_str = _step_toward(player_pos, target, rng)
+                else:
+                    action_str = str(rng.choice(MOVE_ACTIONS))
+
+                old_inv = _get_inv(info)
+                pixels, _, done, info = env.step(action_str)
+                if done:
+                    episode_done = True
+                _build_snapshot(engine, action_str, near_str, f"explore ({current_goal})",
+                               [], 0, 0,
+                               get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
+                continue
+
+            # We have a plan — work on current step
+            if plan_step_idx >= len(current_plan):
+                # Plan complete → force replan
+                current_plan = []
+                steps_since_replan = REPLAN_INTERVAL
+                continue
+
+            step = current_plan[plan_step_idx]
+
+            # Check prerequisites
+            if step.requires:
+                has_reqs = all(
+                    inv_items.get(k, 0) >= v for k, v in step.requires.items()
+                )
+                if not has_reqs:
+                    # Missing prerequisites — replan
+                    engine.log_event(f"missing prereqs for {step.expected_gain}, replanning")
+                    current_plan = []
+                    steps_since_replan = REPLAN_INTERVAL
+                    continue
+
+            # Navigation to target
+            target_concept = step.target
+            reason = f"navigate → {target_concept}"
+
+            if step.action == "do":
+                # For "do" actions: navigate to target, then probe
+                if near_str == target_concept:
+                    # Arrived! Do the action via directional probe
+                    reason = f"do {target_concept}"
+                    old_inv = _get_inv(info)
+
+                    # Predict before action
+                    prediction = store.predict_before_action(near_str, "do", inv)
+
+                    success, pixels, info = _do_probe(env, rng, labeler, target_concept)
+                    done = False  # probe handles done internally
+
+                    new_inv = _get_inv(info)
+                    actual = labeler.label("do", old_inv, new_inv)
+
+                    # Verify prediction
+                    store.verify_after_action(prediction, "do", actual, near=near_str)
+
+                    # Experiential grounding
+                    if z_real is not None:
+                        grounded = on_action_outcome("do", old_inv, new_inv, z_real, store, labeler)
+                        if grounded:
+                            grounding_log.append(f"grounded: {grounded}")
+                            engine.log_event(f"grounded: {grounded}")
+
+                    if success:
+                        engine.log_event(f"collected {step.expected_gain}")
+                        plan_step_idx += 1
+                        nav_steps = 0
                     else:
-                        engine.log_event(f"chain: IRON_CHAIN (no goals)")
+                        nav_steps += 8  # probe cost
+                        if nav_steps > MAX_NAV_STEPS:
+                            engine.log_event(f"gave up on {target_concept}")
+                            plan_step_idx += 1
+                            nav_steps = 0
+
+                    _build_snapshot(engine, "do", near_str, reason,
+                                   _plan_to_ui(current_plan, plan_step_idx),
+                                   plan_step_idx, len(current_plan),
+                                   get_drive_strengths(new_inv), last_perception_sim, grounding_log[-3:])
+                    continue
+
                 else:
-                    engine.log_event(f"chain: IRON_CHAIN (no chain_gen)")
-            chain_idx += 1
-        else:
-            time.sleep(0.1)
-            continue
+                    # Navigate toward target
+                    known_pos = spatial_map.find_nearest(target_concept, player_pos)
+                    if known_pos is not None:
+                        action_str = _step_toward(player_pos, known_pos, rng)
+                    else:
+                        # Target not in map — explore
+                        unvisited = spatial_map.unvisited_neighbors(player_pos, radius=8)
+                        if unvisited:
+                            explore_target = unvisited[rng.randint(len(unvisited))]
+                            action_str = _step_toward(player_pos, explore_target, rng)
+                        else:
+                            action_str = str(rng.choice(MOVE_ACTIONS))
 
-        # Set chain info on wrapper for plan display
-        wrapped.chain_steps = chain
-        wrapped.chain_name = f"chain #{chain_idx}"
-        wrapped.current_step_idx = 0
+                    pixels, _, done, info = env.step(action_str)
+                    nav_steps += 1
+                    if done:
+                        episode_done = True
 
-        # Run the chain — same as exp128 phase 2 (run_chain, NOT with_concepts)
-        with engine.model_lock:
-            detector = engine.detector
+                    if nav_steps > MAX_NAV_STEPS:
+                        engine.log_event(f"nav timeout for {target_concept}")
+                        plan_step_idx += 1
+                        nav_steps = 0
 
-        try:
-            labeled = runner.run_chain(
-                env=wrapped,
-                detector=detector,
-                labeler=labeler,
-                chain=chain,
-                rng=rng,
-            )
-            engine.log_event(f"chain done: {len(labeled)} labeled frames")
-        except Exception as e:
-            engine.log_event(f"chain error: {e}")
+                    _build_snapshot(engine, action_str, near_str, reason,
+                                   _plan_to_ui(current_plan, plan_step_idx),
+                                   plan_step_idx, len(current_plan),
+                                   get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
+                    continue
 
-        # Episode stats
+            elif step.action == "sleep":
+                # Sleep action — execute directly
+                reason = "sleep"
+                pixels, _, done, info = env.step("sleep")
+                if done:
+                    episode_done = True
+                plan_step_idx += 1
+                _build_snapshot(engine, "sleep", near_str, reason,
+                               _plan_to_ui(current_plan, plan_step_idx),
+                               plan_step_idx, len(current_plan),
+                               get_drive_strengths(_get_inv(info)), last_perception_sim, grounding_log[-3:])
+                continue
+
+            elif step.action in ("make", "place"):
+                # Craft/place: navigate to target (table/empty), then do action
+                crafter_action = step.action
+                if step.action == "make":
+                    crafter_action = f"make_{step.expected_gain}"
+                elif step.action == "place":
+                    crafter_action = f"place_{step.expected_gain}"
+
+                if near_str == target_concept:
+                    # At target — execute craft/place
+                    reason = f"{crafter_action}"
+                    old_inv = _get_inv(info)
+
+                    prediction = store.predict_before_action(near_str, step.action, inv)
+
+                    pixels, _, done, info = env.step(crafter_action)
+                    if done:
+                        episode_done = True
+
+                    new_inv = _get_inv(info)
+                    actual = labeler.label(crafter_action, old_inv, new_inv)
+
+                    store.verify_after_action(prediction, step.action, actual, near=near_str)
+
+                    if actual is not None:
+                        engine.log_event(f"crafted {step.expected_gain}")
+                        plan_step_idx += 1
+                        nav_steps = 0
+                    else:
+                        nav_steps += 1
+                        if nav_steps > 15:
+                            engine.log_event(f"craft failed: {crafter_action}")
+                            plan_step_idx += 1
+                            nav_steps = 0
+
+                    _build_snapshot(engine, crafter_action, near_str, reason,
+                                   _plan_to_ui(current_plan, plan_step_idx),
+                                   plan_step_idx, len(current_plan),
+                                   get_drive_strengths(new_inv), last_perception_sim, grounding_log[-3:])
+                    continue
+
+                else:
+                    # Navigate to target
+                    known_pos = spatial_map.find_nearest(target_concept, player_pos)
+                    if known_pos is not None:
+                        action_str = _step_toward(player_pos, known_pos, rng)
+                    else:
+                        unvisited = spatial_map.unvisited_neighbors(player_pos, radius=8)
+                        if unvisited:
+                            explore_target = unvisited[rng.randint(len(unvisited))]
+                            action_str = _step_toward(player_pos, explore_target, rng)
+                        else:
+                            action_str = str(rng.choice(MOVE_ACTIONS))
+
+                    pixels, _, done, info = env.step(action_str)
+                    nav_steps += 1
+                    if done:
+                        episode_done = True
+
+                    if nav_steps > MAX_NAV_STEPS:
+                        engine.log_event(f"nav timeout for {target_concept}")
+                        plan_step_idx += 1
+                        nav_steps = 0
+
+                    _build_snapshot(engine, action_str, near_str, f"navigate → {target_concept}",
+                                   _plan_to_ui(current_plan, plan_step_idx),
+                                   plan_step_idx, len(current_plan),
+                                   get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
+                    continue
+
+            else:
+                # Unknown action type — skip
+                plan_step_idx += 1
+                continue
+
+        # Episode over
         engine.metrics.finish_episode(engine.step_count)
         engine.log_event(f"episode {engine.episode_count} done (step {engine.step_count})")

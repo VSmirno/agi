@@ -163,6 +163,17 @@ class ConceptStore:
 
     def query_visual(self, z_real: torch.Tensor) -> Concept | None:
         """Find closest concept by visual embedding (cosine similarity)."""
+        concept, _ = self.query_visual_scored(z_real)
+        return concept
+
+    def query_visual_scored(
+        self, z_real: torch.Tensor
+    ) -> tuple[Concept | None, float]:
+        """Find closest concept by visual embedding, returning similarity score.
+
+        Returns (best_concept, best_similarity). If no concepts have visual
+        embeddings, returns (None, -1.0).
+        """
         best_concept = None
         best_sim = -1.0
         z_norm = torch.nn.functional.normalize(z_real.unsqueeze(0), dim=1)
@@ -176,7 +187,7 @@ class ConceptStore:
             if sim > best_sim:
                 best_sim = sim
                 best_concept = concept
-        return best_concept
+        return best_concept, best_sim
 
     # --- Causal reasoning ---
 

@@ -1,7 +1,7 @@
 # Stage 72: Perception Pivot — Self-Organized Perception + Continuous Learning
 
 **Date:** 2026-04-07
-**Status:** Draft
+**Status:** Implemented
 **Depends on:** Stage 71 (exp128), ConceptStore, CrafterSpatialMap
 **Replaces:** exp129 (iterative finetuning — wrong approach, backprop-centric)
 
