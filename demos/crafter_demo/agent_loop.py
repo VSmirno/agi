@@ -472,8 +472,12 @@ def env_thread_loop(engine: DemoEngine) -> None:
                         engine.log_event(f"collected {step.expected_gain}")
                         plan_step_idx += 1
                         nav_steps = 0
+                        # Resource consumed — invalidate map position
+                        spatial_map.update(player_pos, "empty")
                     else:
                         nav_steps += 8  # probe cost
+                        # Failed probe — invalidate to avoid loop
+                        spatial_map.update(player_pos, "empty")
                         if nav_steps > MAX_NAV_STEPS:
                             engine.log_event(f"gave up on {target_concept}")
                             plan_step_idx += 1
