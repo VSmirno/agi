@@ -284,6 +284,10 @@ def run_autonomous_episode(
 
         plan_step = current_plan[plan_step_idx]
 
+        if verbose and step % 20 == 0:
+            print(f"    [{step}] plan[{plan_step_idx}/{len(current_plan)}]: "
+                  f"{plan_step.action} {plan_step.target} (near={near_str})")
+
         # Check if at target
         if near_str == plan_step.target:
             if plan_step.action == "do":
@@ -600,15 +604,18 @@ def main_diagnostic():
     print("=" * 60)
     encoder = phase0_load_encoder()
     store, tracker = phase1_init_store()
-    # Quick bootstrap: run 5 episodes to ground basics
+    # Quick bootstrap: 20 episodes to ground concepts
     labeler = OutcomeLabeler()
-    for i in range(5):
+    for i in range(20):
         run_autonomous_episode(encoder, store, labeler, tracker, 60000 + i * 7,
-                               max_steps=500, enemies=True, verbose=True)
+                               max_steps=500, enemies=True, verbose=(i < 3))
     grounded = [c.id for c in store.concepts.values() if c.visual is not None]
-    print(f"\nGrounded after bootstrap: {grounded}\n")
-    # Now survival diagnostic
-    phase5_survival(encoder, store, tracker, n=20, max_steps=1500)
+    print(f"\nGrounded after bootstrap: {grounded}")
+    print(f"Tracker rates: {tracker.rates}")
+    crs = {k: f'{v:.3f}' for k, v in tracker.conditional_rates.items() if abs(v) > 0.001}
+    print(f"Conditional rates: {crs}\n")
+    # Survival diagnostic with full verbose
+    phase5_survival(encoder, store, tracker, n=10, max_steps=1500)
 
 
 def main():
