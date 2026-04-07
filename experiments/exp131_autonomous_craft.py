@@ -381,6 +381,24 @@ def run_autonomous_episode(
                             spatial_map.update(player_pos, plan_step.expected_gain)
                     plan_step_idx += 1
                     nav_steps = 0
+                    # Immediately execute next step if same location
+                    # e.g. after place_table, next step "make near table" is HERE
+                    if plan_step_idx < len(current_plan):
+                        next_step = current_plan[plan_step_idx]
+                        if (next_step.action in ("make",) and
+                                next_step.target == plan_step.expected_gain):
+                            # Same location — execute craft immediately
+                            craft2 = f"{next_step.action}_{next_step.expected_gain}"
+                            old_inv2 = dict(info.get("inventory", {}))
+                            pixels, _, done, info = env.step(craft2)
+                            if not done:
+                                new_inv2 = dict(info.get("inventory", {}))
+                                craft_out2 = outcome_to_verify(craft2, old_inv2, new_inv2)
+                                verify_outcome(plan_step.expected_gain, next_step.action, craft_out2, store)
+                                if craft_out2 is not None:
+                                    if verbose:
+                                        print(f"    [{step}] IMMEDIATE-CRAFT→{next_step.expected_gain}")
+                                    plan_step_idx += 1
                 else:
                     nav_steps += 1
                     if nav_steps > 15:
