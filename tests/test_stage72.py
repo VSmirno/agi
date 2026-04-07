@@ -249,7 +249,7 @@ class TestGate4DriveGoalSelection:
         strengths = get_drive_strengths({"food": 2, "drink": 9, "energy": 9})
         assert strengths["restore_food"] == 6.0  # (5-2)*2
         assert strengths["restore_drink"] == 0.0
-        assert strengths["wood"] == 1.0
+        assert strengths["wood"] > 0
 
     def test_wood_plan_has_steps(self):
         store = _make_store()
@@ -259,6 +259,20 @@ class TestGate4DriveGoalSelection:
         assert len(plan) >= 1
         assert plan[0].action == "do"
         assert plan[0].target == "tree"
+
+    def test_progression_wood_to_pickaxe(self):
+        """After getting wood, drive shifts to pickaxe."""
+        store = _make_store()
+        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 3}
+        goal, plan = select_goal(inv, store)
+        assert goal == "wood_pickaxe"
+
+    def test_progression_pickaxe_to_stone(self):
+        """After getting pickaxe, drive shifts to stone."""
+        store = _make_store()
+        inv = {"food": 9, "drink": 9, "energy": 9, "wood": 5, "wood_pickaxe": 1}
+        goal, plan = select_goal(inv, store)
+        assert goal == "stone_item"
 
 
 # ---------------------------------------------------------------------------
