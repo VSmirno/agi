@@ -461,7 +461,7 @@ def run_autonomous_episode(
 # Phases
 # ---------------------------------------------------------------------------
 
-def phase2_tree_nav(encoder, store, n=50, max_steps=1500):
+def phase2_tree_nav(encoder, store, n=200, max_steps=1500):
     print(f"Phase 2: Tree navigation ({n} episodes, enemies ON)...")
     t0 = time.time()
     labeler = OutcomeLabeler()
@@ -474,7 +474,7 @@ def phase2_tree_nav(encoder, store, n=50, max_steps=1500):
         total_wood += wood
         if wood > 0:
             successes += 1
-        if (i + 1) % 10 == 0 or i < 3:
+        if (i + 1) % 50 == 0 or i < 3:
             grounded = [c.id for c in store.concepts.values() if c.visual is not None]
             print(f"  [{i+1}/{n}] success={successes}/{i+1} wood={total_wood} "
                   f"grounded={grounded} map={result['map_visited']}")
@@ -486,7 +486,7 @@ def phase2_tree_nav(encoder, store, n=50, max_steps=1500):
     return {"success_rate": rate, "gate_pass": rate >= 0.50, "grounded": grounded}
 
 
-def phase3_stone_nav(encoder, store, n=50, max_steps=2000):
+def phase3_stone_nav(encoder, store, n=200, max_steps=2000):
     print(f"Phase 3: Stone navigation ({n} episodes, enemies ON)...")
     t0 = time.time()
     labeler = OutcomeLabeler()
@@ -499,7 +499,7 @@ def phase3_stone_nav(encoder, store, n=50, max_steps=2000):
         total_stone += stone
         if stone > 0:
             successes += 1
-        if (i + 1) % 10 == 0:
+        if (i + 1) % 50 == 0:
             print(f"  [{i+1}/{n}] success={successes}/{i+1} stone={total_stone}")
     rate = successes / n
     print(f"  Stone nav: {successes}/{n} = {rate:.1%} (gate: ≥20%)")
@@ -516,7 +516,7 @@ def phase4_grounding_count(store):
     return {"grounded": grounded, "count": len(grounded), "gate_pass": gate}
 
 
-def phase5_survival(encoder, store, n=50, max_steps=1500):
+def phase5_survival(encoder, store, n=200, max_steps=1500):
     print(f"Phase 5: Survival with enemies ({n} episodes)...")
     t0 = time.time()
     labeler = OutcomeLabeler()
@@ -528,7 +528,7 @@ def phase5_survival(encoder, store, n=50, max_steps=1500):
             max_steps=max_steps, enemies=True, verbose=(i < 5))
         lengths.append(result["length"])
         death_causes[result.get("death_cause", "unknown")] += 1
-        if (i + 1) % 10 == 0:
+        if (i + 1) % 50 == 0:
             print(f"  [{i+1}/{n}] mean_length={np.mean(lengths):.0f} deaths={dict(death_causes)}")
     mean_len = np.mean(lengths)
     print(f"  Mean length: {mean_len:.0f} (gate: ≥200)")
