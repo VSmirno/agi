@@ -283,6 +283,7 @@ def run_autonomous_episode(
                         break
                 if done:
                     break
+                new_inv = dict(info.get("inventory", {}))
                 # Verify ONCE with probe result, not per-direction
                 if success:
                     verify_outcome(near_str, "do",
