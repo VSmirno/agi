@@ -364,22 +364,61 @@ def run_autonomous_episode(
                 plan_step_idx += 1
 
         else:
-            # NAVIGATE toward target
+            # NAVIGATE toward target — with motor babbling for discovery
             known_pos = spatial_map.find_nearest(plan_step.target, player_pos)
             if known_pos is not None:
                 action = _step_toward(player_pos, known_pos, rng)
             else:
-                unvisited = spatial_map.unvisited_neighbors(player_pos, radius=8)
-                if unvisited:
-                    target = unvisited[rng.randint(len(unvisited))]
-                    action = _step_toward(player_pos, target, rng)
-                else:
-                    action = str(rng.choice(MOVE_ACTIONS))
+                # Target not in map — curiosity-driven exploration
+                action = explore_action(rng, store)
 
-            pixels, _, done, info = env.step(action)
-            nav_steps += 1
-            if done:
-                break
+            if action == "babble_do":
+                # Motor babbling during navigation — discover objects
+                direction = _DIRECTIONS[rng.randint(0, 4)]
+                pixels, _, done, info = env.step(direction)
+                if done:
+                    break
+                pix_t = torch.from_numpy(pixels).float()
+                if device.type != "cpu":
+                    pix_t = pix_t.to(device)
+                _, z_before = perceive(pix_t, encoder, store)
+                old_inv_b = dict(info.get("inventory", {}))
+                pixels, _, done, info = env.step("do")
+                if done:
+                    break
+                new_inv_b = dict(info.get("inventory", {}))
+                grounded = on_action_outcome(
+                    "do", old_inv_b, new_inv_b, z_before, store, labeler)
+                if grounded:
+                    grounding_events.append(grounded)
+                    if verbose:
+                        print(f"    [{step}] NAV-BABBLE→{grounded}")
+                    spatial_map.update(
+                        info.get("player_pos", player_pos), grounded)
+                    for k, v in new_inv_b.items():
+                        delta = v - old_inv_b.get(k, 0)
+                        if delta > 0 and k not in ("health", "food", "drink", "energy"):
+                            resources[k] += delta
+                # Verify prediction
+                actual = labeler.label("do", old_inv_b, new_inv_b)
+                prediction = store.predict_before_action(
+                    grounded or "empty", "do", old_inv_b)
+                store.verify_after_action(prediction, "do", actual,
+                                          near=grounded or "empty")
+                nav_steps += 2
+            else:
+                if action not in _DIRECTIONS:
+                    unvisited = spatial_map.unvisited_neighbors(player_pos, radius=8)
+                    if unvisited:
+                        target = unvisited[rng.randint(len(unvisited))]
+                        action = _step_toward(player_pos, target, rng)
+                    else:
+                        action = str(rng.choice(MOVE_ACTIONS))
+                pixels, _, done, info = env.step(action)
+                nav_steps += 1
+                if done:
+                    break
+
             if nav_steps > 200:
                 plan_step_idx += 1
                 nav_steps = 0
