@@ -340,8 +340,6 @@ def run_autonomous_episode(
                     spatial_map.update(player_pos, "empty")
                 else:
                     nav_steps += 8
-                    # Failed probe — invalidate position to avoid loop
-                    spatial_map.update(player_pos, "empty")
                     if nav_steps > 200:
                         plan_step_idx += 1
                         nav_steps = 0
