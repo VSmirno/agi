@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crafter Survival Demo</title>
+<style>
+:root {
+  --bg: #1a1a2e;
+  --panel: #14142a;
+  --border: #3c3c5a;
+  --text: #eaeaea;
+  --dim: #8c8caa;
+  --green: #2ecc71;
+  --yellow: #f39c12;
+  --red: #e74c3c;
+  --blue: #3498db;
+  --orange: #e67e22;
+  --purple: #9b59b6;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  overflow-x: hidden;
+}
+
+/* Top bar */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.topbar h1 { font-size: 16px; font-weight: 600; flex-shrink: 0; }
+.topbar .spacer { flex: 1; }
+.topbar select, .topbar button, .topbar input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.topbar button:hover { border-color: var(--blue); }
+.topbar button.active { background: var(--blue); border-color: var(--blue); }
+.topbar .fps-label { color: var(--dim); font-size: 11px; }
+.topbar .no-model {
+  background: var(--red);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Main grid */
+.main-grid {
+  display: grid;
+  grid-template-columns: 520px 1fr 1fr;
+  grid-template-rows: 520px auto;
+  gap: 1px;
+  background: var(--border);
+  height: calc(100vh - 42px);
+}
+
+/* Panels */
+.panel {
+  background: var(--panel);
+  padding: 10px;
+  overflow-y: auto;
+}
+.panel h2 {
+  font-size: 12px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+/* Game frame */
+.game-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+#gameCanvas {
+  image-rendering: pixelated;
+  width: 512px;
+  height: 512px;
+}
+
+/* Survival bars */
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.bar-label { width: 50px; font-size: 11px; color: var(--dim); }
+.bar-track {
+  flex: 1;
+  height: 14px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+.bar-fill.health { background: var(--red); }
+.bar-fill.food { background: var(--orange); }
+.bar-fill.drink { background: var(--blue); }
+.bar-fill.energy { background: var(--yellow); }
+.bar-value { width: 24px; font-size: 11px; text-align: right; }
+
+/* Inventory */
+.inv-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.inv-item {
+  background: rgba(255,255,255,0.05);
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+.inv-item .count { color: var(--green); font-weight: 600; }
+
+/* Near detection */
+.near-badge {
+  display: inline-block;
+  background: var(--blue);
+  color: white;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+/* Plan list */
+.plan-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.plan-step .icon { width: 16px; text-align: center; }
+.plan-step.done { color: var(--dim); }
+.plan-step.done .icon { color: var(--green); }
+.plan-step.active { color: var(--text); font-weight: 600; }
+.plan-step.active .icon { color: var(--yellow); }
+.plan-step.pending { color: var(--dim); }
+
+/* Reactive */
+.reactive-banner {
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.reactive-banner.danger { background: rgba(231,76,60,0.2); color: var(--red); border: 1px solid var(--red); }
+.reactive-banner.survival { background: rgba(243,156,18,0.2); color: var(--yellow); border: 1px solid var(--yellow); }
+.reactive-banner.hidden { display: none; }
+
+/* Minimap */
+#minimapCanvas {
+  image-rendering: pixelated;
+  width: 108px;
+  height: 108px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* Bottom panels */
+.bottom-left {
+  grid-column: 1 / 3;
+}
+.bottom-right {
+  grid-column: 3 / 4;
+}
+
+/* Causal graph */
+#causalSvg {
+  width: 100%;
+  height: 180px;
+}
+#causalSvg text { fill: var(--text); font-size: 11px; font-family: inherit; }
+#causalSvg .node { fill: var(--blue); }
+#causalSvg .edge { stroke: var(--dim); fill: none; }
+
+/* Sparklines */
+.chart-row { margin-bottom: 8px; }
+.chart-label { font-size: 11px; color: var(--dim); margin-bottom: 2px; }
+.chart-canvas { width: 100%; height: 40px; }
+
+/* Event log */
+.log-footer {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.log-footer .log-entry {
+  font-size: 11px;
+  color: var(--dim);
+  flex-shrink: 0;
+}
+.log-footer .train-btn {
+  margin-left: auto;
+  background: var(--purple);
+  color: white;
+  border: none;
+  padding: 4px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.log-footer .train-btn:hover { opacity: 0.8; }
+
+/* Train modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  width: 360px;
+}
+.modal h2 { font-size: 16px; margin-bottom: 16px; }
+.modal label { display: block; margin-bottom: 8px; font-size: 12px; color: var(--dim); }
+.modal input[type=number] {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-family: inherit;
+  width: 100%;
+  margin-bottom: 12px;
+}
+.modal .progress-bar {
+  height: 8px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 12px 0;
+}
+.modal .progress-fill {
+  height: 100%;
+  background: var(--purple);
+  transition: width 0.3s;
+  width: 0%;
+}
+.modal .progress-text { font-size: 11px; color: var(--dim); }
+.modal .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+.modal button {
+  flex: 1;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+}
+.modal button.primary { background: var(--purple); border-color: var(--purple); font-weight: 600; }
+
+/* Goal selector */
+.goal-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.goal-btn {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.goal-btn:hover { border-color: var(--blue); }
+
+/* Episode counter */
+.episode-info {
+  font-size: 11px;
+  color: var(--dim);
+}
+.episode-info span { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Crafter Survival Demo</h1>
+  <select id="modeSelect">
+    <option value="survival">Survival</option>
+    <option value="interactive">Interactive</option>
+  </select>
+  <button id="btnPlay">Play</button>
+  <button id="btnPause">Pause</button>
+  <button id="btnStep">Step</button>
+  <button id="btnReset">Reset</button>
+  <span class="fps-label">FPS</span>
+  <input type="range" id="fpsSlider" min="1" max="30" value="10" style="width:80px">
+  <span id="fpsVal" class="fps-label">10</span>
+  <div class="spacer"></div>
+  <div class="episode-info">Ep <span id="epNum">0</span> Step <span id="stepNum">0</span></div>
+  <div id="noModelBadge" class="no-model" style="display:none">No Model — Train First</div>
+</div>
+
+<div class="main-grid">
+  <!-- Game frame -->
+  <div class="panel game-panel">
+    <canvas id="gameCanvas" width="64" height="64"></canvas>
+  </div>
+
+  <!-- Middle panel -->
+  <div class="panel">
+    <h2>Survival</h2>
+    <div id="survivalBars">
+      <div class="bar-row"><span class="bar-label">Health</span><div class="bar-track"><div class="bar-fill health" id="barHealth" style="width:100%"></div></div><span class="bar-value" id="valHealth">9</span></div>
+      <div class="bar-row"><span class="bar-label">Food</span><div class="bar-track"><div class="bar-fill food" id="barFood" style="width:100%"></div></div><span class="bar-value" id="valFood">9</span></div>
+      <div class="bar-row"><span class="bar-label">Drink</span><div class="bar-track"><div class="bar-fill drink" id="barDrink" style="width:100%"></div></div><span class="bar-value" id="valDrink">9</span></div>
+      <div class="bar-row"><span class="bar-label">Energy</span><div class="bar-track"><div class="bar-fill energy" id="barEnergy" style="width:100%"></div></div><span class="bar-value" id="valEnergy">9</span></div>
+    </div>
+
+    <h2 style="margin-top:12px">Inventory</h2>
+    <div class="inv-grid" id="invGrid"></div>
+
+    <h2 style="margin-top:12px">Near Detection</h2>
+    <span class="near-badge" id="nearBadge">empty</span>
+
+    <h2 style="margin-top:12px">Agent</h2>
+    <div id="agentInfo" style="font-size:12px; color:var(--dim)">idle</div>
+  </div>
+
+  <!-- Right panel -->
+  <div class="panel">
+    <div id="reactiveBanner" class="reactive-banner hidden"></div>
+
+    <h2>Plan</h2>
+    <div id="planList"></div>
+
+    <div id="goalSection" style="margin-top:12px; display:none">
+      <h2>Set Goal</h2>
+      <div class="goal-list" id="goalList"></div>
+    </div>
+
+    <h2 style="margin-top:16px">Minimap</h2>
+    <canvas id="minimapCanvas" width="9" height="9"></canvas>
+  </div>
+
+  <!-- Bottom left: causal graph -->
+  <div class="panel bottom-left">
+    <h2>Causal Graph</h2>
+    <svg id="causalSvg" viewBox="0 0 600 180"></svg>
+  </div>
+
+  <!-- Bottom right: metrics -->
+  <div class="panel bottom-right">
+    <h2>Metrics</h2>
+    <div class="chart-row">
+      <div class="chart-label">Episode Length</div>
+      <canvas class="chart-canvas" id="chartLength"></canvas>
+    </div>
+    <div class="chart-row">
+      <div class="chart-label">Resources</div>
+      <canvas class="chart-canvas" id="chartResources"></canvas>
+    </div>
+    <div class="chart-row">
+      <div class="chart-label">Zombie Encounters</div>
+      <canvas class="chart-canvas" id="chartEncounters"></canvas>
+    </div>
+  </div>
+
+  <!-- Footer: log + train -->
+  <div class="log-footer">
+    <div id="logEntries"></div>
+    <button class="train-btn" id="btnTrain">Train</button>
+  </div>
+</div>
+
+<!-- Train modal -->
+<div class="modal-overlay" id="trainModal">
+  <div class="modal">
+    <h2>Train Model</h2>
+    <label>Epochs</label>
+    <input type="number" id="trainEpochs" value="150" min="10" max="500">
+    <div class="progress-bar"><div class="progress-fill" id="trainProgress"></div></div>
+    <div class="progress-text" id="trainStatus">Ready</div>
+    <div class="btn-row">
+      <button id="trainCancel">Cancel</button>
+      <button class="primary" id="trainStart">Start Training</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/causal.js"></script>
+<script src="/static/charts.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
