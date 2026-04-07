@@ -168,14 +168,10 @@ def run_autonomous_episode(
             tracker.update(prev_inv, inv, vf.visible_concepts())
         prev_inv = dict(inv)
 
-        # 2b. REACTIVE CHECK — scan entire visual field for danger
-        # Spatial perception: agent can see zombie at distance, not just adjacent
-        danger = None
-        for visible_cid in vf.visible_concepts():
-            d = reactive.check(visible_cid, inv)
-            if d is not None:
-                danger = d
-                break
+        # 2b. REACTIVE CHECK
+        # Near danger: react immediately (center positions)
+        # Far danger: inform drives (select_goal will plan response)
+        danger = reactive.check(near_str, inv)
         if danger == "flee":
             for _ in range(4):
                 d = _DIRECTIONS[rng.randint(0, 4)]
