@@ -129,9 +129,17 @@ def _parse_rule(text: str) -> dict[str, Any] | None:
 
 
 def _parse_requires(text: str) -> dict[str, int]:
-    """Parse 'wood and stone_item' → {'wood': 1, 'stone_item': 1}"""
+    """Parse 'wood and stone_item' → {'wood': 1, 'stone_item': 1}
+
+    Handles duplicates: 'wood and wood' → {'wood': 2}
+    """
     items = re.split(r"\s+and\s+", text.strip())
-    return {item.strip(): 1 for item in items if item.strip()}
+    result: dict[str, int] = {}
+    for item in items:
+        item = item.strip()
+        if item:
+            result[item] = result.get(item, 0) + 1
+    return result
 
 
 class CrafterTextbook:

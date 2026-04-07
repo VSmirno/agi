@@ -178,4 +178,10 @@
 - **info["player_pos"] остаётся** — проприоцепция.
 - **info["inventory"] остаётся** — проприоцепция.
 - **NearDetector code сохранён** — используется для backward compat (zombie tracking в wrapper).
+- **exp130 результаты:** tree nav 60% PASS, stone 0%, coal not grounded, survival 74, verification 0.
+  - 3 концепта grounded из опыта: tree, water, cow.
+  - Motor babbling (15% prob) → action outcome → one-shot grounding → perception bootstrap.
+  - Survival +50% (49→74) через grounding cow/water для еды/питья.
+  - Stone FAIL = не перцепция, а planning execution (craft chain не реализован).
+  - Verification FAIL = predict/verify не подключён в babble path.
 

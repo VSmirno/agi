@@ -33,7 +33,7 @@ rules:
   - "do coal gives coal_item requires wood_pickaxe"
   - "do iron gives iron_item requires stone_pickaxe"
   # Crafting
-  - "place table on empty requires wood"
+  - "place table on empty requires wood and wood"
   - "make wood_pickaxe near table requires wood"
   - "make stone_pickaxe near table requires wood and stone_item"
   - "make wood_sword near table requires wood"
