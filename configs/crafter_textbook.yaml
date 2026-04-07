@@ -14,6 +14,9 @@ vocabulary:
   - { id: table, category: crafted }
   - { id: empty, category: terrain }
   - { id: zombie, category: enemy, dangerous: true }
+  # Survival resources
+  - { id: water, category: resource }
+  - { id: cow, category: resource }
   # Inventory items (text grounding only)
   - { id: wood, category: item }
   - { id: stone_item, category: item }
@@ -24,13 +27,20 @@ vocabulary:
   - { id: wood_sword, category: weapon }
 
 rules:
+  # Gathering
   - "do tree gives wood"
   - "do stone gives stone_item requires wood_pickaxe"
   - "do coal gives coal_item requires wood_pickaxe"
   - "do iron gives iron_item requires stone_pickaxe"
+  # Crafting
   - "place table on empty requires wood"
   - "make wood_pickaxe near table requires wood"
   - "make stone_pickaxe near table requires wood and stone_item"
   - "make wood_sword near table requires wood"
+  # Combat
   - "do zombie with wood_sword kills zombie"
   - "zombie nearby without wood_sword means flee"
+  # Survival
+  - "do water restores drink"
+  - "do cow restores food"
+  - "sleep restores energy"

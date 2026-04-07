@@ -61,6 +61,28 @@ def _parse_rule(text: str) -> dict[str, Any] | None:
             "type": "survival",
         }
 
+    # Survival restore: "do OBJECT restores STAT" or "sleep restores STAT"
+    m = re.match(r"do (\w+) restores (\w+)", text)
+    if m:
+        return {
+            "concept": m.group(1),
+            "action": "do",
+            "result": f"restore_{m.group(2)}",
+            "requires": {},
+            "type": "need",
+            "restores": m.group(2),
+        }
+    m = re.match(r"sleep restores (\w+)", text)
+    if m:
+        return {
+            "concept": "_self",
+            "action": "sleep",
+            "result": f"restore_{m.group(1)}",
+            "requires": {},
+            "type": "need",
+            "restores": m.group(1),
+        }
+
     # Gather: "do OBJECT gives RESULT [requires ...]"
     m = re.match(
         r"do (\w+) gives (\w+)(?:\s+requires\s+(.+))?$", text

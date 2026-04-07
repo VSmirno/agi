@@ -461,19 +461,45 @@ class ScenarioRunner:
                 if not self._prereqs_met(inv, step.prerequisite_inv):
                     break
 
-                # --- Reactive layer: check for danger ---
+                # --- Reactive layer: danger + survival needs ---
                 if reactive is not None and detector is not None:
                     det_pixels = torch.from_numpy(pixels_np).float()
                     near_str = detector.detect(det_pixels)
-                    override = reactive.check(near_str, inv)
-                    if override == "do":
+
+                    result = reactive.check_all(near_str, inv)
+                    if result["action"] == "do" and result["reason"] == "danger":
                         pixels_np, _, done, info = env.step("do")
                         if done:
                             pixels_np, info = env.reset()
                         continue
-                    if override == "flee":
+                    if result["action"] == "flee":
                         reactive.flee_action(env, rng)
                         pixels_np, info = env.observe()
+                        continue
+                    if result["action"] == "sleep":
+                        pixels_np, _, done, info = env.step("sleep")
+                        if done:
+                            pixels_np, info = env.reset()
+                        continue
+                    if result["action"] == "do" and result["reason"] == "survival":
+                        # Resource already nearby — interact
+                        pixels_np, _, done, info = env.step("do")
+                        if done:
+                            pixels_np, info = env.reset()
+                        continue
+                    if result["action"] == "seek":
+                        # Need to find resource — navigate briefly
+                        target = result["target"]
+                        _, info_nav, found = find_target_with_map(
+                            env, detector, smap, target,
+                            max_steps=50, rng=rng,
+                        )
+                        if found:
+                            pixels_np, _, done, info = env.step("do")
+                            if done:
+                                pixels_np, info = env.reset()
+                        else:
+                            pixels_np, info = env.observe()
                         continue
 
                 # Navigation phase
