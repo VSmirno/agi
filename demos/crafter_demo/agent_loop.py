@@ -29,6 +29,7 @@ from snks.agent.perception import (
     ground_empty_on_start,
     ground_zombie_on_damage,
     verify_outcome,
+    outcome_to_verify,
     MIN_SIMILARITY,
 )
 
@@ -405,8 +406,8 @@ def env_thread_loop(engine: DemoEngine) -> None:
                             spatial_map.update(
                                 info.get("player_pos", player_pos), grounded)
                         # Universal verification
-                        actual = labeler.label("do", old_inv_b, new_inv_b)
-                        verify_outcome(grounded or near_str, "do", actual, store)
+                        do_out = outcome_to_verify("do", old_inv_b, new_inv_b)
+                        verify_outcome(grounded or near_str, "do", do_out, store)
                     _build_snapshot(engine, "babble", near_str, "curiosity: motor babbling",
                                    [], 0, 0,
                                    get_drive_strengths(inv), last_perception_sim, grounding_log[-3:])
@@ -429,8 +430,8 @@ def env_thread_loop(engine: DemoEngine) -> None:
                         engine.log_event(f"DISCOVERY: craft→{grounded}")
                         spatial_map.update(
                             info.get("player_pos", player_pos), grounded)
-                    actual = labeler.label(craft_action, old_inv_b, new_inv_b)
-                    verify_outcome(near_str, craft_action.split("_")[0], actual, store)
+                    craft_out = outcome_to_verify(craft_action, old_inv_b, new_inv_b)
+                    verify_outcome(near_str, craft_action.split("_")[0], craft_out, store)
                     _build_snapshot(engine, craft_action, near_str, "curiosity: craft babble",
                                    [], 0, 0,
                                    get_drive_strengths(new_inv_b), last_perception_sim, grounding_log[-3:])

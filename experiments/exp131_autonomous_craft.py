@@ -46,6 +46,7 @@ from snks.agent.perception import (
     ground_empty_on_start,
     ground_zombie_on_damage,
     verify_outcome,
+    outcome_to_verify,
 )
 
 _DIRECTIONS = ["move_up", "move_down", "move_left", "move_right"]
@@ -221,8 +222,8 @@ def run_autonomous_episode(
                         if delta > 0 and k not in ("health", "food", "drink", "energy"):
                             resources[k] += delta
                 # Universal verification
-                actual = labeler.label("do", old_inv_b, new_inv_b)
-                verify_outcome(grounded or near_str, "do", actual, store)
+                outcome = outcome_to_verify("do", old_inv_b, new_inv_b)
+                verify_outcome(grounded or near_str, "do", outcome, store)
                 continue
 
             elif action.startswith("babble_"):
@@ -241,8 +242,8 @@ def run_autonomous_episode(
                         print(f"    [{step}] CRAFT→{grounded}")
                     spatial_map.update(
                         info.get("player_pos", player_pos), grounded)
-                actual = labeler.label(craft_action, old_inv_b, new_inv_b)
-                verify_outcome(near_str, craft_action.split("_")[0], actual, store)
+                craft_outcome = outcome_to_verify(craft_action, old_inv_b, new_inv_b)
+                verify_outcome(near_str, craft_action.split("_")[0], craft_outcome, store)
                 continue
             else:
                 unvisited = spatial_map.unvisited_neighbors(player_pos, radius=5)
@@ -283,10 +284,11 @@ def run_autonomous_episode(
                 if done:
                     break
                 new_inv = dict(info.get("inventory", {}))
-                actual = labeler.label("do", old_inv, new_inv)
-                store.verify_after_action(prediction, "do", actual, near=near_str)
-                # Universal verify
-                verify_outcome(near_str, "do", actual, store)
+                actual_near = labeler.label("do", old_inv, new_inv)
+                store.verify_after_action(prediction, "do", actual_near, near=near_str)
+                # Universal verify with actual outcome (gained item)
+                do_outcome = outcome_to_verify("do", old_inv, new_inv)
+                verify_outcome(near_str, "do", do_outcome, store)
                 if z_real is not None:
                     grounded = on_action_outcome("do", old_inv, new_inv, z_real, store, labeler)
                     if grounded:
@@ -309,8 +311,8 @@ def run_autonomous_episode(
                 if done:
                     break
                 new_inv = dict(info.get("inventory", {}))
-                actual = labeler.label(crafter_action, old_inv, new_inv)
-                verify_outcome(near_str, plan_step.action, actual, store)
+                craft_out = outcome_to_verify(crafter_action, old_inv, new_inv)
+                verify_outcome(near_str, plan_step.action, craft_out, store)
                 if z_real is not None:
                     grounded = on_action_outcome(
                         crafter_action, old_inv, new_inv, z_real, store, labeler)
@@ -364,8 +366,8 @@ def run_autonomous_episode(
                         delta = v - old_inv_b.get(k, 0)
                         if delta > 0 and k not in ("health", "food", "drink", "energy"):
                             resources[k] += delta
-                actual = labeler.label("do", old_inv_b, new_inv_b)
-                verify_outcome(grounded or near_str, "do", actual, store)
+                outcome = outcome_to_verify("do", old_inv_b, new_inv_b)
+                verify_outcome(grounded or near_str, "do", outcome, store)
                 nav_steps += 2
             elif action.startswith("babble_"):
                 craft_action = action.replace("babble_", "")
@@ -380,8 +382,8 @@ def run_autonomous_episode(
                     grounding_events.append(f"nav-craft→{grounded}")
                     spatial_map.update(
                         info.get("player_pos", player_pos), grounded)
-                actual = labeler.label(craft_action, old_inv_b, new_inv_b)
-                verify_outcome(near_str, craft_action.split("_")[0], actual, store)
+                craft_outcome = outcome_to_verify(craft_action, old_inv_b, new_inv_b)
+                verify_outcome(near_str, craft_action.split("_")[0], craft_outcome, store)
                 nav_steps += 1
             else:
                 if action not in _DIRECTIONS:

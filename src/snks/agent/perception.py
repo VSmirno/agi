@@ -192,12 +192,66 @@ def verify_outcome(
     Args:
         near_label: concept_id of what was NEARBY (e.g. "tree")
         action: what was done (e.g. "do")
-        actual_outcome: what was gained/produced (e.g. "wood")
+        actual_outcome: what was GAINED/PRODUCED (e.g. "wood"),
+                       NOT the near label. Use outcome_to_verify() to extract.
         concept_store: ConceptStore to update confidence
     """
     if near_label is None or actual_outcome is None:
         return
     concept_store.verify(near_label, action, actual_outcome)
+
+
+def outcome_to_verify(
+    action: str,
+    inv_before: dict[str, int],
+    inv_after: dict[str, int],
+) -> str | None:
+    """Extract the actual outcome (gained item/stat) from inventory delta.
+
+    This is what was PRODUCED, not what was nearby. For verification:
+    - "do" near tree: gained "wood" → outcome = "wood"
+    - "place_table": lost wood, gained table placement → outcome = "table"
+    - "make_wood_pickaxe": gained wood_pickaxe → outcome = "wood_pickaxe"
+
+    Different from OutcomeLabeler.label() which returns the NEAR concept.
+    """
+    gains: dict[str, int] = {}
+    losses: dict[str, int] = {}
+    survival = {"health", "food", "drink", "energy"}
+
+    for k in set(inv_before) | set(inv_after):
+        delta = inv_after.get(k, 0) - inv_before.get(k, 0)
+        if delta > 0:
+            gains[k] = delta
+        elif delta < 0:
+            losses[k] = -delta
+
+    if action == "do":
+        # Item gained = outcome (wood, stone_item, etc.)
+        for k in gains:
+            if k not in survival:
+                return k
+        # Stat gained = restore outcome
+        for stat in ("food", "drink"):
+            if gains.get(stat, 0) > 0:
+                return f"restore_{stat}"
+        return None
+
+    if action.startswith("place_"):
+        # Placed something: outcome = what was placed
+        placed = action.replace("place_", "")
+        if losses:  # resources were consumed → success
+            return placed
+        return None
+
+    if action.startswith("make_"):
+        # Crafted something: outcome = what was crafted
+        crafted = action.replace("make_", "")
+        if gains.get(crafted, 0) > 0:
+            return crafted
+        return None
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +332,7 @@ def select_goal(
     else:
         drives["wood"] = 0.1
 
-    if wood >= 2 and has_pickaxe == 0:
+    if wood >= 3 and has_pickaxe == 0:
         drives["wood_pickaxe"] = 1.5
     elif has_pickaxe > 0 and stone < 2:
         drives["stone_item"] = 1.5
@@ -309,6 +363,6 @@ def get_drive_strengths(inventory: dict[str, int]) -> dict[str, float]:
         "wood": max(0.1, 2.0 - wood * 0.3) if wood < 5 else 0.1,
         "stone_item": 1.5 if (has_pickaxe > 0 and stone < 2) else 0.3,
     }
-    if wood >= 2 and has_pickaxe == 0:
+    if wood >= 3 and has_pickaxe == 0:
         drives["wood_pickaxe"] = 1.5
     return drives

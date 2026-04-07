@@ -173,7 +173,7 @@ class TestGate2CausalLoad:
             ("stone", "do", {"wood_pickaxe": 1}, "stone_item"),
             ("coal", "do", {"wood_pickaxe": 1}, "coal_item"),
             ("iron", "do", {"stone_pickaxe": 1}, "iron_item"),
-            ("empty", "place", {"wood": 1}, "table"),
+            ("empty", "place", {"wood": 2}, "table"),
             ("table", "make", {"wood": 1}, "wood_pickaxe"),
             ("table", "make", {"wood": 1, "stone_item": 1}, "stone_pickaxe"),
             # wood_sword has same requires as wood_pickaxe (wood:1), so
