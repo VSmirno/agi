@@ -414,7 +414,7 @@ class TestGate5HomeostaticDrives:
         store = _make_store()
         sm = CrafterSpatialMap()
         curiosity = compute_curiosity(store, sm)
-        assert curiosity > 0.01  # model very incomplete, curiosity active
+        assert curiosity > 0.02  # model very incomplete, curiosity active
 
     def test_curiosity_decreases_with_knowledge(self):
         """Curiosity drops as concepts get grounded and confidence grows."""

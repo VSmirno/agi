@@ -235,8 +235,8 @@ class TestGate4DriveGoalSelection:
         t = HomeostaticTracker()
         t.rates = {"health": 0.0, "food": -0.04, "drink": -0.04, "energy": -0.03}
         sm = CrafterSpatialMap()
-        for i in range(100):  # low curiosity
-            sm.update((i % 10, i // 10), "empty")
+        for i in range(200):  # low curiosity
+            sm.update((i % 20, i // 20), "empty")
         return t, sm
 
     def test_low_food_selects_food(self):
