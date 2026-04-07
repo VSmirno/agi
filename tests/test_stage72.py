@@ -48,7 +48,7 @@ def _make_store() -> ConceptStore:
     return store
 
 
-_EncoderOutput = namedtuple("_EncoderOutput", ["z_real", "z_vsa", "near_logits"])
+_EncoderOutput = namedtuple("_EncoderOutput", ["z_real", "z_vsa", "near_logits", "feature_map"])
 
 
 class _MockEncoder:
@@ -60,10 +60,15 @@ class _MockEncoder:
 
     def __call__(self, pixels: torch.Tensor) -> _EncoderOutput:
         z = self._z.unsqueeze(0) if self._z.dim() == 1 else self._z
+        # Feature map: place z[:256] into center of 4×4 grid
+        feat = torch.randn(1, 256, 4, 4)
+        if self._z.dim() == 1 and self._z.shape[0] >= 256:
+            feat[0, :, 1:3, 1:3] = self._z[:256].reshape(256, 1, 1).expand(256, 2, 2)
         return _EncoderOutput(
             z_real=z,
             z_vsa=(z > 0).float(),
             near_logits=torch.zeros(1, 12),
+            feature_map=feat,
         )
 
 
@@ -118,29 +123,32 @@ class TestGate1QueryVisualScored:
 class TestGate2Perceive:
     def test_perceive_known_concept(self):
         store = _make_store()
-        z_tree = torch.randn(2048)
-        z_norm = F.normalize(z_tree.unsqueeze(0), dim=1).squeeze(0)
+        # Ground with 256-dim (per-position feature space)
+        z_256 = torch.randn(256)
+        z_norm = F.normalize(z_256.unsqueeze(0), dim=1).squeeze(0)
         store.ground_visual("tree", z_norm)
 
-        encoder = _MockEncoder(z_real=z_norm)
+        # Mock encoder: place z_256 in center of feature map
+        z_2048 = torch.randn(2048)
+        z_2048[:256] = z_256  # center features match prototype
+        encoder = _MockEncoder(z_real=z_2048)
         pixels = torch.randn(3, 64, 64)
 
-        concept, z_real = perceive(pixels, encoder, store)
+        concept, cf = perceive(pixels, encoder, store)
         assert concept is not None
         assert concept.id == "tree"
 
     def test_perceive_unknown_below_threshold(self):
         store = _make_store()
-        z_tree = torch.randn(2048)
-        store.ground_visual("tree", z_tree)
+        z_256 = torch.randn(256)
+        store.ground_visual("tree", z_256)
 
-        # Very different z_real
+        # Very different z_real → different center features
         z_other = torch.randn(2048) * 100
         encoder = _MockEncoder(z_real=z_other)
         pixels = torch.randn(3, 64, 64)
 
-        concept, z_real = perceive(pixels, encoder, store, min_similarity=0.99)
-        # With min_similarity=0.99 and random vectors, should return None
+        concept, cf = perceive(pixels, encoder, store, min_similarity=0.99)
         assert concept is None
 
     def test_perceive_no_visuals(self):
@@ -148,7 +156,7 @@ class TestGate2Perceive:
         encoder = _MockEncoder()
         pixels = torch.randn(3, 64, 64)
 
-        concept, z_real = perceive(pixels, encoder, store)
+        concept, cf = perceive(pixels, encoder, store)
         assert concept is None
 
 
@@ -161,7 +169,7 @@ class TestGate3ExperientialGrounding:
     def test_one_shot_grounding(self):
         store = _make_store()
         labeler = OutcomeLabeler()
-        z = torch.randn(2048)
+        z = torch.randn(256)
 
         inv_before = {"wood": 0}
         inv_after = {"wood": 1}
@@ -177,13 +185,13 @@ class TestGate3ExperientialGrounding:
         store = _make_store()
         labeler = OutcomeLabeler()
 
-        # First grounding
-        z1 = F.normalize(torch.randn(2048).unsqueeze(0), dim=1).squeeze(0)
+        # First grounding (256-dim per-position features)
+        z1 = F.normalize(torch.randn(256).unsqueeze(0), dim=1).squeeze(0)
         on_action_outcome("do", {"wood": 0}, {"wood": 1}, z1, store, labeler)
         visual_after_first = store.query_text("tree").visual.clone()
 
         # Second grounding — should EMA update
-        z2 = F.normalize(torch.randn(2048).unsqueeze(0), dim=1).squeeze(0)
+        z2 = F.normalize(torch.randn(256).unsqueeze(0), dim=1).squeeze(0)
         on_action_outcome("do", {"wood": 1}, {"wood": 2}, z2, store, labeler)
         visual_after_second = store.query_text("tree").visual
 
@@ -198,7 +206,7 @@ class TestGate3ExperientialGrounding:
     def test_no_effect_returns_none(self):
         store = _make_store()
         labeler = OutcomeLabeler()
-        z = torch.randn(2048)
+        z = torch.randn(256)
 
         result = on_action_outcome("do", {"wood": 0}, {"wood": 0}, z, store, labeler)
         assert result is None
@@ -206,7 +214,7 @@ class TestGate3ExperientialGrounding:
     def test_craft_grounding(self):
         store = _make_store()
         labeler = OutcomeLabeler()
-        z = torch.randn(2048)
+        z = torch.randn(256)
 
         inv_before = {"wood": 2}
         inv_after = {"wood": 1, "wood_pickaxe": 1}
@@ -297,7 +305,7 @@ class TestGate4bMotorBabbling:
         store = _make_store()
         # Ground 5 concepts
         for cid in ["tree", "stone", "coal", "iron", "table"]:
-            store.ground_visual(cid, torch.randn(2048))
+            store.ground_visual(cid, torch.randn(256))
         prob = babble_probability(store)
         assert prob < BABBLE_BASE_PROB
         assert prob >= BABBLE_MIN_PROB
@@ -306,7 +314,7 @@ class TestGate4bMotorBabbling:
         store = _make_store()
         # Ground many concepts
         for cid in store.concepts:
-            store.ground_visual(cid, torch.randn(2048))
+            store.ground_visual(cid, torch.randn(256))
         prob = babble_probability(store)
         assert prob >= BABBLE_MIN_PROB
 
@@ -325,7 +333,7 @@ class TestGate4bMotorBabbling:
     def test_explore_mostly_moves_when_grounded(self):
         store = _make_store()
         for cid in store.concepts:
-            store.ground_visual(cid, torch.randn(2048))
+            store.ground_visual(cid, torch.randn(256))
         rng = np.random.RandomState(42)
         babble_count = sum(
             1 for _ in range(1000) if explore_action(rng, store) == "babble_do"
