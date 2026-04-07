@@ -1,420 +1,262 @@
-"""Tick-based agent loop for Crafter Survival Demo.
+"""Agent loop for Crafter Survival Demo.
 
-One env.step() per tick. Handles reactive checks, plan execution,
-and auto-planning. Runs inside EnvThread.
+Uses the REAL pipeline from experiments:
+- ScenarioRunner.run_chain_with_concepts() for execution
+- ChainGenerator for auto-generated chains
+- IRON_CHAIN / hardcoded chains as fallback
+- ReactiveCheck integrated via run_chain_with_concepts
+
+The env is wrapped so every env.step() updates the UI snapshot,
+tracks item stats, and respects play/pause/step/FPS controls.
 """
 
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
 
-from snks.agent.crafter_pixel_env import ACTION_TO_IDX, SEMANTIC_NAMES
+from snks.agent.crafter_pixel_env import CrafterPixelEnv, SEMANTIC_NAMES, ACTION_TO_IDX
+from snks.agent.outcome_labeler import OutcomeLabeler
+from snks.agent.scenario_runner import (
+    ScenarioRunner, ScenarioStep, IRON_CHAIN, TREE_CHAIN, COAL_CHAIN,
+)
+from snks.agent.decode_head import NEAR_CLASSES
 
 if TYPE_CHECKING:
     from demos.crafter_demo.engine import DemoEngine
 
-# Resource progression for auto-planning
-_RESOURCE_GOALS = ["wood", "stone_item", "coal_item", "iron_item"]
+SURVIVAL_KEYS = {"health", "food", "drink", "energy"}
 
-# Need → goal mapping for survival
-_NEED_GOALS = {
-    "food": "cow",
-    "drink": "water",
-    "energy": "_sleep",
+# Chains to cycle through in survival mode
+SURVIVAL_CHAINS = [
+    ("wood harvest", TREE_CHAIN),
+    ("iron chain", IRON_CHAIN),
+]
+
+_CRAFT_ITEMS = {
+    "wood_pickaxe", "stone_pickaxe", "iron_pickaxe",
+    "wood_sword", "stone_sword", "iron_sword",
 }
 
 
-@dataclass
-class AgentState:
-    """Mutable agent state across ticks."""
+class DemoEnvWrapper:
+    """Wraps CrafterPixelEnv to hook every step() for UI updates.
 
-    plan: list[dict] | None = None  # list of ScenarioStep-like dicts
-    plan_index: int = 0
-    nav_phase: bool = True
-    retry_count: int = 0
-    rng: np.random.RandomState = field(default_factory=lambda: np.random.RandomState(42))
-    resource_index: int = 0  # which resource to pursue next
+    On each step():
+    - Updates engine.last_pixels / last_info / step_count
+    - Tracks collected/crafted items
+    - Updates snapshot for WS streaming
+    - Waits for FPS timing
+    - Respects pause (blocks until resumed)
+    """
 
+    def __init__(self, env: CrafterPixelEnv, engine: DemoEngine) -> None:
+        self._env = env
+        self._engine = engine
 
-def _find_nearest_object(
-    semantic: np.ndarray, player_pos: np.ndarray, target_name: str
-) -> tuple[int, int] | None:
-    """Find nearest cell with target in semantic map. Returns (row, col) or None."""
-    target_id = None
-    for sid, name in SEMANTIC_NAMES.items():
-        if name == target_name:
-            target_id = sid
-            break
-    if target_id is None:
-        return None
+    def step(self, action: int | str) -> tuple[Any, float, bool, dict]:
+        eng = self._engine
 
-    px, py = int(player_pos[0]), int(player_pos[1])
-    h, w = semantic.shape
-    best_pos = None
-    best_dist = float("inf")
+        # Wait if paused
+        while eng.state == "paused" and eng._running:
+            # Process commands while paused
+            _process_commands(eng)
+            time.sleep(0.05)
 
-    for r in range(h):
-        for c in range(w):
-            if int(semantic[r, c]) == target_id:
-                dist = abs(r - px) + abs(c - py)
-                if dist < best_dist:
-                    best_dist = dist
-                    best_pos = (r, c)
-    return best_pos
+        if not eng._running:
+            # Shutting down — return dummy
+            return eng.last_pixels, 0.0, True, eng.last_info
 
+        old_info = eng.last_info
+        old_inv = _get_inv_items(old_info)
 
-def _navigate_one_step(
-    engine: DemoEngine,
-    target_name: str,
-    rng: np.random.RandomState,
-) -> str:
-    """One move toward target using semantic map. Returns action name."""
-    semantic = engine.last_info.get("semantic")
-    player_pos = engine.last_info.get("player_pos")
-    if semantic is None or player_pos is None:
-        return _random_move(rng)
+        pixels, reward, done, info = self._env.step(action)
 
-    target_pos = _find_nearest_object(semantic, player_pos, target_name)
-    if target_pos is None:
-        return _random_move(rng)
+        eng.last_pixels = pixels
+        eng.last_info = info
+        eng.step_count += 1
 
-    px, py = int(player_pos[0]), int(player_pos[1])
-    tx, ty = target_pos
+        # Track items
+        new_inv = _get_inv_items(info)
+        for k, v in new_inv.items():
+            delta = v - old_inv.get(k, 0)
+            if delta > 0:
+                if k in _CRAFT_ITEMS:
+                    eng.metrics.record_crafted(k)
+                    eng.log_event(f"crafted {k}")
+                else:
+                    eng.metrics.record_collected(k)
+                    eng.log_event(f"collected {k}")
 
-    dx = tx - px
-    dy = ty - py
+        action_str = action if isinstance(action, str) else ""
+        if isinstance(action, str) and action.startswith("place_"):
+            placed = action.replace("place_", "")
+            eng.metrics.record_crafted(placed)
+            eng.log_event(f"placed {placed}")
 
-    if abs(dx) >= abs(dy):
-        return "move_right" if dx > 0 else "move_left"
-    else:
-        return "move_down" if dy > 0 else "move_up"
+        # Track zombie
+        near = "empty"
+        with eng.model_lock:
+            if eng.detector is not None:
+                try:
+                    near = eng.detector.detect(torch.from_numpy(pixels).float())
+                except Exception:
+                    pass
+        if near == "zombie":
+            eng.metrics.cur_encounters += 1
+            old_health = old_info.get("inventory", {}).get("health", 9)
+            new_health = info.get("inventory", {}).get("health", 9)
+            if new_health >= old_health:
+                eng.metrics.cur_survived += 1
 
+        # Build snapshot
+        snapshot = eng.build_snapshot(
+            agent_action=action_str if isinstance(action, str) else str(action),
+            agent_near=near,
+            agent_reason="pipeline",
+        )
+        with eng.snapshot_lock:
+            eng.snapshot = snapshot
 
-def _is_adjacent(engine: DemoEngine, target_name: str) -> bool:
-    """Check if target is on a neighboring cell (distance=1, cardinal)."""
-    semantic = engine.last_info.get("semantic")
-    player_pos = engine.last_info.get("player_pos")
-    if semantic is None or player_pos is None:
-        return False
+        # FPS throttle
+        time.sleep(1.0 / max(1, eng.target_fps))
 
-    target_pos = _find_nearest_object(semantic, player_pos, target_name)
-    if target_pos is None:
-        return False
+        # Handle stepping mode
+        if eng.state == "stepping":
+            eng.state = "paused"
 
-    px, py = int(player_pos[0]), int(player_pos[1])
-    tx, ty = target_pos
-    return abs(px - tx) + abs(py - ty) <= 1
+        return pixels, reward, done, info
 
+    def observe(self) -> tuple[Any, dict]:
+        return self._env.observe()
 
-def _random_move(rng: np.random.RandomState) -> str:
-    moves = ["move_up", "move_down", "move_left", "move_right"]
-    return moves[rng.randint(0, 4)]
+    def reset(self) -> tuple[Any, dict]:
+        pixels, info = self._env.reset()
+        self._engine.last_pixels = pixels
+        self._engine.last_info = info
+        return pixels, info
+
+    # Pass through n_actions etc
+    @property
+    def n_actions(self) -> int:
+        return self._env.n_actions
+
+    @property
+    def action_names(self) -> list[str]:
+        return self._env.action_names
 
 
 def _get_inv_items(info: dict) -> dict[str, int]:
-    """Extract item inventory (no survival stats)."""
     inv = dict(info.get("inventory", {}))
-    for k in ("health", "food", "drink", "energy"):
+    for k in SURVIVAL_KEYS:
         inv.pop(k, None)
     return {k: v for k, v in inv.items() if v > 0}
 
 
-def _get_survival(info: dict) -> dict[str, int]:
-    """Extract survival stats."""
-    inv = info.get("inventory", {})
-    return {
-        "health": inv.get("health", 9),
-        "food": inv.get("food", 9),
-        "drink": inv.get("drink", 9),
-        "energy": inv.get("energy", 9),
-    }
-
-
-def _plan_to_ui(plan: list[dict] | None, plan_index: int) -> list[dict[str, str]]:
-    """Convert plan to UI-friendly list with status markers."""
-    if not plan:
-        return []
-    result = []
-    for i, step in enumerate(plan):
-        if i < plan_index:
-            status = "done"
-        elif i == plan_index:
-            status = "active"
-        else:
-            status = "pending"
-        result.append({"label": step.get("label", step.get("action", "?")), "status": status})
-    return result
-
-
-def _make_plan_from_chain(engine: DemoEngine, goal: str) -> list[dict] | None:
-    """Generate plan from ChainGenerator for a goal."""
-    with engine.model_lock:
-        if engine.chain_gen is None:
-            return None
+def _process_commands(engine: DemoEngine) -> None:
+    """Drain command queue."""
+    while not engine.cmd_queue.empty():
         try:
-            steps = engine.chain_gen.generate(goal)
+            cmd = engine.cmd_queue.get_nowait()
         except Exception:
-            return None
+            break
 
-    if not steps:
-        return None
-
-    plan = []
-    for s in steps:
-        plan.append({
-            "navigate_to": s.navigate_to,
-            "action": s.action,
-            "near_label": s.near_label,
-            "label": f"{s.action} → {s.near_label}",
-            "prerequisite_inv": dict(s.prerequisite_inv) if s.prerequisite_inv else {},
-        })
-    return plan
-
-
-def _auto_plan(engine: DemoEngine, agent: AgentState) -> None:
-    """Auto-generate plan based on survival needs or resource progression."""
-    survival = _get_survival(engine.last_info)
-
-    # Check survival needs first
-    with engine.model_lock:
-        if engine.reactive:
-            need = engine.reactive.check_needs(dict(engine.last_info.get("inventory", {})))
-            if need:
-                need_name, target = need
-                if target == "_sleep":
-                    # Simple sleep plan
-                    agent.plan = [{"action": "sleep", "navigate_to": None, "near_label": "sleep",
-                                   "label": "sleep (energy)", "prerequisite_inv": {}}]
-                else:
-                    agent.plan = [{"action": "do", "navigate_to": target, "near_label": target,
-                                   "label": f"seek {target} ({need_name})", "prerequisite_inv": {}}]
-                agent.plan_index = 0
-                agent.nav_phase = True
-                engine.log_event(f"auto-plan: {need_name} need → seek {target}")
-                return
-
-    # Resource progression
-    goal = _RESOURCE_GOALS[agent.resource_index % len(_RESOURCE_GOALS)]
-    plan = _make_plan_from_chain(engine, goal)
-    if plan:
-        agent.plan = plan
-        agent.plan_index = 0
-        agent.nav_phase = True
-        engine.log_event(f"auto-plan: {goal}")
-    else:
-        # Fallback: random explore
-        agent.plan = None
-
-
-def tick(engine: DemoEngine, agent: AgentState) -> None:
-    """One tick of the agent loop. Executes one env.step()."""
-    if engine.env is None or engine.last_pixels is None:
-        return
-
-    pixels = engine.last_pixels
-    info = engine.last_info
-    inv = dict(info.get("inventory", {}))
-
-    # --- Step 1: Detect near object ---
-    near = "empty"
-    with engine.model_lock:
-        if engine.detector is not None:
-            try:
-                near = engine.detector.detect(torch.from_numpy(pixels).float())
-            except Exception:
-                near = "empty"
-
-    agent_reason = "idle"
-    action_name = "noop"
-    reactive_data = None
-
-    # --- Step 2: Reactive check ---
-    with engine.model_lock:
-        if engine.reactive is not None:
-            result = engine.reactive.check_all(near, inv)
-            if result["action"] is not None:
-                reactive_data = result
-                agent_reason = "reactive"
-
-                if result["action"] == "flee":
-                    action_name = _random_move(agent.rng)  # flee = random away
-                    engine.log_event(f"reactive: flee from {near}")
-                elif result["action"] == "do":
-                    action_name = "do"
-                    reason = result.get("reason", "")
-                    engine.log_event(f"reactive: {reason} → do")
-                elif result["action"] == "sleep":
-                    action_name = "sleep"
-                    engine.log_event("reactive: sleep (energy)")
-                elif result["action"] == "seek":
-                    target = result.get("target", "water")
-                    action_name = _navigate_one_step(engine, target, agent.rng)
-                    engine.log_event(f"reactive: seek {target}")
-
-    # --- Step 3: Plan execution ---
-    if agent_reason == "idle" and agent.plan and agent.plan_index < len(agent.plan):
-        step = agent.plan[agent.plan_index]
-        agent_reason = "plan"
-
-        if agent.nav_phase:
-            # Navigation phase: move toward target
-            if step.get("navigate_to"):
-                if _is_adjacent(engine, step["navigate_to"]):
-                    # Arrived — switch to action phase on NEXT tick
-                    agent.nav_phase = False
-                    action_name = "noop"  # don't act yet, just mark arrival
-                else:
-                    action_name = _navigate_one_step(engine, step["navigate_to"], agent.rng)
-            else:
-                # No navigation needed — go straight to action phase
-                agent.nav_phase = False
-                action_name = "noop"
-        else:
-            # Action phase: execute the step's action
-            action_name = step["action"]
-            # Advance plan on next tick
-            agent.nav_phase = True
-            agent.plan_index += 1
-            agent.retry_count = 0
-            if agent.plan_index >= len(agent.plan):
-                engine.log_event("plan complete")
-                agent.resource_index += 1
-                agent.plan = None
-
-    # --- Step 4: Auto-plan if idle ---
-    if agent_reason == "idle" and engine.mode == "survival":
-        _auto_plan(engine, agent)
-        if agent.plan:
-            agent_reason = "plan"
-            # Will execute on next tick
-            action_name = "noop"
-    elif agent_reason == "idle" and engine.mode == "interactive":
-        action_name = "noop"
-
-    # --- Step 5: Execute action ---
-    if action_name == "noop":
-        action_idx = 0
-    elif isinstance(action_name, str):
-        action_idx = ACTION_TO_IDX.get(action_name, 0)
-    else:
-        action_idx = int(action_name)
-
-    new_pixels, reward, done, new_info = engine.env.step(action_idx)
-
-    # Track resources — distinguish gathered vs crafted
-    _CRAFT_ITEMS = {"wood_pickaxe", "stone_pickaxe", "iron_pickaxe",
-                    "wood_sword", "stone_sword", "iron_sword"}
-    _PLACE_ITEMS = {"table", "furnace"}  # these disappear from inv on place
-    old_inv = _get_inv_items(info)
-    new_inv = _get_inv_items(new_info)
-    for k, v in new_inv.items():
-        delta = v - old_inv.get(k, 0)
-        if delta > 0:
-            if k in _CRAFT_ITEMS:
-                engine.metrics.record_crafted(k)
-                engine.log_event(f"crafted {k}")
-            else:
-                engine.metrics.record_collected(k)
-                engine.log_event(f"collected {k}")
-    # Detect place actions (item leaves inventory)
-    if action_name.startswith("place_"):
-        placed = action_name.replace("place_", "")
-        engine.metrics.record_crafted(placed)
-        engine.log_event(f"placed {placed}")
-
-    # Track zombie encounters
-    if near == "zombie":
-        engine.metrics.cur_encounters += 1
-        new_health = new_info.get("inventory", {}).get("health", 9)
-        old_health = inv.get("health", 9)
-        if new_health >= old_health:
-            engine.metrics.cur_survived += 1
-
-    engine.last_pixels = new_pixels
-    engine.last_info = new_info
-    engine.step_count += 1
-
-    # --- Step 6: Update snapshot ---
-    plan_ui = _plan_to_ui(agent.plan, agent.plan_index)
-    snapshot = engine.build_snapshot(
-        agent_action=action_name,
-        agent_near=near,
-        agent_reason=agent_reason,
-        plan_data=plan_ui,
-        plan_step=agent.plan_index,
-        plan_total=len(agent.plan) if agent.plan else 0,
-        reactive_data=reactive_data,
-    )
-    with engine.snapshot_lock:
-        engine.snapshot = snapshot
-
-    # --- Step 7: Episode done ---
-    if done:
-        engine.metrics.finish_episode(engine.step_count)
-        engine.log_event(f"episode {engine.episode_count} ended (step {engine.step_count})")
-        agent.plan = None
-        agent.plan_index = 0
-        # Reset immediately — no dead-env ticks
-        engine.reset_env()
-        agent.rng = np.random.RandomState(engine.episode_count)
-        # Rebuild snapshot with fresh env state
-        snapshot = engine.build_snapshot(
-            agent_action="reset",
-            agent_near="empty",
-            agent_reason="new episode",
-        )
-        with engine.snapshot_lock:
-            engine.snapshot = snapshot
+        action = cmd.get("cmd", "")
+        if action == "play":
+            engine.state = "playing"
+        elif action == "pause":
+            engine.state = "paused"
+        elif action == "step":
+            engine.state = "stepping"
+        elif action == "reset":
+            engine.reset_env()
+        elif action == "set_mode":
+            engine.mode = cmd.get("mode", "survival")
+        elif action == "set_goal":
+            engine._pending_goal = cmd.get("goal", "")
+        elif action == "set_speed":
+            engine.target_fps = max(1, min(30, cmd.get("fps", 10)))
+        elif action == "train":
+            engine.start_training(epochs=cmd.get("epochs", 150))
 
 
 def env_thread_loop(engine: DemoEngine) -> None:
-    """Main loop for EnvThread. Processes commands and ticks."""
-    agent = AgentState()
+    """Main loop — runs ScenarioRunner chains exactly like experiments."""
+    runner = ScenarioRunner()
+    labeler = OutcomeLabeler()
+    rng = np.random.RandomState(42)
+    chain_idx = 0
 
     while engine._running:
         # Process commands
-        while not engine.cmd_queue.empty():
-            try:
-                cmd = engine.cmd_queue.get_nowait()
-            except Exception:
-                break
+        _process_commands(engine)
 
-            action = cmd.get("cmd", "")
-            if action == "play":
-                engine.state = "playing"
-            elif action == "pause":
-                engine.state = "paused"
-            elif action == "step":
-                engine.state = "stepping"
-            elif action == "reset":
-                engine.reset_env()
-                agent = AgentState()
-            elif action == "set_mode":
-                engine.mode = cmd.get("mode", "survival")
-                agent.plan = None
-                agent.plan_index = 0
-            elif action == "set_goal":
-                goal = cmd.get("goal", "")
-                plan = _make_plan_from_chain(engine, goal)
-                if plan:
-                    agent.plan = plan
-                    agent.plan_index = 0
-                    agent.nav_phase = True
-                    engine.log_event(f"goal set: {goal}")
-            elif action == "set_speed":
-                engine.target_fps = max(1, min(30, cmd.get("fps", 10)))
+        # Wait if paused
+        if engine.state == "paused":
+            time.sleep(0.05)
+            continue
 
-        # Tick
-        if engine.state == "playing":
-            tick(engine, agent)
-            time.sleep(1.0 / engine.target_fps)
-        elif engine.state == "stepping":
-            tick(engine, agent)
-            engine.state = "paused"
+        # Create wrapped env
+        engine.reset_env()
+        wrapped = DemoEnvWrapper(engine.env, engine)
+
+        if engine.mode == "interactive" and hasattr(engine, "_pending_goal") and engine._pending_goal:
+            # Interactive: use ChainGenerator for user-specified goal
+            goal = engine._pending_goal
+            engine._pending_goal = ""
+            with engine.model_lock:
+                if engine.chain_gen:
+                    chain = engine.chain_gen.generate(goal)
+                    engine.log_event(f"goal: {goal} ({len(chain)} steps)")
+                else:
+                    chain = list(IRON_CHAIN)
+                    engine.log_event(f"goal: {goal} (fallback IRON_CHAIN)")
+        elif engine.mode == "survival":
+            # Survival: cycle through chains
+            name, chain = SURVIVAL_CHAINS[chain_idx % len(SURVIVAL_CHAINS)]
+            chain_idx += 1
+            engine.log_event(f"chain: {name}")
+
+            # Also try ChainGenerator chains
+            with engine.model_lock:
+                if engine.chain_gen:
+                    goals = engine.chain_gen.available_goals()
+                    resource_goals = [g for g in goals if g not in (
+                        "restore_drink", "restore_energy", "restore_food")]
+                    if resource_goals:
+                        goal = resource_goals[(chain_idx - 1) % len(resource_goals)]
+                        gen_chain = engine.chain_gen.generate(goal)
+                        if gen_chain:
+                            chain = gen_chain
+                            engine.log_event(f"  (generated: {goal}, {len(chain)} steps)")
         else:
-            time.sleep(0.05)  # idle sleep when paused
+            # Interactive with no goal — idle
+            time.sleep(0.1)
+            continue
+
+        # Run the chain using the REAL pipeline
+        with engine.model_lock:
+            detector = engine.detector
+            store = engine.store
+            reactive = engine.reactive
+
+        try:
+            labeled = runner.run_chain_with_concepts(
+                env=wrapped,
+                detector=detector,
+                labeler=labeler,
+                chain=chain,
+                rng=rng,
+                concept_store=store,
+                reactive=reactive,
+            )
+            engine.log_event(f"chain done: {len(labeled)} labeled frames")
+        except Exception as e:
+            engine.log_event(f"chain error: {e}")
+
+        # Episode stats
+        engine.metrics.finish_episode(engine.step_count)
+        engine.log_event(f"episode {engine.episode_count} done (step {engine.step_count})")

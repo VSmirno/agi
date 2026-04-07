@@ -272,6 +272,7 @@ class DemoEngine:
 
         # Command queue for env thread
         self.cmd_queue: queue.Queue[dict] = queue.Queue()
+        self._pending_goal: str = ""
 
         # Training progress
         self.train_progress = TrainProgress()
