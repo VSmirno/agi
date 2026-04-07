@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from snks.agent.outcome_labeler import OutcomeLabeler
 
 
-MIN_SIMILARITY = 0.5
+MIN_SIMILARITY = 0.3  # permissive — one-shot prototypes are noisy
 EMA_ALPHA = 0.1  # new observation weight in prototype update
 
 
@@ -110,7 +110,7 @@ def on_action_outcome(
 
 # Action diversity during exploration. Higher = more random actions tried.
 # Decays as more concepts get visually grounded (less need to babble).
-BABBLE_BASE_PROB = 0.30  # probability of trying "do" during exploration
+BABBLE_BASE_PROB = 0.20  # probability of trying "do" during exploration
 BABBLE_MIN_PROB = 0.03   # floor after many concepts grounded
 
 _ALL_ACTIONS = ["do", "sleep", "place_table", "make_wood_pickaxe"]
