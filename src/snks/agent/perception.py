@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from snks.agent.outcome_labeler import OutcomeLabeler
 
 
-MIN_SIMILARITY = 0.4
+MIN_SIMILARITY = 0.5
 EMA_ALPHA = 0.2       # prototype refinement (faster convergence for 256-dim)
 RATE_EMA_ALPHA = 0.05  # homeostatic rate tracking (slow — body changes gradually)
 
@@ -335,7 +335,7 @@ def outcome_to_verify(
 # Curiosity / Motor Babbling
 # ---------------------------------------------------------------------------
 
-BABBLE_BASE_PROB = 0.15
+BABBLE_BASE_PROB = 0.20
 BABBLE_MIN_PROB = 0.03
 _DIRECTIONS = ["move_up", "move_down", "move_left", "move_right"]
 

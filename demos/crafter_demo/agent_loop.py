@@ -24,6 +24,7 @@ from snks.agent.perception import (
     perceive,
     perceive_field,
     VisualField,
+    HomeostaticTracker,
     on_action_outcome,
     select_goal,
     get_drive_strengths,
@@ -307,11 +308,12 @@ def env_thread_loop(engine: DemoEngine) -> None:
                     dy, dx = gy - 2, gx - 2  # center is ~(1.5,1.5)
                     spatial_map.update((py + dy * 2, px + dx * 2), cid)
 
-            # ---- 1b. ZOMBIE GROUNDING (damage detection) ----
+            # ---- 1b. ZOMBIE GROUNDING + HOMEOSTATIC TRACKING ----
             if hasattr(engine, '_prev_inv'):
                 if ground_zombie_on_damage(engine._prev_inv, inv, vf, store):
                     engine.log_event("DISCOVERY: grounded 'zombie' from damage")
                     grounding_log.append("damage→zombie")
+                engine.tracker.update(engine._prev_inv, inv, vf.visible_concepts())
             engine._prev_inv = dict(inv)
 
             # ---- 2. REACTIVE CHECK (perception-based, drives decide) ----
@@ -354,7 +356,9 @@ def env_thread_loop(engine: DemoEngine) -> None:
             # ---- 3. GOAL SELECTION (re-evaluate periodically) ----
             if not current_plan or steps_since_replan >= REPLAN_INTERVAL:
                 old_goal = current_goal
-                current_goal, current_plan = select_goal(inv, store, visual_field=vf)
+                current_goal, current_plan = select_goal(
+                    inv, store, tracker=engine.tracker, visual_field=vf,
+                    spatial_map=spatial_map)
                 plan_step_idx = 0
                 nav_steps = 0
                 steps_since_replan = 0

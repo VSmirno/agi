@@ -30,6 +30,7 @@ from snks.agent.crafter_pixel_env import (
 )
 from snks.agent.crafter_spatial_map import CrafterSpatialMap
 from snks.agent.crafter_textbook import CrafterTextbook
+from snks.agent.perception import HomeostaticTracker
 from snks.agent.reactive_check import ReactiveCheck
 from snks.encoder.cnn_encoder import CNNEncoder
 from snks.encoder.near_detector import NearDetector
@@ -252,6 +253,7 @@ class DemoEngine:
         self.chain_gen: ChainGenerator | None = None
         self.reactive: ReactiveCheck | None = None
         self.spatial_map: CrafterSpatialMap = CrafterSpatialMap()
+        self.tracker: HomeostaticTracker = HomeostaticTracker()
         self.model_lock = threading.Lock()
 
         # Env
@@ -389,12 +391,12 @@ class DemoEngine:
             self.reactive = ReactiveCheck(store)
             self.has_model = False
 
-    @staticmethod
-    def _init_textbook(store: ConceptStore) -> None:
+    def _init_textbook(self, store: ConceptStore) -> None:
         tb_path = Path(__file__).parent.parent.parent / "configs" / "crafter_textbook.yaml"
         if tb_path.exists():
             tb = CrafterTextbook(str(tb_path))
             tb.load_into(store)
+            self.tracker.init_from_body_rules(tb.body_rules)
 
     def reset_env(self) -> None:
         """Reset or create env."""
