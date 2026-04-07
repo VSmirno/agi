@@ -96,7 +96,7 @@ def _navigate_one_step(
 
 
 def _is_adjacent(engine: DemoEngine, target_name: str) -> bool:
-    """Check if target is within 2 cells."""
+    """Check if target is on a neighboring cell (distance=1, cardinal)."""
     semantic = engine.last_info.get("semantic")
     player_pos = engine.last_info.get("player_pos")
     if semantic is None or player_pos is None:
@@ -108,7 +108,7 @@ def _is_adjacent(engine: DemoEngine, target_name: str) -> bool:
 
     px, py = int(player_pos[0]), int(player_pos[1])
     tx, ty = target_pos
-    return abs(px - tx) <= 2 and abs(py - ty) <= 2
+    return abs(px - tx) + abs(py - ty) <= 1
 
 
 def _random_move(rng: np.random.RandomState) -> str:
@@ -261,24 +261,28 @@ def tick(engine: DemoEngine, agent: AgentState) -> None:
         step = agent.plan[agent.plan_index]
         agent_reason = "plan"
 
-        if step.get("navigate_to") and agent.nav_phase:
-            if _is_adjacent(engine, step["navigate_to"]):
-                agent.nav_phase = False
-                action_name = step["action"]
+        if agent.nav_phase:
+            # Navigation phase: move toward target
+            if step.get("navigate_to"):
+                if _is_adjacent(engine, step["navigate_to"]):
+                    # Arrived — switch to action phase on NEXT tick
+                    agent.nav_phase = False
+                    action_name = "noop"  # don't act yet, just mark arrival
+                else:
+                    action_name = _navigate_one_step(engine, step["navigate_to"], agent.rng)
             else:
-                action_name = _navigate_one_step(engine, step["navigate_to"], agent.rng)
+                # No navigation needed — go straight to action phase
+                agent.nav_phase = False
+                action_name = "noop"
         else:
+            # Action phase: execute the step's action
             action_name = step["action"]
-            agent.nav_phase = False
-
-        # If we just did the action (not navigating), check if we should advance
-        if not agent.nav_phase:
-            # Execute action and advance
+            # Advance plan on next tick
             agent.nav_phase = True
             agent.plan_index += 1
             agent.retry_count = 0
             if agent.plan_index >= len(agent.plan):
-                engine.log_event(f"plan complete")
+                engine.log_event("plan complete")
                 agent.resource_index += 1
                 agent.plan = None
 
