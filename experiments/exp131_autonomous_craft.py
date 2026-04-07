@@ -190,9 +190,12 @@ def run_autonomous_episode(
         replan_counter += 1
         if not current_plan or replan_counter >= 20:
             replan_counter = 0
+            old_goal = current_goal
             current_goal, current_plan = select_goal(
                 inv, store, tracker=tracker, visual_field=vf, spatial_map=spatial_map)
             plan_step_idx = 0
+            if verbose and current_goal != old_goal:
+                print(f"    [{step}] GOAL: {current_goal} ({len(current_plan)} steps)")
             nav_steps = 0
 
             if current_goal == "restore_energy":
@@ -532,14 +535,23 @@ def phase5_survival(encoder, store, tracker, n=200, max_steps=1500):
     labeler = OutcomeLabeler()
     lengths = []
     death_causes = Counter()
+    sword_episodes = 0
     for i in range(n):
         result = run_autonomous_episode(
             encoder, store, labeler, tracker, 90000 + i * 7,
             max_steps=max_steps, enemies=True, verbose=(i < 5))
         lengths.append(result["length"])
         death_causes[result.get("death_cause", "unknown")] += 1
+        if "wood_sword" in result.get("resources", {}):
+            sword_episodes += 1
+        # Check if sword was crafted (grounding events)
+        if any("sword" in e for e in result.get("grounding_events", [])):
+            sword_episodes += 1
         if (i + 1) % 50 == 0:
-            print(f"  [{i+1}/{n}] mean_length={np.mean(lengths):.0f} deaths={dict(death_causes)}")
+            last50 = lengths[-50:]
+            print(f"  [{i+1}/{n}] mean_length={np.mean(lengths):.0f} "
+                  f"last50={np.mean(last50):.0f} deaths={dict(death_causes)} "
+                  f"sword={sword_episodes}/{i+1}")
     mean_len = np.mean(lengths)
     print(f"  Mean length: {mean_len:.0f} (gate: ≥200)")
     print(f"  Death causes: {dict(death_causes)}")

@@ -72,6 +72,7 @@ class HomeostaticTracker:
         """Set initial rates from textbook body rules (innate knowledge).
 
         Like a baby knowing pain = bad. Not learned, pre-wired.
+        _background rules set unconditional baseline rates.
         """
         if self._initialized:
             return
@@ -80,7 +81,11 @@ class HomeostaticTracker:
             var = rule.get("variable")
             rate = rule.get("rate", 0.0)
             if concept and var:
-                self.conditional_rates[(concept, var)] = rate
+                if concept == "_background":
+                    # Background rate = unconditional baseline
+                    self.rates[var] = rate
+                else:
+                    self.conditional_rates[(concept, var)] = rate
         self._initialized = True
 
     def update(
@@ -365,7 +370,7 @@ def compute_curiosity(concept_store: ConceptStore, spatial_map: Any) -> float:
 
     # Scale down to background level — body drives should override easily
     # Curiosity maxes at ~0.03, body drives start at ~0.04 for mildly low stats
-    return (visual_gap + knowledge_gap + map_gap) / 3.0 * 0.03
+    return (visual_gap + knowledge_gap + map_gap) / 3.0 * 0.05
 
 
 def explore_action(
