@@ -304,9 +304,10 @@ def env_thread_loop(engine: DemoEngine) -> None:
             for cid, _sim, gy, gx in vf.detections:
                 if (gy, gx) not in [(1,1),(1,2),(2,1),(2,2)]:
                     # Offset from player based on grid position
-                    py, px = int(player_pos[0]), int(player_pos[1])
-                    dy, dx = gy - 2, gx - 2  # center is ~(1.5,1.5)
-                    spatial_map.update((py + dy * 2, px + dx * 2), cid)
+                    # player_pos[0]=x, [1]=y. grid: gy=row(vertical), gx=col(horizontal)
+                    wx = int(player_pos[0]) + (gx - 2) * 2  # horizontal
+                    wy = int(player_pos[1]) + (gy - 2) * 2  # vertical
+                    spatial_map.update((wx, wy), cid)
 
             # ---- 1b. ZOMBIE GROUNDING + HOMEOSTATIC TRACKING ----
             if hasattr(engine, '_prev_inv'):
