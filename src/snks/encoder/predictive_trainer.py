@@ -157,12 +157,22 @@ class PredictiveTrainer:
 
         total = pred_loss + var_loss
 
-        # Supervised contrastive loss
+        # Supervised contrastive loss on z_real (scene-level)
         con_loss_val = 0.0
         if self.contrastive_weight > 0 and situation_labels is not None:
             con = supcon_loss(z_t, situation_labels)
             con_loss_val = con.item()
             total = total + self.contrastive_weight * con
+
+        # Supervised contrastive loss on CENTER FEATURES (position-level)
+        # This directly optimizes the space used for cosine matching
+        center_con_val = 0.0
+        if self.contrastive_weight > 0 and situation_labels is not None:
+            fmap = out_t.feature_map  # (B, C, 4, 4)
+            center_feat = fmap[:, :, 1:3, 1:3].mean(dim=(2, 3))  # (B, C)
+            center_con = supcon_loss(center_feat, situation_labels)
+            center_con_val = center_con.item()
+            total = total + self.contrastive_weight * center_con
 
         # Near classification loss (cross-entropy on near_head output)
         near_loss_val = 0.0

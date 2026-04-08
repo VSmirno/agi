@@ -398,8 +398,8 @@ def phase2_train_outcome_encoder(
     predictor = JEPAPredictor()
     trainer = PredictiveTrainer(
         encoder, predictor,
-        contrastive_weight=0.3,
-        near_weight=3.0,   # outcome supervision is the primary signal
+        contrastive_weight=1.0,   # strong: optimize features for cosine matching
+        near_weight=2.0,          # still important for near_head
         device=train_device,
     )
 
