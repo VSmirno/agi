@@ -355,7 +355,7 @@ def phase5_survival(
             # Action selection
             if plan:
                 step_plan = plan[0]
-                target = step_plan.concept_id
+                target = step_plan.target
                 if vf.near_concept == target:
                     action_str = step_plan.action
                 else:
