@@ -228,7 +228,7 @@ def run_autonomous_episode(
                 if device.type != "cpu":
                     pix_t = pix_t.to(device)
                 vf_b = perceive_field(pix_t, encoder, store)
-                z_before = vf_b.center_feature
+                z_before = vf_b.raw_center_feature or vf_b.center_feature
                 old_inv_b = dict(info.get("inventory", {}))
                 pixels, _, done, info = env.step("do")
                 if done:
@@ -261,7 +261,7 @@ def run_autonomous_episode(
                 new_inv_b = dict(info.get("inventory", {}))
                 grounded = on_action_outcome(
                     craft_action, old_inv_b, new_inv_b,
-                    vf.center_feature if vf.center_feature is not None else torch.zeros(256),
+                    (vf.raw_center_feature or vf.center_feature) if vf.center_feature is not None else torch.zeros(256),
                     store, labeler)
                 if grounded:
                     grounding_events.append(f"craft→{grounded}")
@@ -324,7 +324,7 @@ def run_autonomous_episode(
                     verify_outcome(near_str, "do",
                                    plan_step.expected_gain, store)
                 if vf.center_feature is not None:
-                    grounded = on_action_outcome("do", old_inv, new_inv, vf.center_feature, store, labeler, encoder=encoder)
+                    grounded = on_action_outcome("do", old_inv, new_inv, vf.raw_center_feature or vf.center_feature, store, labeler, encoder=encoder)
                     if grounded:
                         grounding_events.append(f"plan→{grounded}")
                 if success:
@@ -362,7 +362,7 @@ def run_autonomous_episode(
                 verify_outcome(near_str, plan_step.action, craft_out, store)
                 if vf.center_feature is not None:
                     grounded = on_action_outcome(
-                        crafter_action, old_inv, new_inv, vf.center_feature, store, labeler, encoder=encoder)
+                        crafter_action, old_inv, new_inv, vf.raw_center_feature or vf.center_feature, store, labeler, encoder=encoder)
                     if grounded:
                         grounding_events.append(f"craft→{grounded}")
                         if verbose:
@@ -429,7 +429,7 @@ def run_autonomous_episode(
                 if device.type != "cpu":
                     pix_t = pix_t.to(device)
                 vf_b = perceive_field(pix_t, encoder, store)
-                z_before = vf_b.center_feature
+                z_before = vf_b.raw_center_feature or vf_b.center_feature
                 old_inv_b = dict(info.get("inventory", {}))
                 pixels, _, done, info = env.step("do")
                 if done:
@@ -459,7 +459,7 @@ def run_autonomous_episode(
                 new_inv_b = dict(info.get("inventory", {}))
                 grounded = on_action_outcome(
                     craft_action, old_inv_b, new_inv_b,
-                    vf.center_feature if vf.center_feature is not None else torch.zeros(256),
+                    (vf.raw_center_feature or vf.center_feature) if vf.center_feature is not None else torch.zeros(256),
                     store, labeler)
                 if grounded:
                     grounding_events.append(f"nav-craft→{grounded}")

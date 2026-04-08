@@ -141,7 +141,8 @@ class VisualField:
     detections: list[tuple[str, float, int, int]] = field(default_factory=list)
     near_concept: str = "empty"
     near_similarity: float = 0.0
-    center_feature: torch.Tensor | None = None
+    center_feature: torch.Tensor | None = None       # projected (for matching)
+    raw_center_feature: torch.Tensor | None = None    # unprojected (for observations)
 
     def visible_concepts(self) -> set[str]:
         return {cid for cid, _, _, _ in self.detections}
@@ -180,7 +181,7 @@ def perceive_field(
     c0 = H // 2 - 1
     raw_center = fmap[:, c0:c0+2, c0:c0+2].mean(dim=(1, 2))  # (C,)
 
-    # Project through metric head if available
+    vf.raw_center_feature = raw_center  # always store raw for observations
     if has_proj:
         with torch.no_grad():
             vf.center_feature = encoder.metric_proj(raw_center.unsqueeze(0)).squeeze(0)
@@ -311,7 +312,7 @@ def on_action_outcome(
 
     # Store RAW observation (before projection) for metric learning
     z_raw = F.normalize(center_feature.unsqueeze(0), dim=1).squeeze(0)
-    concept.add_observation(z_raw)
+    concept.add_observation(z_raw)  # always raw dim, never projected
 
     # Project through metric head if available
     has_proj = encoder is not None and hasattr(encoder, "metric_proj") and encoder.metric_proj is not None
