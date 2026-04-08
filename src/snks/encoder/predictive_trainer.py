@@ -168,8 +168,10 @@ class PredictiveTrainer:
         # This directly optimizes the space used for cosine matching
         center_con_val = 0.0
         if self.contrastive_weight > 0 and situation_labels is not None:
-            fmap = out_t.feature_map  # (B, C, 4, 4)
-            center_feat = fmap[:, :, 1:3, 1:3].mean(dim=(2, 3))  # (B, C)
+            fmap = out_t.feature_map  # (B, C, H, W)
+            H = fmap.shape[2]
+            c0 = H // 2 - 1  # center start: 1 for grid=4, 3 for grid=8
+            center_feat = fmap[:, :, c0:c0+2, c0:c0+2].mean(dim=(2, 3))  # (B, C)
             center_con = supcon_loss(center_feat, situation_labels)
             center_con_val = center_con.item()
             total = total + self.contrastive_weight * center_con
