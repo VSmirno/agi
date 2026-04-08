@@ -213,6 +213,9 @@
 - **Bottleneck = perception speed.** Agent тратит ~80 шагов на поиск 3 деревьев при текущем качестве cosine matching. Нужно либо быстрее perception, либо рicher features.
 - **ReactiveCheck убран** — flee хуже чем терпеть удары. Drives правильно выводят "крафти меч".
 - **Архитектура чистая:** zero hardcoded strategy. Sword emergence подтверждён (1 craft в exp131 ранних итерациях).
+- **SupCon on center features не помог** (exp132 supcon: survival 169 vs 173 без). Classification features ≠ metric features — разный training objective не решается добавлением contrastive loss.
+- **500 эпизодов — learning saturated.** Survival стабильно 169-173, не растёт. Bottleneck архитектурный.
+- **Лучший результат:** exp131 без ReactiveCheck, 512ch CNN: survival 173, tree 54%, 6 concepts, 4 rules verified.
 
   - 3 концепта grounded из опыта: tree, water, cow.
   - Motor babbling (15% prob) → action outcome → one-shot grounding → perception bootstrap.
