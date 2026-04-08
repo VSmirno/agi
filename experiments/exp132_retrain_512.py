@@ -49,16 +49,12 @@ def phase0_retrain_512():
     # Collect training data using existing chains
     dataset = phase2_collect_via_chains(detector, gen, store)
 
-    # Train NEW encoder with 512 channels
-    print("  Training 512-channel encoder...")
-    encoder_512 = CNNEncoder(feature_channels=512)
-    if torch.cuda.is_available():
-        encoder_512 = encoder_512.cuda()
+    # Train NEW encoder: 256 channels, 8×8 grid (~1 tile per cell)
+    print("  Training 8×8 grid encoder (256ch, 3 layers)...")
 
-    # Use existing training function — it creates a fresh encoder internally
-    # We need to patch it to use 512 channels
     encoder_trained, detector_trained = phase2_train_outcome_encoder(
-        dataset, epochs=150, encoder_cls_kwargs={"feature_channels": 512}
+        dataset, epochs=150,
+        encoder_cls_kwargs={"feature_channels": 256, "grid_size": 8},
     )
 
     encoder_trained.eval()

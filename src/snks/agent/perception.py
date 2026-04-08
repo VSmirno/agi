@@ -37,8 +37,10 @@ RATE_EMA_ALPHA = 0.05  # homeostatic rate tracking (slow — body changes gradua
 # The body — the ONLY hardcoded thing (the "DNA")
 HOMEOSTATIC_VARS = {"health", "food", "drink", "energy"}
 
-# Grid positions: center 2×2 = "nearby"
-CENTER_POSITIONS = [(1, 1), (1, 2), (2, 1), (2, 2)]
+# Grid center positions are computed from feature map size
+def _center_positions(grid_size: int) -> set[tuple[int, int]]:
+    c0 = grid_size // 2 - 1
+    return {(c0, c0), (c0, c0+1), (c0+1, c0), (c0+1, c0+1)}
 
 
 # ---------------------------------------------------------------------------
@@ -162,18 +164,23 @@ def perceive_field(
     concept_store: ConceptStore,
     min_similarity: float = MIN_SIMILARITY,
 ) -> VisualField:
-    """Perceive visual field: match 256-dim prototypes at each grid position."""
+    """Perceive visual field: match prototypes at each grid position."""
     with torch.no_grad():
         out = encoder(pixels.unsqueeze(0) if pixels.dim() == 3 else pixels)
         fmap = out.feature_map
         if fmap.dim() == 4:
             fmap = fmap.squeeze(0)
 
-    vf = VisualField()
-    vf.center_feature = fmap[:, 1:3, 1:3].mean(dim=(1, 2))  # (256,)
+    C, H, W = fmap.shape  # (channels, grid_h, grid_w)
+    center_pos = _center_positions(H)
 
-    for gy in range(4):
-        for gx in range(4):
+    vf = VisualField()
+    # Center feature = mean of center 2×2
+    c0 = H // 2 - 1
+    vf.center_feature = fmap[:, c0:c0+2, c0:c0+2].mean(dim=(1, 2))  # (C,)
+
+    for gy in range(H):
+        for gx in range(W):
             feat = fmap[:, gy, gx]
             feat_norm = F.normalize(feat.unsqueeze(0), dim=1)
 
@@ -192,15 +199,12 @@ def perceive_field(
                 elif sim > second_sim:
                     second_sim = sim
 
-            # Relative matching: best must be above threshold AND
-            # significantly better than second-best (margin ≥ 0.1)
-            # This prevents "water vs tree both at ~0.55" confusion
             margin = best_sim - max(second_sim, 0.0)
             if (best_concept is not None
                     and best_sim >= min_similarity
                     and margin >= 0.1):
                 vf.detections.append((best_concept.id, best_sim, gy, gx))
-                if (gy, gx) in CENTER_POSITIONS and best_sim > vf.near_similarity:
+                if (gy, gx) in center_pos and best_sim > vf.near_similarity:
                     vf.near_concept = best_concept.id
                     vf.near_similarity = best_sim
 
@@ -236,7 +240,9 @@ def ground_empty_on_start(
         fmap = out.feature_map
         if fmap.dim() == 4:
             fmap = fmap.squeeze(0)
-        center_feat = fmap[:, 1:3, 1:3].mean(dim=(1, 2))
+        H = fmap.shape[1]
+        c0 = H // 2 - 1
+        center_feat = fmap[:, c0:c0+2, c0:c0+2].mean(dim=(1, 2))
         z_norm = F.normalize(center_feat.unsqueeze(0), dim=1).squeeze(0)
         concept_store.ground_visual("empty", z_norm)
     return True

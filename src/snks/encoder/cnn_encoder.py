@@ -51,16 +51,21 @@ class SimpleConv(nn.Module):
 class CNNEncoder(nn.Module):
     """CNN encoder: (3, 64, 64) → z_real + z_vsa + near_logits.
 
-    Architecture:
+    Architecture (grid_size=8, 3 stride-2 layers → ~1 tile per cell):
+        Conv(3→64, 3×3, stride=2)    → (64, 32, 32)
+        Conv(64→128, 3×3, stride=2)  → (128, 16, 16)
+        Conv(128→256, 3×3, stride=2) → (256, 8, 8)
+        Flatten → Linear(16384, 2048) → z_real
+
+    Architecture (grid_size=4, 4 stride-2 layers → ~4 tiles per cell, legacy):
         Conv(3→32, 3×3, stride=2)  → (32, 32, 32)
         Conv(32→64, 3×3, stride=2) → (64, 16, 16)
         Conv(64→128, 3×3, stride=2) → (128, 8, 8)
-        Conv(128→512, 3×3, stride=2) → (512, 4, 4)
-        Flatten → Linear(8192, 2048) → z_real
+        Conv(128→C, 3×3, stride=2)  → (C, 4, 4)
+        Flatten → Linear(C*16, 2048) → z_real
 
     Near detection from center features:
-        Central 2×2 of (512, 4, 4) = (512, 2, 2) → flatten → Linear → near_logits
-        These features correspond to the agent's neighborhood.
+        Central 2×2 of feature map → flatten → Linear → near_logits
     """
 
     def __init__(
@@ -69,32 +74,48 @@ class CNNEncoder(nn.Module):
         n_near_classes: int = 12,
         vsa_threshold: float = 0.0,
         feature_channels: int = 512,
+        grid_size: int = 4,
     ):
         super().__init__()
         self.embed_dim = embed_dim
         self.vsa_threshold = vsa_threshold
         self.feature_channels = feature_channels
+        self.grid_size = grid_size
 
-        self.conv = nn.Sequential(
-            SimpleConv(3, 32, 3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            SimpleConv(32, 64, 3, stride=2, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            SimpleConv(64, 128, 3, stride=2, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            SimpleConv(128, feature_channels, 3, stride=2, padding=1),
-            nn.BatchNorm2d(feature_channels),
-            nn.ReLU(),
-        )
-        # 64→32→16→8→4: output (feature_channels, 4, 4)
-        self.proj = nn.Linear(feature_channels * 4 * 4, embed_dim)
+        if grid_size == 8:
+            # 3 layers: 64→32→16→8. ~1 tile per cell.
+            self.conv = nn.Sequential(
+                SimpleConv(3, 64, 3, stride=2, padding=1),
+                nn.BatchNorm2d(64),
+                nn.ReLU(),
+                SimpleConv(64, 128, 3, stride=2, padding=1),
+                nn.BatchNorm2d(128),
+                nn.ReLU(),
+                SimpleConv(128, feature_channels, 3, stride=2, padding=1),
+                nn.BatchNorm2d(feature_channels),
+                nn.ReLU(),
+            )
+        else:
+            # 4 layers: 64→32→16→8→4. Legacy.
+            self.conv = nn.Sequential(
+                SimpleConv(3, 32, 3, stride=2, padding=1),
+                nn.BatchNorm2d(32),
+                nn.ReLU(),
+                SimpleConv(32, 64, 3, stride=2, padding=1),
+                nn.BatchNorm2d(64),
+                nn.ReLU(),
+                SimpleConv(64, 128, 3, stride=2, padding=1),
+                nn.BatchNorm2d(128),
+                nn.ReLU(),
+                SimpleConv(128, feature_channels, 3, stride=2, padding=1),
+                nn.BatchNorm2d(feature_channels),
+                nn.ReLU(),
+            )
+
+        self.proj = nn.Linear(feature_channels * grid_size * grid_size, embed_dim)
         self.ln = nn.LayerNorm(embed_dim)
 
-        # Near classification from central features
-        # Center 2×2 of 4×4 feature map = agent's immediate neighborhood
+        # Near classification from central 2×2
         self.near_head = nn.Sequential(
             nn.Linear(feature_channels * 2 * 2, 128),
             nn.ReLU(),
@@ -125,7 +146,9 @@ class CNNEncoder(nn.Module):
         z_vsa = (z_real > self.vsa_threshold).float()
 
         # Near classification from central 2×2
-        center = features[:, :, 1:3, 1:3].flatten(1)  # (B, 256*2*2=1024)
+        g = self.grid_size
+        c0 = g // 2 - 1  # center start: 1 for grid=4, 3 for grid=8
+        center = features[:, :, c0:c0+2, c0:c0+2].flatten(1)
         near_logits = self.near_head(center)  # (B, n_classes)
 
         if single:
