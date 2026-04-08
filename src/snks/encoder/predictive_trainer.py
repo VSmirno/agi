@@ -100,6 +100,7 @@ class PredictiveTrainer:
         vicreg_weight: float = 0.1,
         contrastive_weight: float = 0.0,
         near_weight: float = 0.0,
+        tile_weight: float = 0.0,
         device: torch.device | str = "cpu",
     ):
         self.encoder = encoder.to(torch.device(device))
@@ -108,6 +109,7 @@ class PredictiveTrainer:
         self.vicreg_weight = vicreg_weight
         self.contrastive_weight = contrastive_weight
         self.near_weight = near_weight
+        self.tile_weight = tile_weight
 
         # Optimize all encoder params + predictor
         self.optimizer = torch.optim.Adam(
@@ -123,6 +125,7 @@ class PredictiveTrainer:
         actions: torch.Tensor,
         situation_labels: torch.Tensor | None = None,
         near_labels: torch.Tensor | None = None,
+        tile_labels: torch.Tensor | None = None,
     ) -> dict[str, float]:
         """One training step.
 
@@ -132,9 +135,10 @@ class PredictiveTrainer:
             actions: (B,) int action indices.
             situation_labels: (B,) int labels for SupCon (optional).
             near_labels: (B,) int near class indices for cross-entropy (optional).
+            tile_labels: (B, H, W) int class indices per feature map position (optional).
 
         Returns:
-            Dict with pred_loss, var_loss, con_loss, near_loss, total_loss.
+            Dict with pred_loss, var_loss, con_loss, near_loss, tile_loss, total_loss.
         """
         self.encoder.train()
         self.predictor.train()
@@ -183,6 +187,19 @@ class PredictiveTrainer:
             near_loss_val = near_ce.item()
             total = total + self.near_weight * near_ce
 
+        # Per-tile classification loss (Stage 75)
+        tile_loss_val = 0.0
+        if self.tile_weight > 0 and tile_labels is not None:
+            fmap = out_t.feature_map  # (B, C, H, W)
+            B, C, H, W = fmap.shape
+            # tile_head: Linear(C, n_classes) applied per position
+            feats_flat = fmap.permute(0, 2, 3, 1).reshape(B * H * W, C)
+            tile_logits = self.encoder.tile_head(feats_flat)  # (B*H*W, n_classes)
+            tile_gt = tile_labels.reshape(B * H * W)
+            tile_ce = nn.functional.cross_entropy(tile_logits, tile_gt)
+            tile_loss_val = tile_ce.item()
+            total = total + self.tile_weight * tile_ce
+
         self.optimizer.zero_grad()
         total.backward()
         self.optimizer.step()
@@ -192,6 +209,7 @@ class PredictiveTrainer:
             "var_loss": var_loss.item(),
             "con_loss": con_loss_val,
             "near_loss": near_loss_val,
+            "tile_loss": tile_loss_val,
             "total_loss": total.item(),
         }
 
@@ -202,6 +220,7 @@ class PredictiveTrainer:
         actions: torch.Tensor,
         situation_labels: torch.Tensor | None = None,
         near_labels: torch.Tensor | None = None,
+        tile_labels: torch.Tensor | None = None,
         batch_size: int = 256,
     ) -> dict[str, float]:
         """Train one epoch over dataset.
@@ -212,6 +231,7 @@ class PredictiveTrainer:
             actions: (N,) all action indices.
             situation_labels: (N,) int labels for SupCon (optional).
             near_labels: (N,) int near class indices for cross-entropy (optional).
+            tile_labels: (N, H, W) int class per feature map position (optional).
             batch_size: batch size.
 
         Returns:
@@ -225,6 +245,11 @@ class PredictiveTrainer:
             if situation_labels is None:
                 tensors.append(torch.zeros(len(pixels_t), dtype=torch.long))
             tensors.append(near_labels)
+        if tile_labels is not None:
+            # Pad situation_labels and near_labels slots if absent
+            while len(tensors) < 5:
+                tensors.append(torch.zeros(len(pixels_t), dtype=torch.long))
+            tensors.append(tile_labels)
 
         dataset = TensorDataset(*tensors)
         loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
@@ -238,8 +263,11 @@ class PredictiveTrainer:
             batch_a = batch[2].to(self.device)
             batch_sl = batch[3].to(self.device) if len(batch) > 3 else None
             batch_nl = batch[4].to(self.device) if len(batch) > 4 else None
+            batch_tl = batch[5].to(self.device) if len(batch) > 5 else None
 
-            metrics = self.train_step(batch_pt, batch_pt1, batch_a, batch_sl, batch_nl)
+            metrics = self.train_step(
+                batch_pt, batch_pt1, batch_a, batch_sl, batch_nl, batch_tl,
+            )
             for k, v in metrics.items():
                 totals[k] = totals.get(k, 0.0) + v
             n_batches += 1
@@ -253,6 +281,7 @@ class PredictiveTrainer:
         actions: torch.Tensor,
         situation_labels: torch.Tensor | None = None,
         near_labels: torch.Tensor | None = None,
+        tile_labels: torch.Tensor | None = None,
         epochs: int = 100,
         batch_size: int = 256,
         log_every: int = 10,
@@ -265,7 +294,8 @@ class PredictiveTrainer:
         history = []
         for epoch in range(epochs):
             metrics = self.train_epoch(
-                pixels_t, pixels_t1, actions, situation_labels, near_labels, batch_size,
+                pixels_t, pixels_t1, actions, situation_labels, near_labels,
+                tile_labels, batch_size,
             )
             metrics["epoch"] = epoch
 
@@ -278,6 +308,8 @@ class PredictiveTrainer:
                     parts.append(f"con={metrics['con_loss']:.4f}")
                 if metrics.get("near_loss", 0) > 0:
                     parts.append(f"near={metrics['near_loss']:.4f}")
+                if metrics.get("tile_loss", 0) > 0:
+                    parts.append(f"tile={metrics['tile_loss']:.4f}")
                 print(" ".join(parts))
 
         return history

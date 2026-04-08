@@ -105,75 +105,88 @@ def phase0_nav_encoder():
 # Phase 1: Collect labeled data (same as exp128)
 # ---------------------------------------------------------------------------
 
-def phase1_collect(detector: NearDetector) -> dict:
-    """Collect labeled frames for encoder training. Reuses exp128 pipeline."""
+def phase1_collect(detector: NearDetector, n_frames: int = 10000, n_episodes: int = 200) -> dict:
+    """Collect pixel frames + semantic map GT from random walks.
+
+    Random walks give diverse scenes. Semantic map provides per-tile GT
+    for tile_head supervision during encoder training.
+    """
     print("\n" + "=" * 60)
-    print("Phase 1: Collect labeled training data")
+    print("Phase 1: Collect frames with semantic maps (random walks)")
     print("=" * 60)
     t0 = time.time()
 
-    runner = ScenarioRunner()
-    labeler = OutcomeLabeler()
+    from snks.encoder.tile_head_trainer import semantic_cell_label
+    from exp122_pixels import _detect_near_from_info
 
-    # Use ConceptStore + ChainGenerator for natural chains
-    store = ConceptStore()
-    tb = CrafterTextbook("configs/crafter_textbook.yaml")
-    tb.load_into(store)
+    GRID_SIZE = 8
+    all_pixels: list[torch.Tensor] = []
+    all_near_labels: list[int] = []
+    all_tile_labels: list[torch.Tensor] = []
+    frames_per_ep = max(1, n_frames // n_episodes)
 
-    from snks.agent.chain_generator import ChainGenerator
-    gen = ChainGenerator(store, use_semantic_nav=True)
-    tree_chain = gen.generate("wood")
-    stone_chain = gen.generate("stone_item")
+    for ep in range(n_episodes):
+        env = CrafterPixelEnv(seed=ep * 17 + 42)
+        pixels, info = env.reset()
 
-    # Tree (natural chain)
-    print("  Tree chain (80 seeds)...")
-    tree_labeled = _run_chain_batch(runner, detector, labeler, tree_chain, 80, 20000, "tree")
+        for step in range(frames_per_ep * 3):
+            action = np.random.randint(0, env.n_actions)
+            pixels, _, done, info = env.step(action)
+            if done:
+                pixels, info = env.reset()
 
-    # Stone natural + controlled
-    print("  Stone natural (50 seeds)...")
-    stone_natural = _run_chain_batch(runner, detector, labeler, stone_chain, 50, 23000, "stone")
-    print("  Stone controlled (80 seeds)...")
-    stone_controlled = _run_controlled_batch("stone", _STONE_CONTROLLED, {"wood_pickaxe": 1}, 80, 28000, "stone")
+            if step % 3 != 0:
+                continue
 
-    # Coal, Iron controlled
-    print("  Coal controlled (50 seeds)...")
-    coal_labeled = _run_controlled_batch("coal", _COAL_CONTROLLED, {"wood_pickaxe": 1}, 50, 25000, "coal")
-    print("  Iron controlled (50 seeds)...")
-    iron_labeled = _run_controlled_batch("iron", _IRON_CONTROLLED, {"stone_pickaxe": 1}, 50, 26000, "iron")
+            semantic = info.get("semantic")
+            if semantic is None:
+                continue
 
-    # Empty/Table controlled — doubled to avoid balancing bottleneck
-    print("  Empty/Table controlled (200 seeds)...")
-    empty_table = _run_controlled_items_batch(_EMPTY_TABLE_CONTROLLED, {"wood": 9}, 200, 27000, "empty")
+            # Near label from GT semantic map (center object)
+            near_str = _detect_near_from_info(info)
+            near_idx = NEAR_TO_IDX.get(near_str, 0)
 
-    # Empty walk — increased
-    print("  Empty walk (200 seeds)...")
-    empty_walk = _collect_empty_walk_frames(200, 29000, frames_per_seed=30)
+            # Tile labels: (H, W) GT class for each feature map position
+            tile_gt = torch.zeros(GRID_SIZE, GRID_SIZE, dtype=torch.long)
+            for gy in range(GRID_SIZE):
+                for gx in range(GRID_SIZE):
+                    tile_gt[gy, gx] = semantic_cell_label(semantic, gy, gx, GRID_SIZE)
 
-    # Zombie walk
-    print("  Zombie walk (50 seeds)...")
-    zombie_walk = _collect_zombie_walk_frames(50, 31000, frames_per_seed=10)
+            all_pixels.append(torch.from_numpy(pixels))
+            all_near_labels.append(near_idx)
+            all_tile_labels.append(tile_gt)
 
-    all_labeled = (
-        tree_labeled + stone_natural + stone_controlled
-        + coal_labeled + iron_labeled + empty_table + empty_walk + zombie_walk
-    )
+            if len(all_pixels) >= n_frames:
+                break
+        if len(all_pixels) >= n_frames:
+            break
 
-    if not all_labeled:
-        raise RuntimeError("No labeled frames collected")
+    pixels_t = torch.stack(all_pixels).float()
+    near_labels_t = torch.tensor(all_near_labels, dtype=torch.long)
+    tile_labels_t = torch.stack(all_tile_labels)  # (N, H, W)
 
-    all_labeled = _balance_classes(all_labeled, max_ratio=8.0)
+    # Near label distribution
+    counter = Counter(all_near_labels)
+    print(f"  Collected {len(pixels_t)} frames ({time.time()-t0:.0f}s)")
+    print(f"  Near label distribution:")
+    for idx in sorted(counter.keys()):
+        name = NEAR_CLASSES[idx] if idx < len(NEAR_CLASSES) else f"unk_{idx}"
+        print(f"    {name}: {counter[idx]}")
 
-    # Stats
-    counter = Counter(NEAR_CLASSES[idx] for _, idx in all_labeled)
-    print(f"\n  Balanced class distribution:")
-    for cls, cnt in sorted(counter.items()):
-        print(f"    {cls}: {cnt}")
-    print(f"  Total: {len(all_labeled)} frames ({time.time()-t0:.0f}s)")
+    # Tile label distribution (across all positions)
+    tile_flat = tile_labels_t.flatten().tolist()
+    tile_counter = Counter(tile_flat)
+    print(f"  Tile label distribution ({GRID_SIZE}×{GRID_SIZE} per frame):")
+    for idx in sorted(tile_counter.keys()):
+        name = NEAR_CLASSES[idx] if idx < len(NEAR_CLASSES) else f"unk_{idx}"
+        print(f"    {name}: {tile_counter[idx]}")
 
-    pixels = torch.stack([p for p, _ in all_labeled]).float()
-    near_labels = torch.tensor([idx for _, idx in all_labeled], dtype=torch.long)
-
-    return {"pixels": pixels, "near_labels": near_labels, "trained_classes": set(counter.keys())}
+    return {
+        "pixels": pixels_t,
+        "near_labels": near_labels_t,
+        "tile_labels": tile_labels_t,
+        "trained_classes": {NEAR_CLASSES[idx] for idx in counter.keys() if idx < len(NEAR_CLASSES)},
+    }
 
 
 def _run_chain_batch(runner, detector, labeler, chain, n_seeds, seed_base, label):
@@ -222,6 +235,8 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
     actions = torch.zeros(N - 1, dtype=torch.long)
     nl = near_labels[:-1]
 
+    tile_labels = dataset.get("tile_labels")
+
     # NEW: grid_size=8, feature_channels=256
     encoder = CNNEncoder(
         feature_channels=256,
@@ -234,17 +249,23 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
         encoder, predictor,
         contrastive_weight=1.0,
         near_weight=2.0,
+        tile_weight=3.0,  # strong per-tile supervision
         device=train_device,
     )
 
     print(f"  {N} frames, grid_size=8, feature_channels=256")
     print(f"  Feature map: (256, 8, 8) — each cell ≈ 1 Crafter tile")
+    print(f"  tile_weight=3.0 — per-tile supervision during encoder training")
     print(f"  Training on {train_device}...")
+
+    # tile_labels for (t, t+1) pairs: use labels from frame t
+    tl = tile_labels[:-1] if tile_labels is not None else None
 
     history = trainer.train_full(
         pixels_t, pixels_t1, actions,
         situation_labels=nl,
         near_labels=nl,
+        tile_labels=tl,
         epochs=epochs,
         batch_size=min(64, N - 1),
         log_every=30,
@@ -561,11 +582,11 @@ def phase6_survival(encoder: CNNEncoder, n_episodes: int = 20, max_steps: int = 
 def main():
     t_start = time.time()
 
-    # Phase 0
-    nav_encoder, detector = phase0_nav_encoder()
+    # Phase 0 — nav encoder for potential future use, but Phase 1 uses random walks
+    # nav_encoder, detector = phase0_nav_encoder()
 
-    # Phase 1
-    dataset = phase1_collect(detector)
+    # Phase 1 — random walks with semantic map GT (no nav encoder needed)
+    dataset = phase1_collect(None, n_frames=10000, n_episodes=200)
 
     # Phase 2
     encoder, detector_new = phase2_train_encoder(dataset, epochs=150)
