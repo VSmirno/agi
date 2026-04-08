@@ -61,19 +61,28 @@ _DIRECTIONS = ["move_up", "move_down", "move_left", "move_right"]
 # ---------------------------------------------------------------------------
 
 def phase0_load_encoder() -> CNNEncoder:
-    print("Phase 0: Loading frozen encoder from exp128...")
+    print("Phase 0: Loading frozen encoder...")
     t0 = time.time()
-    for tag in ["final", "phase3", "phase1"]:
-        path = EXP128_CHECKPOINT / tag / "encoder.pt"
-        if path.exists():
-            encoder = CNNEncoder()
-            encoder.load_state_dict(torch.load(path, weights_only=True))
-            encoder.eval()
-            if torch.cuda.is_available():
-                encoder = encoder.cuda()
-            print(f"  Loaded encoder from {path} ({time.time()-t0:.1f}s)")
-            return encoder
-    raise FileNotFoundError(f"No encoder in {EXP128_CHECKPOINT}")
+    # Try exp132 (512ch) first, then exp128 (256ch)
+    search = [
+        (Path("demos/checkpoints/exp132"), 512),
+        (EXP128_CHECKPOINT, 256),
+    ]
+    for ckpt_dir, channels in search:
+        for tag in ["final", "phase0", "phase3", "phase1"]:
+            path = ckpt_dir / tag / "encoder.pt"
+            if path.exists():
+                encoder = CNNEncoder(feature_channels=channels)
+                try:
+                    encoder.load_state_dict(torch.load(path, weights_only=True))
+                except RuntimeError:
+                    continue
+                encoder.eval()
+                if torch.cuda.is_available():
+                    encoder = encoder.cuda()
+                print(f"  Loaded {channels}ch encoder from {path} ({time.time()-t0:.1f}s)")
+                return encoder
+    raise FileNotFoundError("No encoder checkpoint found")
 
 
 def phase1_init_store() -> tuple[ConceptStore, HomeostaticTracker]:
