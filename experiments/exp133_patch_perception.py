@@ -232,12 +232,19 @@ def run_episode(
                     plan_step_idx += 1
                     continue
             else:
-                # Navigate to target
+                # Navigate to target — or explore if target unknown
                 known_pos = spatial_map.find_nearest(plan_step.target, player_pos)
                 if known_pos:
                     direction = _step_toward(player_pos, known_pos, rng)
                 else:
-                    direction = _DIRECTIONS[rng.randint(0, 4)]
+                    # Target not in map — explore to find it
+                    # Random walk + collision learning will discover objects
+                    unvisited = spatial_map.unvisited_neighbors(player_pos, radius=5)
+                    if unvisited:
+                        target = unvisited[rng.randint(len(unvisited))]
+                        direction = _step_toward(player_pos, target, rng)
+                    else:
+                        direction = _DIRECTIONS[rng.randint(0, 4)]
 
         # 4. EXECUTE MOVE + COLLISION LEARNING
         pos_before = info.get("player_pos", (32, 32))
