@@ -165,12 +165,9 @@ def run_autonomous_episode(
 
         player_pos = info.get("player_pos", (32, 32))
         spatial_map.update(player_pos, near_str)
-        # Fill map from peripheral detections
-        for cid, _sim, gy, gx in vf.detections:
-            if (gy, gx) not in [(1,1),(1,2),(2,1),(2,2)]:
-                py, px = int(player_pos[0]), int(player_pos[1])
-                dy, dx = gy - 2, gx - 2
-                spatial_map.update((py + dy * 2, px + dx * 2), cid)
+        # NOTE: peripheral detections NOT written to map.
+        # Projection head trained on center features — peripheral features
+        # through same head produce false positives (100% stale confirmed).
 
         # 1b. ZOMBIE GROUNDING + HOMEOSTATIC TRACKING
         if prev_inv:
@@ -500,8 +497,28 @@ def run_autonomous_episode(
                 death_cause = "zombie"
         else:
             death_cause = "unknown"
+    # Map stale rate check (using GT semantic)
+    semantic = info.get("semantic")
+    stale_count = 0
+    valid_count = 0
+    if semantic is not None:
+        from snks.agent.crafter_pixel_env import SEMANTIC_NAMES
+        for (my, mx), label in spatial_map._map.items():
+            if label in ("empty",):
+                continue
+            if 0 <= my < semantic.shape[0] and 0 <= mx < semantic.shape[1]:
+                gt_id = int(semantic[my, mx])
+                gt_label = SEMANTIC_NAMES.get(gt_id, "?")
+                if gt_label == label:
+                    valid_count += 1
+                else:
+                    stale_count += 1
+
     if verbose:
-        print(f"    death={death_cause} h={health} f={food} d={drink} e={energy} @step={steps}")
+        total_entries = stale_count + valid_count
+        stale_pct = stale_count / max(1, total_entries) * 100
+        print(f"    death={death_cause} h={health} f={food} d={drink} e={energy} @step={steps} "
+              f"map_stale={stale_count}/{total_entries} ({stale_pct:.0f}%)")
 
     return {
         "length": steps,
