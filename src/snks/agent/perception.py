@@ -401,7 +401,7 @@ def retrain_features(
     labels = labels[balanced_idx]
 
     feat_dim = features.shape[1]
-    proj_dim = 128
+    proj_dim = feat_dim  # same dim as input — no information loss
 
     print(f"  Metric retrain: {len(features)} samples, {label_idx} concepts, "
           f"{min_count}/concept, {feat_dim}→{proj_dim}")
