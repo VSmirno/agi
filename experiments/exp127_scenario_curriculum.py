@@ -372,6 +372,7 @@ def phase2_train_outcome_encoder(
     outcome_data: dict,
     epochs: int = 150,
     batch_size: int = 64,
+    encoder_cls_kwargs: dict | None = None,
 ) -> tuple[CNNEncoder, NearDetector]:
     """Phase 2: Train CNNEncoder on scenario-labeled frames."""
     N = len(outcome_data["pixels"])
@@ -390,7 +391,10 @@ def phase2_train_outcome_encoder(
     actions = torch.zeros(N - 1, dtype=torch.long)
     nl = near_labels[:-1]
 
-    encoder = CNNEncoder(n_near_classes=len(NEAR_CLASSES))
+    kwargs = {"n_near_classes": len(NEAR_CLASSES)}
+    if encoder_cls_kwargs:
+        kwargs.update(encoder_cls_kwargs)
+    encoder = CNNEncoder(**kwargs)
     predictor = JEPAPredictor()
     trainer = PredictiveTrainer(
         encoder, predictor,
