@@ -30,16 +30,21 @@ from snks.encoder.cnn_encoder import CNNEncoder
 _TERRAIN = {"grass", "path", "sand", "lava", "unknown", "player"}
 
 
-def semantic_cell_label(semantic: np.ndarray, gy: int, gx: int, grid_size: int = 4) -> int:
+def semantic_cell_label(
+    semantic: np.ndarray, gy: int, gx: int,
+    grid_size: int = 4, min_frac: float = 0.20,
+) -> int:
     """Get GT class index for one feature map cell from semantic map.
 
     Each cell covers a (64/grid_size × 64/grid_size) pixel region.
-    Priority: non-terrain object > empty (terrain).
+    An object must cover ≥min_frac of the cell to be labeled as that class.
+    This prevents 1-pixel bleeds from creating noisy labels.
 
     Args:
         semantic: (64, 64) semantic map from Crafter info.
         gy, gx: grid position (0..grid_size-1).
         grid_size: feature map spatial size.
+        min_frac: minimum fraction of cell pixels for an object label.
 
     Returns:
         Class index into NEAR_CLASSES (0 = empty).
@@ -47,16 +52,19 @@ def semantic_cell_label(semantic: np.ndarray, gy: int, gx: int, grid_size: int =
     cell_h = 64 // grid_size
     cell_w = 64 // grid_size
     patch = semantic[gy * cell_h:(gy + 1) * cell_h, gx * cell_w:(gx + 1) * cell_w]
+    total = patch.size
 
     counts: Counter[str] = Counter()
     for val in patch.flat:
         name = SEMANTIC_NAMES.get(int(val), "unknown")
         counts[name] += 1
 
-    # Find best non-terrain class
+    # Find best non-terrain class with minimum coverage
     for name, count in counts.most_common():
         if name not in _TERRAIN and name in NEAR_TO_IDX:
-            return NEAR_TO_IDX[name]
+            if count / total >= min_frac:
+                return NEAR_TO_IDX[name]
+            break  # no non-terrain class has enough coverage
 
     return 0  # empty
 
