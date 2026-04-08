@@ -215,7 +215,11 @@
 - **Архитектура чистая:** zero hardcoded strategy. Sword emergence подтверждён (1 craft в exp131 ранних итерациях).
 - **SupCon on center features не помог** (exp132 supcon: survival 169 vs 173 без). Classification features ≠ metric features — разный training objective не решается добавлением contrastive loss.
 - **500 эпизодов — learning saturated.** Survival стабильно 169-173, не растёт. Bottleneck архитектурный.
-- **Лучший результат:** exp131 без ReactiveCheck, 512ch CNN: survival 173, tree 54%, 6 concepts, 4 rules verified.
+- **Лучший результат:** exp131 без ReactiveCheck, 512ch CNN 4×4 grid: survival 173, tree 54%, 6 concepts, 4 rules verified.
+- **8×8 grid (256ch, 3 layers) не помог:** survival 164, tree 48%. Больше позиций (64 vs 16) но quality не улучшилась.
+- **Sandbox curriculum не помог:** survival 165. Prototypes не стали точнее — CNN features fundamentally не подходят для cosine matching.
+- **Diagnostic: 100% stale map entries.** perceive_field возвращает "tree" на траве. 4 тайла в одной ячейке 4×4 → смешанные features. 8×8 (~1 тайл) не решило — проблема в training objective, не разрешении.
+- **Root cause подтверждён:** classification CNN features (cross-entropy) не образуют metric space для cosine matching. Intra-class 0.99, inter-class 0.55-0.82. Нужен metric learning или near_head для detection.
 
   - 3 концепта grounded из опыта: tree, water, cow.
   - Motor babbling (15% prob) → action outcome → one-shot grounding → perception bootstrap.
