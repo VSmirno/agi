@@ -49,6 +49,8 @@ from snks.agent.perception import (
     ground_empty_on_start,
     ground_zombie_on_damage,
     verify_outcome,
+    should_retrain,
+    retrain_features,
     outcome_to_verify,
 )
 from snks.agent.crafter_textbook import CrafterTextbook
@@ -702,9 +704,25 @@ def main():
     grounding = phase4_grounding_count(store)
     verify_sandbox = phase6_verification(store)
 
-    # REAL WORLD: survival with enemies (using accumulated knowledge)
+    # METRIC RETRAIN: CNN learns from agent's experience
     print("=" * 60)
-    print("REAL WORLD: Survival with enemies (using sandbox knowledge)")
+    print("METRIC RETRAIN: CNN adapts features for cosine matching")
+    print("=" * 60)
+    if should_retrain(store):
+        retrained = retrain_features(encoder, store)
+        if retrained:
+            save_checkpoint(encoder, store, "retrained")
+            print("  CNN retrained — features now metric\n")
+        else:
+            print("  Retrain skipped — not enough data\n")
+    else:
+        obs_counts = {c.id: len(c.observations) for c in store.concepts.values()
+                      if c.observations}
+        print(f"  Not ready: {obs_counts}\n")
+
+    # REAL WORLD: survival with enemies (using improved perception)
+    print("=" * 60)
+    print("REAL WORLD: Survival with enemies (metric perception)")
     print("=" * 60)
     survival = phase5_survival(encoder, store, tracker)
     save_checkpoint(encoder, store, "final")

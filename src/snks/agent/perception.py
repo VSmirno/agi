@@ -303,7 +303,131 @@ def on_action_outcome(
             ((1 - EMA_ALPHA) * concept.visual + EMA_ALPHA * z_norm).unsqueeze(0),
             dim=1,
         ).squeeze(0)
+    # Store raw observation for metric learning
+    concept.add_observation(z_norm)
     return label
+
+
+# ---------------------------------------------------------------------------
+# Self-supervised metric learning — CNN learns from agent's experience
+# ---------------------------------------------------------------------------
+
+MIN_RETRAIN_CONCEPTS = 3   # need ≥3 concepts with enough observations
+MIN_RETRAIN_OBS = 5        # minimum observations per concept to include
+
+
+def should_retrain(concept_store: ConceptStore) -> bool:
+    """Check if enough verified observations for metric learning."""
+    n = sum(
+        1 for c in concept_store.concepts.values()
+        if len(c.observations) >= MIN_RETRAIN_OBS
+    )
+    return n >= MIN_RETRAIN_CONCEPTS
+
+
+def retrain_features(
+    encoder: Any,
+    concept_store: ConceptStore,
+    epochs: int = 50,
+    lr: float = 1e-4,
+) -> bool:
+    """Fine-tune CNN for cosine matching using agent's experience.
+
+    SupCon loss on per-position features from verified interactions.
+    Freezes early conv layers — only adapts last conv + proj.
+    Self-supervised: labels from agent's own grounding, not external.
+
+    Returns True if retrain happened.
+    """
+    # Collect training data from observation buffers
+    features_list = []
+    labels_list = []
+    label_idx = 0
+    for concept in concept_store.concepts.values():
+        if len(concept.observations) < MIN_RETRAIN_OBS:
+            continue
+        for obs in concept.observations:
+            features_list.append(obs)
+            labels_list.append(label_idx)
+        label_idx += 1
+
+    if label_idx < MIN_RETRAIN_CONCEPTS:
+        return False
+
+    device = next(encoder.parameters()).device
+    features = torch.stack(features_list).to(device)
+    labels = torch.tensor(labels_list, device=device)
+
+    # Balance: equal samples per concept
+    min_count = min(
+        sum(1 for l in labels_list if l == i)
+        for i in range(label_idx)
+    )
+    balanced_idx = []
+    for i in range(label_idx):
+        idx = [j for j, l in enumerate(labels_list) if l == i][:min_count]
+        balanced_idx.extend(idx)
+    features = features[balanced_idx]
+    labels = labels[balanced_idx]
+
+    print(f"  Metric retrain: {len(features)} samples, {label_idx} concepts, "
+          f"{min_count} per concept")
+
+    # Freeze early layers — only train last conv block + proj
+    all_params = list(encoder.parameters())
+    for p in all_params:
+        p.requires_grad = False
+
+    # Unfreeze last conv layer + batch norm + proj + layer norm
+    # Conv layers are in encoder.conv Sequential
+    conv_modules = list(encoder.conv.children())
+    # Last 3 modules = SimpleConv + BatchNorm + ReLU
+    for module in conv_modules[-3:]:
+        for p in module.parameters():
+            p.requires_grad = True
+    for p in encoder.proj.parameters():
+        p.requires_grad = True
+    for p in encoder.ln.parameters():
+        p.requires_grad = True
+
+    trainable = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
+    total = sum(p.numel() for p in encoder.parameters())
+    print(f"  Training {trainable:,}/{total:,} params ({trainable/total*100:.1f}%)")
+
+    optimizer = torch.optim.Adam(
+        [p for p in encoder.parameters() if p.requires_grad], lr=lr
+    )
+
+    encoder.train()
+    from snks.encoder.predictive_trainer import supcon_loss
+
+    for epoch in range(epochs):
+        z_norm = F.normalize(features, dim=1)
+        loss = supcon_loss(z_norm, labels, temperature=0.1)
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        if epoch % 10 == 0:
+            print(f"    epoch {epoch}: supcon_loss={loss.item():.4f}")
+
+    encoder.eval()
+
+    # Unfreeze all for future use
+    for p in encoder.parameters():
+        p.requires_grad = True
+
+    # Measure improvement
+    z_all = F.normalize(features, dim=1)
+    sim_matrix = z_all @ z_all.T
+    same_mask = labels.unsqueeze(0) == labels.unsqueeze(1)
+    diff_mask = ~same_mask
+    intra = sim_matrix[same_mask & ~torch.eye(len(labels), dtype=torch.bool, device=device)].mean()
+    inter = sim_matrix[diff_mask].mean()
+    print(f"  After retrain: intra-class={intra.item():.3f}, inter-class={inter.item():.3f}")
+
+    return True
 
 
 # ---------------------------------------------------------------------------

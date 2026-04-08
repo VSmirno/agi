@@ -28,16 +28,26 @@ class CausalLink:
     confidence: float = 0.5  # starts at 0.5 (from textbook), grows with verification
 
 
+MAX_OBSERVATIONS = 20  # raw feature samples per concept for metric learning
+
+
 @dataclass
 class Concept:
     """One concept with all modalities."""
 
     id: str
-    visual: torch.Tensor | None = None  # z_real (2048) from CNNEncoder
+    visual: torch.Tensor | None = None  # center_feature prototype (EMA)
     text_sdr: torch.Tensor | None = None  # SDR from GroundedTokenizer
     attributes: dict[str, Any] = field(default_factory=dict)
     causal_links: list[CausalLink] = field(default_factory=list)
     confidence: float = 0.5
+    observations: list[torch.Tensor] = field(default_factory=list)  # raw features
+
+    def add_observation(self, feature: torch.Tensor) -> None:
+        """Store raw feature from verified interaction (for metric learning)."""
+        self.observations.append(feature.detach().clone())
+        if len(self.observations) > MAX_OBSERVATIONS:
+            self.observations.pop(0)
 
     def find_causal(
         self,
@@ -341,6 +351,8 @@ class ConceptStore:
                 tensors[f"{cid}_visual"] = concept.visual
             if concept.text_sdr is not None:
                 tensors[f"{cid}_text_sdr"] = concept.text_sdr
+            for i, obs in enumerate(concept.observations):
+                tensors[f"{cid}_obs_{i}"] = obs
 
         (p / "concepts.json").write_text(json.dumps(meta, indent=2))
         if tensors:
@@ -372,3 +384,10 @@ class ConceptStore:
             sdr_key = f"{cid}_text_sdr"
             if sdr_key in tensors:
                 concept.text_sdr = tensors[sdr_key]
+            # Load observations
+            for i in range(MAX_OBSERVATIONS):
+                obs_key = f"{cid}_obs_{i}"
+                if obs_key in tensors:
+                    concept.observations.append(tensors[obs_key])
+                else:
+                    break
