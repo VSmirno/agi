@@ -76,10 +76,26 @@ from exp128_text_visual import _collect_zombie_walk_frames
 # ---------------------------------------------------------------------------
 
 def phase0_nav_encoder():
+    """Load exp128 encoder (grid_size=4) for navigation during data collection."""
     print("=" * 60)
-    print("Phase 0: Load nav encoder for data collection")
+    print("Phase 0: Load exp128 encoder for navigation")
     print("=" * 60)
     t0 = time.time()
+
+    # Use exp128 encoder directly — it works for NearDetector (center 2×2)
+    for tag in ["final", "phase1"]:
+        path = EXP128_CHECKPOINT / tag / "encoder.pt"
+        if path.exists():
+            encoder = CNNEncoder(feature_channels=256, grid_size=4)
+            state = torch.load(path, map_location="cpu", weights_only=True)
+            encoder.load_state_dict(state, strict=False)
+            encoder.eval()
+            detector = NearDetector(encoder)
+            print(f"  Loaded exp128 encoder from {path} ({time.time()-t0:.1f}s)")
+            return encoder, detector
+
+    # Fallback: train from scratch
+    print("  WARNING: exp128 not found, training nav encoder from scratch...")
     nav_encoder, detector = phase0_load_nav_encoder()
     print(f"  Done ({time.time()-t0:.1f}s)")
     return nav_encoder, detector
@@ -125,13 +141,13 @@ def phase1_collect(detector: NearDetector) -> dict:
     print("  Iron controlled (50 seeds)...")
     iron_labeled = _run_controlled_batch("iron", _IRON_CONTROLLED, {"stone_pickaxe": 1}, 50, 26000, "iron")
 
-    # Empty/Table controlled
-    print("  Empty/Table controlled (100 seeds)...")
-    empty_table = _run_controlled_items_batch(_EMPTY_TABLE_CONTROLLED, {"wood": 9}, 100, 27000, "empty")
+    # Empty/Table controlled — doubled to avoid balancing bottleneck
+    print("  Empty/Table controlled (200 seeds)...")
+    empty_table = _run_controlled_items_batch(_EMPTY_TABLE_CONTROLLED, {"wood": 9}, 200, 27000, "empty")
 
-    # Empty walk
-    print("  Empty walk (100 seeds)...")
-    empty_walk = _collect_empty_walk_frames(100, 29000, frames_per_seed=30)
+    # Empty walk — increased
+    print("  Empty walk (200 seeds)...")
+    empty_walk = _collect_empty_walk_frames(200, 29000, frames_per_seed=30)
 
     # Zombie walk
     print("  Zombie walk (50 seeds)...")
@@ -145,7 +161,7 @@ def phase1_collect(detector: NearDetector) -> dict:
     if not all_labeled:
         raise RuntimeError("No labeled frames collected")
 
-    all_labeled = _balance_classes(all_labeled, max_ratio=4.0)
+    all_labeled = _balance_classes(all_labeled, max_ratio=8.0)
 
     # Stats
     counter = Counter(NEAR_CLASSES[idx] for _, idx in all_labeled)
@@ -480,7 +496,7 @@ def phase6_survival(encoder: CNNEncoder, n_episodes: int = 20, max_steps: int = 
 
             if plan:
                 step_plan = plan[0]
-                target = step_plan.concept_id
+                target = step_plan.target
                 if vf.near_concept == target:
                     action_str = step_plan.action
                 else:
@@ -555,7 +571,7 @@ def main():
     encoder, detector_new = phase2_train_encoder(dataset, epochs=150)
 
     # Phase 3
-    tile_stats = phase3_train_tile_head(encoder, n_frames=5000)
+    tile_stats = phase3_train_tile_head(encoder, n_frames=10000)
 
     # Phase 4
     tile_acc = phase4_accuracy_gate(encoder)
