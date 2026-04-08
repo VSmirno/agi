@@ -224,6 +224,70 @@ def perceive_field(
     return vf
 
 
+def perceive_tile_field(
+    pixels: torch.Tensor,
+    encoder: Any,
+    min_confidence: float = 0.3,
+) -> VisualField:
+    """Perceive visual field via tile_head (Stage 75).
+
+    Per-tile classification — no cosine matching, no prototypes.
+    Returns class_ids (int) as concept names ("class_0"..."class_11").
+    Agent maps class_id → object name through interaction (ConceptStore).
+
+    Args:
+        pixels: (3, 64, 64) float32 [0, 1].
+        encoder: CNNEncoder with trained tile_head.
+        min_confidence: minimum softmax confidence to report detection.
+
+    Returns:
+        VisualField with detections as (class_name, confidence, gy, gx).
+    """
+    from snks.agent.decode_head import NEAR_CLASSES
+
+    class_ids, confidences = encoder.classify_tiles(pixels)
+    H, W = class_ids.shape
+    center_pos = _center_positions(H)
+
+    vf = VisualField()
+
+    # Store center feature for grounding (raw, before any projection)
+    with torch.no_grad():
+        out = encoder(pixels.unsqueeze(0) if pixels.dim() == 3 else pixels)
+        fmap = out.feature_map
+        if fmap.dim() == 4:
+            fmap = fmap.squeeze(0)
+    c0 = H // 2 - 1
+    vf.raw_center_feature = fmap[:, c0:c0+2, c0:c0+2].mean(dim=(1, 2))
+    vf.center_feature = vf.raw_center_feature
+
+    for gy in range(H):
+        for gx in range(W):
+            cls_idx = int(class_ids[gy, gx].item())
+            conf = float(confidences[gy, gx].item())
+
+            if conf < min_confidence:
+                continue
+
+            # Use actual class name from NEAR_CLASSES
+            if cls_idx < len(NEAR_CLASSES):
+                cls_name = NEAR_CLASSES[cls_idx]
+            else:
+                cls_name = f"class_{cls_idx}"
+
+            # Skip "empty" detections for non-center
+            if cls_name == "empty" and (gy, gx) not in center_pos:
+                continue
+
+            vf.detections.append((cls_name, conf, gy, gx))
+
+            if (gy, gx) in center_pos and conf > vf.near_similarity:
+                vf.near_concept = cls_name
+                vf.near_similarity = conf
+
+    return vf
+
+
 def perceive(
     pixels: torch.Tensor,
     encoder: Any,

@@ -115,12 +115,16 @@ class CNNEncoder(nn.Module):
         self.proj = nn.Linear(feature_channels * grid_size * grid_size, embed_dim)
         self.ln = nn.LayerNorm(embed_dim)
 
-        # Near classification from central 2×2
+        # Near classification from central 2×2 (legacy, Stage 66)
         self.near_head = nn.Sequential(
             nn.Linear(feature_channels * 2 * 2, 128),
             nn.ReLU(),
             nn.Linear(128, n_near_classes),
         )
+
+        # Per-tile classification head (Stage 75)
+        # Single position feature → class. Works on EACH of grid_size² positions.
+        self.tile_head = nn.Linear(feature_channels, n_near_classes)
 
     def forward(self, pixels: torch.Tensor) -> CNNEncoderOutput:
         """Encode pixel observations.
@@ -157,6 +161,44 @@ class CNNEncoder(nn.Module):
                 features.squeeze(0),
             )
         return CNNEncoderOutput(z_real, z_vsa, near_logits, features)
+
+    def classify_tiles(self, pixels: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Per-tile classification over entire feature map (Stage 75).
+
+        Args:
+            pixels: (3, 64, 64) or (B, 3, 64, 64) float32 [0, 1].
+
+        Returns:
+            class_ids: (H, W) int — predicted class per grid position.
+            confidences: (H, W) float — softmax confidence per position.
+        """
+        single = pixels.dim() == 3
+        if single:
+            pixels = pixels.unsqueeze(0)
+
+        with torch.no_grad():
+            features = self.conv(pixels)  # (B, C, H, W)
+            if single:
+                features = features.squeeze(0)  # (C, H, W)
+
+            C, H, W = features.shape[-3], features.shape[-2], features.shape[-1]
+
+            if single:
+                # (C, H, W) → (H*W, C) → tile_head → (H*W, n_classes)
+                feats_flat = features.permute(1, 2, 0).reshape(-1, C)
+                logits = self.tile_head(feats_flat)  # (H*W, n_classes)
+                probs = torch.softmax(logits, dim=-1)
+                class_ids = probs.argmax(dim=-1).reshape(H, W)
+                confidences = probs.max(dim=-1).values.reshape(H, W)
+            else:
+                B = features.shape[0]
+                feats_flat = features.permute(0, 2, 3, 1).reshape(B * H * W, C)
+                logits = self.tile_head(feats_flat)
+                probs = torch.softmax(logits, dim=-1)
+                class_ids = probs.argmax(dim=-1).reshape(B, H, W)
+                confidences = probs.max(dim=-1).values.reshape(B, H, W)
+
+        return class_ids, confidences
 
     @property
     def codebook_utilization(self) -> float:
