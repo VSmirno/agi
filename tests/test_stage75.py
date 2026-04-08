@@ -160,11 +160,19 @@ class TestSemanticCellLabel:
         label = semantic_cell_label(semantic, 0, 0, 4)
         assert NEAR_CLASSES[label] == "zombie"
 
-    def test_minority_object_wins(self):
+    def test_minority_below_threshold_is_empty(self):
         from snks.encoder.tile_head_trainer import semantic_cell_label
         semantic = np.full((64, 64), 2, dtype=np.int32)  # grass
-        # Only a few pixels are coal
+        # Only 9/256 pixels = 3.5% coal — below 20% threshold
         semantic[2:5, 2:5] = 8  # coal
+        label = semantic_cell_label(semantic, 0, 0, 4)
+        assert NEAR_CLASSES[label] == "empty"
+
+    def test_majority_object_detected(self):
+        from snks.encoder.tile_head_trainer import semantic_cell_label
+        semantic = np.full((64, 64), 2, dtype=np.int32)  # grass
+        # Coal fills 60% of cell → above threshold
+        semantic[0:10, 0:16] = 8  # coal: 160/256 = 62.5%
         label = semantic_cell_label(semantic, 0, 0, 4)
         assert NEAR_CLASSES[label] == "coal"
 

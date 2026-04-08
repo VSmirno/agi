@@ -247,15 +247,15 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
 
     trainer = PredictiveTrainer(
         encoder, predictor,
-        contrastive_weight=1.0,
-        near_weight=2.0,
-        tile_weight=10.0,  # dominant per-tile supervision
+        contrastive_weight=0.0,  # OFF — tile-only training
+        near_weight=1.0,         # keep near_head for center detection
+        tile_weight=5.0,         # primary objective
         device=train_device,
     )
 
     print(f"  {N} frames, grid_size=8, feature_channels=256")
     print(f"  Feature map: (256, 8, 8) — each cell ≈ 1 Crafter tile")
-    print(f"  tile_weight=10.0 + class-weighted CE — dominant per-tile supervision")
+    print(f"  tile-focused: tile_weight=5.0, near_weight=1.0, no SupCon")
     print(f"  Training on {train_device}...")
 
     # tile_labels for (t, t+1) pairs: use labels from frame t
@@ -624,7 +624,7 @@ def main():
     dataset = phase1_collect(None, n_frames=10000, n_episodes=200)
 
     # Phase 2 (trains encoder + tile_head jointly)
-    encoder, detector_new = phase2_train_encoder(dataset, epochs=150)
+    encoder, detector_new = phase2_train_encoder(dataset, epochs=200)
 
     # Phase 3: optional re-training (skip if joint training already good)
     # Joint accuracy already measured in Phase 2 diagnostic
