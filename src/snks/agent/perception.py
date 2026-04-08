@@ -324,12 +324,13 @@ def on_action_outcome(
         z_match = z_raw
 
     if concept.visual is None:
-        concept.visual = z_match
+        concept.visual = z_match.cpu()
     else:
+        cv = concept.visual.to(z_match.device)
         concept.visual = F.normalize(
-            ((1 - EMA_ALPHA) * concept.visual + EMA_ALPHA * z_match).unsqueeze(0),
+            ((1 - EMA_ALPHA) * cv + EMA_ALPHA * z_match).unsqueeze(0),
             dim=1,
-        ).squeeze(0)
+        ).squeeze(0).cpu()
 
     return label
 
