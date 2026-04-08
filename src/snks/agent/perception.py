@@ -202,7 +202,7 @@ def perceive_field(
             for concept in concept_store.concepts.values():
                 if concept.visual is None:
                     continue
-                c_norm = F.normalize(concept.visual.unsqueeze(0), dim=1)
+                c_norm = F.normalize(concept.visual.unsqueeze(0).to(feat_norm.device), dim=1)
                 sim = (feat_norm @ c_norm.T).item()
                 if sim > best_sim:
                     second_sim = best_sim
