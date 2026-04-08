@@ -63,16 +63,17 @@ _DIRECTIONS = ["move_up", "move_down", "move_left", "move_right"]
 def phase0_load_encoder() -> CNNEncoder:
     print("Phase 0: Loading frozen encoder...")
     t0 = time.time()
-    # Try exp132 (512ch) first, then exp128 (256ch)
+    # Try newest checkpoints first: grid8 (256ch,8×8) → grid4 (512ch,4×4) → legacy (256ch,4×4)
     search = [
-        (Path("demos/checkpoints/exp132"), 512),
-        (EXP128_CHECKPOINT, 256),
+        (Path("demos/checkpoints/exp132"), {"feature_channels": 256, "grid_size": 8}),
+        (Path("demos/checkpoints/exp132"), {"feature_channels": 512, "grid_size": 4}),
+        (EXP128_CHECKPOINT, {"feature_channels": 256, "grid_size": 4}),
     ]
-    for ckpt_dir, channels in search:
+    for ckpt_dir, kwargs in search:
         for tag in ["final", "phase0", "phase3", "phase1"]:
             path = ckpt_dir / tag / "encoder.pt"
             if path.exists():
-                encoder = CNNEncoder(feature_channels=channels)
+                encoder = CNNEncoder(**kwargs)
                 try:
                     encoder.load_state_dict(torch.load(path, weights_only=True))
                 except RuntimeError:
@@ -80,7 +81,9 @@ def phase0_load_encoder() -> CNNEncoder:
                 encoder.eval()
                 if torch.cuda.is_available():
                     encoder = encoder.cuda()
-                print(f"  Loaded {channels}ch encoder from {path} ({time.time()-t0:.1f}s)")
+                gs = kwargs.get("grid_size", 4)
+                ch = kwargs.get("feature_channels", 256)
+                print(f"  Loaded {ch}ch grid{gs} encoder from {path} ({time.time()-t0:.1f}s)")
                 return encoder
     raise FileNotFoundError("No encoder checkpoint found")
 
