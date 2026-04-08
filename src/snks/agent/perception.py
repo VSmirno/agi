@@ -451,6 +451,7 @@ def retrain_features(
 
     # Re-ground all prototypes through projection head
     print("  Re-grounding prototypes through projection...")
+    regrounded = 0
     for concept in concept_store.concepts.values():
         if concept.observations:
             with torch.no_grad():
@@ -458,7 +459,11 @@ def retrain_features(
                 projected = encoder.metric_proj(obs_tensor)
                 proto = F.normalize(projected.mean(dim=0, keepdim=True), dim=1).squeeze(0)
             concept.visual = proto.cpu()
-    print(f"  Re-grounded {sum(1 for c in concept_store.concepts.values() if c.visual is not None)} concepts")
+            regrounded += 1
+        elif concept.visual is not None:
+            # Can't project — clear stale prototype to avoid dim mismatch
+            concept.visual = None
+    print(f"  Re-grounded {regrounded} concepts (cleared {sum(1 for c in concept_store.concepts.values() if c.visual is None and c.id != '_self')} stale)")
 
     return True
 
