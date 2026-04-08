@@ -514,7 +514,7 @@ def run_autonomous_episode(
 # Phases
 # ---------------------------------------------------------------------------
 
-def phase2_tree_nav(encoder, store, tracker, n=200, max_steps=1500):
+def phase2_tree_nav(encoder, store, tracker, n=500, max_steps=1500):
     print(f"Phase 2: Tree navigation ({n} episodes, enemies ON)...")
     t0 = time.time()
     labeler = OutcomeLabeler()
@@ -539,7 +539,7 @@ def phase2_tree_nav(encoder, store, tracker, n=200, max_steps=1500):
     return {"success_rate": rate, "gate_pass": rate >= 0.50, "grounded": grounded}
 
 
-def phase3_stone_nav(encoder, store, tracker, n=200, max_steps=2000):
+def phase3_stone_nav(encoder, store, tracker, n=500, max_steps=2000):
     print(f"Phase 3: Stone navigation ({n} episodes, enemies ON)...")
     t0 = time.time()
     labeler = OutcomeLabeler()
@@ -569,7 +569,7 @@ def phase4_grounding_count(store):
     return {"grounded": grounded, "count": len(grounded), "gate_pass": gate}
 
 
-def phase5_survival(encoder, store, tracker, n=200, max_steps=1500):
+def phase5_survival(encoder, store, tracker, n=500, max_steps=1500):
     print(f"Phase 5: Survival with enemies ({n} episodes)...")
     t0 = time.time()
     labeler = OutcomeLabeler()
@@ -589,9 +589,12 @@ def phase5_survival(encoder, store, tracker, n=200, max_steps=1500):
             sword_episodes += 1
         if (i + 1) % 50 == 0:
             last50 = lengths[-50:]
-            print(f"  [{i+1}/{n}] mean_length={np.mean(lengths):.0f} "
-                  f"last50={np.mean(last50):.0f} deaths={dict(death_causes)} "
-                  f"sword={sword_episodes}/{i+1}")
+            grounded = [c.id for c in store.concepts.values() if c.visual is not None]
+            zombie_rate = tracker.conditional_rates.get(("zombie", "health"), 0)
+            print(f"  [{i+1}/{n}] mean={np.mean(lengths):.0f} last50={np.mean(last50):.0f} "
+                  f"deaths={{z:{death_causes.get('zombie',0)},s:{death_causes.get('starvation',0)}}} "
+                  f"sword={sword_episodes}/{i+1} grounded={len(grounded)} "
+                  f"zombie_h_rate={zombie_rate:.2f}")
     mean_len = np.mean(lengths)
     print(f"  Mean length: {mean_len:.0f} (gate: ≥200)")
     print(f"  Death causes: {dict(death_causes)}")
