@@ -165,23 +165,35 @@ def perceive_field(
     min_similarity: float = MIN_SIMILARITY,
 ) -> VisualField:
     """Perceive visual field: match prototypes at each grid position."""
+    has_proj = hasattr(encoder, "metric_proj") and encoder.metric_proj is not None
+
     with torch.no_grad():
         out = encoder(pixels.unsqueeze(0) if pixels.dim() == 3 else pixels)
         fmap = out.feature_map
         if fmap.dim() == 4:
             fmap = fmap.squeeze(0)
 
-    C, H, W = fmap.shape  # (channels, grid_h, grid_w)
+    C, H, W = fmap.shape
     center_pos = _center_positions(H)
 
     vf = VisualField()
-    # Center feature = mean of center 2×2
     c0 = H // 2 - 1
-    vf.center_feature = fmap[:, c0:c0+2, c0:c0+2].mean(dim=(1, 2))  # (C,)
+    raw_center = fmap[:, c0:c0+2, c0:c0+2].mean(dim=(1, 2))  # (C,)
+
+    # Project through metric head if available
+    if has_proj:
+        with torch.no_grad():
+            vf.center_feature = encoder.metric_proj(raw_center.unsqueeze(0)).squeeze(0)
+    else:
+        vf.center_feature = raw_center
 
     for gy in range(H):
         for gx in range(W):
             feat = fmap[:, gy, gx]
+            # Project through metric head if available
+            if has_proj:
+                with torch.no_grad():
+                    feat = encoder.metric_proj(feat.unsqueeze(0)).squeeze(0)
             feat_norm = F.normalize(feat.unsqueeze(0), dim=1)
 
             best_concept = None
@@ -283,6 +295,7 @@ def on_action_outcome(
     action: str, inv_before: dict[str, int], inv_after: dict[str, int],
     center_feature: torch.Tensor, concept_store: ConceptStore,
     labeler: Any,
+    encoder: Any = None,
 ) -> str | None:
     label = labeler.label(action, inv_before, inv_after)
     if label is None and action == "do":
@@ -295,16 +308,28 @@ def on_action_outcome(
     concept = concept_store.query_text(label)
     if concept is None:
         return None
-    z_norm = F.normalize(center_feature.unsqueeze(0), dim=1).squeeze(0)
+
+    # Store RAW observation (before projection) for metric learning
+    z_raw = F.normalize(center_feature.unsqueeze(0), dim=1).squeeze(0)
+    concept.add_observation(z_raw)
+
+    # Project through metric head if available
+    has_proj = encoder is not None and hasattr(encoder, "metric_proj") and encoder.metric_proj is not None
+    if has_proj:
+        with torch.no_grad():
+            z_proj = encoder.metric_proj(z_raw.unsqueeze(0)).squeeze(0)
+        z_match = F.normalize(z_proj.unsqueeze(0), dim=1).squeeze(0)
+    else:
+        z_match = z_raw
+
     if concept.visual is None:
-        concept_store.ground_visual(label, z_norm)
+        concept.visual = z_match
     else:
         concept.visual = F.normalize(
-            ((1 - EMA_ALPHA) * concept.visual + EMA_ALPHA * z_norm).unsqueeze(0),
+            ((1 - EMA_ALPHA) * concept.visual + EMA_ALPHA * z_match).unsqueeze(0),
             dim=1,
         ).squeeze(0)
-    # Store raw observation for metric learning
-    concept.add_observation(z_norm)
+
     return label
 
 
@@ -328,18 +353,23 @@ def should_retrain(concept_store: ConceptStore) -> bool:
 def retrain_features(
     encoder: Any,
     concept_store: ConceptStore,
-    epochs: int = 50,
-    lr: float = 1e-4,
+    epochs: int = 100,
+    lr: float = 1e-3,
 ) -> bool:
-    """Fine-tune CNN for cosine matching using agent's experience.
+    """Train projection head for cosine matching using agent's experience.
 
-    SupCon loss on per-position features from verified interactions.
-    Freezes early conv layers — only adapts last conv + proj.
-    Self-supervised: labels from agent's own grounding, not external.
+    Observations are detached features (no grad). We train a small MLP
+    projection head that maps features → metric space optimized for SupCon.
+
+    The projection head is stored on the encoder and used in perceive_field.
+    Self-supervised: labels from agent's own grounding.
 
     Returns True if retrain happened.
     """
-    # Collect training data from observation buffers
+    import torch.nn as nn
+    from snks.encoder.predictive_trainer import supcon_loss
+
+    # Collect training data
     features_list = []
     labels_list = []
     label_idx = 0
@@ -358,7 +388,7 @@ def retrain_features(
     features = torch.stack(features_list).to(device)
     labels = torch.tensor(labels_list, device=device)
 
-    # Balance: equal samples per concept
+    # Balance
     min_count = min(
         sum(1 for l in labels_list if l == i)
         for i in range(label_idx)
@@ -370,62 +400,65 @@ def retrain_features(
     features = features[balanced_idx]
     labels = labels[balanced_idx]
 
+    feat_dim = features.shape[1]
+    proj_dim = 128
+
     print(f"  Metric retrain: {len(features)} samples, {label_idx} concepts, "
-          f"{min_count} per concept")
+          f"{min_count}/concept, {feat_dim}→{proj_dim}")
 
-    # Freeze early layers — only train last conv block + proj
-    all_params = list(encoder.parameters())
-    for p in all_params:
-        p.requires_grad = False
+    # Measure BEFORE
+    z_before = F.normalize(features, dim=1)
+    sim_before = z_before @ z_before.T
+    same = labels.unsqueeze(0) == labels.unsqueeze(1)
+    diff = ~same
+    eye = torch.eye(len(labels), dtype=torch.bool, device=device)
+    intra_before = sim_before[same & ~eye].mean().item()
+    inter_before = sim_before[diff].mean().item()
+    print(f"  Before: intra={intra_before:.3f}, inter={inter_before:.3f}")
 
-    # Unfreeze last conv layer + batch norm + proj + layer norm
-    # Conv layers are in encoder.conv Sequential
-    conv_modules = list(encoder.conv.children())
-    # Last 3 modules = SimpleConv + BatchNorm + ReLU
-    for module in conv_modules[-3:]:
-        for p in module.parameters():
-            p.requires_grad = True
-    for p in encoder.proj.parameters():
-        p.requires_grad = True
-    for p in encoder.ln.parameters():
-        p.requires_grad = True
+    # Create projection head
+    proj_head = nn.Sequential(
+        nn.Linear(feat_dim, 256),
+        nn.ReLU(),
+        nn.Linear(256, proj_dim),
+    ).to(device)
 
-    trainable = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
-    total = sum(p.numel() for p in encoder.parameters())
-    print(f"  Training {trainable:,}/{total:,} params ({trainable/total*100:.1f}%)")
-
-    optimizer = torch.optim.Adam(
-        [p for p in encoder.parameters() if p.requires_grad], lr=lr
-    )
-
-    encoder.train()
-    from snks.encoder.predictive_trainer import supcon_loss
+    optimizer = torch.optim.Adam(proj_head.parameters(), lr=lr)
 
     for epoch in range(epochs):
-        z_norm = F.normalize(features, dim=1)
-        loss = supcon_loss(z_norm, labels, temperature=0.1)
+        z = proj_head(features)
+        z_norm = F.normalize(z, dim=1)
+        loss = supcon_loss(z_norm, labels, temperature=0.07)
 
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        if epoch % 10 == 0:
-            print(f"    epoch {epoch}: supcon_loss={loss.item():.4f}")
+        if epoch % 20 == 0:
+            print(f"    epoch {epoch}: loss={loss.item():.4f}")
 
-    encoder.eval()
+    # Measure AFTER (in projected space)
+    with torch.no_grad():
+        z_after = F.normalize(proj_head(features), dim=1)
+    sim_after = z_after @ z_after.T
+    intra_after = sim_after[same & ~eye].mean().item()
+    inter_after = sim_after[diff].mean().item()
+    print(f"  After:  intra={intra_after:.3f}, inter={inter_after:.3f}")
 
-    # Unfreeze all for future use
-    for p in encoder.parameters():
-        p.requires_grad = True
+    # Store projection head on encoder for use in perceive_field
+    encoder.metric_proj = proj_head
+    encoder.metric_proj.eval()
 
-    # Measure improvement
-    z_all = F.normalize(features, dim=1)
-    sim_matrix = z_all @ z_all.T
-    same_mask = labels.unsqueeze(0) == labels.unsqueeze(1)
-    diff_mask = ~same_mask
-    intra = sim_matrix[same_mask & ~torch.eye(len(labels), dtype=torch.bool, device=device)].mean()
-    inter = sim_matrix[diff_mask].mean()
-    print(f"  After retrain: intra-class={intra.item():.3f}, inter-class={inter.item():.3f}")
+    # Re-ground all prototypes through projection head
+    print("  Re-grounding prototypes through projection...")
+    for concept in concept_store.concepts.values():
+        if concept.observations:
+            with torch.no_grad():
+                obs_tensor = torch.stack(concept.observations).to(device)
+                projected = encoder.metric_proj(obs_tensor)
+                proto = F.normalize(projected.mean(dim=0, keepdim=True), dim=1).squeeze(0)
+            concept.visual = proto.cpu()
+    print(f"  Re-grounded {sum(1 for c in concept_store.concepts.values() if c.visual is not None)} concepts")
 
     return True
 

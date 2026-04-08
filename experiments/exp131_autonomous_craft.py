@@ -235,7 +235,7 @@ def run_autonomous_episode(
                     break
                 new_inv_b = dict(info.get("inventory", {}))
                 grounded = on_action_outcome(
-                    "do", old_inv_b, new_inv_b, z_before, store, labeler)
+                    "do", old_inv_b, new_inv_b, z_before, store, labeler, encoder=encoder)
                 if grounded:
                     grounding_events.append(f"babble→{grounded}")
                     if verbose:
@@ -324,7 +324,7 @@ def run_autonomous_episode(
                     verify_outcome(near_str, "do",
                                    plan_step.expected_gain, store)
                 if vf.center_feature is not None:
-                    grounded = on_action_outcome("do", old_inv, new_inv, vf.center_feature, store, labeler)
+                    grounded = on_action_outcome("do", old_inv, new_inv, vf.center_feature, store, labeler, encoder=encoder)
                     if grounded:
                         grounding_events.append(f"plan→{grounded}")
                 if success:
@@ -362,7 +362,7 @@ def run_autonomous_episode(
                 verify_outcome(near_str, plan_step.action, craft_out, store)
                 if vf.center_feature is not None:
                     grounded = on_action_outcome(
-                        crafter_action, old_inv, new_inv, vf.center_feature, store, labeler)
+                        crafter_action, old_inv, new_inv, vf.center_feature, store, labeler, encoder=encoder)
                     if grounded:
                         grounding_events.append(f"craft→{grounded}")
                         if verbose:
@@ -436,7 +436,7 @@ def run_autonomous_episode(
                     break
                 new_inv_b = dict(info.get("inventory", {}))
                 grounded = on_action_outcome(
-                    "do", old_inv_b, new_inv_b, z_before, store, labeler)
+                    "do", old_inv_b, new_inv_b, z_before, store, labeler, encoder=encoder)
                 if grounded:
                     grounding_events.append(f"nav→{grounded}")
                     if verbose:
