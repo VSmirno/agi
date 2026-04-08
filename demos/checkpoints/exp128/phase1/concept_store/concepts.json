@@ -1,0 +1,258 @@
+{
+  "tree": {
+    "attributes": {
+      "category": "resource"
+    },
+    "confidence": 0.5,
+    "causal_links": [
+      {
+        "action": "do",
+        "result": "wood",
+        "requires": {},
+        "condition": null,
+        "confidence": 0.5
+      }
+    ]
+  },
+  "stone": {
+    "attributes": {
+      "category": "resource"
+    },
+    "confidence": 0.5,
+    "causal_links": [
+      {
+        "action": "do",
+        "result": "stone_item",
+        "requires": {
+          "wood_pickaxe": 1
+        },
+        "condition": null,
+        "confidence": 0.5
+      }
+    ]
+  },
+  "coal": {
+    "attributes": {
+      "category": "resource"
+    },
+    "confidence": 0.5,
+    "causal_links": [
+      {
+        "action": "do",
+        "result": "coal_item",
+        "requires": {
+          "wood_pickaxe": 1
+        },
+        "condition": null,
+        "confidence": 0.5
+      }
+    ]
+  },
+  "iron": {
+    "attributes": {
+      "category": "resource"
+    },
+    "confidence": 0.5,
+    "causal_links": [
+      {
+        "action": "do",
+        "result": "iron_item",
+        "requires": {
+          "stone_pickaxe": 1
+        },
+        "condition": null,
+        "confidence": 0.5
+      }
+    ]
+  },
+  "table": {
+    "attributes": {
+      "category": "crafted"
+    },
+    "confidence": 0.5,
+    "causal_links": [
+      {
+        "action": "make",
+        "result": "wood_pickaxe",
+        "requires": {
+          "wood": 1
+        },
+        "condition": null,
+        "confidence": 0.5
+      },
+      {
+        "action": "make",
+        "result": "stone_pickaxe",
+        "requires": {
+          "wood": 1,
+          "stone_item": 1
+        },
+        "condition": null,
+        "confidence": 0.5
+      },
+      {
+        "action": "make",
+        "result": "wood_sword",
+        "requires": {
+          "wood": 1
+        },
+        "condition": null,
+        "confidence": 0.5
+      }
+    ]
+  },
+  "empty": {
+    "attributes": {
+      "category": "terrain"
+    },
+    "confidence": 0.5,
+    "causal_links": [
+      {
+        "action": "place",
+        "result": "table",
+        "requires": {
+          "wood": 1
+        },
+        "condition": null,
+        "confidence": 0.5
+      }
+    ]
+  },
+  "zombie": {
+    "attributes": {
+      "category": "enemy",
+      "dangerous": true
+    },
+    "confidence": 0.5,
+    "causal_links": [
+      {
+        "action": "do",
+        "result": "kill_zombie",
+        "requires": {
+          "wood_sword": 1
+        },
+        "condition": null,
+        "confidence": 0.5
+      },
+      {
+        "action": "nearby",
+        "result": "flee",
+        "requires": {},
+        "condition": "without_wood_sword",
+        "confidence": 0.5
+      }
+    ]
+  },
+  "water": {
+    "attributes": {
+      "category": "resource"
+    },
+    "confidence": 0.5,
+    "causal_links": [
+      {
+        "action": "do",
+        "result": "restore_drink",
+        "requires": {},
+        "condition": null,
+        "confidence": 0.5
+      }
+    ]
+  },
+  "cow": {
+    "attributes": {
+      "category": "resource"
+    },
+    "confidence": 0.5,
+    "causal_links": [
+      {
+        "action": "do",
+        "result": "restore_food",
+        "requires": {},
+        "condition": null,
+        "confidence": 0.5
+      }
+    ]
+  },
+  "wood": {
+    "attributes": {
+      "category": "item"
+    },
+    "confidence": 0.5,
+    "causal_links": []
+  },
+  "stone_item": {
+    "attributes": {
+      "category": "item"
+    },
+    "confidence": 0.5,
+    "causal_links": []
+  },
+  "coal_item": {
+    "attributes": {
+      "category": "item"
+    },
+    "confidence": 0.5,
+    "causal_links": []
+  },
+  "iron_item": {
+    "attributes": {
+      "category": "item"
+    },
+    "confidence": 0.5,
+    "causal_links": []
+  },
+  "wood_pickaxe": {
+    "attributes": {
+      "category": "tool"
+    },
+    "confidence": 0.5,
+    "causal_links": []
+  },
+  "stone_pickaxe": {
+    "attributes": {
+      "category": "tool"
+    },
+    "confidence": 0.5,
+    "causal_links": []
+  },
+  "wood_sword": {
+    "attributes": {
+      "category": "weapon"
+    },
+    "confidence": 0.5,
+    "causal_links": []
+  },
+  "kill_zombie": {
+    "attributes": {},
+    "confidence": 0.5,
+    "causal_links": []
+  },
+  "restore_drink": {
+    "attributes": {},
+    "confidence": 0.5,
+    "causal_links": []
+  },
+  "restore_food": {
+    "attributes": {},
+    "confidence": 0.5,
+    "causal_links": []
+  },
+  "_self": {
+    "attributes": {},
+    "confidence": 0.5,
+    "causal_links": [
+      {
+        "action": "sleep",
+        "result": "restore_energy",
+        "requires": {},
+        "condition": null,
+        "confidence": 0.5
+      }
+    ]
+  },
+  "restore_energy": {
+    "attributes": {},
+    "confidence": 0.5,
+    "causal_links": []
+  }
+}
