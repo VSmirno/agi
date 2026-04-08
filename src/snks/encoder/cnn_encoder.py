@@ -55,11 +55,11 @@ class CNNEncoder(nn.Module):
         Conv(3→32, 3×3, stride=2)  → (32, 32, 32)
         Conv(32→64, 3×3, stride=2) → (64, 16, 16)
         Conv(64→128, 3×3, stride=2) → (128, 8, 8)
-        Conv(128→256, 3×3, stride=2) → (256, 4, 4)
-        Flatten → Linear(4096, 2048) → z_real
+        Conv(128→512, 3×3, stride=2) → (512, 4, 4)
+        Flatten → Linear(8192, 2048) → z_real
 
     Near detection from center features:
-        Central 2×2 of (256, 4, 4) = (256, 2, 2) → flatten → Linear → near_logits
+        Central 2×2 of (512, 4, 4) = (512, 2, 2) → flatten → Linear → near_logits
         These features correspond to the agent's neighborhood.
     """
 
@@ -68,10 +68,12 @@ class CNNEncoder(nn.Module):
         embed_dim: int = 2048,
         n_near_classes: int = 12,
         vsa_threshold: float = 0.0,
+        feature_channels: int = 512,
     ):
         super().__init__()
         self.embed_dim = embed_dim
         self.vsa_threshold = vsa_threshold
+        self.feature_channels = feature_channels
 
         self.conv = nn.Sequential(
             SimpleConv(3, 32, 3, stride=2, padding=1),
@@ -83,18 +85,18 @@ class CNNEncoder(nn.Module):
             SimpleConv(64, 128, 3, stride=2, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            SimpleConv(128, 256, 3, stride=2, padding=1),
-            nn.BatchNorm2d(256),
+            SimpleConv(128, feature_channels, 3, stride=2, padding=1),
+            nn.BatchNorm2d(feature_channels),
             nn.ReLU(),
         )
-        # 64→32→16→8→4: output (256, 4, 4) = 4096
-        self.proj = nn.Linear(256 * 4 * 4, embed_dim)
+        # 64→32→16→8→4: output (feature_channels, 4, 4)
+        self.proj = nn.Linear(feature_channels * 4 * 4, embed_dim)
         self.ln = nn.LayerNorm(embed_dim)
 
         # Near classification from central features
         # Center 2×2 of 4×4 feature map = agent's immediate neighborhood
         self.near_head = nn.Sequential(
-            nn.Linear(256 * 2 * 2, 128),
+            nn.Linear(feature_channels * 2 * 2, 128),
             nn.ReLU(),
             nn.Linear(128, n_near_classes),
         )
