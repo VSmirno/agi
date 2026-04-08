@@ -145,6 +145,8 @@ def run_episode(
                         if done:
                             break
                         oi = dict(info.get("inventory", {}))
+                        # Capture patch BEFORE "do" — object still exists
+                        patch_before_do = extract_facing_patch(pixels, d)
                         pixels, _, done, info = env.step("do")
                         if done:
                             break
@@ -156,17 +158,15 @@ def run_episode(
                                 delta = v - oi.get(k, 0)
                                 if delta > 0 and k not in ("health","food","drink","energy"):
                                     resources[k] += delta
-                            # Ground patch from this direction
-                            patch = extract_facing_patch(pixels, d)
-                            if patch is not None:
-                                patch_store.add(plan_step.target, patch)
+                            # Ground patch from BEFORE "do"
+                            if patch_before_do is not None:
+                                patch_store.add(plan_step.target, patch_before_do)
                             break
                         # Stat gains (food/drink from cow/water)
                         for stat, near in _STAT_GAIN_TO_NEAR.items():
                             if ni.get(stat, 0) > oi.get(stat, 0):
-                                patch = extract_facing_patch(pixels, d)
-                                if patch is not None:
-                                    patch_store.add(near, patch)
+                                if patch_before_do is not None:
+                                    patch_store.add(near, patch_before_do)
                                 break
                     if done:
                         break
