@@ -58,9 +58,19 @@ This happened WITHOUT ANY hardcoded "craft sword" logic. Purely from:
 
 256-dim spatial features are insufficiently discriminative for reliable object recognition. Agent needs ~80 steps to find 3 trees (babble + navigation), but dies in ~100-140 steps from zombie/starvation. Sword crafting succeeded once in 200 episodes.
 
+## exp132: CNN 512 channels
+
+Retrained CNN with 512 channels instead of 256. Results:
+- Tree nav: 55.5% PASS
+- Survival: **150** steps (best ever, +9% vs 256-ch)
+- Sword: still 0/200
+- Last 50 episodes trend: 156 steps
+
+512 channels improve discrimination but sword crafting still blocked by timing — agent needs ~80 steps to collect 3 wood, zombie arrives at ~50-100.
+
 ## Recommendations for next session
 
-1. **Feature quality** — consider contrastive fine-tuning of CNN features for cosine matching
-2. **Or**: use full z_real (2048) for grounding/matching, feature_map only for spatial field
-3. **Forward simulation** — agent should mentally simulate "if I craft sword first vs gather food first"
-4. **Episode learning** — carry map/context hints between episodes for faster startup
+1. **Sword timing** — agent needs wood faster. Consider: initial inventory boost, or faster babble convergence
+2. **Forward simulation** — agent should mentally simulate "if I craft sword first vs gather food first"
+3. **Episode learning** — carry map/context between episodes for faster startup
+4. **Contrastive loss** — fine-tune features specifically for cosine matching (not just classification)
