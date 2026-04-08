@@ -49,12 +49,13 @@ def phase0_retrain_512():
     # Collect training data using existing chains
     dataset = phase2_collect_via_chains(detector, gen, store)
 
-    # Train NEW encoder: 256 channels, 8×8 grid (~1 tile per cell)
-    print("  Training 8×8 grid encoder (256ch, 3 layers)...")
+    # Train NEW encoder: 512 channels, 8×8 grid (~1 tile per cell)
+    # 512ch = enough info per cell. 8×8 = 1 tile per cell, no mixing.
+    print("  Training 8×8 grid encoder (512ch, 3 layers)...")
 
     encoder_trained, detector_trained = phase2_train_outcome_encoder(
         dataset, epochs=150,
-        encoder_cls_kwargs={"feature_channels": 256, "grid_size": 8},
+        encoder_cls_kwargs={"feature_channels": 512, "grid_size": 8},
     )
 
     encoder_trained.eval()
