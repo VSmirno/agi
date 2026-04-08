@@ -248,41 +248,58 @@ def run_episode(
         last_direction = direction
 
         if detect_collision(pos_before, pos_after):
-            # BLOCKED — object ahead! Extract patch and try "do"
+            # BLOCKED — extract patch to identify what's ahead
             patch_ahead = extract_facing_patch(pixels, direction)
 
-            old_inv = dict(info.get("inventory", {}))
-            pixels, _, done, info = env.step("do")
-            if done:
-                break
-            new_inv = dict(info.get("inventory", {}))
+            # Only "do" if patch matches a known RESOURCE or is unknown
+            # Don't waste "do" on grass/water/known non-interactable
+            should_do = True
+            if patch_ahead is not None:
+                match = patch_store.match(patch_ahead)
+                if match in ("water", "unknown_obstacle", "zombie"):
+                    should_do = False  # can't collect, don't waste step
+                elif match is not None and match not in ("tree", "stone", "coal", "iron", "cow"):
+                    should_do = False  # known non-resource
 
-            # What did we get?
-            outcome = labeler.label("do", old_inv, new_inv)
-            if outcome is not None and patch_ahead is not None:
-                patch_store.add(outcome, patch_ahead)
-                grounding_events.append(f"collision→{outcome}")
-                if verbose:
-                    print(f"    [{step}] COLLISION→{outcome}")
-                spatial_map.update(pos_before, outcome)
-                for k, v in new_inv.items():
-                    delta = v - old_inv.get(k, 0)
-                    if delta > 0 and k not in ("health", "food", "drink", "energy"):
-                        resources[k] += delta
-                verify_outcome(outcome, "do",
-                               outcome_to_verify("do", old_inv, new_inv), store)
-            else:
-                # Check stat gains
-                for stat, near in _STAT_GAIN_TO_NEAR.items():
-                    if new_inv.get(stat, 0) > old_inv.get(stat, 0):
-                        if patch_ahead is not None:
-                            patch_store.add(near, patch_ahead)
-                            grounding_events.append(f"collision→{near}")
-                        break
+            if should_do:
+                old_inv = dict(info.get("inventory", {}))
+                pixels, _, done, info = env.step("do")
+                if done:
+                    break
+                new_inv = dict(info.get("inventory", {}))
+
+                outcome = labeler.label("do", old_inv, new_inv)
+                if outcome is not None and patch_ahead is not None:
+                    patch_store.add(outcome, patch_ahead)
+                    grounding_events.append(f"collision→{outcome}")
+                    if verbose:
+                        print(f"    [{step}] COLLISION→{outcome}")
+                    spatial_map.update(pos_before, outcome)
+                    for k, v in new_inv.items():
+                        delta = v - old_inv.get(k, 0)
+                        if delta > 0 and k not in ("health", "food", "drink", "energy"):
+                            resources[k] += delta
+                    verify_outcome(outcome, "do",
+                                   outcome_to_verify("do", old_inv, new_inv), store)
                 else:
-                    # Unknown obstacle — store for later
-                    if patch_ahead is not None:
-                        patch_store.add("unknown_obstacle", patch_ahead)
+                    for stat, near in _STAT_GAIN_TO_NEAR.items():
+                        if new_inv.get(stat, 0) > old_inv.get(stat, 0):
+                            if patch_ahead is not None:
+                                patch_store.add(near, patch_ahead)
+                                grounding_events.append(f"collision→{near}")
+                            break
+                    else:
+                        if patch_ahead is not None:
+                            # Tried "do", nothing happened — record as obstacle
+                            patch_store.add("unknown_obstacle", patch_ahead)
+            else:
+                # Known non-resource — just record in map, don't "do"
+                if patch_ahead is not None:
+                    match = patch_store.match(patch_ahead)
+                    if match:
+                        py, px = int(pos_before[0]), int(pos_before[1])
+                        dy, dx = {"move_up":(-1,0),"move_down":(1,0),"move_left":(0,-1),"move_right":(0,1)}[direction]
+                        spatial_map.update((py+dy, px+dx), match)
 
         nav_steps += 1
         if nav_steps > 200:
