@@ -651,10 +651,41 @@ def main_diagnostic():
     phase5_survival(encoder, store, tracker, n=50, max_steps=1500)
 
 
+def phase_sandbox(encoder, store, tracker, n=200, max_steps=2000):
+    """Sandbox: safe environment, no zombies. Agent learns the world.
+
+    Like a nursery — agent explores, grounds concepts, learns causal rules,
+    practices crafting. Knowledge persists for the real world.
+    """
+    print(f"SANDBOX: Learning phase ({n} episodes, NO enemies)...")
+    t0 = time.time()
+    labeler = OutcomeLabeler()
+    wood_total = 0
+    crafted = Counter()
+    for i in range(n):
+        result = run_autonomous_episode(
+            encoder, store, labeler, tracker, 40000 + i * 7,
+            max_steps=max_steps, enemies=False, verbose=(i < 3))
+        wood_total += result["resources"].get("wood", 0)
+        for e in result.get("grounding_events", []):
+            if "CRAFT" in e or "IMMEDIATE" in e or "place" in e:
+                crafted[e] += 1
+        if (i + 1) % 50 == 0:
+            grounded = [c.id for c in store.concepts.values() if c.visual is not None]
+            verified = sum(1 for c in store.concepts.values()
+                          for l in c.causal_links if l.confidence > 0.5)
+            print(f"  [{i+1}/{n}] wood={wood_total} grounded={grounded} "
+                  f"verified={verified} crafts={dict(crafted)} "
+                  f"length={result['length']}")
+    grounded = [c.id for c in store.concepts.values() if c.visual is not None]
+    print(f"  Sandbox done: {len(grounded)} concepts, {wood_total} wood ({time.time()-t0:.0f}s)\n")
+    return {"grounded": grounded, "wood": wood_total}
+
+
 def main():
     disable_rocm_conv()
     print("=" * 60)
-    print("exp131: Stage 74 — Homeostatic Agent")
+    print("exp131: Developmental Curriculum — Sandbox → Real World")
     print("=" * 60)
     t_start = time.time()
 
@@ -662,18 +693,19 @@ def main():
     store, tracker = phase1_init_store()
     save_checkpoint(encoder, store, "phase1")
 
-    tree = phase2_tree_nav(encoder, store, tracker)
-    save_checkpoint(encoder, store, "phase2")
-
-    stone = phase3_stone_nav(encoder, store, tracker)
-    save_checkpoint(encoder, store, "phase3")
-
+    # SANDBOX: safe learning (nursery)
+    sandbox = phase_sandbox(encoder, store, tracker)
+    save_checkpoint(encoder, store, "sandbox")
     grounding = phase4_grounding_count(store)
+    verify_sandbox = phase6_verification(store)
 
+    # REAL WORLD: survival with enemies (using accumulated knowledge)
+    print("=" * 60)
+    print("REAL WORLD: Survival with enemies (using sandbox knowledge)")
+    print("=" * 60)
     survival = phase5_survival(encoder, store, tracker)
     save_checkpoint(encoder, store, "final")
-
-    verify = phase6_verification(store)
+    verify_final = phase6_verification(store)
 
     elapsed = time.time() - t_start
     print("=" * 60)
@@ -681,18 +713,15 @@ def main():
     print("=" * 60)
 
     gates = {
-        "tree_nav_50%": tree["gate_pass"],
-        "stone_nav_20%": stone["gate_pass"],
         "grounding_5": grounding["gate_pass"],
         "survival_200": survival["gate_pass"],
-        "verification_3": verify["gate_pass"],
+        "verification_3": verify_final["gate_pass"],
     }
 
-    print(f"  Tree nav:   {tree['success_rate']:.1%} (≥50%)")
-    print(f"  Stone nav:  {stone['success_rate']:.1%} (≥20%)")
+    print(f"  Sandbox: {len(sandbox['grounded'])} concepts grounded, {sandbox['wood']} wood")
     print(f"  Grounded:   {grounding['count']} concepts (≥5)")
     print(f"  Survival:   {survival['mean_length']:.0f} steps (≥200)")
-    print(f"  Verified:   {verify['count']} rules (≥3)")
+    print(f"  Verified:   {verify_final['count']} rules (≥3)")
     print()
     for g, p in gates.items():
         print(f"  Gate {g}: {'PASS' if p else 'FAIL'}")
