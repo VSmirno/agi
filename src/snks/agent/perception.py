@@ -203,7 +203,7 @@ def perceive_field(
             for concept in concept_store.concepts.values():
                 if concept.visual is None:
                     continue
-                c_norm = F.normalize(concept.visual.unsqueeze(0).to(feat_norm.device), dim=1)
+                c_norm = F.normalize(concept.visual.unsqueeze(0), dim=1)
                 sim = (feat_norm @ c_norm.T).item()
                 if sim > best_sim:
                     second_sim = best_sim
@@ -324,14 +324,11 @@ def on_action_outcome(
         z_match = z_raw
 
     if concept.visual is None:
-        concept.visual = z_match.cpu()
-    else:
-        cv = concept.visual.to(z_match.device)
+        concept.visual = z_match    else:
         concept.visual = F.normalize(
-            ((1 - EMA_ALPHA) * cv + EMA_ALPHA * z_match).unsqueeze(0),
+            ((1 - EMA_ALPHA) * concept.visual + EMA_ALPHA * z_match).unsqueeze(0),
             dim=1,
-        ).squeeze(0).cpu()
-
+        ).squeeze(0)
     return label
 
 
@@ -460,8 +457,7 @@ def retrain_features(
                 obs_tensor = torch.stack(concept.observations).to(device)
                 projected = encoder.metric_proj(obs_tensor)
                 proto = F.normalize(projected.mean(dim=0, keepdim=True), dim=1).squeeze(0)
-            concept.visual = proto.cpu()
-            regrounded += 1
+            concept.visual = proto            regrounded += 1
         elif concept.visual is not None:
             # Can't project — clear stale prototype to avoid dim mismatch
             concept.visual = None
