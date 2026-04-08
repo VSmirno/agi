@@ -275,12 +275,19 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
     detector = NearDetector(encoder)
 
     final = history[-1]
-    print(f"  Done: pred={final['pred_loss']:.4f} near={final['near_loss']:.4f} ({time.time()-t0:.0f}s)")
+    tile_final = final.get('tile_loss', 0)
+    print(f"  Done: pred={final['pred_loss']:.4f} near={final['near_loss']:.4f} "
+          f"tile={tile_final:.4f} ({time.time()-t0:.0f}s)")
 
     # Save encoder checkpoint
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     torch.save(encoder.state_dict(), CHECKPOINT_DIR / "encoder_g8.pt")
     print(f"  Saved → {CHECKPOINT_DIR / 'encoder_g8.pt'}")
+
+    # Diagnostic: tile accuracy from joint training (before Phase 3 re-trains)
+    print("  Diagnostic: tile accuracy from joint training...")
+    joint_acc = phase4_accuracy_gate(encoder, n_frames=300)
+    print(f"  Joint-trained tile accuracy: {joint_acc:.1%}")
 
     return encoder, detector
 
@@ -588,13 +595,14 @@ def main():
     # Phase 1 — random walks with semantic map GT (no nav encoder needed)
     dataset = phase1_collect(None, n_frames=10000, n_episodes=200)
 
-    # Phase 2
+    # Phase 2 (trains encoder + tile_head jointly)
     encoder, detector_new = phase2_train_encoder(dataset, epochs=150)
 
-    # Phase 3
-    tile_stats = phase3_train_tile_head(encoder, n_frames=10000)
+    # Phase 3: optional re-training (skip if joint training already good)
+    # Joint accuracy already measured in Phase 2 diagnostic
+    # tile_stats = phase3_train_tile_head(encoder, n_frames=10000)
 
-    # Phase 4
+    # Phase 4: final accuracy gate
     tile_acc = phase4_accuracy_gate(encoder)
 
     # Phase 5
