@@ -219,7 +219,8 @@
 - **8×8 grid (256ch, 3 layers) не помог:** survival 164, tree 48%. Больше позиций (64 vs 16) но quality не улучшилась.
 - **Sandbox curriculum не помог:** survival 165. Prototypes не стали точнее — CNN features fundamentally не подходят для cosine matching.
 - **Diagnostic: 100% stale map entries.** perceive_field возвращает "tree" на траве. 4 тайла в одной ячейке 4×4 → смешанные features. 8×8 (~1 тайл) не решило — проблема в training objective, не разрешении.
-- **Root cause подтверждён:** classification CNN features (cross-entropy) не образуют metric space для cosine matching. Intra-class 0.99, inter-class 0.55-0.82. Нужен metric learning или near_head для detection.
+- **512ch×8×8 grid: survival 169.** Лучше чем 256ch×8×8 (164) но хуже чем 512ch×4×4 (173). Чистые ячейки (1 tile) не помогают — CNN features всё равно не metric space.
+- **Root cause подтверждён окончательно:** classification CNN features (cross-entropy) не образуют metric space для cosine matching. Проблема в training objective, не в resolution/channels/grid. Протестировано: 256ch×4×4, 512ch×4×4, 256ch×8×8, 512ch×8×8, SupCon, sandbox, 500 episodes. Ничего не помогает. Нужен metric learning или near_head для detection.
 
   - 3 концепта grounded из опыта: tree, water, cow.
   - Motor babbling (15% prob) → action outcome → one-shot grounding → perception bootstrap.
