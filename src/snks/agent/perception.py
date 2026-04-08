@@ -324,7 +324,8 @@ def on_action_outcome(
         z_match = z_raw
 
     if concept.visual is None:
-        concept.visual = z_match    else:
+        concept.visual = z_match
+    else:
         concept.visual = F.normalize(
             ((1 - EMA_ALPHA) * concept.visual + EMA_ALPHA * z_match).unsqueeze(0),
             dim=1,
@@ -457,7 +458,8 @@ def retrain_features(
                 obs_tensor = torch.stack(concept.observations).to(device)
                 projected = encoder.metric_proj(obs_tensor)
                 proto = F.normalize(projected.mean(dim=0, keepdim=True), dim=1).squeeze(0)
-            concept.visual = proto            regrounded += 1
+            concept.visual = proto
+            regrounded += 1
         elif concept.visual is not None:
             # Can't project — clear stale prototype to avoid dim mismatch
             concept.visual = None
