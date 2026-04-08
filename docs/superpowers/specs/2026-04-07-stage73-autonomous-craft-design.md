@@ -1,7 +1,7 @@
 # Stage 73: Autonomous Craft — Plan-Driven Crafting Through Experience
 
 **Date:** 2026-04-07
-**Status:** Draft
+**Status:** Implemented
 **Depends on:** Stage 72 (exp130 — perception pivot, motor babbling, experiential grounding)
 
 ## Problem

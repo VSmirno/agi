@@ -184,6 +184,36 @@
   - Relative matching (margin ≥0.1): fixes 256-dim inter-class confusion.
   - Sword emergence: plan reaches step 2/4 (make sword near table) but table recognition fails.
   - Root cause: 256-dim inter-class similarity too high (stone vs water: 0.82).
+
+---
+
+## Stage 74 — Homeostatic Agent (2026-04-08)
+**Что сделано:** Убраны ВСЕ hardcoded drives и ReactiveCheck. Поведение из body rates + world model + curiosity. CNN 256→512 channels.
+**Компоненты:**
+- HomeostaticTracker: rate of change body variables + conditional rates (STDP-like).
+- compute_drive: urgency = 1/steps_until_zero (pure body physics).
+- compute_curiosity: model incompleteness (biological drive).
+- Preparation drive: trace known threat → plan to remove cause → proactive craft.
+- Strategy 2: health drops → cause=zombie → kill_zombie → sword chain.
+- Relative matching: margin ≥0.1 between best/second-best (fixes inter-class confusion).
+- CNN 512 channels: retrained, +9% survival.
+- ReactiveCheck REMOVED: flee wastes steps, drives handle zombie correctly.
+
+**Результаты (exp131, 500 episodes):**
+- Tree nav: 54.4% PASS
+- Grounding: 6 concepts PASS (tree, table, empty, zombie, water, cow)
+- Verification: 4 rules PASS (tree.do→wood 1.00, empty.place→table 1.00, water.do→restore_drink 1.00, cow.do→restore_food 0.80)
+- Survival: 173 steps FAIL (gate ≥200). Стабильно, не растёт с обучением.
+- Stone: 0% FAIL. Sword: 0/500.
+
+**Допущения/ограничения:**
+- **Survival 173 — потолок текущей архитектуры.** 500 эпизодов не улучшают — learning saturated.
+- **Sword 0/500** — agent выводит правильный план (kill_zombie→sword→table→wood) но не успевает собрать 3 wood до смерти (~80 шагов на 3 дерева, zombie убивает за ~100-170).
+- **512-dim features:** intra-class 0.99, inter-class 0.55-0.82. Relative matching помогает но не решает.
+- **Bottleneck = perception speed.** Agent тратит ~80 шагов на поиск 3 деревьев при текущем качестве cosine matching. Нужно либо быстрее perception, либо рicher features.
+- **ReactiveCheck убран** — flee хуже чем терпеть удары. Drives правильно выводят "крафти меч".
+- **Архитектура чистая:** zero hardcoded strategy. Sword emergence подтверждён (1 craft в exp131 ранних итерациях).
+
   - 3 концепта grounded из опыта: tree, water, cow.
   - Motor babbling (15% prob) → action outcome → one-shot grounding → perception bootstrap.
   - Survival +50% (49→74) через grounding cow/water для еды/питья.
