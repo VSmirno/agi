@@ -86,13 +86,14 @@ def run_episode(
         near_str = near_label or "empty"
 
         # Update spatial map from detections
+        # player_pos = [x, y]. spatial_map expects (pos[0], pos[1]) consistently.
         spatial_map.update(player_pos, near_str)
         for label, row, col, diff in detections:
-            # Convert tile position to world position
-            py, px = int(player_pos[0]), int(player_pos[1])
-            dy = row - 3  # center row = 3
-            dx = col - 4  # center col = 4
-            spatial_map.update((py + dy, px + dx), label)
+            # tile grid: row=vertical(screen Y), col=horizontal(screen X)
+            # player_pos[0]=world_x, player_pos[1]=world_y
+            wx = int(player_pos[0]) + (col - 4)   # horizontal offset
+            wy = int(player_pos[1]) + (row - 3)   # vertical offset
+            spatial_map.update((wx, wy), label)
 
         # 1b. HOMEOSTATIC TRACKING
         if prev_inv:
@@ -304,9 +305,9 @@ def run_episode(
                 if patch_ahead is not None:
                     match = patch_store.match(patch_ahead)
                     if match:
-                        py, px = int(pos_before[0]), int(pos_before[1])
-                        dy, dx = {"move_up":(-1,0),"move_down":(1,0),"move_left":(0,-1),"move_right":(0,1)}[direction]
-                        spatial_map.update((py+dy, px+dx), match)
+                        wx, wy = int(pos_before[0]), int(pos_before[1])
+                        ddx, ddy = {"move_up":(0,-1),"move_down":(0,1),"move_left":(-1,0),"move_right":(1,0)}[direction]
+                        spatial_map.update((wx+ddx, wy+ddy), match)
 
         nav_steps += 1
         if nav_steps > 200:
