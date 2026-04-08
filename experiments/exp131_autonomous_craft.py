@@ -36,7 +36,7 @@ from snks.agent.crafter_textbook import CrafterTextbook
 from snks.agent.crafter_pixel_env import CrafterPixelEnv
 from snks.agent.crafter_spatial_map import CrafterSpatialMap, _step_toward, MOVE_ACTIONS
 from snks.agent.outcome_labeler import OutcomeLabeler
-from snks.agent.reactive_check import ReactiveCheck
+# ReactiveCheck REMOVED — homeostatic drives handle all behavior
 from snks.agent.perception import (
     perceive,
     perceive_field,
@@ -114,7 +114,7 @@ def run_autonomous_episode(
     pixels, info = env.reset()
     rng = np.random.RandomState(seed)
     spatial_map = CrafterSpatialMap()
-    reactive = ReactiveCheck(store)
+    # No ReactiveCheck — drives handle zombie via Strategy 2
     device = next(encoder.parameters()).device
 
     # --- Bootstrap: ground "empty" from first frame ---
@@ -168,26 +168,9 @@ def run_autonomous_episode(
             tracker.update(prev_inv, inv, vf.visible_concepts())
         prev_inv = dict(inv)
 
-        # 2b. REACTIVE CHECK
-        # Near danger: react immediately (center positions)
-        # Far danger: inform drives (select_goal will plan response)
-        danger = reactive.check(near_str, inv)
-        if danger == "flee":
-            for _ in range(4):
-                d = _DIRECTIONS[rng.randint(0, 4)]
-                pixels, _, done, info = env.step(d)
-                if done:
-                    break
-            if done:
-                break
-            continue
-        if danger == "do":
-            # Attack — face the direction where zombie was detected
-            pixels, _, done, info = env.step("do")
-            if done:
-                break
-            verify_outcome("zombie", "do", "kill_zombie", store)
-            continue
+        # 2b. NO ReactiveCheck — drives handle everything
+        # Zombie nearby → health drops → urgency rises → Strategy 2 → craft sword
+        # Agent tolerates damage while executing plan — flee wastes steps
 
         # 3. GOAL SELECTION
         # Only replan when: no plan, plan completed, OR periodic check when exploring
@@ -291,14 +274,9 @@ def run_autonomous_episode(
             print(f"    [{step}] plan[{plan_step_idx}/{len(current_plan)}]: "
                   f"{plan_step.action} {plan_step.target} (near={near_str})")
 
-        # Skip plan steps targeting dangerous concepts — let reactive handle
-        # Agent doesn't navigate TO zombie, zombie comes to agent
-        target_concept = store.query_text(plan_step.target) if store else None
-        if target_concept and target_concept.attributes.get("dangerous"):
-            plan_step_idx += 1
-            if plan_step_idx >= len(current_plan):
-                current_plan = []
-            continue
+        # Note: agent doesn't actively navigate TO zombie.
+        # Plan step "do zombie" waits until zombie comes to agent (near_str == "zombie").
+        # Meanwhile agent continues exploring/gathering — zombie will find agent naturally.
 
         # Check if at target
         if near_str == plan_step.target:
