@@ -262,7 +262,7 @@ def run_autonomous_episode(
                 grounded = on_action_outcome(
                     craft_action, old_inv_b, new_inv_b,
                     (vf.raw_center_feature if vf.raw_center_feature is not None else vf.center_feature) if vf.center_feature is not None else torch.zeros(256),
-                    store, labeler)
+                    store, labeler, encoder=encoder)
                 if grounded:
                     grounding_events.append(f"craft→{grounded}")
                     if verbose:
@@ -460,7 +460,7 @@ def run_autonomous_episode(
                 grounded = on_action_outcome(
                     craft_action, old_inv_b, new_inv_b,
                     (vf.raw_center_feature if vf.raw_center_feature is not None else vf.center_feature) if vf.center_feature is not None else torch.zeros(256),
-                    store, labeler)
+                    store, labeler, encoder=encoder)
                 if grounded:
                     grounding_events.append(f"nav-craft→{grounded}")
                     spatial_map.update(
