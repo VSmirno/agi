@@ -196,7 +196,17 @@ class PredictiveTrainer:
             feats_flat = fmap.permute(0, 2, 3, 1).reshape(B * H * W, C)
             tile_logits = self.encoder.tile_head(feats_flat)  # (B*H*W, n_classes)
             tile_gt = tile_labels.reshape(B * H * W)
-            tile_ce = nn.functional.cross_entropy(tile_logits, tile_gt)
+
+            # Class-weighted CE: inverse frequency balancing
+            if not hasattr(self, '_tile_class_weights'):
+                n_classes = tile_logits.shape[1]
+                counts = torch.bincount(tile_gt, minlength=n_classes).float().clamp(min=1)
+                self._tile_class_weights = (1.0 / counts).to(tile_gt.device)
+                self._tile_class_weights /= self._tile_class_weights.sum()
+                self._tile_class_weights *= n_classes
+            tile_ce = nn.functional.cross_entropy(
+                tile_logits, tile_gt, weight=self._tile_class_weights,
+            )
             tile_loss_val = tile_ce.item()
             total = total + self.tile_weight * tile_ce
 

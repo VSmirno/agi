@@ -249,13 +249,13 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
         encoder, predictor,
         contrastive_weight=1.0,
         near_weight=2.0,
-        tile_weight=3.0,  # strong per-tile supervision
+        tile_weight=10.0,  # dominant per-tile supervision
         device=train_device,
     )
 
     print(f"  {N} frames, grid_size=8, feature_channels=256")
     print(f"  Feature map: (256, 8, 8) — each cell ≈ 1 Crafter tile")
-    print(f"  tile_weight=3.0 — per-tile supervision during encoder training")
+    print(f"  tile_weight=10.0 + class-weighted CE — dominant per-tile supervision")
     print(f"  Training on {train_device}...")
 
     # tile_labels for (t, t+1) pairs: use labels from frame t
@@ -334,6 +334,8 @@ def phase4_accuracy_gate(encoder: CNNEncoder, n_frames: int = 500) -> float:
     correct = 0
     total = 0
     grid_size = encoder.grid_size
+    per_class_correct: dict[int, int] = {}
+    per_class_total: dict[int, int] = {}
 
     for ep in range(20):
         env = CrafterPixelEnv(seed=ep * 31 + 100)
@@ -357,12 +359,21 @@ def phase4_accuracy_gate(encoder: CNNEncoder, n_frames: int = 500) -> float:
                 for gx in range(W):
                     gt = semantic_cell_label(semantic, gy, gx, grid_size)
                     pred = int(class_ids[gy, gx].item())
+                    per_class_total[gt] = per_class_total.get(gt, 0) + 1
                     if gt == pred:
                         correct += 1
+                        per_class_correct[gt] = per_class_correct.get(gt, 0) + 1
                     total += 1
 
     acc = correct / max(1, total)
     print(f"  Accuracy: {acc:.1%} ({correct}/{total})")
+    print(f"  Per-class accuracy:")
+    for cls_idx in sorted(per_class_total.keys()):
+        name = NEAR_CLASSES[cls_idx] if cls_idx < len(NEAR_CLASSES) else f"unk_{cls_idx}"
+        cls_correct = per_class_correct.get(cls_idx, 0)
+        cls_total = per_class_total[cls_idx]
+        cls_acc = cls_correct / max(1, cls_total)
+        print(f"    {name}: {cls_acc:.1%} ({cls_correct}/{cls_total})")
     print(f"  {'PASS' if acc >= 0.60 else 'FAIL'}: {'≥' if acc >= 0.60 else '<'}60%")
     return acc
 
