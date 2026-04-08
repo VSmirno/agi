@@ -92,6 +92,8 @@ def main():
                 if vf2.center_feature is not None:
                     on_action_outcome("do", oi, ni, vf2.center_feature, store, labeler)
             else:
+                if act.startswith("babble_"):
+                    act = _DIRECTIONS[rng.randint(0, 4)]
                 pixels, _, done, info = env.step(act)
                 if done: break
 
