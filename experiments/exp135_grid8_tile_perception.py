@@ -688,6 +688,9 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
         spatial_map = CrafterSpatialMap()
         last_action = None
         last_pos = None
+        prev_health = 9
+        flee_timer = 0  # steps remaining in panic flee
+        flee_dir_panic = None
         steps_taken = 0
 
         for step in range(max_steps):
@@ -707,28 +710,44 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
 
             action_str = None
             has_sword = inv.get("wood_sword", 0) > 0
+            health = inv.get("health", 9)
 
-            # REFLEX: handle nearest threat
-            # - Adjacent zombie/skeleton: attack if has sword, else flee
-            # - Threat within 3 tiles: flee away (skeletons shoot from range)
-            threat_dist, flee_dir = _find_nearest_threat(
-                vf, center_r, center_c, threats=("zombie", "skeleton")
-            )
-            if threat_dist is not None:
-                if threat_dist == 1 and has_sword:
-                    # adjacent threat + sword → attack
-                    # find which adjacent direction
-                    for t in ("zombie", "skeleton"):
-                        d = _find_adjacent(vf, center_r, center_c, t)
-                        if d is not None:
-                            if last_action == f"move_{d}":
-                                action_str = "do"
-                            else:
-                                action_str = f"move_{d}"
-                            break
-                elif threat_dist <= 3:
-                    # flee away (both close zombie and ranged skeleton)
-                    action_str = f"move_{flee_dir}"
+            # DAMAGE REFLEX: if HP dropped, panic flee for 4 steps
+            # (handles undetected threats like skeletons via health signal)
+            if health < prev_health:
+                flee_timer = 4
+                # Pick flee direction: opposite of visible threat, or random
+                t_dist, t_away = _find_nearest_threat(
+                    vf, center_r, center_c, threats=("zombie", "skeleton")
+                )
+                if t_away is not None:
+                    flee_dir_panic = t_away
+                else:
+                    flee_dir_panic = rng.choice(["up", "down", "left", "right"])
+            prev_health = health
+
+            if flee_timer > 0:
+                action_str = f"move_{flee_dir_panic}"
+                flee_timer -= 1
+
+            # REFLEX: handle visible threat even without damage
+            if action_str is None:
+                threat_dist, flee_dir = _find_nearest_threat(
+                    vf, center_r, center_c, threats=("zombie", "skeleton")
+                )
+                if threat_dist is not None:
+                    if threat_dist == 1 and has_sword:
+                        # adjacent threat + sword → attack
+                        for t in ("zombie", "skeleton"):
+                            d = _find_adjacent(vf, center_r, center_c, t)
+                            if d is not None:
+                                if last_action == f"move_{d}":
+                                    action_str = "do"
+                                else:
+                                    action_str = f"move_{d}"
+                                break
+                    elif threat_dist <= 3:
+                        action_str = f"move_{flee_dir}"
 
             # NEEDS: water/food
             if action_str is None:
