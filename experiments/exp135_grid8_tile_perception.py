@@ -623,7 +623,10 @@ def _find_adjacent(vf, center_r, center_c, concept_id):
     return None
 
 
-def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> dict:
+def phase6_survival(
+    segmenter, n_episodes: int = 20, max_steps: int = 500,
+    enemies: bool = True, verbose: bool = False,
+) -> dict:
     """Survival eval with homeostatic drives + causal planning (ideology-aligned).
 
     NO hardcoded reflexes. Strategy emerges from:
@@ -631,9 +634,14 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
       - world model (ConceptStore causal rules from textbook + experience)
       - urgency (drive strength = d/dt of stat / current value)
       - planning (backward chaining from goal)
+
+    Args:
+        enemies: if False, disable enemy spawning (isolating test).
+        verbose: if True, print per-step diagnostic for first episode.
     """
+    label = "with enemies" if enemies else "NO enemies (diagnostic)"
     print("\n" + "=" * 60)
-    print("Phase 6: Survival with enemies (homeostatic policy)")
+    print(f"Phase 6: Survival {label}")
     print("=" * 60)
 
     store = ConceptStore()
@@ -654,6 +662,11 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
 
     for ep in range(n_episodes):
         env = CrafterPixelEnv(seed=ep * 11 + 300)
+        if not enemies:
+            try:
+                env._env._balance_chunk = lambda *a, **kw: None
+            except Exception:
+                pass
         pixels, info = env.reset()
         rng = np.random.RandomState(ep)
         spatial_map = CrafterSpatialMap()
@@ -661,6 +674,7 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
         last_action = None
         last_pos = None
         steps_taken = 0
+        ep_verbose = verbose and ep == 0
 
         current_goal = ""
         current_plan: list = []
@@ -753,6 +767,24 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
 
             last_action = action_str
             last_pos = player_pos
+
+            if ep_verbose:
+                plan_repr = (
+                    f"{current_goal}[{plan_step_idx}/{len(current_plan)}]"
+                    if current_plan else f"{current_goal}(no plan)"
+                )
+                step_info = ""
+                if current_plan and plan_step_idx < len(current_plan):
+                    sp = current_plan[plan_step_idx]
+                    step_info = f" ✓do={sp.action}({sp.target})→{sp.expected_gain}"
+                inv_summary = (
+                    f"H{inv.get('health',9)}F{inv.get('food',9)}"
+                    f"D{inv.get('drink',9)}E{inv.get('energy',9)}"
+                    f" W{inv.get('wood',0)}T{inv.get('table',0)}"
+                    f"S{inv.get('wood_sword',0)}"
+                )
+                print(f"s{step:3d} {inv_summary} near={vf.near_concept:9s}"
+                      f" pos={player_pos} | {plan_repr}{step_info} → {action_str}")
 
             inv_before = inv
             pixels, _, done, info = env.step(action_str)
