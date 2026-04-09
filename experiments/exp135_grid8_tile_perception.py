@@ -422,15 +422,22 @@ def phase4_accuracy_gate(segmenter, n_frames: int = 500) -> float:
 # ---------------------------------------------------------------------------
 
 def _perceive_segmenter(pixels, segmenter):
-    """Perceive using TileSegmenter → VisualField."""
+    """Perceive using TileSegmenter → VisualField.
+
+    Player is at screen tile (cr, cc). 4 cardinal adjacent tiles are:
+      N (cr-1, cc), S (cr+1, cc), W (cr, cc-1), E (cr, cc+1)
+
+    near_concept = the object in any of the 4 adjacent tiles (if any).
+    The player's own tile is always labeled "empty" in training data, so
+    we exclude it from near_concept computation.
+    """
     from snks.agent.perception import VisualField
     class_ids, confidences = segmenter.classify_tiles(pixels)
     H, W = class_ids.shape
-    # Player at center of 7×9: row ~3, col ~4
-    cr, cc = H // 2, W // 2
+    cr, cc = H // 2, W // 2  # player tile
 
     vf = VisualField()
-    center_pos = {(cr-1, cc-1), (cr-1, cc), (cr, cc-1), (cr, cc)}
+    adjacent_pos = {(cr-1, cc), (cr+1, cc), (cr, cc-1), (cr, cc+1)}
 
     for tr in range(H):
         for tc in range(W):
@@ -440,10 +447,10 @@ def _perceive_segmenter(pixels, segmenter):
                 cls_name = NEAR_CLASSES[cls_idx]
             else:
                 cls_name = f"class_{cls_idx}"
-            if cls_name == "empty" and (tr, tc) not in center_pos:
+            if cls_name == "empty":
                 continue
             vf.detections.append((cls_name, conf, tr, tc))
-            if (tr, tc) in center_pos and conf > vf.near_similarity:
+            if (tr, tc) in adjacent_pos and conf > vf.near_similarity:
                 vf.near_concept = cls_name
                 vf.near_similarity = conf
     return vf
@@ -481,44 +488,87 @@ def phase5_smoke(segmenter, n_episodes: int = 20, max_steps: int = 200) -> dict:
         wood = 0
         found_3wood_step = None
 
+        last_action = None
+        last_pos = None
+
         for step in range(max_steps):
             inv = dict(info.get("inventory", {}))
-            player_pos = info.get("player_pos", (32, 32))
+            player_pos = tuple(info.get("player_pos", (32, 32)))
+            px_player, py_player = int(player_pos[0]), int(player_pos[1])
 
             px_tensor = torch.from_numpy(pixels)
             vf = _perceive_segmenter(px_tensor, segmenter)
-            effective_near = vf.near_concept
 
-            # Update spatial map from tile detections
-            spatial_map.update(player_pos, effective_near)
+            # Update spatial map from tile detections.
+            # Tile→world mapping matches viewport_tile_label (used for training):
+            #   world_X = player[0] + tile_col - center_c
+            #   world_Y = player[1] + (tile_row + 1) - center_r - 1
+            #            = player[1] + tile_row - center_r + 1 - 1
+            #            = player[1] + tile_row - 2   (for center_r=3)
+            # The +1 is the sprite offset we verified visually.
+            spatial_map.update((px_player, py_player), vf.near_concept)
             for cid, conf, gy, gx in vf.detections:
-                wx = int(player_pos[0]) + (gx - center_c)
-                wy = int(player_pos[1]) + (gy - center_r)
+                wx = px_player + (gx - center_c)
+                wy = py_player + (gy - (center_r - 1))
                 spatial_map.update((wx, wy), cid)
 
-            # Simple policy: find tree, do
-            if effective_near == "tree":
-                action_str = "do"
-            else:
-                tree_pos = spatial_map.find_nearest("tree", player_pos)
-                if tree_pos:
-                    action_str = _step_toward(player_pos, tree_pos, rng)
+            # Policy:
+            # 1. If tree is adjacent (near_concept==tree) AND we're facing it:
+            #    → 'do' will chop it
+            # 2. If tree is adjacent but wrong facing:
+            #    → move in tree's direction (this turns player + tries to step)
+            # 3. Else: navigate from spatial_map or visual field
+            if vf.near_concept == "tree":
+                # Find which adjacent tile has the tree
+                tree_adj_dir = None
+                for cid, conf, gy, gx in vf.detections:
+                    if cid != "tree":
+                        continue
+                    # N/S/E/W of player tile (center_r, center_c)
+                    if gy == center_r - 1 and gx == center_c:
+                        tree_adj_dir = "up"; break
+                    if gy == center_r + 1 and gx == center_c:
+                        tree_adj_dir = "down"; break
+                    if gy == center_r and gx == center_c - 1:
+                        tree_adj_dir = "left"; break
+                    if gy == center_r and gx == center_c + 1:
+                        tree_adj_dir = "right"; break
+
+                if tree_adj_dir is None:
+                    # near_concept says tree but not in cardinal adjacency (shouldn't happen)
+                    action_str = "do"
                 else:
+                    # If last action was move in this direction and we got blocked
+                    # (pos didn't change), we're now facing the tree → 'do'
+                    blocked = (last_pos is not None and last_pos == player_pos
+                               and last_action == f"move_{tree_adj_dir}")
+                    if blocked or last_action == f"move_{tree_adj_dir}":
+                        action_str = "do"
+                    else:
+                        action_str = f"move_{tree_adj_dir}"
+            else:
+                tree_pos = spatial_map.find_nearest("tree", (px_player, py_player))
+                if tree_pos:
+                    action_str = _step_toward((px_player, py_player), tree_pos, rng)
+                else:
+                    # Fall back: any tree visible in non-adjacent tiles
                     tree_dets = vf.find("tree")
                     if tree_dets:
                         _, tgy, tgx = tree_dets[0]
-                        if tgx < center_c - 1:
-                            action_str = "move_left"
-                        elif tgx > center_c:
-                            action_str = "move_right"
-                        elif tgy < center_r - 1:
-                            action_str = "move_up"
-                        elif tgy > center_r:
-                            action_str = "move_down"
-                        else:
-                            action_str = "do"
+                        # Convert tile offset to world direction
+                        dx = tgx - center_c
+                        dy = tgy - (center_r - 1)
+                        moves = []
+                        if dx > 0: moves.append("move_right")
+                        elif dx < 0: moves.append("move_left")
+                        if dy > 0: moves.append("move_down")
+                        elif dy < 0: moves.append("move_up")
+                        action_str = moves[rng.randint(len(moves))] if moves else "do"
                     else:
                         action_str = str(rng.choice(MOVE_ACTIONS))
+
+            last_action = action_str
+            last_pos = player_pos
 
             inv_before = inv
             pixels, _, done, info = env.step(action_str)
@@ -589,15 +639,16 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
 
         for step in range(max_steps):
             inv = dict(info.get("inventory", {}))
-            player_pos = info.get("player_pos", (32, 32))
+            player_pos = tuple(info.get("player_pos", (32, 32)))
+            px_player, py_player = int(player_pos[0]), int(player_pos[1])
 
             px_tensor = torch.from_numpy(pixels)
             vf = _perceive_segmenter(px_tensor, segmenter)
 
-            spatial_map.update(player_pos, vf.near_concept)
+            spatial_map.update((px_player, py_player), vf.near_concept)
             for cid, conf, gy, gx in vf.detections:
-                wx = int(player_pos[0]) + (gx - center_c)
-                wy = int(player_pos[1]) + (gy - center_r)
+                wx = px_player + (gx - center_c)
+                wy = py_player + (gy - (center_r - 1))
                 spatial_map.update((wx, wy), cid)
 
             if prev_inv:
@@ -611,23 +662,21 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
                 if vf.near_concept == target:
                     action_str = step_plan.action
                 else:
-                    target_pos = spatial_map.find_nearest(target, player_pos)
+                    target_pos = spatial_map.find_nearest(target, (px_player, py_player))
                     if target_pos:
-                        action_str = _step_toward(player_pos, target_pos, rng)
+                        action_str = _step_toward((px_player, py_player), target_pos, rng)
                     else:
                         target_dets = vf.find(target)
                         if target_dets:
                             _, tgy, tgx = target_dets[0]
-                            if tgx < center - 1:
-                                action_str = "move_left"
-                            elif tgx > center:
-                                action_str = "move_right"
-                            elif tgy < center - 1:
-                                action_str = "move_up"
-                            elif tgy > center:
-                                action_str = "move_down"
-                            else:
-                                action_str = "do"
+                            dx = tgx - center_c
+                            dy = tgy - (center_r - 1)
+                            moves = []
+                            if dx > 0: moves.append("move_right")
+                            elif dx < 0: moves.append("move_left")
+                            if dy > 0: moves.append("move_down")
+                            elif dy < 0: moves.append("move_up")
+                            action_str = moves[rng.randint(len(moves))] if moves else "do"
                         else:
                             action_str = explore_action(rng, store, inv)
                 if action_str.startswith("babble_"):
