@@ -1,8 +1,7 @@
 # Stage 76: Continuous Model Learning — Design
 
 **Date:** 2026-04-09
-**Status:** Draft (post-brainstorming, ready for plan)
-**Supersedes:** `2026-04-09-stage76-continuous-model-learning-design.md` (initial draft)
+**Status:** Draft v2 (post-brainstorming + spec review)
 **Depends on:** Stage 75 perception (82% tile accuracy) + homeostatic bugs fixed
 
 ## Problem
@@ -65,6 +64,23 @@ Three NEW memory systems:
 7. **State encoder**: `StateEncoder` — deterministic projection of raw
    perception into sparse binary vector (SDR). No learning; just encoding.
 
+### Key design principle — no drive argmax
+
+First draft included a "dominant drive" argmax selector (take the most urgent
+body variable and query attention weighted by that drive). This was itself a
+hardcoded priority heuristic — it presupposes agent needs to "think about one
+thing at a time".
+
+**Revised**: body state is encoded directly into SDR as raw scalar fields.
+Attention weights are per-body-variable (not per-drive). Action selection
+uses the full SDR query (no masking) and scores candidate actions by
+**expected cumulative deficit reduction across ALL body variables**, weighted
+by current deficit.
+
+There is no "which drive wins" step. The agent reacts to the whole state
+simultaneously. Deficit weighting makes urgent variables naturally dominate
+action scoring without an explicit priority loop.
+
 ### Data Flow
 
 ```
@@ -74,39 +90,36 @@ Raw perception (inv, vf, spatial_map, player_pos, tracker)
 ┌──────────────────────┐
 │ StateEncoder         │
 │ → state_sdr          │  (sparse binary vector, ~200 of 4000 bits active)
+│ includes all body    │  (HP, food, drink, energy as bucket-encoded scalars)
+│ state as bucket bits │
 └──────────┬───────────┘
            │
            ▼
 ┌──────────────────────┐
-│ Dominant drive D     │  (most urgent body variable, from tracker)
+│ EpisodicSDM.recall   │  query with full state_sdr (no masking v1)
+│ → top-K past episodes│  sorted by SDR similarity (popcount overlap)
 └──────────┬───────────┘
            │
            ▼
 ┌──────────────────────┐
-│ AttentionWeights     │  attended_sdr = state_sdr ∧ weights[D]
-│ → attended_sdr       │  (gate out bits irrelevant to current drive)
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│ EpisodicSDM.recall   │  → list of (past_state, past_action, past_outcome)
-│ → past experiences   │     sorted by SDR similarity
-└──────────┬───────────┘
-           │
-           ▼
-┌──────────────────────┐
-│ Action aggregation   │  per action: expected body_delta for drive D
-│ → best action        │  pick action maximizing D reduction
+│ Action Aggregator    │  per action A in recalled:
+│                      │    expected_delta[var] = mean(body_delta[var])
+│                      │  score[A] = Σ_var deficit[var] × expected_delta[var]
+│                      │  choose A via softmax (temperature > 0 for exploration)
 └──────────┬───────────┘
            │
            ▼ (env.step)
 ┌──────────────────────┐
 │ EpisodicSDM.write    │  (state, action, next_state, body_delta)
-│ AttentionWeights     │  Hebbian update for drive × active bits
-│ .update              │
-│ ConceptStore.verify  │  confidence updates for causal links
+│ ConceptStore.verify  │  confidence update for causal links
+│ tracker.update       │  body rate observation (unchanged)
 └──────────────────────┘
 ```
+
+**Note on AttentionWeights**: deferred to v2 within Stage 76. v1 ships
+without attention mask, relying on raw SDR similarity. If SDM recall proves
+too noisy (retrieves irrelevant episodes), v2 adds attention. This keeps
+scope minimal and testable.
 
 ### Bootstrap Phase (cold start)
 
@@ -160,24 +173,55 @@ wood=3: bits[1010:1050] = 1
 **3. Inventory presence (wood_sword, wood_pickaxe, table)** — fixed random
 SDR per item, 40 bits each, drawn from a known seed. Present → bits on.
 
-**4. Visible concepts with distance** — VSA binding.
-```python
-# zombie detected at tile (gy, gx), distance to player tile center
-dist_sdr = bucket_encode("dist", manhattan_to_center, range=9)
-bits |= vsa_bind(FIXED_SDR["see_zombie"], dist_sdr)
-```
-Each detected concept in vf produces one binding term. Multiple instances
-bundle via OR.
+**4. Visible concepts with distance** — spatial bit allocation (not VSA XOR).
 
-**5. Spatial map distances** — VSA binding with larger range.
+Rejected approach: `vsa_bind(concept, dist)` via XOR. XOR destroys similarity
+— `bind(zombie, dist=2)` and `bind(zombie, dist=3)` share ~0% bits, breaking
+the "similar values → similar patterns" principle for distances.
+
+Used approach: pre-allocate a dedicated bit range per concept, bucket-encode
+distance within that range.
 ```python
-# nearest known tree from spatial_map
+# bit ranges per concept, pre-allocated
+SEE_ZOMBIE_RANGE = (2000, 2100)   # 100 bits
+SEE_TREE_RANGE = (2100, 2200)
+SEE_WATER_RANGE = (2200, 2300)
+# ... one range per known class
+
+def encode_visible(bits, concept, distance):
+    start, end = CONCEPT_RANGES[concept]
+    # Bucket encode distance 0..9 in 100-bit range, window=40
+    bucket = bucket_encode_range(distance, 9, start, end, window=40)
+    bits[bucket] = True
+```
+
+Property: `see_zombie@dist=2` and `see_zombie@dist=3` share ~80% bits within
+the SEE_ZOMBIE_RANGE. `see_tree@dist=2` shares 0% bits with `see_zombie@dist=2`
+because they occupy different ranges. Similarity-preserving by construction.
+
+Multiple instances: use max-distance or min-distance per concept (closest
+instance typically most relevant). v1 uses min-distance only.
+
+**5. Spatial map distances** — same spatial allocation strategy, different
+ranges and wider distance scale.
+```python
+KNOW_TREE_RANGE = (3000, 3100)
+KNOW_WATER_RANGE = (3100, 3200)
+# ...
+
 for concept in KNOWN_CLASSES:
     nearest = spatial_map.find_nearest(concept, player_pos)
     if nearest:
-        dist = manhattan(nearest, player_pos)
-        bits |= vsa_bind(FIXED_SDR["know_" + concept], bucket_encode("world_dist", min(dist, 30), range=30))
+        dist = min(manhattan(nearest, player_pos), 30)
+        bucket = bucket_encode_range(dist, 30, *KNOW_RANGES[concept], window=30)
+        bits[bucket] = True
 ```
+
+**VSA note**: we are not using circular convolution or XOR binding in v1.
+The spatial allocation scheme above gives us similarity-preserving structured
+encoding with simpler implementation and better interpretability. If future
+stages need role-filler binding (e.g., "agent at position X, zombie at Y,
+relative angle Z"), proper VSA can be added then.
 
 No derived features. No booleans like `can_craft` or `in_danger`. Raw sensor
 values only, encoded so that similar values produce similar patterns.
@@ -186,21 +230,19 @@ Fixed SDR patterns (for concept bindings and presence) generated from a
 deterministic random seed and stored once. Same seed across all runs for
 consistency.
 
-### VSA Primitives
+### Primitives
 
-Minimal subset needed:
+Only two operations on SDRs:
 
-**Bind (circular convolution or XOR-based)**: `C = bind(A, B)`
-- Implementation: element-wise XOR is simplest for binary SDRs (and its own
-  inverse). More sophisticated: circular convolution, but requires denser vectors.
-- Start with XOR: `C = A XOR B`, unbind: `A = C XOR B`.
+**Bundle (OR)**: `C = A | B`
+- Element-wise OR of binary SDRs. Accumulates features.
 
-**Bundle (OR)**: `C = A + B`
-- Simple element-wise OR of binary SDRs.
-- Accumulates bits; capacity limited by density. Fine at 5% density.
+**Similarity**: `sim(A, B) = popcount(A & B)`
+- Bit overlap count. Linear in sparse density.
 
-**Similarity**: `sim(A, B) = popcount(A AND B)`
-- Bit overlap count. Simple and fast.
+No bind/unbind operations needed in v1 thanks to spatial allocation scheme
+above. Each concept×value combination maps directly to a pre-allocated bit
+region.
 
 ### EpisodicSDM
 
@@ -236,55 +278,90 @@ with brute force.
 
 **Per-action aggregation**:
 ```python
-def best_action(recalled: list[Episode], drive: str) -> str:
-    scores = {}  # action → sum of drive_delta
-    counts = {}
+def score_actions(
+    recalled: list[Episode],
+    current_body: dict[str, int],
+    tracker: HomeostaticTracker,
+) -> dict[str, float]:
+    """
+    Score each action by expected improvement of body state.
+
+    Deficit-weighted aggregation:
+    - For each body variable V (from tracker.rates keys, not hardcoded):
+      deficit[V] = max(0, tracker.observed_max[V] - current_body[V])
+    - For each recalled episode with action A:
+      score[A] += Σ_V deficit[V] × body_delta_V_in_episode
+    - Average over episodes of same action
+
+    Sign is emergent: if body variable 'health' is observed to go up in
+    good episodes and down in bad ones, deficit × delta naturally scores
+    "restoring" actions higher. No hardcoded "higher is better" assumption.
+    Works for any variable tracker observes (food, drink, energy, HP,
+    and any future variables).
+    """
+    scores = defaultdict(float)
+    counts = defaultdict(int)
     for ep in recalled:
-        scores[ep.action] = scores.get(ep.action, 0) + ep.body_delta.get(drive, 0)
-        counts[ep.action] = counts.get(ep.action, 0) + 1
-    # For drive = "health", positive delta is good (health increased)
-    # For drive = "food" (depleting), positive delta is good
-    avg_scores = {a: scores[a] / counts[a] for a in scores}
-    return max(avg_scores, key=avg_scores.get)
+        for var, delta in ep.body_delta.items():
+            if var not in tracker.observed_max:
+                continue
+            current = current_body.get(var, tracker.observed_max[var])
+            deficit = max(0, tracker.observed_max[var] - current)
+            scores[ep.action] += deficit * delta
+        counts[ep.action] += 1
+    return {a: scores[a] / counts[a] for a in scores if counts[a] > 0}
+
+
+def select_action(action_scores: dict[str, float], temperature: float = 1.0) -> str:
+    """
+    Softmax-based action selection for exploration.
+    Higher temperature → more exploration, lower → more exploitation.
+    """
+    if not action_scores:
+        return None
+    actions = list(action_scores.keys())
+    values = np.array([action_scores[a] for a in actions])
+    # Subtract max for numerical stability
+    exp_values = np.exp((values - values.max()) / temperature)
+    probs = exp_values / exp_values.sum()
+    return np.random.choice(actions, p=probs)
 ```
 
-### AttentionWeights
+Notes:
+- `tracker.observed_max[var]` is a new tracker feature: rolling max observed
+  across episodes. Replaces hardcoded `9`. Initialized from first observation.
+- `body_delta` set is whatever tracker has seen, not a hardcoded list.
+  Adding new body variables (e.g., mana, fatigue) requires only tracker
+  updates, not this function.
+- Softmax with temperature > 0 gives stochastic action choice — prevents
+  collapse onto early strategies (exploration mechanism). Temperature
+  schedule: start high (1.0), decay over episodes.
 
-Purpose: learn relevance of each SDR bit to each body drive via outcome
-correlation.
+### AttentionWeights — deferred to v2 within Stage 76
 
-Shape: `np.float32[n_drives, n_bits]` = 4 × 4096 = 64KB. Dense.
+The initial brainstorming proposed per-drive attention weights `[drive × bit]`.
+Spec review identified load-bearing issues: (a) "drive" selection is itself
+a hardcoded argmax, (b) unbounded Hebbian updates drift, (c) zero-init plus
+positive threshold breaks bootstrap.
 
-Initial values: small positive (e.g., 0.01) or uniform 0.
+**v1 decision**: ship Stage 76 without AttentionWeights. Query SDM with the
+full state_sdr. Rely on bucket-encoding and spatial allocation to produce
+similar patterns for similar states naturally.
 
-**Update rule (Hebbian / outcome correlation)**:
+**v2 trigger**: if SDM recall is consistently noisy (top-K matches include
+many irrelevant episodes → poor action scoring → survival doesn't improve),
+add attention as a per-variable relevance weight:
+
 ```python
-def update(self, state_sdr, body_delta_per_drive, lr=0.01):
-    # For each drive, positive delta = good outcome, negative = bad
-    for drive, delta in body_delta_per_drive.items():
-        if drive not in self.drive_idx:
-            continue
-        d_idx = self.drive_idx[drive]
-        # Amplify weights of active bits proportional to delta
-        # Positive delta → reinforce; negative → weaken
-        self.weights[d_idx] += lr * delta * state_sdr.astype(np.float32)
+# v2 (not in scope for initial ship)
+weights: np.float32[n_body_vars, n_bits]  # per-variable, not per-drive
+# EMA update with clipping, normalized initialization
+# Soft weighting (no hard threshold), used as query mask
 ```
 
-Weights grow for bits that co-occur with positive outcomes, shrink for bits
-that co-occur with negative outcomes.
-
-**Mask query**:
-```python
-def attend(self, state_sdr, drive):
-    d_idx = self.drive_idx[drive]
-    # Keep bits where weight is positive (relevant); drop where weight is
-    # near zero or negative (irrelevant or anti-correlated)
-    threshold = 0.0
-    mask = self.weights[d_idx] > threshold
-    return state_sdr & mask
-```
-
-Simple threshold mask. Refinements possible later (soft weighting).
+Rationale: avoid scope creep. v1 is simpler and testable. v2 justified only
+if v1 evidence shows noise-in-recall is the bottleneck. Matches the
+"systematic debugging" principle: no speculative complexity before measuring.
 
 ### Interaction with Existing Components
 
@@ -303,74 +380,103 @@ uses the components above.
 
 ## Components Summary
 
+### v1 (this Stage 76 ship)
+
 New files:
-- `src/snks/memory/sdr_encoder.py` — StateEncoder class, bucket encoding utilities
-- `src/snks/memory/vsa.py` — VSA primitives (bind, bundle, similarity)
-- `src/snks/memory/episodic_sdm.py` — EpisodicSDM class
-- `src/snks/memory/attention.py` — AttentionWeights class
-- `src/snks/agent/continuous_agent.py` — decision loop using all memory systems
+- `src/snks/memory/__init__.py` — new package
+- `src/snks/memory/sdr_encoder.py` — StateEncoder class + bucket encoding
+- `src/snks/memory/episodic_sdm.py` — EpisodicSDM class with FIFO buffer,
+  recall, best_action scoring, softmax selection
+- `src/snks/agent/continuous_agent.py` — decision loop using SDR + SDM +
+  ConceptStore bootstrap
 
 Modified:
+- `src/snks/agent/perception.py` — add `HomeostaticTracker.observed_max`,
+  `observed_variables()` methods (drop hardcoded 4-drive list)
 - `experiments/exp136_continuous_learning.py` — new experiment pipeline
-- `tests/test_stage76_*.py` — unit tests per component
+  (warmup + evaluation phases)
+- `tests/test_stage76_sdr.py` — StateEncoder tests
+- `tests/test_stage76_sdm.py` — EpisodicSDM tests
+- `tests/test_stage76_agent.py` — end-to-end decision loop smoke test
+- `tests/test_stage76_no_hardcode.py` — automated check for forbidden
+  patterns (Gate 5)
 
-Unchanged:
-- Perception (reuses exp135 segmenter checkpoint)
-- ConceptStore, HomeostaticTracker, CrafterSpatialMap
-- CrafterPixelEnv
+### v2 (deferred, only if v1 insufficient)
+
+- `src/snks/memory/attention.py` — AttentionWeights class with per-variable
+  relevance, EMA updates, clipping. Only added if v1 survival < 200 AND
+  diagnostic shows SDM recall noise is the cause.
+
+### Unchanged
+
+- Perception pipeline (reuses `exp135/segmenter_9x9.pt`)
+- `snks/agent/concept_store.py` (except confidence update which already exists)
+- `snks/agent/crafter_spatial_map.py`
+- `snks/agent/crafter_pixel_env.py`
+- `snks/agent/crafter_textbook.py`
 
 ## Decision Loop Pseudocode
 
 ```python
-def continuous_decision_loop(env, encoder, sdm, attention, store, tracker, max_steps):
+def continuous_decision_loop(env, segmenter, encoder, sdm, store, tracker,
+                              rng, max_steps, temperature=1.0, bootstrap_k=5):
     pixels, info = env.reset()
     spatial_map = CrafterSpatialMap()
-    episode_history = []
+    prev_inv = None
 
     for step in range(max_steps):
-        inv = info["inventory"]
+        inv = dict(info["inventory"])
         player_pos = info["player_pos"]
 
         # Perception
         vf = perceive_tile_field(torch.from_numpy(pixels), segmenter)
         spatial_map.update(player_pos, vf.near_concept)
         for cid, conf, gy, gx in vf.detections:
-            spatial_map.update(world_pos_of(cid, player_pos, gy, gx), cid)
+            wx = player_pos[0] + (gx - center_c)
+            wy = player_pos[1] + (gy - (center_r - 1))
+            spatial_map.update((wx, wy), cid)
 
-        # Track body changes
-        if episode_history:
-            prev_inv = episode_history[-1]['inv']
+        # Track body changes (observes rates, updates observed_max)
+        if prev_inv is not None:
             tracker.update(prev_inv, inv, vf.visible_concepts())
 
-        # Encode raw state
+        # Encode raw state → SDR (includes body stats as bucket-encoded)
         state_sdr = encoder.encode(inv, vf, spatial_map, player_pos)
 
-        # Decide action
-        drive = tracker.most_urgent_drive(inv)
-        attended = attention.attend(state_sdr, drive)
-        recalled = sdm.recall(attended, top_k=20)
+        # Query episodic memory with full SDR
+        recalled = sdm.recall(state_sdr, top_k=20)
 
-        if len(recalled) >= 5:
+        if len(recalled) >= bootstrap_k:
             # Memory-based decision
-            action = sdm.best_action(recalled, drive)
+            action_scores = score_actions(recalled, inv, tracker)
+            action = select_action(action_scores, temperature=temperature)
         else:
-            # Bootstrap: ConceptStore plan
+            # Bootstrap: ConceptStore plan from textbook instincts
             goal, plan = select_goal(inv, store, tracker, vf, spatial_map)
-            action = plan[0].action if plan else explore_action(rng, store, inv)
+            if plan:
+                action = plan[0].action
+                # For make/place, compose env action name
+                if plan[0].action in ("make", "place"):
+                    action = f"{plan[0].action}_{plan[0].expected_gain}"
+            else:
+                # No plan — random move for data gathering
+                action = str(rng.choice(MOVE_ACTIONS))
 
         # Execute
+        inv_before = inv
         pixels, _, done, info = env.step(action)
-        next_inv = info["inventory"]
+        next_inv = dict(info["inventory"])
         next_vf = perceive_tile_field(torch.from_numpy(pixels), segmenter)
-        next_state_sdr = encoder.encode(next_inv, next_vf, spatial_map, info["player_pos"])
+        next_state_sdr = encoder.encode(next_inv, next_vf, spatial_map,
+                                         info["player_pos"])
 
-        # Compute body delta per drive
+        # Body delta — variables come from tracker, not hardcoded
         body_delta = {
-            var: next_inv.get(var, 9) - inv.get(var, 9)
-            for var in ("health", "food", "drink", "energy")
+            var: next_inv.get(var, inv.get(var, 0)) - inv.get(var, 0)
+            for var in tracker.observed_variables()
         }
 
-        # Write experience
+        # Write experience (continuous, every step)
         sdm.write(Episode(
             state_sdr=state_sdr,
             action=action,
@@ -379,42 +485,93 @@ def continuous_decision_loop(env, encoder, sdm, attention, store, tracker, max_s
             step=step,
         ))
 
-        # Update attention from this step's outcome
-        attention.update(state_sdr, body_delta, lr=0.01)
-
-        # ConceptStore confidence update (existing path)
-        outcome = outcome_to_verify(action, inv, next_inv)
+        # ConceptStore confidence update (existing path, for bootstrap quality)
+        outcome = outcome_to_verify(action, inv_before, next_inv)
         if outcome:
             verify_outcome(vf.near_concept, action, outcome, store)
 
-        episode_history.append({'inv': inv, 'action': action, 'state': state_sdr})
-
+        prev_inv = inv
         if done:
             break
 
     return {
         "length": step + 1,
         "sdm_size": len(sdm.buffer),
-        "attention_norms": attention.diagnostic_norms(),
+        "final_inv": next_inv,
     }
 ```
+
+**Key differences from Stage 75 phase6**:
+1. No `select_goal` in the main path — only as bootstrap fallback
+2. No plan execution state machine (no plan_step_idx, no nav_steps timer)
+3. No hardcoded "drive" argmax
+4. Full state encoded every step, memory queried every step
+5. Softmax action selection (exploration mechanism)
+6. Single source of truth for action choice: SDM recall + deficit-weighted
+   aggregation + softmax. No if-else chains.
+
+## Why 1-step reactive with memory should beat Stage 75 planning
+
+The Stage 75 survival gap wasn't "can't plan far enough" — the agent had a
+4-step kill_zombie plan. The gap was "plan commits too early, can't adapt
+when conditions change". Specifically:
+
+- Stage 75 agent sees zombie → plans kill_zombie → navigates to tree →
+  during navigation zombie attacks → HP drops → plan doesn't re-evaluate →
+  dies mid-plan.
+
+Stage 76 addresses this WITHOUT forward simulation by making every step a
+fresh decision based on similar past experiences:
+
+- Stage 76 agent sees zombie → queries SDM with "zombie visible + HP=X +
+  sword=0 + ..." → recalls past episodes where similar state led to death →
+  scoring pushes away from that action class → picks different action (flee,
+  or if past episodes with attack succeeded, attack).
+
+The key claim: **memory of past outcomes substitutes for explicit forward
+simulation**, because recalled episodes ARE past forward rollouts. Each
+episode is a 1-step look at "what happens when I do X in state S".
+
+What this approach CANNOT do:
+- Plan novel multi-step sequences the agent has never executed
+- Reason about "if I collect 2 wood now, I'll have enough for table later"
+- Discover new strategies without first trying them randomly
+
+These are Stage 77+ concerns (compositional forward simulation). Stage 76
+tests whether memory-based reaction alone beats Stage 75's 178 steps.
+
+Hypothesis: YES, because Stage 75's failure mode is architectural commitment,
+not insufficient planning depth. A reactive agent that remembers past deaths
+can avoid repeating them. A planning agent that commits to a 4-step plan
+executes it until death regardless.
+
+If this hypothesis is wrong (survival still <200), Stage 76 needs multi-step
+forward simulation. That's a scope expansion, not a redesign.
 
 ## Success Criteria
 
 ### Must pass (gates)
 
-1. **Survival ≥ 200 steps avg** with enemies (20 episodes × 1000 max_steps).
-   This is the Stage 75 unmet gate.
-2. **Perception maintained**: tile_acc ≥ 80% (no regression from Stage 75).
-3. **Wood collection maintained**: ≥ 50% of episodes reach 3 wood.
-4. **Memory growth**: SDM size grows monotonically during training
-   (sanity check that writes work).
-5. **Attention convergence**: weights stabilize (change < 5% over 50 episodes
-   near end of training).
-6. **Zero hardcoded derived features**: code review confirms StateEncoder
-   contains only raw sensor fields and VSA bindings.
-7. **Tests pass**: unit tests for VSA operations, StateEncoder, SDM recall,
-   AttentionWeights updates.
+1. **Survival mean ≥ 200 steps** over 3 independent runs × 20 episodes each
+   (60 total), with enemies enabled, max_steps=1000. Each individual run
+   must also show mean ≥ 200 (no lucky-run cheats).
+2. **Perception maintained**: tile_acc ≥ 80% on fresh eval (no regression
+   from Stage 75).
+3. **Wood collection maintained**: ≥ 50% of smoke episodes (no enemies,
+   max_steps=200) reach 3 wood.
+4. **Memory growth monotonic**: SDM size grows each episode until buffer
+   wraps. After wrap, buffer stays at size=max_buffer (no empty state).
+5. **Zero hardcoded derived features**: automated check — a linter-style
+   test that scans `sdr_encoder.py` for forbidden patterns:
+   - No `if` statements computing booleans from inventory/vf
+   - No magic number thresholds (e.g., `HP < 3`)
+   - No hardcoded list of "drive variables" in encoder
+   Only allowed: bucket_encode, fixed SDR lookup, spatial range assignment.
+6. **No `most_urgent_drive` or similar priority argmax** in decision loop
+   (code review + grep).
+7. **Tests pass**: unit tests for StateEncoder (deterministic, similarity
+   property), EpisodicSDM (write, recall, wrap), action scoring
+   (deficit-weighted, sign-emergent), softmax selection.
 
 ### Should demonstrate
 
@@ -438,22 +595,51 @@ def continuous_decision_loop(env, encoder, sdm, attention, store, tracker, max_s
 
 1. **Slow warm-up**. First 200-500 steps will be nearly random. If episodes
    are too short, agent dies before accumulating useful memory. Mitigation:
-   start with easier environment (no enemies) to seed SDM, then enable enemies.
-2. **SDM scan cost**. Linear scan over 10K episodes per step could be slow.
-   Mitigation: start with smaller buffer (~2K), optimize with hash buckets if
-   needed.
-3. **Attention weight drift**. Non-stationary behavior (agent improves) causes
-   weight distribution shift. Mitigation: EMA with tunable decay.
-4. **Bit collision in VSA**. XOR bind has limited capacity. Multiple bindings
-   start interfering. Mitigation: larger SDR size, or switch to circular
-   convolution if XOR insufficient.
-5. **No clear transition criterion**. "When to trust SDM vs ConceptStore" is
-   hand-crafted threshold (≥5 similar episodes). Could fail to switch or
-   switch prematurely. Mitigation: tune by experiment; consider confidence
-   score instead.
+   seed SDM with a warmup phase in enemy-free env (50 episodes) before
+   enabling enemies for evaluation.
+
+2. **SDM scan cost**. Linear scan over 10K episodes per step = ~40M bitwise
+   ops per query. At 10ms per query, 500-step episodes cost 5s perception-free.
+   Acceptable for evaluation but may slow experimentation. Mitigation:
+   start with smaller buffer (2K), add LSH or hash buckets if bottleneck.
+
+3. **Catastrophic forgetting via FIFO buffer**. Once buffer fills (~10K steps
+   = ~50 episodes), early exploration-phase experiences get evicted. Those
+   experiences might be important (they cover state space more broadly than
+   later experiences from a converged policy). Mitigation: implement
+   reservoir sampling or priority eviction (keep episodes with high
+   prediction error). v1 uses simple FIFO; monitor forgetting empirically.
+
+4. **Exploration collapse**. Without sufficient temperature, softmax collapses
+   onto "whatever worked first" — the first successful strategy dominates
+   and the agent never discovers better ones. Mitigation: (a) initial high
+   temperature (1.0+), (b) temperature decay schedule, (c) monitor action
+   distribution entropy across episodes; if entropy drops below threshold,
+   inject temperature. Alternative: Thompson sampling over action scores.
+
+5. **Bootstrap transition threshold hand-tuned**. "≥5 similar episodes" is
+   an arbitrary number, and "similar" needs a definition. Mitigation:
+   define similarity concretely (popcount overlap ≥ 50% of query popcount),
+   tune bootstrap_k by warmup experiments. Log bootstrap/SDM split per
+   episode for diagnostic visibility.
+
 6. **Hidden hardcoding creep**. Easy to smuggle in "critical threshold" in
-   attention update, or "danger bit" in encoder. Vigilance required in code
-   review.
+   action scoring, or "danger bit" in encoder. Mitigation: (a) automated
+   linter in gate 5, (b) code review must grep for common violations
+   (`if inv["health"] < N`, `MAX_X = 9`, hardcoded variable lists).
+
+7. **Deficit scoring may favor risky actions**. High deficit × positive delta
+   scores well; but a single positive delta outlier may dominate the mean.
+   E.g., one episode where `do(zombie)` accidentally killed a zombie → large
+   positive delta → agent tries `do(zombie)` again despite many deaths.
+   Mitigation: use median instead of mean, or penalize high-variance actions.
+
+8. **Memory-reaction vs. multi-step tradeoffs**. 1-step reactive can't
+   discover novel multi-step strategies. If surviving 200 requires crafting
+   a sword (a 4-step sequence), agent must execute those steps by accident
+   first to have memory of them. Mitigation: ConceptStore bootstrap provides
+   multi-step plans as initial seed; SDM learns from their executions even
+   if imperfect. If insufficient, Stage 77 adds forward simulation.
 
 ## Non-Goals
 
