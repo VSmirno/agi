@@ -719,9 +719,9 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
             has_sword = inv.get("wood_sword", 0) > 0
             health = inv.get("health", 9)
 
-            # DAMAGE REFLEX: if HP actually dropped, panic flee for 4 steps
+            # DAMAGE REFLEX: if HP actually dropped, panic flee for 8 steps
             if health < prev_health:
-                flee_timer = 4
+                flee_timer = 8
                 # Only use visible threat direction if ADJACENT (high precision)
                 adj_threat_dir = None
                 for t in ("zombie", "skeleton"):
