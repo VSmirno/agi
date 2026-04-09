@@ -623,52 +623,28 @@ def _find_adjacent(vf, center_r, center_c, concept_id):
     return None
 
 
-_OPPOSITE = {"up": "down", "down": "up", "left": "right", "right": "left"}
-
-
-def _find_nearest_threat(vf, center_r, center_c, threats=("zombie", "skeleton")):
-    """Return (distance, direction_away) of nearest threat in viewport.
-
-    distance = Manhattan distance from player tile (center).
-    direction_away = direction to move AWAY from threat.
-    Returns (None, None) if no threat visible.
-    """
-    best_dist = float("inf")
-    best_away = None
-    for cid, conf, gy, gx in vf.detections:
-        if cid not in threats:
-            continue
-        dy = gy - center_r
-        dx = gx - center_c
-        dist = abs(dy) + abs(dx)
-        if dist < best_dist:
-            best_dist = dist
-            # Direction to the threat (from player)
-            # We want opposite — move AWAY
-            if abs(dx) > abs(dy):
-                best_away = "left" if dx > 0 else "right"
-            elif abs(dy) > 0:
-                best_away = "up" if dy > 0 else "down"
-            else:
-                best_away = "up"  # on top — flee anywhere
-    if best_away is None:
-        return None, None
-    return best_dist, best_away
-
-
 def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> dict:
-    """Survival eval with simple reactive policy.
+    """Survival eval with homeostatic drives + causal planning (ideology-aligned).
 
-    Priority:
-      1. REFLEX: flee from adjacent zombie/skeleton (unless has wood_sword)
-      2. NEEDS:  if drink<4 → seek water; if food<4 → seek cow
-      3. DEFAULT: collect wood
+    NO hardcoded reflexes. Strategy emerges from:
+      - body (homeostatic tracker observes rates)
+      - world model (ConceptStore causal rules from textbook + experience)
+      - urgency (drive strength = d/dt of stat / current value)
+      - planning (backward chaining from goal)
     """
     print("\n" + "=" * 60)
-    print("Phase 6: Survival with enemies (reactive policy)")
+    print("Phase 6: Survival with enemies (homeostatic policy)")
     print("=" * 60)
 
+    store = ConceptStore()
+    tb = CrafterTextbook("configs/crafter_textbook.yaml")
+    tb.load_into(store)
     labeler = OutcomeLabeler()
+    tracker = HomeostaticTracker()
+
+    body_rules = tb.get_body_rules() if hasattr(tb, "get_body_rules") else []
+    if body_rules:
+        tracker.init_from_body_rules(body_rules)
 
     from snks.encoder.tile_head_trainer import VIEWPORT_ROWS, VIEWPORT_COLS
     center_r = VIEWPORT_ROWS // 2
@@ -678,20 +654,14 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
     resources = Counter()
     causes: Counter = Counter()
 
-    FOOD_TH = 4
-    DRINK_TH = 4
-
     for ep in range(n_episodes):
         env = CrafterPixelEnv(seed=ep * 11 + 300)
         pixels, info = env.reset()
         rng = np.random.RandomState(ep)
         spatial_map = CrafterSpatialMap()
+        prev_inv: dict = {}
         last_action = None
         last_pos = None
-        prev_health = 9
-        flee_timer = 0
-        flee_dir_panic = None
-        stuck_count = 0
         steps_taken = 0
 
         for step in range(max_steps):
@@ -699,12 +669,6 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
             inv = dict(info.get("inventory", {}))
             player_pos = tuple(info.get("player_pos", (32, 32)))
             px_player, py_player = int(player_pos[0]), int(player_pos[1])
-
-            # Stuck detection: count consecutive steps without position change
-            if last_pos is not None and last_pos == player_pos:
-                stuck_count += 1
-            else:
-                stuck_count = 0
 
             px_tensor = torch.from_numpy(pixels)
             vf = _perceive_segmenter(px_tensor, segmenter)
@@ -715,79 +679,32 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
                 wy = py_player + (gy - (center_r - 1))
                 spatial_map.update((wx, wy), cid)
 
-            action_str = None
-            has_sword = inv.get("wood_sword", 0) > 0
-            health = inv.get("health", 9)
+            if prev_inv:
+                tracker.update(prev_inv, inv, vf.visible_concepts())
 
-            # DAMAGE REFLEX: if HP actually dropped, panic flee for 8 steps
-            if health < prev_health:
-                flee_timer = 8
-                # Only use visible threat direction if ADJACENT (high precision)
-                adj_threat_dir = None
-                for t in ("zombie", "skeleton"):
-                    d = _find_adjacent(vf, center_r, center_c, t)
-                    if d is not None:
-                        adj_threat_dir = _OPPOSITE[d]
-                        break
-                flee_dir_panic = (adj_threat_dir if adj_threat_dir
-                                  else rng.choice(["up", "down", "left", "right"]))
-            prev_health = health
+            # Homeostatic goal selection (ideology: strategy from drives + world model)
+            goal, plan = select_goal(inv, store, tracker, vf, spatial_map)
 
-            if flee_timer > 0:
-                action_str = f"move_{flee_dir_panic}"
-                flee_timer -= 1
-
-            # STUCK: force random direction if stuck 3+ steps
-            if action_str is None and stuck_count >= 3:
-                action_str = str(rng.choice(MOVE_ACTIONS))
-                stuck_count = 0  # reset counter
-
-            # REFLEX: only adjacent threats (high precision, no false positives)
-            if action_str is None:
-                for t in ("zombie", "skeleton"):
-                    d = _find_adjacent(vf, center_r, center_c, t)
-                    if d is None:
-                        continue
-                    if has_sword:
-                        if last_action == f"move_{d}":
-                            action_str = "do"
-                        else:
-                            action_str = f"move_{d}"
-                    else:
-                        action_str = f"move_{_OPPOSITE[d]}"
-                    break
-
-            # NEEDS: water/food
-            if action_str is None:
-                target = None
-                drink = inv.get("drink", 9)
-                food = inv.get("food", 9)
-                if drink < DRINK_TH:
-                    target = "water"
-                elif food < FOOD_TH:
-                    target = "cow"
-                else:
-                    target = "tree"
-
+            action_str: str
+            if plan:
+                step_plan = plan[0]
+                target = step_plan.target
                 if vf.near_concept == target:
+                    # Target adjacent — execute plan action (do / make / place)
                     tgt_dir = _find_adjacent(vf, center_r, center_c, target)
-                    if tgt_dir is None:
-                        action_str = "do"
+                    if tgt_dir is None or last_action == f"move_{tgt_dir}":
+                        action_str = step_plan.action
                     else:
-                        blocked = (last_pos is not None and last_pos == player_pos
-                                   and last_action == f"move_{tgt_dir}")
-                        if blocked or last_action == f"move_{tgt_dir}":
-                            action_str = "do"
-                        else:
-                            action_str = f"move_{tgt_dir}"
+                        # Turn toward target first (Crafter facing requirement)
+                        action_str = f"move_{tgt_dir}"
                 else:
                     tgt_pos = spatial_map.find_nearest(target, (px_player, py_player))
                     if tgt_pos:
                         action_str = _step_toward((px_player, py_player), tgt_pos, rng)
                     else:
-                        dets = vf.find(target)
-                        if dets:
-                            _, tgy, tgx = dets[0]
+                        tgt_dets = vf.find(target)
+                        if tgt_dets:
+                            _, tgy, tgx = tgt_dets[0]
                             dx = tgx - center_c
                             dy = tgy - (center_r - 1)
                             moves = []
@@ -797,7 +714,13 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
                             elif dy < 0: moves.append("move_up")
                             action_str = moves[rng.randint(len(moves))] if moves else "do"
                         else:
-                            action_str = str(rng.choice(MOVE_ACTIONS))
+                            action_str = explore_action(rng, store, inv)
+                if action_str.startswith("babble_"):
+                    action_str = action_str.replace("babble_", "")
+            else:
+                action_str = explore_action(rng, store, inv)
+                if action_str.startswith("babble_"):
+                    action_str = action_str.replace("babble_", "")
 
             last_action = action_str
             last_pos = player_pos
@@ -810,8 +733,9 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
             if label:
                 resources[label] = resources.get(label, 0) + 1
 
+            prev_inv = inv
+
             if done:
-                # Classify cause of death
                 final = inv_after
                 if final.get("health", 9) <= 0:
                     causes["killed"] += 1
