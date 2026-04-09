@@ -170,8 +170,16 @@ wood=2: bits[1000:1040] = 1
 wood=3: bits[1010:1050] = 1
 ```
 
-**3. Inventory presence (wood_sword, wood_pickaxe, table)** — fixed random
-SDR per item, 40 bits each, drawn from a known seed. Present → bits on.
+**3. Inventory presence (wood_sword, wood_pickaxe, table, ...)** — fixed
+random SDR per item, 40 bits each, drawn from a known seed.
+
+**Portability note**: the item list comes from `inventory` dict keys
+observed from env, not from a hardcoded literal. On first encounter of a
+new item key, a new SDR slice is allocated. Same applies to concept ranges
+(from segmenter class list) and KNOW_RANGES (from spatial_map classes).
+Nothing is hardcoded to Crafter-specific names — moving to another world
+requires zero code changes, only that env provide similar observation
+structure (body vars + inventory dict + visible concept classes).
 
 **4. Visible concepts with distance** — spatial bit allocation (not VSA XOR).
 
@@ -365,8 +373,9 @@ if v1 evidence shows noise-in-recall is the bottleneck. Matches the
 
 ### Interaction with Existing Components
 
-**HomeostaticTracker**: unchanged. Provides dominant drive selection for
-attention query.
+**HomeostaticTracker**: extended with `observed_max[var]` (rolling max per
+variable, auto-updated) and `observed_variables()` (set of variables seen).
+Replaces hardcoded `9` default and hardcoded drive list.
 
 **ConceptStore**: unchanged internals. Used during bootstrap phase via
 `select_goal` + `plan()` when SDM is empty. After bootstrap, confidence still
@@ -428,10 +437,12 @@ def continuous_decision_loop(env, segmenter, encoder, sdm, store, tracker,
         inv = dict(info["inventory"])
         player_pos = info["player_pos"]
 
-        # Perception
+        # Perception (center_r/center_c from VIEWPORT_ROWS/COLS per Stage 75)
         vf = perceive_tile_field(torch.from_numpy(pixels), segmenter)
         spatial_map.update(player_pos, vf.near_concept)
         for cid, conf, gy, gx in vf.detections:
+            # Same coordinate mapping as verified in Stage 75
+            # (viewport_tile_label formula, inverted)
             wx = player_pos[0] + (gx - center_c)
             wy = player_pos[1] + (gy - (center_r - 1))
             spatial_map.update((wx, wy), cid)
@@ -561,15 +572,21 @@ forward simulation. That's a scope expansion, not a redesign.
    max_steps=200) reach 3 wood.
 4. **Memory growth monotonic**: SDM size grows each episode until buffer
    wraps. After wrap, buffer stays at size=max_buffer (no empty state).
-5. **Zero hardcoded derived features**: automated check — a linter-style
-   test that scans `sdr_encoder.py` for forbidden patterns:
-   - No `if` statements computing booleans from inventory/vf
-   - No magic number thresholds (e.g., `HP < 3`)
-   - No hardcoded list of "drive variables" in encoder
-   Only allowed: bucket_encode, fixed SDR lookup, spatial range assignment.
-6. **No `most_urgent_drive` or similar priority argmax** in decision loop
-   (code review + grep).
-7. **Tests pass**: unit tests for StateEncoder (deterministic, similarity
+5. **Zero hardcoded derived features + no priority argmax**: automated test
+   (`tests/test_stage76_no_hardcode.py`) scans all new files
+   (`src/snks/memory/*.py`, `src/snks/agent/continuous_agent.py`) for:
+   - No boolean computations from inventory/vf outside `encode()` bucket calls
+   - No magic number thresholds like `HP < 3`, `health > 5`
+   - No hardcoded variable lists `["health", "food", "drink", "energy"]`
+     (must use `tracker.observed_variables()` or equivalent)
+   - No `most_urgent_drive`, `dominant_drive`, or argmax over drives
+   - No `if inv.get("X", 0) < N:` patterns
+   Explicit whitelist (documented as Open Questions #2):
+   - `bootstrap_k` (magic number)
+   - similarity threshold (magic number)
+   - softmax temperature init (magic number)
+   All other magic numbers fail the test.
+6. **Tests pass**: unit tests for StateEncoder (deterministic, similarity
    property), EpisodicSDM (write, recall, wrap), action scoring
    (deficit-weighted, sign-emergent), softmax selection.
 
@@ -577,12 +594,12 @@ forward simulation. That's a scope expansion, not a redesign.
 
 1. **Bootstrap transition**: early episodes use ConceptStore, later episodes
    use SDM. Log proportion per episode.
-2. **Drive-dependent attention**: weight patterns differ across drives.
-   Print top-10 bits per drive after training.
-3. **Successful generalization**: agent handles situations it hasn't exactly
+2. **Successful generalization**: agent handles situations it hasn't exactly
    seen before (similar but not identical states recall helpful memories).
-4. **Improvement over training**: survival trend should rise across
+3. **Improvement over training**: survival trend should rise across
    episodes as memory accumulates.
+4. **Action entropy monitoring**: print action distribution per 50 episodes
+   — collapse (entropy drop) flags exploration problem.
 
 ### Nice to have
 
@@ -653,15 +670,22 @@ forward simulation. That's a scope expansion, not a redesign.
 
 1. **SDR bit layout**: exact allocation of bit ranges per field. Needs
    experimentation. Suggested: 100 bits per body stat (window 40), 100 bits
-   per inventory item, 200 bits per VSA-bound concept, remainder for padding.
-2. **Bootstrap → SDM transition threshold**: 5 similar episodes is a starting
-   value. May need tuning.
-3. **Attention learning rate**: 0.01 initial. May need schedule (faster early,
-   slower later).
-4. **SDM buffer size**: 10K is a guess. Smaller = less memory, faster scan.
-   Larger = more coverage. Tune empirically.
-5. **Forward simulation depth**: starts at 1 (reactive). Stage 76 doesn't yet
-   implement multi-step forward simulation — that's an extension once
+   per inventory item, 100 bits per concept × distance range, remainder for
+   padding. Total ~4000 bits, ~200 active.
+2. **Bootstrap threshold (`bootstrap_k`)**: 5 similar episodes is a starting
+   value. "Similar" = popcount overlap ≥ 50% of query popcount. Both are
+   explicitly tunable magic numbers; Gate 5 linter whitelists these two.
+   Stage 77 may replace with confidence-based criterion.
+3. **SDM buffer size**: 10K is a guess. Smaller = less memory, faster scan;
+   but FIFO wrap evicts older experience sooner (catastrophic forgetting
+   risk). Tune empirically with buffer=2K / 5K / 10K comparison.
+4. **Softmax temperature schedule**: start 1.0, decay over episodes.
+   Exact decay rate TBD — start with linear decay to 0.2 over 200 episodes.
+5. **Action scoring: mean vs. median**: Risk #7 notes outlier influence.
+   v1 starts with mean for simplicity; median as fallback if outlier
+   collapse observed.
+6. **Forward simulation depth**: starts at 1 (reactive). Stage 76 doesn't
+   yet implement multi-step forward simulation — that's an extension once
    memory-based 1-step decisions work reliably.
 
 ## Relationship to Prior Stages
