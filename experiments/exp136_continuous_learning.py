@@ -30,6 +30,7 @@ from snks.agent.crafter_pixel_env import CrafterPixelEnv
 from snks.agent.crafter_textbook import CrafterTextbook
 from snks.agent.perception import HomeostaticTracker
 from snks.encoder.cnn_encoder import disable_rocm_conv
+from snks.encoder.tile_segmenter import load_tile_segmenter
 from snks.memory.episodic_sdm import EpisodicSDM
 from snks.memory.state_encoder import StateEncoder
 
@@ -52,9 +53,9 @@ def phase0_load_segmenter() -> Any:
             f"Segmenter checkpoint not found at {STAGE75_CHECKPOINT}. "
             f"Run Stage 75 first (experiments/exp135_grid8_tile_perception.py)."
         )
-    segmenter = torch.load(STAGE75_CHECKPOINT, map_location="cpu", weights_only=False)
-    segmenter.eval()
-    print(f"  Loaded {STAGE75_CHECKPOINT} ({time.time() - t0:.1f}s)")
+    segmenter = load_tile_segmenter(str(STAGE75_CHECKPOINT))
+    n_params = sum(p.numel() for p in segmenter.parameters())
+    print(f"  Loaded {STAGE75_CHECKPOINT} ({n_params} params, {time.time() - t0:.1f}s)")
     return segmenter
 
 
