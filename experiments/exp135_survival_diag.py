@@ -1,11 +1,10 @@
-"""Diagnostic: run survival episodes, track what kills the agent.
+"""Diagnostic v2: use NEW reactive policy, track flee events and why they fail.
 
-For each episode record:
-- episode length
-- final inventory state (which stat hit 0, if any)
-- timeline of health/food/drink/energy
-- zombie/skeleton encounters (visible in viewport)
-- damage events (health decreases)
+Track:
+- damage events + what threat was visible (zombie / skeleton / neither)
+- flee triggers (how often)
+- flee success (did damage stop?)
+- skeleton detection rate when damage happens from skeleton
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ from snks.agent.decode_head import NEAR_CLASSES
 from snks.encoder.tile_head_trainer import VIEWPORT_ROWS, VIEWPORT_COLS
 
 from exp135_eval_only import TileSegmenter
-from exp135_grid8_tile_perception import _perceive_segmenter
+from exp135_grid8_tile_perception import _perceive_segmenter, _find_adjacent, _OPPOSITE
 
 
 def run_episode_diag(segmenter, seed: int, max_steps: int = 500) -> dict:
@@ -35,6 +34,7 @@ def run_episode_diag(segmenter, seed: int, max_steps: int = 500) -> dict:
     timeline = []
     damage_events = []
     visible_counts: Counter = Counter()
+    flee_count = 0
     prev_health = 9
     last_action = None
     last_pos = None
@@ -85,59 +85,48 @@ def run_episode_diag(segmenter, seed: int, max_steps: int = 500) -> dict:
             wy = py_player + (gy - (center_r - 1))
             spatial_map.update((wx, wy), cid)
 
-        # Simple survival policy:
-        # - If thirsty, find water
-        # - If hungry, find cow
-        # - Else collect wood (for future crafting)
-        target = None
-        if drink <= 3:
-            target = "water"
-        elif food <= 3:
-            target = "cow"
-        else:
-            target = "tree"
+        # NEW policy: reactive flee, then needs, then wood
+        action_str = None
+        flee_triggered = False
+        for threat in ("zombie", "skeleton"):
+            danger_dir = _find_adjacent(vf, center_r, center_c, threat)
+            if danger_dir is not None:
+                action_str = f"move_{_OPPOSITE[danger_dir]}"
+                flee_triggered = True
+                flee_count += 1
+                break
 
-        # Same logic as wood collection for the target
-        if vf.near_concept == target:
-            tree_adj_dir = None
-            for cid, conf, gy, gx in vf.detections:
-                if cid != target:
-                    continue
-                if gy == center_r - 1 and gx == center_c:
-                    tree_adj_dir = "up"; break
-                if gy == center_r + 1 and gx == center_c:
-                    tree_adj_dir = "down"; break
-                if gy == center_r and gx == center_c - 1:
-                    tree_adj_dir = "left"; break
-                if gy == center_r and gx == center_c + 1:
-                    tree_adj_dir = "right"; break
-            if tree_adj_dir is None:
-                action_str = "do"
-            else:
-                blocked = (last_pos is not None and last_pos == player_pos
-                           and last_action == f"move_{tree_adj_dir}")
-                if blocked or last_action == f"move_{tree_adj_dir}":
+        if action_str is None:
+            target = "water" if drink < 4 else ("cow" if food < 4 else "tree")
+            if vf.near_concept == target:
+                tgt_dir = _find_adjacent(vf, center_r, center_c, target)
+                if tgt_dir is None:
                     action_str = "do"
                 else:
-                    action_str = f"move_{tree_adj_dir}"
-        else:
-            target_pos = spatial_map.find_nearest(target, (px_player, py_player))
-            if target_pos:
-                action_str = _step_toward((px_player, py_player), target_pos, rng)
+                    blocked = (last_pos is not None and last_pos == player_pos
+                               and last_action == f"move_{tgt_dir}")
+                    if blocked or last_action == f"move_{tgt_dir}":
+                        action_str = "do"
+                    else:
+                        action_str = f"move_{tgt_dir}"
             else:
-                dets = vf.find(target)
-                if dets:
-                    _, tgy, tgx = dets[0]
-                    dx = tgx - center_c
-                    dy = tgy - (center_r - 1)
-                    moves = []
-                    if dx > 0: moves.append("move_right")
-                    elif dx < 0: moves.append("move_left")
-                    if dy > 0: moves.append("move_down")
-                    elif dy < 0: moves.append("move_up")
-                    action_str = moves[rng.randint(len(moves))] if moves else "do"
+                tgt_pos = spatial_map.find_nearest(target, (px_player, py_player))
+                if tgt_pos:
+                    action_str = _step_toward((px_player, py_player), tgt_pos, rng)
                 else:
-                    action_str = str(rng.choice(MOVE_ACTIONS))
+                    dets = vf.find(target)
+                    if dets:
+                        _, tgy, tgx = dets[0]
+                        dx = tgx - center_c
+                        dy = tgy - (center_r - 1)
+                        moves = []
+                        if dx > 0: moves.append("move_right")
+                        elif dx < 0: moves.append("move_left")
+                        if dy > 0: moves.append("move_down")
+                        elif dy < 0: moves.append("move_up")
+                        action_str = moves[rng.randint(len(moves))] if moves else "do"
+                    else:
+                        action_str = str(rng.choice(MOVE_ACTIONS))
 
         last_action = action_str
         last_pos = player_pos
@@ -180,6 +169,7 @@ def run_episode_diag(segmenter, seed: int, max_steps: int = 500) -> dict:
         "damage_events": damage_events[-5:],  # last 5
         "visible_counts": dict(visible_counts),
         "timeline_final": timeline[-10:],  # last 10 steps
+        "flee_count": flee_count,
     }
 
 
@@ -212,7 +202,21 @@ def main():
         print(f"  {cause}: {n}/20")
     print()
     avg_steps = sum(r["steps"] for r in results) / len(results)
+    total_flee = sum(r["flee_count"] for r in results)
     print(f"Avg episode length: {avg_steps:.0f}")
+    print(f"Total flee triggers: {total_flee} across 20 episodes")
+    print()
+
+    # Damage events — analyze what was visible
+    all_dmg = [d for r in results for d in r["damage_events"]]
+    dmg_with_zombie = sum(1 for d in all_dmg if "zombie" in d["visible"])
+    dmg_with_skeleton = sum(1 for d in all_dmg if "skeleton" in d["visible"])
+    dmg_with_neither = sum(1 for d in all_dmg if "zombie" not in d["visible"]
+                            and "skeleton" not in d["visible"])
+    print(f"Total damage events (last 5 per episode): {len(all_dmg)}")
+    print(f"  with zombie visible: {dmg_with_zombie}")
+    print(f"  with skeleton visible: {dmg_with_skeleton}")
+    print(f"  with neither: {dmg_with_neither}")
 
     # Stats drop patterns
     print()
