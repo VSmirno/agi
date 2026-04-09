@@ -53,9 +53,15 @@ def phase0_load_segmenter() -> Any:
             f"Segmenter checkpoint not found at {STAGE75_CHECKPOINT}. "
             f"Run Stage 75 first (experiments/exp135_grid8_tile_perception.py)."
         )
-    segmenter = load_tile_segmenter(str(STAGE75_CHECKPOINT))
+    from snks.encoder.tile_segmenter import pick_device
+    device = pick_device()
+    segmenter = load_tile_segmenter(str(STAGE75_CHECKPOINT), device=device)
     n_params = sum(p.numel() for p in segmenter.parameters())
-    print(f"  Loaded {STAGE75_CHECKPOINT} ({n_params} params, {time.time() - t0:.1f}s)")
+    cuda_name = torch.cuda.get_device_name(0) if device.type == "cuda" else "cpu"
+    print(
+        f"  Loaded {STAGE75_CHECKPOINT} ({n_params} params, "
+        f"device={device} [{cuda_name}], {time.time() - t0:.1f}s)"
+    )
     return segmenter
 
 
