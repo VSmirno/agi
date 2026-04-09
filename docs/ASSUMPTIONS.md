@@ -228,3 +228,48 @@
   - Stone FAIL = не перцепция, а planning execution (craft chain не реализован).
   - Verification FAIL = predict/verify не подключён в babble path.
 
+## Stage 75 — Per-Tile Visual Field (2026-04-09)
+**Что сделано:** Заменил cosine matching на classification CNN с no-stride FCN architecture.
+tile_head через Conv1×1 на output feature map. Per-tile labels через semantic map как teacher.
+Полный viewport 7×9 tiles (49×63 px из 64×64), исключая inventory bar и черную границу.
+
+**Компоненты:**
+- TileSegmenter: 3× Conv3×3 (stride=1) + BN + ReLU → AdaptiveAvgPool(7,9) → Conv1×1(64,12). 57K params.
+- viewport_tile_label: корректный coordinate mapping с учётом render transpose + sprite offset +1.
+- ConceptStore.plan(goal, inventory): skip prerequisites уже в inventory.
+- Textbook restore_health rules: do cow/water restores health (matches Crafter implicit regen).
+- Homeostatic bugs fixed: tb.body_rules property access, plan verification before advance,
+  cumulative requires for do, probe_dirs rotation, make/place unconditional advance.
+
+**Результаты (exp135):**
+- Tile accuracy: **82%** PASS (was 39% in Stage 74)
+- Wood collection: **4.7/ep avg, 65% reach ≥3 in 17 steps** PASS
+- Survival with enemies: **178 avg** FAIL (gate ≥200). Variance 94-264.
+- Per-class acc: water 83%, tree 67%, stone 65-85%, coal 97%, cow 81%, zombie 100% (small n), skeleton 0-63%.
+
+**Допущения/ограничения:**
+- **Survival ≥200 — architectural limit.** 11+ кодовых фиксов не дали результата выше 189.
+  Pattern: каждый фикс решает симптом, но рождает новый — signal of architectural gap.
+- **Root cause:** plan execution linear/blind. Agent commits to kill_zombie (4 steps), нет
+  forward simulation "выживу ли я во время этого плана?". Zombies attack during execution, dies.
+- **Skeleton detection 0-63%:** training distribution has 168 skeleton tiles of 670K total (0.025%).
+  Class-weighted CE помогает частично но не решает. Accepted limit.
+- **Placed table detection unreliable:** 70 table samples in training. Agent кладёт table,
+  не находит потом для make_wood_sword. Spatial_map manual update — procedural patch, reverted.
+- **Coordinate mapping discovered via visual debug.** Crafter canvas.transpose((1,0,2)) + sprite
+  offset +1 row. Labels were wrong in Stage 74, per-tile accuracy был ограничен noise в GT,
+  не feature quality. See `feedback_visual_debug.md`.
+- **Procedural patches rejected per ideology:** hardcoded flee reflex, flee_timer panic,
+  stuck detection random, range-based threat check, manual spatial_map updates. Все были tried
+  and reverted. See `feedback_no_hardcoded_reflexes.md`.
+- **Cumulative requires check correct:** do(tree) stays until sum of requires across all
+  subsequent plan steps is met. Prevents place_table at 2 wood when make_sword also needs 1.
+- **explore_action babble conflicts with plan:** during plan execution, babble may consume
+  resources (make_wood_pickaxe съедает wood для sword). Solution was to use random walk в
+  fallback, но это тоже procedural patch и reverted.
+- **Best variance observed:** survival ranges 94-264 within single 20-episode run. Stochastic
+  due to zombie spawn positions. Increasing sample size would stabilize but not move mean above 200.
+- **Next:** Stage 76 — continuous model learning / forward simulation. Model-based планирование
+  через ConceptStore + tracker + learned value function. See
+  `docs/superpowers/specs/2026-04-09-stage76-continuous-model-learning-design.md`.
+
