@@ -1,20 +1,15 @@
-"""exp135: Stage 75 — Retrain CNN with grid_size=8 + tile_head.
+"""exp135: Stage 75 — Per-tile visual field via no-stride FCN.
 
-Root cause from exp134: grid_size=4 feature map cells cover ~2.3 tiles each.
-Features are mixed → intra-class sim ≈ inter-class sim → tile_head can't classify.
-
-Fix: grid_size=8 → 8×8 feature map → each cell = 8×8 pixels ≈ 1 Crafter tile.
-3 conv layers (stride=2 each): 64→32→16→8.
+No-stride FCN: Conv3x3 at full 64×64 resolution → AdaptiveAvgPool(7,9) → classify.
+Crafter viewport = 7 world rows × 9 cols (49×63 pixels).
+Labels via viewport_tile_label() with correct render-transpose coordinate mapping.
 
 Pipeline:
-  Phase 0: Load nav encoder (for data collection navigation)
-  Phase 1: Collect labeled data (reuse exp128 pipeline)
-  Phase 2: Train NEW CNN encoder (grid_size=8, feature_channels=256)
-  Phase 3: Train tile_head on new encoder
+  Phase 1: Collect frames with semantic map GT (random walks)
+  Phase 2: Train TileSegmenter (no-stride FCN, 7×9 output)
   Phase 4: Tile accuracy gate (≥60%)
   Phase 5: Smoke test — wood collection
   Phase 6: Survival with enemies
-  Phase 7: Save checkpoint
 
 Design: docs/superpowers/specs/2026-04-08-stage75-per-tile-visual-field-design.md
 """
@@ -177,7 +172,7 @@ def phase1_collect(detector: NearDetector, n_frames: int = 10000, n_episodes: in
     # Tile label distribution (across all positions)
     tile_flat = tile_labels_t.flatten().tolist()
     tile_counter = Counter(tile_flat)
-    print(f"  Tile label distribution ({GRID_SIZE}×{GRID_SIZE} per frame):")
+    print(f"  Tile label distribution ({VIEWPORT_ROWS}×{VIEWPORT_COLS} per frame):")
     for idx in sorted(tile_counter.keys()):
         name = NEAR_CLASSES[idx] if idx < len(NEAR_CLASSES) else f"unk_{idx}"
         print(f"    {name}: {tile_counter[idx]}")
@@ -212,13 +207,13 @@ def _run_chain_batch(runner, detector, labeler, chain, n_seeds, seed_base, label
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: Train new CNN encoder (grid_size=8)
+# Phase 2: Train TileSegmenter (no-stride FCN)
 # ---------------------------------------------------------------------------
 
-def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, NearDetector]:
-    """Train CNN encoder with grid_size=8."""
+def phase2_train_encoder(dataset: dict, epochs: int = 150):
+    """Train no-stride FCN tile segmenter (7×9 output)."""
     print("\n" + "=" * 60)
-    print("Phase 2: Train CNN encoder (grid_size=8)")
+    print("Phase 2: Train TileSegmenter (no-stride FCN, 7×9)")
     print("=" * 60)
     t0 = time.time()
 
@@ -286,7 +281,7 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
     class_weights = class_weights.to(train_device)
 
     n_params = sum(p.numel() for p in segmenter.parameters())
-    print(f"  {N} frames, no-stride FCN, {n_params} params")
+    print(f"  {N} frames, no-stride FCN → {VIEWPORT_ROWS}×{VIEWPORT_COLS}, {n_params} params")
     print(f"  AdaptiveAvgPool({VIEWPORT_ROWS}×{VIEWPORT_COLS}) — 7 rows × 9 cols (world only)")
     print(f"  viewport_tile_label with correct coordinate mapping")
     print(f"  Training on {train_device}...")
@@ -465,8 +460,9 @@ def phase5_smoke(segmenter, n_episodes: int = 20, max_steps: int = 200) -> dict:
     tb.load_into(store)
     labeler = OutcomeLabeler()
 
-    grid_size = encoder.grid_size
-    center = grid_size // 2  # grid center ≈ 4 for grid_size=8
+    from snks.encoder.tile_head_trainer import VIEWPORT_ROWS, VIEWPORT_COLS
+    center_r = VIEWPORT_ROWS // 2  # 3
+    center_c = VIEWPORT_COLS // 2  # 4
 
     wood_collected = []
     steps_to_3wood = []
@@ -495,8 +491,8 @@ def phase5_smoke(segmenter, n_episodes: int = 20, max_steps: int = 200) -> dict:
             # Update spatial map from tile detections
             spatial_map.update(player_pos, effective_near)
             for cid, conf, gy, gx in vf.detections:
-                wx = int(player_pos[0]) + (gx - center)
-                wy = int(player_pos[1]) + (gy - center)
+                wx = int(player_pos[0]) + (gx - center_c)
+                wy = int(player_pos[1]) + (gy - center_r)
                 spatial_map.update((wx, wy), cid)
 
             # Simple policy: find tree, do
@@ -510,13 +506,13 @@ def phase5_smoke(segmenter, n_episodes: int = 20, max_steps: int = 200) -> dict:
                     tree_dets = vf.find("tree")
                     if tree_dets:
                         _, tgy, tgx = tree_dets[0]
-                        if tgx < center - 1:
+                        if tgx < center_c - 1:
                             action_str = "move_left"
-                        elif tgx > center:
+                        elif tgx > center_c:
                             action_str = "move_right"
-                        elif tgy < center - 1:
+                        elif tgy < center_r - 1:
                             action_str = "move_up"
-                        elif tgy > center:
+                        elif tgy > center_r:
                             action_str = "move_down"
                         else:
                             action_str = "do"
@@ -576,8 +572,9 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
     if body_rules:
         tracker.init_from_body_rules(body_rules)
 
-    grid_size = encoder.grid_size
-    center = grid_size // 2
+    from snks.encoder.tile_head_trainer import VIEWPORT_ROWS, VIEWPORT_COLS
+    center_r = VIEWPORT_ROWS // 2
+    center_c = VIEWPORT_COLS // 2
 
     episode_lengths = []
     resources = Counter()
@@ -594,20 +591,12 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
             player_pos = info.get("player_pos", (32, 32))
 
             px_tensor = torch.from_numpy(pixels)
-            vf = perceive_tile_field(px_tensor, encoder)
-
-            # Near_head for center confirmation
-            with torch.no_grad():
-                enc_out = encoder(px_tensor)
-            near_idx = int(enc_out.near_logits.argmax().item())
-            near_name = NEAR_CLASSES[near_idx] if near_idx < len(NEAR_CLASSES) else "empty"
-            if near_name != "empty":
-                vf.near_concept = near_name
+            vf = _perceive_segmenter(px_tensor, segmenter)
 
             spatial_map.update(player_pos, vf.near_concept)
             for cid, conf, gy, gx in vf.detections:
-                wx = int(player_pos[0]) + (gx - center)
-                wy = int(player_pos[1]) + (gy - center)
+                wx = int(player_pos[0]) + (gx - center_c)
+                wy = int(player_pos[1]) + (gy - center_r)
                 spatial_map.update((wx, wy), cid)
 
             if prev_inv:
@@ -698,7 +687,7 @@ def main():
     print("\n" + "=" * 60)
     print("SUMMARY")
     print("=" * 60)
-    print(f"  Encoder: grid_size=8, feature_channels=256")
+    print(f"  Segmenter: no-stride FCN, {VIEWPORT_ROWS}×{VIEWPORT_COLS}")
     print(f"  Tile head accuracy: {tile_acc:.1%}")
     print(f"  Smoke: avg wood={smoke['avg_wood']:.1f}, ≥3 wood={smoke['pct_3wood']:.0%}")
     print(f"  Survival: {survival['avg_episode_length']:.0f} steps")
