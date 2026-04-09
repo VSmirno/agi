@@ -46,10 +46,16 @@ class TileSegmenter(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """CNNEncoder-compatible API for downstream code.
 
+        Automatically moves inputs to the module's device. Returns CPU
+        tensors so callers can safely call .item() without device transfers.
+
         Returns:
             (class_ids, confidences) — both shape (VIEWPORT_ROWS, VIEWPORT_COLS)
             for a single frame, or (B, VIEWPORT_ROWS, VIEWPORT_COLS) for batches.
         """
+        module_device = next(self.parameters()).device
+        if pixels.device != module_device:
+            pixels = pixels.to(module_device)
         with torch.no_grad():
             logits = self.forward(pixels)
             if logits.shape[0] == 1:
@@ -61,13 +67,36 @@ class TileSegmenter(nn.Module):
                 probs = torch.softmax(logits, dim=1)
                 class_ids = probs.argmax(dim=1)
                 confidences = probs.max(dim=1).values
-        return class_ids, confidences
+        return class_ids.cpu(), confidences.cpu()
 
 
-def load_tile_segmenter(checkpoint_path: str) -> TileSegmenter:
-    """Load a TileSegmenter from a Stage 75 state_dict checkpoint."""
+def pick_device() -> torch.device:
+    """Return best available torch device (cuda > cpu).
+
+    ROCm builds expose AMD GPUs as `cuda`. HSA_OVERRIDE_GFX_VERSION must
+    already be set in the environment before torch is imported for ROCm.
+    """
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
+
+def load_tile_segmenter(
+    checkpoint_path: str,
+    device: torch.device | str | None = None,
+) -> TileSegmenter:
+    """Load a TileSegmenter from a Stage 75 state_dict checkpoint.
+
+    Args:
+        checkpoint_path: path to state_dict .pt file.
+        device: torch device or string. If None, picks cuda when available.
+    """
+    if device is None:
+        device = pick_device()
+    device = torch.device(device)
     segmenter = TileSegmenter()
     state = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
     segmenter.load_state_dict(state)
+    segmenter.to(device)
     segmenter.eval()
     return segmenter
