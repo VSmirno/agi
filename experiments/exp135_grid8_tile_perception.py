@@ -866,9 +866,19 @@ def phase6_survival(
                 break
 
         episode_lengths.append(steps_taken)
+        if verbose or n_episodes <= 20:
+            final = dict(info.get("inventory", {}))
+            print(f"  ep{ep:2d} len={steps_taken:4d} "
+                  f"wood={final.get('wood',0)} table={final.get('table',0)} "
+                  f"sword={final.get('wood_sword',0)} "
+                  f"HP={final.get('health',0)} F={final.get('food',0)} "
+                  f"D={final.get('drink',0)} E={final.get('energy',0)}")
 
     avg_len = sum(episode_lengths) / len(episode_lengths)
+    sorted_lens = sorted(episode_lengths)
     print(f"  Avg episode length: {avg_len:.0f}")
+    print(f"  Min/median/max: {min(episode_lengths)}/"
+          f"{sorted_lens[len(sorted_lens)//2]}/{max(episode_lengths)}")
     print(f"  Resources: {dict(resources)}")
     print(f"  Causes of death: {dict(causes)}")
 
