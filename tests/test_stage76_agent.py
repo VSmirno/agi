@@ -301,18 +301,13 @@ class TestRealSegmenterSmoke:
         Uses no enemies, limited steps. Just verifies the loop doesn't crash.
         """
         from snks.agent.crafter_pixel_env import CrafterPixelEnv
-        from snks.encoder.tile_head_trainer import (
-            VIEWPORT_ROWS, VIEWPORT_COLS,
-        )
         from snks.encoder.cnn_encoder import disable_rocm_conv
+        from snks.encoder.tile_segmenter import load_tile_segmenter
 
         disable_rocm_conv()
 
         # Load Stage 75 segmenter
-        segmenter = torch.load(
-            STAGE75_CHECKPOINT, map_location="cpu", weights_only=False
-        )
-        segmenter.eval()
+        segmenter = load_tile_segmenter(str(STAGE75_CHECKPOINT))
 
         env = CrafterPixelEnv(seed=1)
         try:
