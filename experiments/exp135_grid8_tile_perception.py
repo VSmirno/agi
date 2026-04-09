@@ -626,6 +626,36 @@ def _find_adjacent(vf, center_r, center_c, concept_id):
 _OPPOSITE = {"up": "down", "down": "up", "left": "right", "right": "left"}
 
 
+def _find_nearest_threat(vf, center_r, center_c, threats=("zombie", "skeleton")):
+    """Return (distance, direction_away) of nearest threat in viewport.
+
+    distance = Manhattan distance from player tile (center).
+    direction_away = direction to move AWAY from threat.
+    Returns (None, None) if no threat visible.
+    """
+    best_dist = float("inf")
+    best_away = None
+    for cid, conf, gy, gx in vf.detections:
+        if cid not in threats:
+            continue
+        dy = gy - center_r
+        dx = gx - center_c
+        dist = abs(dy) + abs(dx)
+        if dist < best_dist:
+            best_dist = dist
+            # Direction to the threat (from player)
+            # We want opposite — move AWAY
+            if abs(dx) > abs(dy):
+                best_away = "left" if dx > 0 else "right"
+            elif abs(dy) > 0:
+                best_away = "up" if dy > 0 else "down"
+            else:
+                best_away = "up"  # on top — flee anywhere
+    if best_away is None:
+        return None, None
+    return best_dist, best_away
+
+
 def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> dict:
     """Survival eval with simple reactive policy.
 
@@ -676,22 +706,29 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
                 spatial_map.update((wx, wy), cid)
 
             action_str = None
+            has_sword = inv.get("wood_sword", 0) > 0
 
-            # REFLEX 1: flee from adjacent danger
-            for threat in ("zombie", "skeleton"):
-                danger_dir = _find_adjacent(vf, center_r, center_c, threat)
-                if danger_dir is not None:
-                    has_sword = inv.get("wood_sword", 0) > 0
-                    if has_sword:
-                        # attack: turn and do
-                        if last_action == f"move_{danger_dir}":
-                            action_str = "do"
-                        else:
-                            action_str = f"move_{danger_dir}"
-                    else:
-                        # flee in opposite direction
-                        action_str = f"move_{_OPPOSITE[danger_dir]}"
-                    break
+            # REFLEX: handle nearest threat
+            # - Adjacent zombie/skeleton: attack if has sword, else flee
+            # - Threat within 3 tiles: flee away (skeletons shoot from range)
+            threat_dist, flee_dir = _find_nearest_threat(
+                vf, center_r, center_c, threats=("zombie", "skeleton")
+            )
+            if threat_dist is not None:
+                if threat_dist == 1 and has_sword:
+                    # adjacent threat + sword → attack
+                    # find which adjacent direction
+                    for t in ("zombie", "skeleton"):
+                        d = _find_adjacent(vf, center_r, center_c, t)
+                        if d is not None:
+                            if last_action == f"move_{d}":
+                                action_str = "do"
+                            else:
+                                action_str = f"move_{d}"
+                            break
+                elif threat_dist <= 3:
+                    # flee away (both close zombie and ranged skeleton)
+                    action_str = f"move_{flee_dir}"
 
             # NEEDS: water/food
             if action_str is None:
