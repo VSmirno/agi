@@ -317,17 +317,14 @@ def run_continuous_episode(
         prev_inv = inv
 
         if done:
-            hp = inv_after.get("health", 9)
-            food = inv_after.get("food", 9)
-            drink = inv_after.get("drink", 9)
-            if hp <= 0:
-                cause_of_death = "killed"
-            elif food <= 0:
-                cause_of_death = "starvation"
-            elif drink <= 0:
-                cause_of_death = "thirst"
-            else:
-                cause_of_death = "other"
+            # Post-hoc telemetry: find any tracked variable that hit zero.
+            # No hardcoded "health is death" assumption — whichever variable
+            # the tracker observed that bottomed out is the cause.
+            zeroed_vars = [
+                var for var in tracker.observed_variables()
+                if inv_after.get(var, 1) <= 0
+            ]
+            cause_of_death = ",".join(zeroed_vars) if zeroed_vars else "other"
             break
 
     # Action entropy over episode (information-theoretic exploration measure)
