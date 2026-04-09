@@ -641,10 +641,8 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
     tb.load_into(store)
     labeler = OutcomeLabeler()
     tracker = HomeostaticTracker()
-
-    body_rules = tb.get_body_rules() if hasattr(tb, "get_body_rules") else []
-    if body_rules:
-        tracker.init_from_body_rules(body_rules)
+    tracker.init_from_body_rules(tb.body_rules)
+    print(f"  Body rules: {len(tb.body_rules)} innate rates")
 
     from snks.encoder.tile_head_trainer import VIEWPORT_ROWS, VIEWPORT_COLS
     center_r = VIEWPORT_ROWS // 2
@@ -664,6 +662,11 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
         last_pos = None
         steps_taken = 0
 
+        current_goal = ""
+        current_plan: list = []
+        plan_step_idx = 0
+        replan_counter = 0
+
         for step in range(max_steps):
             steps_taken = step + 1
             inv = dict(info.get("inventory", {}))
@@ -682,18 +685,38 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
             if prev_inv:
                 tracker.update(prev_inv, inv, vf.visible_concepts())
 
-            # Homeostatic goal selection (ideology: strategy from drives + world model)
-            goal, plan = select_goal(inv, store, tracker, vf, spatial_map)
+            # Replan only when needed (not every step — prevents plan thrashing)
+            replan_counter += 1
+            needs_replan = (
+                not current_plan
+                or plan_step_idx >= len(current_plan)
+                or (current_goal == "explore" and replan_counter >= 20)
+            )
+            if needs_replan:
+                replan_counter = 0
+                current_goal, current_plan = select_goal(
+                    inv, store, tracker=tracker, visual_field=vf, spatial_map=spatial_map,
+                )
+                plan_step_idx = 0
 
             action_str: str
-            if plan:
-                step_plan = plan[0]
+            if current_plan and plan_step_idx < len(current_plan):
+                step_plan = current_plan[plan_step_idx]
                 target = step_plan.target
-                if vf.near_concept == target:
+
+                # Self-actions (sleep): execute directly, no navigation needed
+                if target == "_self":
+                    action_str = step_plan.action
+                    plan_step_idx += 1
+                elif vf.near_concept == target:
                     # Target adjacent — execute plan action (do / make / place)
                     tgt_dir = _find_adjacent(vf, center_r, center_c, target)
                     if tgt_dir is None or last_action == f"move_{tgt_dir}":
-                        action_str = step_plan.action
+                        if step_plan.action in ("make", "place"):
+                            action_str = f"{step_plan.action}_{step_plan.expected_gain}"
+                        else:
+                            action_str = step_plan.action
+                        plan_step_idx += 1
                     else:
                         # Turn toward target first (Crafter facing requirement)
                         action_str = f"move_{tgt_dir}"
