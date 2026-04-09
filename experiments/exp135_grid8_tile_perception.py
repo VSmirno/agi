@@ -116,12 +116,10 @@ def phase1_collect(detector: NearDetector, n_frames: int = 10000, n_episodes: in
     print("=" * 60)
     t0 = time.time()
 
-    from snks.encoder.tile_head_trainer import viewport_tile_label, VIEWPORT_VALID
+    from snks.encoder.tile_head_trainer import viewport_tile_label, VIEWPORT_ROWS, VIEWPORT_COLS
     from exp122_pixels import _detect_near_from_info
 
-    # Crafter view = 9×9 tiles, but last row=inventory, last col=black border.
-    # Valid region = 8×8 tiles.
-    GRID_SIZE = VIEWPORT_VALID
+    # Crafter valid region: 7 rows (world) × 9 cols. Bottom 2 rows = inventory.
     all_pixels: list[torch.Tensor] = []
     all_near_labels: list[int] = []
     all_tile_labels: list[torch.Tensor] = []
@@ -150,9 +148,9 @@ def phase1_collect(detector: NearDetector, n_frames: int = 10000, n_episodes: in
             near_idx = NEAR_TO_IDX.get(near_str, 0)
 
             # Tile labels using correct viewport→world coordinate mapping
-            tile_gt = torch.zeros(GRID_SIZE, GRID_SIZE, dtype=torch.long)
-            for tr in range(GRID_SIZE):
-                for tc in range(GRID_SIZE):
+            tile_gt = torch.zeros(VIEWPORT_ROWS, VIEWPORT_COLS, dtype=torch.long)
+            for tr in range(VIEWPORT_ROWS):
+                for tc in range(VIEWPORT_COLS):
                     tile_gt[tr, tc] = viewport_tile_label(semantic, player_pos, tr, tc)
 
             all_pixels.append(torch.from_numpy(pixels))
@@ -242,8 +240,8 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
 
     import torch.nn as nn
 
-    from snks.encoder.tile_head_trainer import VIEWPORT_VALID
-    # No-stride FCN: full 64×64 resolution → AdaptiveAvgPool → 8×8 → classify
+    from snks.encoder.tile_head_trainer import VIEWPORT_ROWS, VIEWPORT_COLS
+    # No-stride FCN: full 64×64 resolution → AdaptiveAvgPool → 7×9 → classify
     # Each output cell sees exactly one Crafter tile's pixels
     class TileSegmenter(nn.Module):
         def __init__(self, n_classes=12):
@@ -253,7 +251,7 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
                 nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
                 nn.Conv2d(64, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
             )
-            self.pool = nn.AdaptiveAvgPool2d(VIEWPORT_VALID)  # 64→8 (valid tiles only)
+            self.pool = nn.AdaptiveAvgPool2d((VIEWPORT_ROWS, VIEWPORT_COLS))  # 64→7×9
             self.head = nn.Conv2d(64, n_classes, 1)
 
         def forward(self, x):
@@ -289,7 +287,7 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
 
     n_params = sum(p.numel() for p in segmenter.parameters())
     print(f"  {N} frames, no-stride FCN, {n_params} params")
-    print(f"  AdaptiveAvgPool({VIEWPORT_VALID}) — 8×8 valid tiles (excl inventory+border)")
+    print(f"  AdaptiveAvgPool({VIEWPORT_ROWS}×{VIEWPORT_COLS}) — 7 rows × 9 cols (world only)")
     print(f"  viewport_tile_label with correct coordinate mapping")
     print(f"  Training on {train_device}...")
 
@@ -370,7 +368,7 @@ def phase3_train_tile_head(encoder: CNNEncoder, n_frames: int = 5000) -> dict:
 
 def phase4_accuracy_gate(segmenter, n_frames: int = 500) -> float:
     """Test tile segmenter accuracy on held-out data."""
-    from snks.encoder.tile_head_trainer import viewport_tile_label, VIEWPORT_VALID
+    from snks.encoder.tile_head_trainer import viewport_tile_label
 
     print("\n" + "=" * 60)
     print("Phase 4: Tile accuracy gate (≥60%)")
@@ -433,10 +431,11 @@ def _perceive_segmenter(pixels, segmenter):
     from snks.agent.perception import VisualField
     class_ids, confidences = segmenter.classify_tiles(pixels)
     H, W = class_ids.shape
-    center = H // 2  # 4 for 9×9
+    # Player at center of 7×9: row ~3, col ~4
+    cr, cc = H // 2, W // 2
 
     vf = VisualField()
-    center_pos = {(center-1, center-1), (center-1, center), (center, center-1), (center, center)}
+    center_pos = {(cr-1, cc-1), (cr-1, cc), (cr, cc-1), (cr, cc)}
 
     for tr in range(H):
         for tc in range(W):
