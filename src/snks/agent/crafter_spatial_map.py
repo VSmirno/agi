@@ -98,20 +98,26 @@ def _step_toward(
     target: tuple[int, int],
     rng: np.random.RandomState,
 ) -> str:
-    """One greedy step toward target, random tie-break."""
-    cy, cx = int(current[0]), int(current[1])
-    ty, tx = int(target[0]), int(target[1])
-    dy, dx = ty - cy, tx - cx
+    """One greedy step toward target, random tie-break.
+
+    Crafter coordinate convention:
+      pos[0] = horizontal axis (X, move_left/right)
+      pos[1] = vertical axis   (Y, move_up/down)
+    Verified: move_right → pos[0]+=1, move_down → pos[1]+=1.
+    """
+    cx, cy = int(current[0]), int(current[1])
+    tx, ty = int(target[0]), int(target[1])
+    dx, dy = tx - cx, ty - cy
 
     moves = []
-    if dy > 0:
-        moves.append("move_down")
-    elif dy < 0:
-        moves.append("move_up")
     if dx > 0:
         moves.append("move_right")
     elif dx < 0:
         moves.append("move_left")
+    if dy > 0:
+        moves.append("move_down")
+    elif dy < 0:
+        moves.append("move_up")
 
     if not moves:
         return str(rng.choice(MOVE_ACTIONS))
