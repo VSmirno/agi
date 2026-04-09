@@ -727,16 +727,18 @@ def phase6_survival(
                     action_str = step_plan.action
                 elif vf.near_concept == target:
                     # Target adjacent — try all 4 directions + do (probe pattern)
-                    # Each step: either turn (move_d) or execute action
+                    # Rotate through directions: move_dir → do → pop dir if failed
                     if step_plan.action == "do":
                         if not probe_dirs:
                             probe_dirs = ["move_up", "move_down",
                                           "move_left", "move_right"]
-                        # Turn then do: alternate — if last action was move,
-                        # now do; else move.
                         if last_action and last_action.startswith("move_"):
+                            # Just turned — now try do
                             action_str = "do"
                         else:
+                            # Last was do (or nothing yet) — pop failed dir, try next
+                            if last_action == "do" and probe_dirs:
+                                probe_dirs.pop(0)  # previous direction didn't work
                             action_str = probe_dirs[0] if probe_dirs else "do"
                     else:  # make / place
                         action_str = f"{step_plan.action}_{step_plan.expected_gain}"
