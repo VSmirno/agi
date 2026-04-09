@@ -29,10 +29,12 @@ from snks.encoder.cnn_encoder import CNNEncoder
 # Terrain types → mapped to "empty" (class 0)
 _TERRAIN = {"grass", "path", "sand", "lava", "unknown", "player"}
 
-# Crafter viewport: 9×9 tiles rendered into 63×63 px (7px/tile) inside 64×64.
-# Last row (tile_row=8) = inventory bar. Last col (tile_col=8) = 1px black border.
-# Use only 8×8 valid tiles from the 9×9 grid.
-VIEWPORT_VALID = 8  # rows 0..7, cols 0..7
+# Crafter viewport: 9×9 tile grid, but local_view = (63, 49) before transpose.
+# After transpose: 49px height = 7 tile rows (world), 14px = 2 tile rows (inventory).
+# Width: 63px = 9 tile cols, pixel 63 = black.
+# Valid region: 7 rows × 9 cols of actual world tiles.
+VIEWPORT_ROWS = 7   # rows 0..6 = world
+VIEWPORT_COLS = 9   # cols 0..8 = world (pixel 63 is 1px black, inside last tile)
 
 
 def semantic_cell_label(
@@ -98,8 +100,8 @@ def viewport_tile_label(
     Args:
         semantic: world semantic map from info["semantic"].
         player_pos: (player_y, player_x) from info["player_pos"].
-        tile_row: screen row index (0..8 for 9×9 grid).
-        tile_col: screen col index (0..8 for 9×9 grid).
+        tile_row: screen row index (0..6 for 7-row world).
+        tile_col: screen col index (0..8 for 9-col world).
 
     Returns:
         Class index into NEAR_CLASSES (0 = empty).
