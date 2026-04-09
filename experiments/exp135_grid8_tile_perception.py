@@ -818,22 +818,26 @@ def phase6_survival(
                         advanced = True  # wood consumed → table placed
 
                 if advanced:
-                    # Check next step's requirements before committing to advance
-                    next_idx = plan_step_idx + 1
-                    can_advance = True
-                    if next_idx < len(current_plan):
-                        nr = current_plan[next_idx].requires
-                        if nr:
-                            can_advance = all(
-                                inv_after.get(r, 0) >= n for r, n in nr.items()
-                            )
-                    if can_advance:
+                    # For "do" (collection): check next requires — stay if need more
+                    # For "make"/"place"/"_self": one-shot, advance unconditionally
+                    # (re-executing is impossible or wasteful)
+                    if step_plan.action == "do" and step_plan.target != "_self":
+                        next_idx = plan_step_idx + 1
+                        can_advance = True
+                        if next_idx < len(current_plan):
+                            nr = current_plan[next_idx].requires
+                            if nr:
+                                can_advance = all(
+                                    inv_after.get(r, 0) >= n for r, n in nr.items()
+                                )
+                        if can_advance:
+                            plan_step_idx += 1
+                            nav_steps = 0
+                        # else: stay on current do-step, collect more
+                    else:
+                        # make / place / _self: always advance after success
                         plan_step_idx += 1
                         nav_steps = 0
-                    else:
-                        # Current step succeeded but next requires more resources
-                        # → stay on current step (e.g., collect more wood)
-                        pass
                 else:
                     nav_steps += 1
                     if nav_steps > 50:
