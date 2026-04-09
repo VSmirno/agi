@@ -90,6 +90,7 @@ def _run_episodes(
     temperature_schedule: list[float],
     bootstrap_k: int,
     seed_offset: int,
+    min_sdm_size: int = 500,
 ) -> list[dict]:
     """Run a batch of episodes with a per-episode temperature schedule."""
     results: list[dict] = []
@@ -112,6 +113,7 @@ def _run_episodes(
             max_steps=max_steps,
             temperature=temperature,
             bootstrap_k=bootstrap_k,
+            min_sdm_size=min_sdm_size,
         )
         result["episode"] = ep
         result["temperature"] = temperature
@@ -174,15 +176,17 @@ def _summarize(name: str, results: list[dict]) -> dict:
 def phase1_warmup_safe(
     segmenter, encoder, sdm, store, tracker,
     n_episodes: int = 50, max_steps: int = 500, bootstrap_k: int = 5,
+    min_sdm_size: int = 2000,
 ) -> dict:
     print("\n" + "=" * 60)
-    print(f"Phase 1: Warmup A (no enemies, n={n_episodes})")
+    print(f"Phase 1: Warmup A (no enemies, n={n_episodes}, "
+          f"min_sdm_size={min_sdm_size})")
     print("=" * 60)
     temp_schedule = [1.0] * n_episodes  # high exploration
     results = _run_episodes(
         "warmup-safe", n_episodes, max_steps, segmenter, encoder, sdm, store,
         tracker, enemies=False, temperature_schedule=temp_schedule,
-        bootstrap_k=bootstrap_k, seed_offset=300,
+        bootstrap_k=bootstrap_k, seed_offset=300, min_sdm_size=min_sdm_size,
     )
     return _summarize("warmup-safe", results)
 
@@ -195,16 +199,18 @@ def phase1_warmup_safe(
 def phase2_warmup_enemies(
     segmenter, encoder, sdm, store, tracker,
     n_episodes: int = 50, max_steps: int = 500, bootstrap_k: int = 5,
+    min_sdm_size: int = 500,
 ) -> dict:
     print("\n" + "=" * 60)
-    print(f"Phase 2: Warmup B (enemies on, n={n_episodes})")
+    print(f"Phase 2: Warmup B (enemies on, n={n_episodes}, "
+          f"min_sdm_size={min_sdm_size})")
     print("=" * 60)
     # Linear decay from 1.0 to 0.5 across warmup
     temp_schedule = list(np.linspace(1.0, 0.5, n_episodes))
     results = _run_episodes(
         "warmup-enemy", n_episodes, max_steps, segmenter, encoder, sdm, store,
         tracker, enemies=True, temperature_schedule=temp_schedule,
-        bootstrap_k=bootstrap_k, seed_offset=500,
+        bootstrap_k=bootstrap_k, seed_offset=500, min_sdm_size=min_sdm_size,
     )
     return _summarize("warmup-enemy", results)
 
@@ -218,6 +224,7 @@ def phase3_evaluation(
     segmenter, encoder, sdm, store, tracker,
     n_runs: int = 3, n_episodes_per_run: int = 20, max_steps: int = 1000,
     temperature: float = 0.3, bootstrap_k: int = 5,
+    min_sdm_size: int = 500,
 ) -> list[dict]:
     print("\n" + "=" * 60)
     print(f"Phase 3: Evaluation ({n_runs} runs × {n_episodes_per_run} episodes)")
@@ -231,6 +238,7 @@ def phase3_evaluation(
             segmenter, encoder, sdm, store, tracker,
             enemies=True, temperature_schedule=temp_schedule,
             bootstrap_k=bootstrap_k, seed_offset=1000 + run_idx * 100,
+            min_sdm_size=min_sdm_size,
         )
         summaries.append(_summarize(f"eval-run{run_idx}", results))
     return summaries
