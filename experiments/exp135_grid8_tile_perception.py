@@ -666,6 +666,8 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
         current_plan: list = []
         plan_step_idx = 0
         replan_counter = 0
+        nav_steps = 0  # give up counter for navigation
+        probe_dirs: list = []  # remaining directions to try for current 'do'
 
         for step in range(max_steps):
             steps_taken = step + 1
@@ -698,6 +700,8 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
                     inv, store, tracker=tracker, visual_field=vf, spatial_map=spatial_map,
                 )
                 plan_step_idx = 0
+                nav_steps = 0
+                probe_dirs = []
 
             action_str: str
             if current_plan and plan_step_idx < len(current_plan):
@@ -707,19 +711,21 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
                 # Self-actions (sleep): execute directly, no navigation needed
                 if target == "_self":
                     action_str = step_plan.action
-                    plan_step_idx += 1
                 elif vf.near_concept == target:
-                    # Target adjacent — execute plan action (do / make / place)
-                    tgt_dir = _find_adjacent(vf, center_r, center_c, target)
-                    if tgt_dir is None or last_action == f"move_{tgt_dir}":
-                        if step_plan.action in ("make", "place"):
-                            action_str = f"{step_plan.action}_{step_plan.expected_gain}"
+                    # Target adjacent — try all 4 directions + do (probe pattern)
+                    # Each step: either turn (move_d) or execute action
+                    if step_plan.action == "do":
+                        if not probe_dirs:
+                            probe_dirs = ["move_up", "move_down",
+                                          "move_left", "move_right"]
+                        # Turn then do: alternate — if last action was move,
+                        # now do; else move.
+                        if last_action and last_action.startswith("move_"):
+                            action_str = "do"
                         else:
-                            action_str = step_plan.action
-                        plan_step_idx += 1
-                    else:
-                        # Turn toward target first (Crafter facing requirement)
-                        action_str = f"move_{tgt_dir}"
+                            action_str = probe_dirs[0] if probe_dirs else "do"
+                    else:  # make / place
+                        action_str = f"{step_plan.action}_{step_plan.expected_gain}"
                 else:
                     tgt_pos = spatial_map.find_nearest(target, (px_player, py_player))
                     if tgt_pos:
@@ -751,6 +757,58 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
             inv_before = inv
             pixels, _, done, info = env.step(action_str)
             inv_after = dict(info.get("inventory", {}))
+
+            # Plan advancement: verify action succeeded
+            if current_plan and plan_step_idx < len(current_plan):
+                step_plan = current_plan[plan_step_idx]
+                advanced = False
+
+                if step_plan.target == "_self":
+                    # sleep / self-action — advance unconditionally
+                    advanced = True
+                elif step_plan.action == "do":
+                    # did inventory change in the expected way?
+                    expected = step_plan.expected_gain
+                    if (inv_after.get(expected, 0) > inv_before.get(expected, 0)
+                            or expected.startswith("kill_")
+                            or expected.startswith("restore_")):
+                        advanced = True
+                        probe_dirs = []
+                elif step_plan.action in ("make", "place"):
+                    expected = step_plan.expected_gain
+                    # inventory may increase (make) or decrease wood (place)
+                    if inv_after.get(expected, 0) > inv_before.get(expected, 0):
+                        advanced = True
+                    elif step_plan.action == "place" and any(
+                        inv_after.get(r, 0) < inv_before.get(r, 0)
+                        for r in step_plan.requires
+                    ):
+                        advanced = True  # wood consumed → table placed
+
+                if advanced:
+                    # Check next step's requirements before committing to advance
+                    next_idx = plan_step_idx + 1
+                    can_advance = True
+                    if next_idx < len(current_plan):
+                        nr = current_plan[next_idx].requires
+                        if nr:
+                            can_advance = all(
+                                inv_after.get(r, 0) >= n for r, n in nr.items()
+                            )
+                    if can_advance:
+                        plan_step_idx += 1
+                        nav_steps = 0
+                    else:
+                        # Current step succeeded but next requires more resources
+                        # → stay on current step (e.g., collect more wood)
+                        pass
+                else:
+                    nav_steps += 1
+                    if nav_steps > 50:
+                        # Stuck too long — replan
+                        current_plan = []
+                        plan_step_idx = 0
+                        nav_steps = 0
 
             label = labeler.label(action_str, inv_before, inv_after)
             if label:
