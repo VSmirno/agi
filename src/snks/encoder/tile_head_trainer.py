@@ -69,6 +69,36 @@ def semantic_cell_label(
     return 0  # empty
 
 
+def viewport_tile_label(
+    semantic: np.ndarray, player_pos: tuple, tile_row: int, tile_col: int,
+) -> int:
+    """Get GT class for a viewport tile using correct coordinate mapping.
+
+    Crafter renders with transpose: viewport (x, y) → pixel (col, row).
+    So screen tile at (row, col) maps to world pos:
+      world_y = player_y + tile_col - offset
+      world_x = player_x + tile_row - offset
+
+    Args:
+        semantic: world semantic map from info["semantic"].
+        player_pos: (player_y, player_x) from info["player_pos"].
+        tile_row: screen row index (0..8 for 9×9 grid).
+        tile_col: screen col index (0..8 for 9×9 grid).
+
+    Returns:
+        Class index into NEAR_CLASSES (0 = empty).
+    """
+    py, px = int(player_pos[0]), int(player_pos[1])
+    # Render transpose: screen col → world y offset, screen row → world x offset
+    wy = py + tile_col - 4
+    wx = px + tile_row - 4
+    if 0 <= wy < semantic.shape[0] and 0 <= wx < semantic.shape[1]:
+        name = SEMANTIC_NAMES.get(int(semantic[wy, wx]), "unknown")
+        if name not in _TERRAIN and name in NEAR_TO_IDX:
+            return NEAR_TO_IDX[name]
+    return 0  # empty
+
+
 def collect_tile_training_data(
     encoder: CNNEncoder,
     n_frames: int = 5000,

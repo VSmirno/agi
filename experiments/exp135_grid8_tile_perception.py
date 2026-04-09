@@ -116,10 +116,11 @@ def phase1_collect(detector: NearDetector, n_frames: int = 10000, n_episodes: in
     print("=" * 60)
     t0 = time.time()
 
-    from snks.encoder.tile_head_trainer import semantic_cell_label
+    from snks.encoder.tile_head_trainer import viewport_tile_label
     from exp122_pixels import _detect_near_from_info
 
-    GRID_SIZE = 8
+    # Crafter view = 9×9 tiles, use AdaptiveAvgPool2d(9) for CNN
+    GRID_SIZE = 9
     all_pixels: list[torch.Tensor] = []
     all_near_labels: list[int] = []
     all_tile_labels: list[torch.Tensor] = []
@@ -139,18 +140,19 @@ def phase1_collect(detector: NearDetector, n_frames: int = 10000, n_episodes: in
                 continue
 
             semantic = info.get("semantic")
-            if semantic is None:
+            player_pos = info.get("player_pos")
+            if semantic is None or player_pos is None:
                 continue
 
             # Near label from GT semantic map (center object)
             near_str = _detect_near_from_info(info)
             near_idx = NEAR_TO_IDX.get(near_str, 0)
 
-            # Tile labels: (H, W) GT class for each feature map position
+            # Tile labels using correct viewport→world coordinate mapping
             tile_gt = torch.zeros(GRID_SIZE, GRID_SIZE, dtype=torch.long)
-            for gy in range(GRID_SIZE):
-                for gx in range(GRID_SIZE):
-                    tile_gt[gy, gx] = semantic_cell_label(semantic, gy, gx, GRID_SIZE)
+            for tr in range(GRID_SIZE):
+                for tc in range(GRID_SIZE):
+                    tile_gt[tr, tc] = viewport_tile_label(semantic, player_pos, tr, tc)
 
             all_pixels.append(torch.from_numpy(pixels))
             all_near_labels.append(near_idx)
@@ -237,59 +239,98 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
 
     tile_labels = dataset.get("tile_labels")
 
-    # NEW: grid_size=8, feature_channels=256
-    encoder = CNNEncoder(
-        feature_channels=256,
-        grid_size=8,
-        n_near_classes=len(NEAR_CLASSES),
-    )
-    predictor = JEPAPredictor()
+    import torch.nn as nn
 
-    trainer = PredictiveTrainer(
-        encoder, predictor,
-        contrastive_weight=0.0,  # OFF — tile-only training
-        near_weight=1.0,         # keep near_head for center detection
-        tile_weight=5.0,         # primary objective
-        device=train_device,
-    )
+    # No-stride FCN: full 64×64 resolution → AdaptiveAvgPool → 9×9 → classify
+    # Each output cell sees exactly one Crafter tile's pixels
+    class TileSegmenter(nn.Module):
+        def __init__(self, n_classes=12):
+            super().__init__()
+            self.features = nn.Sequential(
+                nn.Conv2d(3, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(),
+                nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
+                nn.Conv2d(64, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
+            )
+            self.pool = nn.AdaptiveAvgPool2d(9)  # 64→9 (matches Crafter 9×9 view)
+            self.head = nn.Conv2d(64, n_classes, 1)
 
-    print(f"  {N} frames, grid_size=8, feature_channels=256")
-    print(f"  Feature map: (256, 8, 8) — each cell ≈ 1 Crafter tile")
-    print(f"  tile-focused: tile_weight=5.0, near_weight=1.0, no SupCon")
+        def forward(self, x):
+            if x.dim() == 3:
+                x = x.unsqueeze(0)
+            return self.head(self.pool(self.features(x)))  # (B, 12, 9, 9)
+
+        def classify_tiles(self, pixels):
+            """CNNEncoder-compatible API for downstream code."""
+            with torch.no_grad():
+                logits = self.forward(pixels)  # (B, 12, 9, 9) or (1, 12, 9, 9)
+                if logits.shape[0] == 1:
+                    logits = logits.squeeze(0)  # (12, 9, 9)
+                    probs = torch.softmax(logits, dim=0)
+                    class_ids = probs.argmax(dim=0)  # (9, 9)
+                    confidences = probs.max(dim=0).values
+                else:
+                    probs = torch.softmax(logits, dim=1)
+                    class_ids = probs.argmax(dim=1)  # (B, 9, 9)
+                    confidences = probs.max(dim=1).values
+            return class_ids, confidences
+
+    tile_labels = dataset.get("tile_labels")  # (N, 9, 9)
+    segmenter = TileSegmenter(n_classes=len(NEAR_CLASSES)).to(train_device)
+    optimizer = torch.optim.Adam(segmenter.parameters(), lr=1e-3)
+
+    # Class weights from training data
+    class_counts = torch.bincount(tile_labels.flatten(), minlength=len(NEAR_CLASSES)).float().clamp(min=1)
+    class_weights = (1.0 / class_counts)
+    class_weights /= class_weights.sum()
+    class_weights *= len(NEAR_CLASSES)
+    class_weights = class_weights.to(train_device)
+
+    n_params = sum(p.numel() for p in segmenter.parameters())
+    print(f"  {N} frames, no-stride FCN, {n_params} params")
+    print(f"  AdaptiveAvgPool(9) — matches Crafter 9×9 tile view")
+    print(f"  viewport_tile_label with correct coordinate mapping")
     print(f"  Training on {train_device}...")
 
-    # tile_labels for (t, t+1) pairs: use labels from frame t
-    tl = tile_labels[:-1] if tile_labels is not None else None
+    from torch.utils.data import DataLoader, TensorDataset
 
-    history = trainer.train_full(
-        pixels_t, pixels_t1, actions,
-        situation_labels=nl,
-        near_labels=nl,
-        tile_labels=tl,
-        epochs=epochs,
-        batch_size=min(64, N - 1),
-        log_every=30,
-    )
+    ds = TensorDataset(pixels, tile_labels)
+    loader = DataLoader(ds, batch_size=min(64, N), shuffle=True)
 
-    encoder.eval().cpu()
-    detector = NearDetector(encoder)
+    for epoch in range(epochs):
+        segmenter.train()
+        total_loss = 0
+        n_batches = 0
+        for batch_px, batch_tl in loader:
+            batch_px = batch_px.to(train_device)
+            batch_tl = batch_tl.to(train_device)
+            logits = segmenter(batch_px)  # (B, 12, 9, 9)
+            loss = nn.functional.cross_entropy(logits, batch_tl, weight=class_weights)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            n_batches += 1
 
-    final = history[-1]
-    tile_final = final.get('tile_loss', 0)
-    print(f"  Done: pred={final['pred_loss']:.4f} near={final['near_loss']:.4f} "
-          f"tile={tile_final:.4f} ({time.time()-t0:.0f}s)")
+        if epoch % 30 == 0:
+            segmenter.eval()
+            with torch.no_grad():
+                # Sample accuracy
+                sample = pixels[:500].to(train_device)
+                sample_tl = tile_labels[:500].to(train_device)
+                preds = segmenter(sample).argmax(1)
+                acc = (preds == sample_tl).float().mean().item()
+            print(f"  Epoch {epoch}: loss={total_loss/n_batches:.4f} acc={acc:.1%}")
 
-    # Save encoder checkpoint
+    segmenter.eval().cpu()
+
+    print(f"  Done ({time.time()-t0:.0f}s)")
+
+    # Save
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    torch.save(encoder.state_dict(), CHECKPOINT_DIR / "encoder_g8.pt")
-    print(f"  Saved → {CHECKPOINT_DIR / 'encoder_g8.pt'}")
+    torch.save(segmenter.state_dict(), CHECKPOINT_DIR / "segmenter_9x9.pt")
+    print(f"  Saved → {CHECKPOINT_DIR / 'segmenter_9x9.pt'}")
 
-    # Diagnostic: tile accuracy from joint training (before Phase 3 re-trains)
-    print("  Diagnostic: tile accuracy from joint training...")
-    joint_acc = phase4_accuracy_gate(encoder, n_frames=300)
-    print(f"  Joint-trained tile accuracy: {joint_acc:.1%}")
-
-    return encoder, detector
+    return segmenter
 
 
 # ---------------------------------------------------------------------------
@@ -325,15 +366,16 @@ def phase3_train_tile_head(encoder: CNNEncoder, n_frames: int = 5000) -> dict:
 # Phase 4: Accuracy gate
 # ---------------------------------------------------------------------------
 
-def phase4_accuracy_gate(encoder: CNNEncoder, n_frames: int = 500) -> float:
-    """Test tile_head accuracy on held-out data."""
+def phase4_accuracy_gate(segmenter, n_frames: int = 500) -> float:
+    """Test tile segmenter accuracy on held-out data."""
+    from snks.encoder.tile_head_trainer import viewport_tile_label
+
     print("\n" + "=" * 60)
     print("Phase 4: Tile accuracy gate (≥60%)")
     print("=" * 60)
 
     correct = 0
     total = 0
-    grid_size = encoder.grid_size
     per_class_correct: dict[int, int] = {}
     per_class_total: dict[int, int] = {}
 
@@ -348,17 +390,18 @@ def phase4_accuracy_gate(encoder: CNNEncoder, n_frames: int = 500) -> float:
                 break
 
             semantic = info.get("semantic")
-            if semantic is None:
+            player_pos = info.get("player_pos")
+            if semantic is None or player_pos is None:
                 continue
 
             px_tensor = torch.from_numpy(pixels)
-            class_ids, _ = encoder.classify_tiles(px_tensor)
+            class_ids, _ = segmenter.classify_tiles(px_tensor)
 
             H, W = class_ids.shape
-            for gy in range(H):
-                for gx in range(W):
-                    gt = semantic_cell_label(semantic, gy, gx, grid_size)
-                    pred = int(class_ids[gy, gx].item())
+            for tr in range(H):
+                for tc in range(W):
+                    gt = viewport_tile_label(semantic, player_pos, tr, tc)
+                    pred = int(class_ids[tr, tc].item())
                     per_class_total[gt] = per_class_total.get(gt, 0) + 1
                     if gt == pred:
                         correct += 1
@@ -374,7 +417,8 @@ def phase4_accuracy_gate(encoder: CNNEncoder, n_frames: int = 500) -> float:
         cls_total = per_class_total[cls_idx]
         cls_acc = cls_correct / max(1, cls_total)
         print(f"    {name}: {cls_acc:.1%} ({cls_correct}/{cls_total})")
-    print(f"  {'PASS' if acc >= 0.60 else 'FAIL'}: {'≥' if acc >= 0.60 else '<'}60%")
+    gate = acc >= 0.60
+    print(f"  {'PASS' if gate else 'FAIL'}: {'≥' if gate else '<'}60%")
     return acc
 
 
@@ -382,7 +426,34 @@ def phase4_accuracy_gate(encoder: CNNEncoder, n_frames: int = 500) -> float:
 # Phase 5: Smoke test — wood collection
 # ---------------------------------------------------------------------------
 
-def phase5_smoke(encoder: CNNEncoder, n_episodes: int = 20, max_steps: int = 200) -> dict:
+def _perceive_segmenter(pixels, segmenter):
+    """Perceive using TileSegmenter → VisualField."""
+    from snks.agent.perception import VisualField
+    class_ids, confidences = segmenter.classify_tiles(pixels)
+    H, W = class_ids.shape
+    center = H // 2  # 4 for 9×9
+
+    vf = VisualField()
+    center_pos = {(center-1, center-1), (center-1, center), (center, center-1), (center, center)}
+
+    for tr in range(H):
+        for tc in range(W):
+            cls_idx = int(class_ids[tr, tc].item())
+            conf = float(confidences[tr, tc].item())
+            if cls_idx < len(NEAR_CLASSES):
+                cls_name = NEAR_CLASSES[cls_idx]
+            else:
+                cls_name = f"class_{cls_idx}"
+            if cls_name == "empty" and (tr, tc) not in center_pos:
+                continue
+            vf.detections.append((cls_name, conf, tr, tc))
+            if (tr, tc) in center_pos and conf > vf.near_similarity:
+                vf.near_concept = cls_name
+                vf.near_similarity = conf
+    return vf
+
+
+def phase5_smoke(segmenter, n_episodes: int = 20, max_steps: int = 200) -> dict:
     """Wood collection with tile perception."""
     print("\n" + "=" * 60)
     print("Phase 5: Smoke test — wood collection")
@@ -417,16 +488,8 @@ def phase5_smoke(encoder: CNNEncoder, n_episodes: int = 20, max_steps: int = 200
             player_pos = info.get("player_pos", (32, 32))
 
             px_tensor = torch.from_numpy(pixels)
-            vf = perceive_tile_field(px_tensor, encoder)
-
-            # Also get near_head output for center confirmation
-            with torch.no_grad():
-                enc_out = encoder(px_tensor)
-            near_idx = int(enc_out.near_logits.argmax().item())
-            near_name = NEAR_CLASSES[near_idx] if near_idx < len(NEAR_CLASSES) else "empty"
-
-            # Use near_head for center detection (more reliable for immediate action)
-            effective_near = near_name if near_name != "empty" else vf.near_concept
+            vf = _perceive_segmenter(px_tensor, segmenter)
+            effective_near = vf.near_concept
 
             # Update spatial map from tile detections
             spatial_map.update(player_pos, effective_near)
@@ -469,9 +532,10 @@ def phase5_smoke(encoder: CNNEncoder, n_episodes: int = 20, max_steps: int = 200
                 if wood >= 3 and found_3wood_step is None:
                     found_3wood_step = step
 
-            if vf.raw_center_feature is not None:
-                on_action_outcome(action_str, inv_before, inv_after,
-                                  vf.raw_center_feature, store, labeler, encoder)
+            # Grounding via outcome labeler (no encoder features needed)
+            label = labeler.label(action_str, inv_before, inv_after)
+            if label:
+                resources[label] = resources.get(label, 0) + 1
 
             if done:
                 break
@@ -495,7 +559,7 @@ def phase5_smoke(encoder: CNNEncoder, n_episodes: int = 20, max_steps: int = 200
 # Phase 6: Survival with enemies
 # ---------------------------------------------------------------------------
 
-def phase6_survival(encoder: CNNEncoder, n_episodes: int = 20, max_steps: int = 500) -> dict:
+def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> dict:
     """Survival eval with homeostatic drives."""
     print("\n" + "=" * 60)
     print("Phase 6: Survival with enemies")
@@ -586,15 +650,9 @@ def phase6_survival(encoder: CNNEncoder, n_episodes: int = 20, max_steps: int = 
             pixels, _, done, info = env.step(action_str)
             inv_after = dict(info.get("inventory", {}))
 
-            if vf.raw_center_feature is not None:
-                label = on_action_outcome(action_str, inv_before, inv_after,
-                                          vf.raw_center_feature, store, labeler, encoder)
-                if label:
-                    resources[label] += 1
-
-            out = outcome_to_verify(action_str, inv_before, inv_after)
-            if out:
-                verify_outcome(vf.near_concept, action_str, out, store)
+            label = labeler.label(action_str, inv_before, inv_after)
+            if label:
+                resources[label] = resources.get(label, 0) + 1
 
             prev_inv = inv
             if done:
@@ -623,25 +681,17 @@ def main():
     # Phase 1 — random walks with semantic map GT (no nav encoder needed)
     dataset = phase1_collect(None, n_frames=10000, n_episodes=200)
 
-    # Phase 2 (trains encoder + tile_head jointly)
-    encoder, detector_new = phase2_train_encoder(dataset, epochs=200)
+    # Phase 2: train tile segmenter (no-stride FCN)
+    segmenter = phase2_train_encoder(dataset, epochs=200)
 
-    # Phase 3: optional re-training (skip if joint training already good)
-    # Joint accuracy already measured in Phase 2 diagnostic
-    # tile_stats = phase3_train_tile_head(encoder, n_frames=10000)
-
-    # Phase 4: final accuracy gate
-    tile_acc = phase4_accuracy_gate(encoder)
+    # Phase 4: accuracy gate
+    tile_acc = phase4_accuracy_gate(segmenter)
 
     # Phase 5
-    smoke = phase5_smoke(encoder, n_episodes=20, max_steps=200)
+    smoke = phase5_smoke(segmenter, n_episodes=20, max_steps=200)
 
     # Phase 6
-    survival = phase6_survival(encoder, n_episodes=20, max_steps=500)
-
-    # Final save
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    torch.save(encoder.state_dict(), CHECKPOINT_DIR / "encoder_final.pt")
+    survival = phase6_survival(segmenter, n_episodes=20, max_steps=500)
 
     # Summary
     print("\n" + "=" * 60)
