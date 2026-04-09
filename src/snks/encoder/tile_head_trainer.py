@@ -104,8 +104,6 @@ def viewport_tile_label(
     Returns:
         Class index into NEAR_CLASSES (0 = empty).
     """
-    if tile_row >= VIEWPORT_VALID or tile_col >= VIEWPORT_VALID:
-        return 0  # inventory bar (row 8) or black border (col 8)
     py, px = int(player_pos[0]), int(player_pos[1])
     # viewport_x = tile_col → world dy = tile_col - 4
     # viewport_y = tile_row + 1 → world dx = tile_row + 1 - 4

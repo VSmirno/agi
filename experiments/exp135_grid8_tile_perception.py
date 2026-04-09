@@ -116,11 +116,12 @@ def phase1_collect(detector: NearDetector, n_frames: int = 10000, n_episodes: in
     print("=" * 60)
     t0 = time.time()
 
-    from snks.encoder.tile_head_trainer import viewport_tile_label
+    from snks.encoder.tile_head_trainer import viewport_tile_label, VIEWPORT_VALID
     from exp122_pixels import _detect_near_from_info
 
-    # Crafter view = 9×9 tiles, use AdaptiveAvgPool2d(9) for CNN
-    GRID_SIZE = 9
+    # Crafter view = 9×9 tiles, but last row=inventory, last col=black border.
+    # Valid region = 8×8 tiles.
+    GRID_SIZE = VIEWPORT_VALID
     all_pixels: list[torch.Tensor] = []
     all_near_labels: list[int] = []
     all_tile_labels: list[torch.Tensor] = []
@@ -241,7 +242,8 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
 
     import torch.nn as nn
 
-    # No-stride FCN: full 64×64 resolution → AdaptiveAvgPool → 9×9 → classify
+    from snks.encoder.tile_head_trainer import VIEWPORT_VALID
+    # No-stride FCN: full 64×64 resolution → AdaptiveAvgPool → 8×8 → classify
     # Each output cell sees exactly one Crafter tile's pixels
     class TileSegmenter(nn.Module):
         def __init__(self, n_classes=12):
@@ -251,7 +253,7 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
                 nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
                 nn.Conv2d(64, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(),
             )
-            self.pool = nn.AdaptiveAvgPool2d(9)  # 64→9 (matches Crafter 9×9 view)
+            self.pool = nn.AdaptiveAvgPool2d(VIEWPORT_VALID)  # 64→8 (valid tiles only)
             self.head = nn.Conv2d(64, n_classes, 1)
 
         def forward(self, x):
@@ -287,7 +289,7 @@ def phase2_train_encoder(dataset: dict, epochs: int = 150) -> tuple[CNNEncoder, 
 
     n_params = sum(p.numel() for p in segmenter.parameters())
     print(f"  {N} frames, no-stride FCN, {n_params} params")
-    print(f"  AdaptiveAvgPool(9) — matches Crafter 9×9 tile view")
+    print(f"  AdaptiveAvgPool({VIEWPORT_VALID}) — 8×8 valid tiles (excl inventory+border)")
     print(f"  viewport_tile_label with correct coordinate mapping")
     print(f"  Training on {train_device}...")
 
@@ -368,7 +370,7 @@ def phase3_train_tile_head(encoder: CNNEncoder, n_frames: int = 5000) -> dict:
 
 def phase4_accuracy_gate(segmenter, n_frames: int = 500) -> float:
     """Test tile segmenter accuracy on held-out data."""
-    from snks.encoder.tile_head_trainer import viewport_tile_label
+    from snks.encoder.tile_head_trainer import viewport_tile_label, VIEWPORT_VALID
 
     print("\n" + "=" * 60)
     print("Phase 4: Tile accuracy gate (≥60%)")
