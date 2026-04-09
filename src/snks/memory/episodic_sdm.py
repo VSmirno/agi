@@ -34,6 +34,9 @@ class Episode:
         next_state_sdr: SDR of state after the action.
         body_delta: {var_name: next - before} for observed body variables.
         step: Monotonic step counter (episode-level or global).
+        weight: Priority for eviction when the buffer is full. Steps belonging
+            to long-surviving episodes get high weight and are preserved longer.
+            Low-weight steps are evicted first.
     """
 
     state_sdr: np.ndarray
@@ -41,28 +44,61 @@ class Episode:
     next_state_sdr: np.ndarray
     body_delta: dict[str, int]
     step: int
+    weight: float = 1.0
 
 
 @dataclass
 class EpisodicSDM:
-    """FIFO buffer of Episodes with similarity-based recall.
+    """Episodic buffer with priority-eviction on overflow.
 
-    Writes append to an unbounded list until capacity; then wrap-around
-    overwrite (oldest episode replaced). No indexing — recall is a linear
-    scan with bitwise AND and popcount over state SDRs.
+    Each stored Episode has a `weight` field. When the buffer is full, the
+    slot with the LOWEST weight is evicted (ties broken by first-found).
+    This preserves steps from long-surviving episodes at the expense of
+    short death-episodes, reducing the "all memories are deaths" failure
+    mode seen in the initial FIFO implementation.
+
+    Recall is still a linear scan with bitwise AND + popcount over state SDRs.
     """
 
-    capacity: int = 10_000
+    capacity: int = 50_000
     _buffer: list[Episode] = field(default_factory=list)
-    _write_idx: int = 0
 
-    def write(self, episode: Episode) -> None:
-        """Append or overwrite oldest slot."""
+    def write(self, episode: Episode) -> int:
+        """Append a new episode, returning the index it landed at.
+
+        If the buffer is full, evict the lowest-weight slot and replace it.
+        Returns the buffer index so callers can later update `weight`
+        (e.g., post-episode upweight by final survival length).
+        """
         if len(self._buffer) < self.capacity:
             self._buffer.append(episode)
-        else:
-            self._buffer[self._write_idx] = episode
-            self._write_idx = (self._write_idx + 1) % self.capacity
+            return len(self._buffer) - 1
+        # Buffer is full — evict the slot with the lowest weight
+        weights = np.fromiter(
+            (ep.weight for ep in self._buffer),
+            dtype=np.float64,
+            count=len(self._buffer),
+        )
+        idx = int(np.argmin(weights))
+        self._buffer[idx] = episode
+        return idx
+
+    def set_weight(self, idx: int, weight: float) -> None:
+        """Update the priority weight of a previously-written episode."""
+        if 0 <= idx < len(self._buffer):
+            self._buffer[idx].weight = float(weight)
+
+    def set_weights(self, indices: list[int], weight: float) -> None:
+        """Bulk-update priority for a list of indices.
+
+        Used at episode end to stamp all steps of the just-finished episode
+        with its survival length (the longer the episode, the higher the
+        priority of every step it contained).
+        """
+        w = float(weight)
+        for idx in indices:
+            if 0 <= idx < len(self._buffer):
+                self._buffer[idx].weight = w
 
     def __len__(self) -> int:
         return len(self._buffer)
