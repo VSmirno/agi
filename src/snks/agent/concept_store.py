@@ -210,14 +210,26 @@ class ConceptStore:
             return None
         return concept.find_causal(action=action, check_requires=inventory)
 
-    def plan(self, goal_id: str) -> list[PlannedStep]:
+    def plan(
+        self,
+        goal_id: str,
+        inventory: dict[str, int] | None = None,
+    ) -> list[PlannedStep]:
         """Backward chaining: find sequence of steps to achieve goal.
 
         Returns forward-ordered list of PlannedStep (ready to execute).
+
+        Args:
+            goal_id: target concept id to produce.
+            inventory: current inventory. If provided, prerequisites already
+                       present are skipped — avoids redundant steps when the
+                       agent already holds required items (e.g. don't re-craft
+                       sword if already wielding one).
         """
         steps: list[PlannedStep] = []
         visited: set[str] = set()
-        self._plan_recursive(goal_id, steps, visited)
+        inv = dict(inventory) if inventory else {}
+        self._plan_recursive(goal_id, steps, visited, inv)
         return steps
 
     def _plan_recursive(
@@ -225,11 +237,20 @@ class ConceptStore:
         goal_id: str,
         steps: list[PlannedStep],
         visited: set[str],
+        inventory: dict[str, int] | None = None,
     ) -> None:
-        """Backward chaining helper. Builds plan in forward order."""
+        """Backward chaining helper. Builds plan in forward order.
+
+        Skips subgoals whose result is already in inventory (quantity ≥ 1).
+        """
         if goal_id in visited:
             return
         visited.add(goal_id)
+
+        # Skip if the goal itself is already satisfied in inventory
+        # (e.g., don't plan 'make wood_sword' if sword already held)
+        if inventory is not None and inventory.get(goal_id, 0) >= 1:
+            return
 
         # Find which concept produces this goal
         for concept in self.concepts.values():
@@ -240,11 +261,11 @@ class ConceptStore:
                 # For make/place: ensure the near-target concept exists
                 # e.g. "make wood_pickaxe near table" → need table first
                 if link.action in ("make", "place"):
-                    self._plan_recursive(concept.id, steps, visited)
+                    self._plan_recursive(concept.id, steps, visited, inventory)
 
                 # Recurse into prerequisites (inventory items)
                 for req_item in link.requires:
-                    self._plan_recursive(req_item, steps, visited)
+                    self._plan_recursive(req_item, steps, visited, inventory)
 
                 steps.append(
                     PlannedStep(
