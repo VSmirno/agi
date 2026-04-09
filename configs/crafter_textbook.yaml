@@ -44,6 +44,10 @@ rules:
   - "do water restores drink"
   - "do cow restores food"
   - "sleep restores energy"
+  # Indirect: in Crafter, food/drink > 0 regenerates HP passively.
+  # Textbook teaches this as direct causality so restore_health plans exist.
+  - "do cow restores health"
+  - "do water restores health"
 
 # Body rules — innate knowledge, how the body works (the "DNA")
 # These initialize HomeostaticTracker conditional_rates before any experience.
