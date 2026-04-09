@@ -466,6 +466,7 @@ def phase5_smoke(segmenter, n_episodes: int = 20, max_steps: int = 200) -> dict:
 
     wood_collected = []
     steps_to_3wood = []
+    resources: dict = {}
 
     for ep in range(n_episodes):
         env = CrafterPixelEnv(seed=ep * 7 + 200)
