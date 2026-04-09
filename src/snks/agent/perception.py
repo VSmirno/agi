@@ -56,6 +56,10 @@ class HomeostaticTracker:
     No formulas, just observation: "when zombie visible, health drops fast."
 
     Persists across episodes (agent remembers what hurts).
+
+    Stage 76 extensions:
+    - `observed_max` tracks rolling max per variable (replaces hardcoded 9)
+    - `observed_variables()` returns set of variables seen (no hardcoded list)
     """
 
     # Background rates: average delta per step for each variable
@@ -69,6 +73,10 @@ class HomeostaticTracker:
 
     # Initial rates from body rules (innate knowledge, set once from textbook)
     _initialized: bool = False
+
+    # Stage 76: observed max per variable (rolling max since first observation)
+    # Replaces hardcoded 9 default. Initialized from first observation.
+    observed_max: dict[str, int] = field(default_factory=dict)
 
     def init_from_body_rules(self, body_rules: list[dict]) -> None:
         """Set initial rates from textbook body rules (innate knowledge).
@@ -96,7 +104,10 @@ class HomeostaticTracker:
         inv_after: dict[str, int],
         visible_concepts: set[str],
     ) -> None:
-        """Called every step: observe what changed and what was visible."""
+        """Called every step: observe what changed and what was visible.
+
+        Updates rates (EMA), conditional_rates (EMA), and observed_max.
+        """
         for var in HOMEOSTATIC_VARS:
             delta = inv_after.get(var, 0) - inv_before.get(var, 0)
 
@@ -111,6 +122,22 @@ class HomeostaticTracker:
                 self.conditional_rates[key] = (
                     old_c * (1 - RATE_EMA_ALPHA) + delta * RATE_EMA_ALPHA
                 )
+
+        # Stage 76: update observed_max for all variables in both inv dicts.
+        # Dynamic — picks up any variable the env exposes, not just HOMEOSTATIC_VARS.
+        for inv in (inv_before, inv_after):
+            for var, value in inv.items():
+                current_max = self.observed_max.get(var, 0)
+                if value > current_max:
+                    self.observed_max[var] = value
+
+    def observed_variables(self) -> set[str]:
+        """Set of body variables observed at least once.
+
+        Stage 76: replaces hardcoded ('health', 'food', 'drink', 'energy') list.
+        Agent learns which variables matter from the env's inventory dict.
+        """
+        return set(self.observed_max.keys())
 
     def get_rate(self, variable: str, visible_concepts: set[str] | None = None) -> float:
         """Get effective rate for a variable given what's visible.
