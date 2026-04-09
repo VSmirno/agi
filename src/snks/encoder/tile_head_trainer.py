@@ -74,10 +74,21 @@ def viewport_tile_label(
 ) -> int:
     """Get GT class for a viewport tile using correct coordinate mapping.
 
-    Crafter renders with transpose: viewport (x, y) → pixel (col, row).
-    So screen tile at (row, col) maps to world pos:
-      world_y = player_y + tile_col - offset
-      world_x = player_x + tile_row - offset
+    Crafter LocalView rendering:
+      for x in range(9):      # x iterates viewport rows (rendered as columns)
+        for y in range(9):    # y iterates viewport cols (rendered as rows)
+          world_pos = player_pos + [x, y] - [4, 4]
+          draw at canvas[x*unit, y*unit]
+      canvas.transpose((1, 0, 2))  # swap rows/cols
+
+    Result: output pixel (row, col) corresponds to:
+      viewport_x = col / tile_size    → world_row = player_y + viewport_x - 4
+      viewport_y = row / tile_size    → world_col = player_x + viewport_y - 4
+
+    Sprite offset: sprites render visually ~1 tile UP from their world
+    cell due to how _draw places textures. So tile_row maps to vp_y+1:
+      world_row = player_y + tile_col - 4
+      world_col = player_x + (tile_row + 1) - 4
 
     Args:
         semantic: world semantic map from info["semantic"].
@@ -89,9 +100,10 @@ def viewport_tile_label(
         Class index into NEAR_CLASSES (0 = empty).
     """
     py, px = int(player_pos[0]), int(player_pos[1])
-    # Render transpose: screen col → world y offset, screen row → world x offset
+    # viewport_x = tile_col → world dy = tile_col - 4
+    # viewport_y = tile_row + 1 → world dx = tile_row + 1 - 4
     wy = py + tile_col - 4
-    wx = px + tile_row - 4
+    wx = px + tile_row + 1 - 4
     if 0 <= wy < semantic.shape[0] and 0 <= wx < semantic.shape[1]:
         name = SEMANTIC_NAMES.get(int(semantic[wy, wx]), "unknown")
         if name not in _TERRAIN and name in NEAR_TO_IDX:
