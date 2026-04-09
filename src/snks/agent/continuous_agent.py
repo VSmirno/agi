@@ -246,17 +246,21 @@ def run_continuous_episode(
         )
 
         # Build a deficit-weighted attention mask from learned per-variable
-        # bit relevance. When attention has no data yet (first episodes) or
-        # current deficits are all zero, mask is None and recall falls back
-        # to plain popcount similarity.
+        # bit relevance. Deficits are computed only over BODY variables
+        # (health, food, drink, energy — whichever the tracker recognises
+        # as having innate decay). Inventory items like wood and sapling
+        # are excluded: being without them is not lethal, and their
+        # observed_max grows unboundedly during collection, which would
+        # swamp the mask with inventory-related bits at eval time.
         query_mask = None
         if attention is not None:
+            body_vars = tracker.body_variables()
             deficits = {
                 var: max(
                     0.0,
                     float(tracker.observed_max.get(var, 0) - inv.get(var, 0)),
                 )
-                for var in tracker.observed_variables()
+                for var in body_vars
             }
             query_mask = attention.query_mask(deficits)
 

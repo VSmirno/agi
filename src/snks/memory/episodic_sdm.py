@@ -124,41 +124,43 @@ class EpisodicSDM:
 
 
 def score_actions(
-    recalled: list[tuple[int, Episode]],
+    recalled: list[tuple[float, Episode]],
     current_body: dict[str, int],
     tracker: "HomeostaticTracker",
 ) -> dict[str, float]:
     """Score each action by expected improvement of body state.
 
-    Deficit-weighted aggregation:
-    - For each body variable V in tracker.observed_variables():
-      deficit[V] = max(0, tracker.observed_max[V] - current_body[V])
+    Deficit-weighted aggregation over BODY variables only:
+    - body_vars = tracker.body_variables() — the subset with innate decay
+      (health, food, drink, energy in Crafter). Inventory items like
+      wood/sapling are excluded because their observed_max grows
+      unboundedly during collection, which would make wood-positive
+      actions dominate scoring regardless of actual survival relevance.
+    - For each var V in body_vars:
+        deficit[V] = max(0, tracker.observed_max[V] - current_body[V])
     - For each recalled episode with action A:
-      score[A] += Σ_V deficit[V] × body_delta_V
+        score[A] += Σ_V deficit[V] × body_delta_V
     - Average over episodes of same action.
 
     Sign is emergent: if health typically goes up in "good" episodes and
     down in "bad" ones, the product deficit × delta scores restorative
     actions higher automatically. No hardcoded "higher is better".
 
-    Works for any variable the tracker has observed — adding new body
-    variables requires only tracker updates, not this function.
-
     Args:
-        recalled: list of (overlap, episode) from EpisodicSDM.recall.
-        current_body: current inventory-style dict with body variable values.
-        tracker: HomeostaticTracker with observed_max and observed_variables().
+        recalled: list of (score, episode) from EpisodicSDM.recall.
+        current_body: current inventory dict with body variable values.
+        tracker: HomeostaticTracker with observed_max and body_variables().
 
     Returns:
         dict[action_name, mean_score]. Empty if no recalled episodes.
     """
     totals: dict[str, float] = defaultdict(float)
     counts: dict[str, int] = defaultdict(int)
-    observed_vars = tracker.observed_variables()
+    body_vars = tracker.body_variables()
     for _, ep in recalled:
         contribution = 0.0
         for var, delta in ep.body_delta.items():
-            if var not in observed_vars:
+            if var not in body_vars:
                 continue
             obs_max = tracker.observed_max.get(var, 0)
             current = current_body.get(var, obs_max)
