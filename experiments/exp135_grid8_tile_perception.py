@@ -607,21 +607,38 @@ def phase5_smoke(segmenter, n_episodes: int = 20, max_steps: int = 200) -> dict:
 # Phase 6: Survival with enemies
 # ---------------------------------------------------------------------------
 
+def _find_adjacent(vf, center_r, center_c, concept_id):
+    """Return direction ('up','down','left','right') if concept_id is adjacent, else None."""
+    for cid, conf, gy, gx in vf.detections:
+        if cid != concept_id:
+            continue
+        if gy == center_r - 1 and gx == center_c:
+            return "up"
+        if gy == center_r + 1 and gx == center_c:
+            return "down"
+        if gy == center_r and gx == center_c - 1:
+            return "left"
+        if gy == center_r and gx == center_c + 1:
+            return "right"
+    return None
+
+
+_OPPOSITE = {"up": "down", "down": "up", "left": "right", "right": "left"}
+
+
 def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> dict:
-    """Survival eval with homeostatic drives."""
+    """Survival eval with simple reactive policy.
+
+    Priority:
+      1. REFLEX: flee from adjacent zombie/skeleton (unless has wood_sword)
+      2. NEEDS:  if drink<4 → seek water; if food<4 → seek cow
+      3. DEFAULT: collect wood
+    """
     print("\n" + "=" * 60)
-    print("Phase 6: Survival with enemies")
+    print("Phase 6: Survival with enemies (reactive policy)")
     print("=" * 60)
 
-    store = ConceptStore()
-    tb = CrafterTextbook("configs/crafter_textbook.yaml")
-    tb.load_into(store)
     labeler = OutcomeLabeler()
-    tracker = HomeostaticTracker()
-
-    body_rules = tb.get_body_rules() if hasattr(tb, "get_body_rules") else []
-    if body_rules:
-        tracker.init_from_body_rules(body_rules)
 
     from snks.encoder.tile_head_trainer import VIEWPORT_ROWS, VIEWPORT_COLS
     center_r = VIEWPORT_ROWS // 2
@@ -629,15 +646,22 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
 
     episode_lengths = []
     resources = Counter()
+    causes: Counter = Counter()
+
+    FOOD_TH = 4
+    DRINK_TH = 4
 
     for ep in range(n_episodes):
         env = CrafterPixelEnv(seed=ep * 11 + 300)
         pixels, info = env.reset()
         rng = np.random.RandomState(ep)
         spatial_map = CrafterSpatialMap()
-        prev_inv: dict = {}
+        last_action = None
+        last_pos = None
+        steps_taken = 0
 
         for step in range(max_steps):
+            steps_taken = step + 1
             inv = dict(info.get("inventory", {}))
             player_pos = tuple(info.get("player_pos", (32, 32)))
             px_player, py_player = int(player_pos[0]), int(player_pos[1])
@@ -651,24 +675,55 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
                 wy = py_player + (gy - (center_r - 1))
                 spatial_map.update((wx, wy), cid)
 
-            if prev_inv:
-                tracker.update(prev_inv, inv, vf.visible_concepts())
+            action_str = None
 
-            goal, plan = select_goal(inv, store, tracker, vf, spatial_map)
-
-            if plan:
-                step_plan = plan[0]
-                target = step_plan.target
-                if vf.near_concept == target:
-                    action_str = step_plan.action
-                else:
-                    target_pos = spatial_map.find_nearest(target, (px_player, py_player))
-                    if target_pos:
-                        action_str = _step_toward((px_player, py_player), target_pos, rng)
+            # REFLEX 1: flee from adjacent danger
+            for threat in ("zombie", "skeleton"):
+                danger_dir = _find_adjacent(vf, center_r, center_c, threat)
+                if danger_dir is not None:
+                    has_sword = inv.get("wood_sword", 0) > 0
+                    if has_sword:
+                        # attack: turn and do
+                        if last_action == f"move_{danger_dir}":
+                            action_str = "do"
+                        else:
+                            action_str = f"move_{danger_dir}"
                     else:
-                        target_dets = vf.find(target)
-                        if target_dets:
-                            _, tgy, tgx = target_dets[0]
+                        # flee in opposite direction
+                        action_str = f"move_{_OPPOSITE[danger_dir]}"
+                    break
+
+            # NEEDS: water/food
+            if action_str is None:
+                target = None
+                drink = inv.get("drink", 9)
+                food = inv.get("food", 9)
+                if drink < DRINK_TH:
+                    target = "water"
+                elif food < FOOD_TH:
+                    target = "cow"
+                else:
+                    target = "tree"
+
+                if vf.near_concept == target:
+                    tgt_dir = _find_adjacent(vf, center_r, center_c, target)
+                    if tgt_dir is None:
+                        action_str = "do"
+                    else:
+                        blocked = (last_pos is not None and last_pos == player_pos
+                                   and last_action == f"move_{tgt_dir}")
+                        if blocked or last_action == f"move_{tgt_dir}":
+                            action_str = "do"
+                        else:
+                            action_str = f"move_{tgt_dir}"
+                else:
+                    tgt_pos = spatial_map.find_nearest(target, (px_player, py_player))
+                    if tgt_pos:
+                        action_str = _step_toward((px_player, py_player), tgt_pos, rng)
+                    else:
+                        dets = vf.find(target)
+                        if dets:
+                            _, tgy, tgx = dets[0]
                             dx = tgx - center_c
                             dy = tgy - (center_r - 1)
                             moves = []
@@ -678,13 +733,10 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
                             elif dy < 0: moves.append("move_up")
                             action_str = moves[rng.randint(len(moves))] if moves else "do"
                         else:
-                            action_str = explore_action(rng, store, inv)
-                if action_str.startswith("babble_"):
-                    action_str = action_str.replace("babble_", "")
-            else:
-                action_str = explore_action(rng, store, inv)
-                if action_str.startswith("babble_"):
-                    action_str = action_str.replace("babble_", "")
+                            action_str = str(rng.choice(MOVE_ACTIONS))
+
+            last_action = action_str
+            last_pos = player_pos
 
             inv_before = inv
             pixels, _, done, info = env.step(action_str)
@@ -694,18 +746,31 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
             if label:
                 resources[label] = resources.get(label, 0) + 1
 
-            prev_inv = inv
             if done:
-                episode_lengths.append(step + 1)
+                # Classify cause of death
+                final = inv_after
+                if final.get("health", 9) <= 0:
+                    causes["killed"] += 1
+                elif final.get("food", 9) <= 0:
+                    causes["starvation"] += 1
+                elif final.get("drink", 9) <= 0:
+                    causes["thirst"] += 1
+                else:
+                    causes["other"] += 1
                 break
-        else:
-            episode_lengths.append(max_steps)
+
+        episode_lengths.append(steps_taken)
 
     avg_len = sum(episode_lengths) / len(episode_lengths)
     print(f"  Avg episode length: {avg_len:.0f}")
     print(f"  Resources: {dict(resources)}")
+    print(f"  Causes of death: {dict(causes)}")
 
-    return {"avg_episode_length": avg_len, "resources": dict(resources)}
+    return {
+        "avg_episode_length": avg_len,
+        "resources": dict(resources),
+        "causes": dict(causes),
+    }
 
 
 # ---------------------------------------------------------------------------
