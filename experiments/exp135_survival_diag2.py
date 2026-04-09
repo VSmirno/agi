@@ -17,22 +17,13 @@ def main():
     segmenter.eval()
 
     print("\n" + "#" * 60)
-    print("# TEST 1: phase6 NO ENEMIES + verbose first episode")
+    print("# phase6 WITH ENEMIES, verbose first episode")
     print("#" * 60)
-    r1 = phase6_survival(segmenter, n_episodes=5, max_steps=200,
-                         enemies=False, verbose=True)
-
-    print("\n" + "#" * 60)
-    print("# TEST 2: phase6 WITH ENEMIES, no verbose")
-    print("#" * 60)
-    r2 = phase6_survival(segmenter, n_episodes=5, max_steps=200,
-                         enemies=True, verbose=False)
+    r1 = phase6_survival(segmenter, n_episodes=5, max_steps=500,
+                         enemies=True, verbose=True)
 
     print("\n" + "=" * 60)
-    print("COMPARISON")
-    print("=" * 60)
-    print(f"NO enemies:  length={r1['avg_episode_length']:.0f} resources={r1['resources']}")
-    print(f"WITH enemies: length={r2['avg_episode_length']:.0f} resources={r2['resources']}")
+    print(f"Result: length={r1['avg_episode_length']:.0f} resources={r1['resources']}")
 
 
 if __name__ == "__main__":
