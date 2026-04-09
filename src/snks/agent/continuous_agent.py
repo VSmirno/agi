@@ -211,13 +211,6 @@ def run_continuous_episode(
     action_counts: Counter = Counter()
     cause_of_death = "alive"
     inv_after: dict[str, int] = dict(info.get("inventory", {}))
-    # Track SDM buffer indices of this episode's writes so we can upweight
-    # them at episode end (priority eviction preserves long-survival steps).
-    episode_write_indices: list[int] = []
-    # During the episode, each step is stamped with weight = max_steps so it
-    # cannot be evicted by its own later steps. After `done`, we overwrite
-    # these weights with the actual survival length.
-    in_flight_weight = float(max_steps)
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -313,18 +306,14 @@ def run_continuous_episode(
             body_variables=tracker.observed_variables() or None,
         )
 
-        # Write episode — every step, unconditionally.
-        # Stamp with a high in-flight weight so steps of the CURRENT episode
-        # don't evict each other while it's ongoing.
-        write_idx = sdm.write(Episode(
+        # Write episode — every step, unconditionally
+        sdm.write(Episode(
             state_sdr=state_sdr,
             action=action_str,
             next_state_sdr=next_state_sdr,
             body_delta=body_delta,
             step=step,
-            weight=in_flight_weight,
         ))
-        episode_write_indices.append(write_idx)
 
         # Keep ConceptStore confidence up to date for bootstrap quality
         outcome = outcome_to_verify(action_str, inv_before, inv_after)
@@ -334,22 +323,15 @@ def run_continuous_episode(
         prev_inv = inv
 
         if done:
-            # Post-hoc telemetry: find any tracked variable that dropped
-            # to zero AFTER having been observed with a positive value.
-            # Variables that started at zero (wood, sapling, ...) are
-            # inventory items, not body stats — they never "bottom out".
+            # Post-hoc telemetry: find any tracked variable that hit zero.
+            # No hardcoded "health is death" assumption — whichever variable
+            # the tracker observed that bottomed out is the cause.
             zeroed_vars = [
                 var for var in tracker.observed_variables()
-                if tracker.observed_max.get(var, 0) > 0
-                and inv_after.get(var, 1) <= 0
+                if inv_after.get(var, 1) <= 0
             ]
             cause_of_death = ",".join(zeroed_vars) if zeroed_vars else "other"
             break
-
-    # Upweight all steps written during this episode with the final survival
-    # length. Long episodes end up with high-weight steps that survive buffer
-    # eviction; short death-episodes get low weights and are evicted first.
-    sdm.set_weights(episode_write_indices, float(steps_taken))
 
     # Action entropy over episode (information-theoretic exploration measure)
     total = sum(action_counts.values())

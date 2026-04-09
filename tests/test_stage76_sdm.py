@@ -106,51 +106,14 @@ class TestBuffer:
             sdm.write(make_episode("noop", step=i))
         assert len(sdm) == 3  # never exceeds capacity
 
-    def test_priority_eviction_lowest_weight_goes_first(self):
-        """When full, the slot with the lowest weight is evicted."""
+    def test_fifo_overwrite_order(self):
+        """When full, oldest entries are replaced by newest."""
         sdm = EpisodicSDM(capacity=3)
-        # Fill with weights 10, 5, 20
-        sdm.write(Episode(make_sdr(seed=1), "a", make_sdr(seed=2), {}, 0, weight=10.0))
-        sdm.write(Episode(make_sdr(seed=3), "b", make_sdr(seed=4), {}, 1, weight=5.0))
-        sdm.write(Episode(make_sdr(seed=5), "c", make_sdr(seed=6), {}, 2, weight=20.0))
-        # Now write a new one — should evict the weight-5 "b" slot
-        sdm.write(Episode(make_sdr(seed=7), "d", make_sdr(seed=8), {}, 3, weight=15.0))
-        actions = {ep.action for ep in sdm._buffer}
-        assert actions == {"a", "c", "d"}
-        # b (weight 5) was evicted
-
-    def test_write_returns_index(self):
-        sdm = EpisodicSDM(capacity=10)
-        idx0 = sdm.write(make_episode("a", step=0))
-        idx1 = sdm.write(make_episode("b", step=1))
-        assert idx0 == 0
-        assert idx1 == 1
-
-    def test_set_weights_batch_updates(self):
-        sdm = EpisodicSDM(capacity=10)
-        indices = []
         for i in range(5):
-            idx = sdm.write(Episode(make_sdr(seed=i), "x", make_sdr(), {}, i, weight=1.0))
-            indices.append(idx)
-        sdm.set_weights(indices, weight=500.0)
-        for i in indices:
-            assert sdm._buffer[i].weight == 500.0
-
-    def test_long_episodes_preserved_over_short(self):
-        """Long-survival episode steps outlive short-death episodes."""
-        sdm = EpisodicSDM(capacity=5)
-        # Write a "long survival" episode (5 steps, all weight 500)
-        long_indices = []
-        for i in range(5):
-            idx = sdm.write(Episode(make_sdr(seed=100 + i), "long", make_sdr(), {}, i, weight=500.0))
-            long_indices.append(idx)
-        # Now write many short episodes (weight 50) — they should displace each other, not the long one
-        for i in range(20):
-            sdm.write(Episode(make_sdr(seed=200 + i), "short", make_sdr(), {}, i, weight=50.0))
-        actions = [ep.action for ep in sdm._buffer]
-        # 4 of the 5 long-episode slots survive; exactly 1 "short" slot remains
-        assert actions.count("long") >= 4
-        assert actions.count("short") <= 1
+            sdm.write(make_episode("noop", step=i))
+        # After writing 0..4 into capacity-3 buffer, expected steps are {2,3,4}
+        stored_steps = {ep.step for ep in sdm._buffer}
+        assert stored_steps == {2, 3, 4}
 
 
 # ---------------------------------------------------------------------------
