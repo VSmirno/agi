@@ -199,7 +199,7 @@ def phase1_warmup_safe(
 def phase2_warmup_enemies(
     segmenter, encoder, sdm, store, tracker,
     n_episodes: int = 50, max_steps: int = 500, bootstrap_k: int = 5,
-    min_sdm_size: int = 500,
+    min_sdm_size: int = 10_000,
 ) -> dict:
     print("\n" + "=" * 60)
     print(f"Phase 2: Warmup B (enemies on, n={n_episodes}, "
@@ -224,7 +224,7 @@ def phase3_evaluation(
     segmenter, encoder, sdm, store, tracker,
     n_runs: int = 3, n_episodes_per_run: int = 20, max_steps: int = 1000,
     temperature: float = 0.3, bootstrap_k: int = 5,
-    min_sdm_size: int = 500,
+    min_sdm_size: int = 10_000,
 ) -> list[dict]:
     print("\n" + "=" * 60)
     print(f"Phase 3: Evaluation ({n_runs} runs × {n_episodes_per_run} episodes)")
@@ -322,7 +322,11 @@ def main():
     print(f"  Body rules: {len(tb.body_rules)} innate rates loaded")
 
     encoder = StateEncoder()
-    sdm = EpisodicSDM(capacity=10_000)
+    # Larger capacity + priority eviction (reservoir-like) preserves
+    # long-surviving episodes across warmup/eval phases. FIFO at 10K
+    # evicted the only 500-step episode during warmup-enemy, leaving
+    # the SDM full of death trajectories.
+    sdm = EpisodicSDM(capacity=50_000)
 
     warmup_a = phase1_warmup_safe(segmenter, encoder, sdm, store, tracker)
     warmup_b = phase2_warmup_enemies(segmenter, encoder, sdm, store, tracker)
