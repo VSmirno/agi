@@ -29,6 +29,10 @@ from snks.encoder.cnn_encoder import CNNEncoder
 # Terrain types → mapped to "empty" (class 0)
 _TERRAIN = {"grass", "path", "sand", "lava", "unknown", "player"}
 
+# Crafter viewport: 9×9 tiles rendered into 64×64 px (7px/tile).
+# Last row (tile_row=8) overlaps with inventory bar → exclude from labeling.
+VIEWPORT_ROWS = 8  # use rows 0..7 only (skip row 8 = inventory)
+
 
 def semantic_cell_label(
     semantic: np.ndarray, gy: int, gx: int,
@@ -99,6 +103,8 @@ def viewport_tile_label(
     Returns:
         Class index into NEAR_CLASSES (0 = empty).
     """
+    if tile_row >= VIEWPORT_ROWS:
+        return 0  # inventory bar — always "empty"
     py, px = int(player_pos[0]), int(player_pos[1])
     # viewport_x = tile_col → world dy = tile_col - 4
     # viewport_y = tile_row + 1 → world dx = tile_row + 1 - 4
