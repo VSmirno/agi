@@ -759,9 +759,10 @@ def phase6_survival(
                             elif dy < 0: moves.append("move_up")
                             action_str = moves[rng.randint(len(moves))] if moves else "do"
                         else:
-                            action_str = explore_action(rng, store, inv)
-                if action_str.startswith("babble_"):
-                    action_str = action_str.replace("babble_", "")
+                            # Random walk — don't call explore_action during plan
+                            # execution (babble can consume plan resources, e.g.
+                            # make_wood_pickaxe eating wood needed for sword).
+                            action_str = str(rng.choice(MOVE_ACTIONS))
             else:
                 action_str = explore_action(rng, store, inv)
                 if action_str.startswith("babble_"):
@@ -818,6 +819,22 @@ def phase6_survival(
                         for r in step_plan.requires
                     ):
                         advanced = True  # wood consumed → table placed
+                    # If place succeeded, record object in spatial_map so
+                    # subsequent plan steps can navigate back to it.
+                    # (segmenter can't reliably detect placed objects — only
+                    # 70 'table' training samples in random walks).
+                    if advanced and step_plan.action == "place":
+                        # Place happens in the direction player last faced.
+                        # Map last_action move → world offset.
+                        facing_offset = {
+                            "move_up": (0, -1),
+                            "move_down": (0, 1),
+                            "move_left": (-1, 0),
+                            "move_right": (1, 0),
+                        }
+                        off = facing_offset.get(last_action, (0, 0))
+                        placed_pos = (px_player + off[0], py_player + off[1])
+                        spatial_map.update(placed_pos, expected)
 
                 if advanced:
                     # For "do" (collection): sum requires across ALL remaining plan
