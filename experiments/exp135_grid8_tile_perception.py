@@ -689,8 +689,9 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
         last_action = None
         last_pos = None
         prev_health = 9
-        flee_timer = 0  # steps remaining in panic flee
+        flee_timer = 0
         flee_dir_panic = None
+        stuck_count = 0
         steps_taken = 0
 
         for step in range(max_steps):
@@ -698,6 +699,12 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
             inv = dict(info.get("inventory", {}))
             player_pos = tuple(info.get("player_pos", (32, 32)))
             px_player, py_player = int(player_pos[0]), int(player_pos[1])
+
+            # Stuck detection: count consecutive steps without position change
+            if last_pos is not None and last_pos == player_pos:
+                stuck_count += 1
+            else:
+                stuck_count = 0
 
             px_tensor = torch.from_numpy(pixels)
             vf = _perceive_segmenter(px_tensor, segmenter)
@@ -712,42 +719,43 @@ def phase6_survival(segmenter, n_episodes: int = 20, max_steps: int = 500) -> di
             has_sword = inv.get("wood_sword", 0) > 0
             health = inv.get("health", 9)
 
-            # DAMAGE REFLEX: if HP dropped, panic flee for 4 steps
-            # (handles undetected threats like skeletons via health signal)
+            # DAMAGE REFLEX: if HP actually dropped, panic flee for 4 steps
             if health < prev_health:
                 flee_timer = 4
-                # Pick flee direction: opposite of visible threat, or random
-                t_dist, t_away = _find_nearest_threat(
-                    vf, center_r, center_c, threats=("zombie", "skeleton")
-                )
-                if t_away is not None:
-                    flee_dir_panic = t_away
-                else:
-                    flee_dir_panic = rng.choice(["up", "down", "left", "right"])
+                # Only use visible threat direction if ADJACENT (high precision)
+                adj_threat_dir = None
+                for t in ("zombie", "skeleton"):
+                    d = _find_adjacent(vf, center_r, center_c, t)
+                    if d is not None:
+                        adj_threat_dir = _OPPOSITE[d]
+                        break
+                flee_dir_panic = (adj_threat_dir if adj_threat_dir
+                                  else rng.choice(["up", "down", "left", "right"]))
             prev_health = health
 
             if flee_timer > 0:
                 action_str = f"move_{flee_dir_panic}"
                 flee_timer -= 1
 
-            # REFLEX: handle visible threat even without damage
+            # STUCK: force random direction if stuck 3+ steps
+            if action_str is None and stuck_count >= 3:
+                action_str = str(rng.choice(MOVE_ACTIONS))
+                stuck_count = 0  # reset counter
+
+            # REFLEX: only adjacent threats (high precision, no false positives)
             if action_str is None:
-                threat_dist, flee_dir = _find_nearest_threat(
-                    vf, center_r, center_c, threats=("zombie", "skeleton")
-                )
-                if threat_dist is not None:
-                    if threat_dist == 1 and has_sword:
-                        # adjacent threat + sword → attack
-                        for t in ("zombie", "skeleton"):
-                            d = _find_adjacent(vf, center_r, center_c, t)
-                            if d is not None:
-                                if last_action == f"move_{d}":
-                                    action_str = "do"
-                                else:
-                                    action_str = f"move_{d}"
-                                break
-                    elif threat_dist <= 3:
-                        action_str = f"move_{flee_dir}"
+                for t in ("zombie", "skeleton"):
+                    d = _find_adjacent(vf, center_r, center_c, t)
+                    if d is None:
+                        continue
+                    if has_sword:
+                        if last_action == f"move_{d}":
+                            action_str = "do"
+                        else:
+                            action_str = f"move_{d}"
+                    else:
+                        action_str = f"move_{_OPPOSITE[d]}"
+                    break
 
             # NEEDS: water/food
             if action_str is None:
