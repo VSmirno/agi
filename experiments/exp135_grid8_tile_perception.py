@@ -820,21 +820,23 @@ def phase6_survival(
                         advanced = True  # wood consumed → table placed
 
                 if advanced:
-                    # For "do" (collection): sum requires across ALL remaining plan
-                    # steps for THIS resource (plan doesn't insert multiple do-steps
-                    # per wood unit — we execute same step until all needs met).
+                    # For "do" (collection): check only NEXT step's requires.
+                    # If later steps need more, failed make/place will trigger
+                    # replan which generates inventory-aware plan (skips items
+                    # already acquired).
                     # For "make"/"place"/"_self": one-shot, advance unconditionally.
                     if step_plan.action == "do" and step_plan.target != "_self":
-                        expected = step_plan.expected_gain
-                        # Sum how much of `expected` is needed by subsequent steps
-                        needed_total = 0
-                        for j in range(plan_step_idx + 1, len(current_plan)):
-                            needed_total += current_plan[j].requires.get(expected, 0)
-                        have = inv_after.get(expected, 0)
-                        if have >= needed_total:
+                        next_idx = plan_step_idx + 1
+                        can_advance = True
+                        if next_idx < len(current_plan):
+                            nr = current_plan[next_idx].requires
+                            if nr:
+                                can_advance = all(
+                                    inv_after.get(r, 0) >= n for r, n in nr.items()
+                                )
+                        if can_advance:
                             plan_step_idx += 1
                             nav_steps = 0
-                        # else: stay, collect more
                     else:
                         # make / place / _self: always advance after success
                         plan_step_idx += 1
