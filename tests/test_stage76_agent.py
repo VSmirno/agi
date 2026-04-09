@@ -202,7 +202,7 @@ class TestContinuousEpisode:
         assert result["sdm_ratio"] == 0.0
 
     def test_sdm_path_activates_with_warm_memory(self):
-        """With low bootstrap_k and similar states, SDM path activates quickly."""
+        """With low bootstrap_k + min_sdm_size, SDM path activates within episode."""
         store, tracker, encoder, sdm = self._make_components()
         env = MockEnv(max_steps=30)
         rng = np.random.RandomState(1)
@@ -216,10 +216,31 @@ class TestContinuousEpisode:
             rng=rng,
             max_steps=30,
             bootstrap_k=3,
+            min_sdm_size=5,  # allow SDM path after 5 episodes in buffer
         )
         # First few steps must be bootstrap; afterwards SDM should kick in
         assert result["bootstrap_ratio"] < 1.0
         assert result["sdm_ratio"] > 0.0
+
+    def test_min_sdm_size_gates_transition(self):
+        """With min_sdm_size larger than episode length, SDM path never triggers."""
+        store, tracker, encoder, sdm = self._make_components()
+        env = MockEnv(max_steps=20)
+        rng = np.random.RandomState(4)
+        result = run_continuous_episode(
+            env=env,
+            segmenter=MockSegmenter(),
+            encoder=encoder,
+            sdm=sdm,
+            store=store,
+            tracker=tracker,
+            rng=rng,
+            max_steps=20,
+            bootstrap_k=1,
+            min_sdm_size=10_000,  # never reached
+        )
+        assert result["bootstrap_ratio"] == 1.0
+        assert result["sdm_ratio"] == 0.0
 
     def test_body_delta_recorded(self):
         """Body deltas should track observed_max variables."""

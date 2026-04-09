@@ -166,6 +166,7 @@ def run_continuous_episode(
     temperature: float = 1.0,
     bootstrap_k: int = 5,
     similarity_threshold: float = 0.5,
+    min_sdm_size: int = 500,
     verbose: bool = False,
 ) -> dict:
     """Run a single continuous-learning episode.
@@ -187,6 +188,9 @@ def run_continuous_episode(
             to SDM path. Below this threshold, ConceptStore is used.
         similarity_threshold: popcount-overlap ratio vs query popcount for
             an episode to count as "similar" during the bootstrap gate.
+        min_sdm_size: minimum TOTAL episodes in SDM before the SDM path can
+            trigger. Prevents cold-start where early similar-state matches
+            yield uninformative scores.
         verbose: if True, print per-step diagnostics.
 
     Returns:
@@ -239,8 +243,10 @@ def run_continuous_episode(
         recalled = sdm.recall(state_sdr, top_k=20)
         n_similar = sdm.count_similar(state_sdr, threshold_ratio=similarity_threshold)
 
-        # Decide: SDM path if we have enough similar past experiences
-        if n_similar >= bootstrap_k and recalled:
+        # Decide: SDM path only when (a) buffer has enough TOTAL diversity
+        # and (b) enough of it is similar to the current query.
+        sdm_ready = len(sdm) >= min_sdm_size
+        if sdm_ready and n_similar >= bootstrap_k and recalled:
             action_scores = score_actions(recalled, inv, tracker)
             if action_scores:
                 action_str = select_action(
