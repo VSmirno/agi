@@ -716,13 +716,13 @@ def select_goal(
                     if cause_concept:
                         for link in cause_concept.causal_links:
                             if link.action == "do":
-                                plan = concept_store.plan(link.result)
+                                plan = concept_store.plan(link.result, inventory)
                                 if plan:
                                     return link.result, plan
         return "explore", []
 
     # Strategy 1: direct restore ("do cow restores food")
-    plan = concept_store.plan(f"restore_{critical}")
+    plan = concept_store.plan(f"restore_{critical}", inventory)
     if plan:
         return f"restore_{critical}", plan
 
@@ -741,7 +741,7 @@ def select_goal(
             if cause_concept:
                 for link in cause_concept.causal_links:
                     if link.action == "do":
-                        cause_plan = concept_store.plan(link.result)
+                        cause_plan = concept_store.plan(link.result, inventory)
                         if cause_plan:
                             return link.result, cause_plan
 
