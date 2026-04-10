@@ -71,33 +71,23 @@ class EpisodicSDM:
         self,
         query_sdr: np.ndarray,
         top_k: int = 20,
-        mask: np.ndarray | None = None,
-    ) -> list[tuple[float, Episode]]:
-        """Return top-k episodes by similarity to the query.
+    ) -> list[tuple[int, Episode]]:
+        """Return top-k episodes by popcount overlap with query.
 
         Args:
             query_sdr: state SDR to match against (shape (n_bits,) bool).
             top_k: maximum number of episodes to return.
-            mask: optional per-bit float weight (shape (n_bits,)) from an
-                AttentionWeights module. When provided, similarity becomes
-                a weighted sum over matching bits instead of plain popcount.
-                Bits with higher mask values dominate the ranking.
 
         Returns:
-            List of (score, episode) pairs, sorted by score descending.
-            When mask is None, score is the integer popcount; otherwise
-            it is a float weighted sum. Empty list if buffer is empty.
+            List of (overlap_count, episode) pairs, sorted by overlap
+            descending. Empty if buffer is empty.
         """
         if not self._buffer:
             return []
-        scored: list[tuple[float, Episode]] = []
+        scored: list[tuple[int, Episode]] = []
         for ep in self._buffer:
-            matched = np.logical_and(query_sdr, ep.state_sdr)
-            if mask is None:
-                score = float(int(matched.sum()))
-            else:
-                score = float(matched.astype(np.float32).dot(mask))
-            scored.append((score, ep))
+            overlap = int(np.logical_and(query_sdr, ep.state_sdr).sum())
+            scored.append((overlap, ep))
         scored.sort(key=lambda pair: pair[0], reverse=True)
         return scored[:top_k]
 

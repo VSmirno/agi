@@ -40,7 +40,6 @@ from snks.agent.perception import (
     select_goal,
     verify_outcome,
 )
-from snks.memory.attention import AttentionWeights
 from snks.memory.episodic_sdm import (
     Episode,
     EpisodicSDM,
@@ -168,7 +167,6 @@ def run_continuous_episode(
     bootstrap_k: int = 5,
     similarity_threshold: float = 0.5,
     min_sdm_size: int = 500,
-    attention: AttentionWeights | None = None,
     verbose: bool = False,
 ) -> dict:
     """Run a single continuous-learning episode.
@@ -193,10 +191,6 @@ def run_continuous_episode(
         min_sdm_size: minimum TOTAL episodes in SDM before the SDM path can
             trigger. Prevents cold-start where early similar-state matches
             yield uninformative scores.
-        attention: optional AttentionWeights module. When provided, the
-            per-step SDM recall uses a deficit-weighted mask built from
-            learned per-variable bit relevance, and the module is updated
-            after each step from (state_sdr, body_delta) correlations.
         verbose: if True, print per-step diagnostics.
 
     Returns:
@@ -245,24 +239,8 @@ def run_continuous_episode(
             body_variables=tracker.observed_variables() or None,
         )
 
-        # Build a deficit-weighted attention mask from learned per-variable
-        # bit relevance. When attention has no data yet (first episodes) or
-        # current deficits are all zero, mask is None and recall falls back
-        # to plain popcount similarity.
-        query_mask = None
-        if attention is not None:
-            deficits = {
-                var: max(
-                    0.0,
-                    float(tracker.observed_max.get(var, 0) - inv.get(var, 0)),
-                )
-                for var in tracker.observed_variables()
-            }
-            query_mask = attention.query_mask(deficits)
-
-        # Query memory — weighted by attention mask if available
-        recalled = sdm.recall(state_sdr, top_k=20, mask=query_mask)
-        # Bootstrap gate is binary popcount (not affected by attention)
+        # Query memory
+        recalled = sdm.recall(state_sdr, top_k=20)
         n_similar = sdm.count_similar(state_sdr, threshold_ratio=similarity_threshold)
 
         # Decide: SDM path only when (a) buffer has enough TOTAL diversity
@@ -316,12 +294,6 @@ def run_continuous_episode(
             var: int(inv_after.get(var, inv.get(var, 0)) - inv.get(var, 0))
             for var in observed_vars
         }
-
-        # Update attention weights: bits active in state_sdr get credit or
-        # blame for the observed body_delta. Over many episodes, this builds
-        # a per-variable relevance map over SDR bits.
-        if attention is not None:
-            attention.update(state_sdr, body_delta)
 
         # Encode the next state for episodic storage
         next_vf = perceive_tile_field(pixels, segmenter)

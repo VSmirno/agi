@@ -31,7 +31,6 @@ from snks.agent.crafter_textbook import CrafterTextbook
 from snks.agent.perception import HomeostaticTracker
 from snks.encoder.cnn_encoder import disable_rocm_conv
 from snks.encoder.tile_segmenter import load_tile_segmenter
-from snks.memory.attention import AttentionWeights
 from snks.memory.episodic_sdm import EpisodicSDM
 from snks.memory.state_encoder import StateEncoder
 
@@ -92,7 +91,6 @@ def _run_episodes(
     bootstrap_k: int,
     seed_offset: int,
     min_sdm_size: int = 500,
-    attention: AttentionWeights | None = None,
 ) -> list[dict]:
     """Run a batch of episodes with a per-episode temperature schedule."""
     results: list[dict] = []
@@ -116,7 +114,6 @@ def _run_episodes(
             temperature=temperature,
             bootstrap_k=bootstrap_k,
             min_sdm_size=min_sdm_size,
-            attention=attention,
         )
         result["episode"] = ep
         result["temperature"] = temperature
@@ -180,7 +177,6 @@ def phase1_warmup_safe(
     segmenter, encoder, sdm, store, tracker,
     n_episodes: int = 50, max_steps: int = 500, bootstrap_k: int = 5,
     min_sdm_size: int = 2000,
-    attention: AttentionWeights | None = None,
 ) -> dict:
     print("\n" + "=" * 60)
     print(f"Phase 1: Warmup A (no enemies, n={n_episodes}, "
@@ -191,7 +187,6 @@ def phase1_warmup_safe(
         "warmup-safe", n_episodes, max_steps, segmenter, encoder, sdm, store,
         tracker, enemies=False, temperature_schedule=temp_schedule,
         bootstrap_k=bootstrap_k, seed_offset=300, min_sdm_size=min_sdm_size,
-        attention=attention,
     )
     return _summarize("warmup-safe", results)
 
@@ -205,7 +200,6 @@ def phase2_warmup_enemies(
     segmenter, encoder, sdm, store, tracker,
     n_episodes: int = 50, max_steps: int = 500, bootstrap_k: int = 5,
     min_sdm_size: int = 500,
-    attention: AttentionWeights | None = None,
 ) -> dict:
     print("\n" + "=" * 60)
     print(f"Phase 2: Warmup B (enemies on, n={n_episodes}, "
@@ -217,7 +211,6 @@ def phase2_warmup_enemies(
         "warmup-enemy", n_episodes, max_steps, segmenter, encoder, sdm, store,
         tracker, enemies=True, temperature_schedule=temp_schedule,
         bootstrap_k=bootstrap_k, seed_offset=500, min_sdm_size=min_sdm_size,
-        attention=attention,
     )
     return _summarize("warmup-enemy", results)
 
@@ -232,7 +225,6 @@ def phase3_evaluation(
     n_runs: int = 3, n_episodes_per_run: int = 20, max_steps: int = 1000,
     temperature: float = 0.3, bootstrap_k: int = 5,
     min_sdm_size: int = 500,
-    attention: AttentionWeights | None = None,
 ) -> list[dict]:
     print("\n" + "=" * 60)
     print(f"Phase 3: Evaluation ({n_runs} runs × {n_episodes_per_run} episodes)")
@@ -246,7 +238,7 @@ def phase3_evaluation(
             segmenter, encoder, sdm, store, tracker,
             enemies=True, temperature_schedule=temp_schedule,
             bootstrap_k=bootstrap_k, seed_offset=1000 + run_idx * 100,
-            min_sdm_size=min_sdm_size, attention=attention,
+            min_sdm_size=min_sdm_size,
         )
         summaries.append(_summarize(f"eval-run{run_idx}", results))
     return summaries
@@ -259,7 +251,6 @@ def phase3_evaluation(
 
 def phase4_gates(
     segmenter, encoder, sdm, store, tracker, eval_summaries: list[dict],
-    attention: AttentionWeights | None = None,
 ) -> dict:
     print("\n" + "=" * 60)
     print("Phase 4: Gate checks")
@@ -291,7 +282,7 @@ def phase4_gates(
     smoke_results = _run_episodes(
         "smoke", 20, 200, segmenter, encoder, sdm, store, tracker,
         enemies=False, temperature_schedule=smoke_temp, bootstrap_k=5,
-        seed_offset=2000, attention=attention,
+        seed_offset=2000,
     )
     wood_3_count = sum(1 for r in smoke_results if r["final_inv"].get("wood", 0) >= 3)
     gate_wood = wood_3_count / 20 >= 0.50
@@ -332,23 +323,11 @@ def main():
 
     encoder = StateEncoder()
     sdm = EpisodicSDM(capacity=10_000)
-    # Stage 76 v2: persistent per-variable attention over SDR bits. Learned
-    # across all episodes, used to bias recall toward deficit-relevant bits.
-    attention = AttentionWeights(n_bits=encoder.total_bits)
 
-    warmup_a = phase1_warmup_safe(
-        segmenter, encoder, sdm, store, tracker, attention=attention
-    )
-    warmup_b = phase2_warmup_enemies(
-        segmenter, encoder, sdm, store, tracker, attention=attention
-    )
-    eval_summaries = phase3_evaluation(
-        segmenter, encoder, sdm, store, tracker, attention=attention
-    )
-    gates = phase4_gates(
-        segmenter, encoder, sdm, store, tracker, eval_summaries,
-        attention=attention,
-    )
+    warmup_a = phase1_warmup_safe(segmenter, encoder, sdm, store, tracker)
+    warmup_b = phase2_warmup_enemies(segmenter, encoder, sdm, store, tracker)
+    eval_summaries = phase3_evaluation(segmenter, encoder, sdm, store, tracker)
+    gates = phase4_gates(segmenter, encoder, sdm, store, tracker, eval_summaries)
 
     print("\n" + "=" * 60)
     print("SUMMARY")
@@ -361,17 +340,6 @@ def main():
               f"entropy={s['avg_entropy']:.2f} "
               f"causes={s['causes']}")
     print(f"  SDM final size: {len(sdm)}/{sdm.capacity}")
-    att_vars = attention.known_variables() if attention is not None else set()
-    print(f"  Attention vars learned: {sorted(att_vars)}")
-    for var in sorted(att_vars):
-        w = attention.weights_for(var)
-        if w is not None:
-            nonzero = int((w != 0).sum())
-            print(
-                f"    {var}: nonzero_bits={nonzero}/{w.shape[0]} "
-                f"abs_max={float(np.abs(w).max()):.3f} "
-                f"abs_mean={float(np.abs(w).mean()):.4f}"
-            )
     print(f"  Gates: {gates}")
     print(f"  Total time: {(time.time() - t_start)/60:.1f} min")
 
