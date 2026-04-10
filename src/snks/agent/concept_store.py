@@ -771,11 +771,22 @@ class ConceptStore:
             sim.player_pos = _apply_player_move(sim.player_pos, primitive)
 
         # === Phase 3: Background body rates ===
+        # Observation-driven: uses tracker.get_rate(var) which Bayesian-
+        # combines the textbook innate rate (rough prior) with the running-
+        # mean observed rate. As the agent accumulates experience, sim
+        # predictions converge to real env dynamics without reading exact
+        # values from the textbook. The textbook only needs rough directional
+        # facts ("food depletes slowly") — observation does the refinement.
         for rule in self.body_rate_rules():
             if rule.confidence < self.CONFIDENCE_THRESHOLD:
                 continue
             var = rule.effect.body_rate_variable
-            rate = rule.effect.body_rate
+            # Prefer tracker's learned rate if this var is known to tracker;
+            # otherwise fall back to textbook static rate.
+            if var in tracker.innate_rates:
+                rate = tracker.get_rate(var)
+            else:
+                rate = rule.effect.body_rate
             sim.body[var] = sim.body.get(var, 0.0) + rate
             traj.events.append(SimEvent(
                 step=tick, kind="body_delta", var=var,
