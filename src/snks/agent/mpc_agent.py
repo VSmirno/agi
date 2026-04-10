@@ -15,8 +15,10 @@ Design: docs/superpowers/specs/2026-04-10-stage77a-conceptstore-forward-sim-desi
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -418,6 +420,7 @@ def run_mpc_episode(
     horizon: int = 20,
     perceive_fn: Any = None,
     verbose: bool = False,
+    trace_path: str | Path | None = None,
 ) -> dict:
     """Run one episode with MPC + forward-sim planning.
 
@@ -449,6 +452,10 @@ def run_mpc_episode(
     if perceive_fn is None:
         perceive_fn = perceive_tile_field
 
+    trace_fh = None
+    if trace_path is not None:
+        trace_fh = open(str(trace_path), "a")
+
     # Pre-populate entity_tracker with known dynamic concepts from store
     entity_tracker = DynamicEntityTracker()
     for rule in store.passive_rules:
@@ -464,6 +471,11 @@ def run_mpc_episode(
     steps_taken = 0
     cause_of_death = "alive"
     inv_after: dict[str, int] = dict(info.get("inventory", {}))
+    # Trace state — predicted body_series for tick 0 of the best plan chosen
+    # on the previous step, so we can measure actual-vs-predicted surprise.
+    prev_predicted_next_body: dict[str, float] | None = None
+    prev_chosen_origin: str | None = None
+    prev_primitive: str | None = None
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -517,7 +529,7 @@ def run_mpc_episode(
 
         # --- Pick best, execute first primitive ---
         scored.sort(key=lambda x: x[0], reverse=True)
-        _, best_plan, _best_traj = scored[0]
+        best_score, best_plan, best_traj = scored[0]
 
         if best_plan.steps:
             primitive = expand_to_primitive(best_plan.steps[0], state, store)
@@ -534,6 +546,13 @@ def run_mpc_episode(
                 f"(plan {best_plan.origin}, {len(best_plan.steps)} steps)"
             )
 
+        # --- Trace: measure surprise from PREVIOUS tick's prediction ---
+        surprise: dict[str, float] = {}
+        if trace_fh is not None and prev_predicted_next_body is not None:
+            for var, predicted in prev_predicted_next_body.items():
+                actual = float(inv.get(var, 0))
+                surprise[var] = actual - predicted
+
         # --- Execute in real env ---
         inv_before_action = inv
         pixels, _reward, done, info = env.step(primitive)
@@ -541,8 +560,73 @@ def run_mpc_episode(
 
         # --- Verify outcome (updates confidence) ---
         outcome = outcome_to_verify(primitive, inv_before_action, inv_after)
+        verified = False
         if outcome:
             verify_outcome(vf.near_concept, primitive, outcome, store)
+            verified = True
+
+        # --- Trace: write one JSONL line per tick ---
+        if trace_fh is not None:
+            predicted_next_body: dict[str, float] = {}
+            for var, series in best_traj.body_series.items():
+                if series:
+                    predicted_next_body[var] = float(series[0])
+            origins = Counter(p.origin for _, p, _ in scored)
+            # Damage sources in the chosen trajectory (first 5 body_delta events
+            # with a real source — filter _background and stateful:*).
+            damage_preview = []
+            for ev in best_traj.events:
+                if ev.kind != "body_delta" or ev.amount >= 0:
+                    continue
+                if ev.source in (None, "_background") or ev.source.startswith("stateful:"):
+                    continue
+                damage_preview.append({
+                    "step": ev.step, "var": ev.var, "amount": ev.amount,
+                    "source": ev.source,
+                })
+                if len(damage_preview) >= 5:
+                    break
+            trace_entry = {
+                "step": step,
+                "pos": list(player_pos),
+                "body": {k: float(inv.get(k, 0)) for k in ("health", "food", "drink", "energy")},
+                "near": vf.near_concept,
+                "visible": sorted(vf.visible_concepts()),
+                "n_entities": len(entity_tracker.current()),
+                "n_candidates": len(scored),
+                "plan_origins": dict(origins),
+                "chosen": {
+                    "origin": best_plan.origin,
+                    "n_steps": len(best_plan.steps),
+                    "first_action": best_plan.steps[0].action if best_plan.steps else None,
+                    "first_target": best_plan.steps[0].target if best_plan.steps else None,
+                    "first_near": best_plan.steps[0].near if best_plan.steps else None,
+                    "score": [float(x) for x in best_score],
+                    "traj_terminated": best_traj.terminated,
+                    "traj_reason": best_traj.terminated_reason,
+                    "traj_ticks": best_traj.tick_count(),
+                    "predicted_final_body": {
+                        k: float(v[-1]) if v else None
+                        for k, v in best_traj.body_series.items()
+                    },
+                    "damage_preview": damage_preview,
+                },
+                "primitive": primitive,
+                "surprise": surprise,
+                "verified": verified,
+                "outcome": outcome,
+                "prev_primitive_landed": (
+                    prev_action is not None
+                    and prev_action.startswith("move_")
+                    and prev_player_pos is not None
+                    and prev_player_pos != player_pos
+                ),
+            }
+            trace_fh.write(json.dumps(trace_entry) + "\n")
+            trace_fh.flush()
+            prev_predicted_next_body = predicted_next_body
+            prev_chosen_origin = best_plan.origin
+            prev_primitive = primitive
 
         prev_inv = inv
         prev_action = primitive
@@ -563,6 +647,16 @@ def run_mpc_episode(
         action_entropy = float(-np.sum(probs * np.log(probs + 1e-12)))
     else:
         action_entropy = 0.0
+
+    if trace_fh is not None:
+        # End-of-episode marker line — easier to aggregate across episodes.
+        trace_fh.write(json.dumps({
+            "episode_end": True,
+            "length": steps_taken,
+            "cause_of_death": cause_of_death,
+            "final_inv": {str(k): int(v) for k, v in inv_after.items()},
+        }) + "\n")
+        trace_fh.close()
 
     return {
         "length": steps_taken,
