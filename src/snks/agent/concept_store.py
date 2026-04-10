@@ -976,12 +976,50 @@ def _nearest_concept(sim: SimState) -> str | None:
     return None
 
 
+def _explore_direction(sim: SimState) -> str:
+    """Pick a move primitive for exploration.
+
+    Prefers the least-visited neighbor. If no spatial_map info available,
+    cycles through cardinal directions based on step counter so the agent
+    doesn't stall on one axis.
+    """
+    if sim.spatial_map is not None and hasattr(sim.spatial_map, "unvisited_neighbors"):
+        try:
+            unvisited = sim.spatial_map.unvisited_neighbors(sim.player_pos, radius=3)
+        except Exception:
+            unvisited = []
+        if unvisited:
+            # Pick the closest unvisited neighbor (Manhattan distance)
+            closest = min(
+                unvisited,
+                key=lambda p: abs(p[0] - sim.player_pos[0]) + abs(p[1] - sim.player_pos[1]),
+            )
+            return _direction_primitive(
+                sim.player_pos, _step_toward_pos(sim.player_pos, closest)
+            )
+
+    # Fall back: cycle through 4 cardinal directions so the agent doesn't
+    # walk in one direction forever. Uses sim.step to pick direction.
+    dirs = ["move_up", "move_right", "move_down", "move_left"]
+    return dirs[sim.step % 4]
+
+
 def _expand_to_primitive(
     step: PlannedStep, sim: SimState, store: "ConceptStore"
 ) -> str:
-    """Convert a symbolic PlannedStep into a primitive env action for this tick."""
+    """Convert a symbolic PlannedStep into a primitive env action for this tick.
+
+    When a plan target is unknown (not in spatial_map), falls through to
+    exploration instead of a fixed move_right default. This lets the agent
+    actually find trees/cows/water by walking to unvisited places rather
+    than stuck moving east forever.
+    """
     if step.action == "inertia":
-        return sim.last_action or "move_right"
+        # Inertia baseline = explore. We don't repeat last_action because
+        # that locks the agent into walking in one direction forever —
+        # the cycling in _explore_direction is what actually moves the
+        # agent through the world to find resources.
+        return _explore_direction(sim)
 
     target = step.target
 
@@ -994,7 +1032,8 @@ def _expand_to_primitive(
         if target_pos is not None:
             primitive_pos = _step_toward_pos(sim.player_pos, target_pos)
             return _direction_primitive(sim.player_pos, primitive_pos)
-        return "move_right"
+        # Unknown target location — explore to find it
+        return _explore_direction(sim)
 
     if step.action == "place":
         effect = step.rule.effect if step.rule else None
@@ -1002,11 +1041,11 @@ def _expand_to_primitive(
         if effect and effect.world_place:
             item = effect.world_place[0]
         if item is None:
-            return "move_right"
+            return _explore_direction(sim)
         near = _nearest_concept(sim)
         if near == "empty":
             return f"place_{item}"
-        return "move_right"
+        return _explore_direction(sim)
 
     if step.action == "make":
         near_target = step.near or (step.rule.concept if step.rule else None)
@@ -1017,7 +1056,7 @@ def _expand_to_primitive(
             if positives:
                 result_item = positives[0]
         if result_item is None:
-            return "move_right"
+            return _explore_direction(sim)
         if _nearest_concept(sim) == near_target:
             return f"make_{result_item}"
         if near_target and sim.spatial_map is not None:
@@ -1026,12 +1065,12 @@ def _expand_to_primitive(
                 return _direction_primitive(
                     sim.player_pos, _step_toward_pos(sim.player_pos, target_pos)
                 )
-        return "move_right"
+        return _explore_direction(sim)
 
     if step.action == "sleep":
         return "sleep"
 
-    return "move_right"
+    return _explore_direction(sim)
 
 
 def _direction_primitive(
