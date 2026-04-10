@@ -12,20 +12,45 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
+
+if TYPE_CHECKING:
+    from snks.agent.forward_sim_types import RuleEffect
 
 
 @dataclass
 class CausalLink:
-    """One causal rule: action on this concept → result."""
+    """One causal rule: action on this concept → result.
 
-    action: str  # "do", "make", "place"
-    result: str  # concept_id of the outcome ("wood")
+    Stage 77a adds `kind` discriminator and `effect` structured dispatch.
+    The legacy `result: str` field is kept temporarily for backward compat
+    with Stage 71-76 code during staged refactor (removed in Commit 8).
+
+    Valid `kind` values:
+      - "action_triggered" — fires on agent `do`/`make`/`place`/`sleep`
+      - "passive_body_rate" — per-tick unconditional body delta
+      - "passive_movement" — entity moves per tick per behavior
+      - "passive_spatial" — adjacent damage / effect
+      - "passive_stateful" — body delta while condition holds
+
+    For action_triggered rules: `action` + `effect` describe what happens
+    when the agent performs the action on `concept` (inherited from Concept).
+
+    For passive rules: `effect` describes the per-tick update; `action` is
+    typically None or "_passive".
+    """
+
+    action: str  # "do", "make", "place", "sleep", or "_passive" for passive rules
+    result: str = ""  # DEPRECATED: string outcome id, kept for backward compat (removed in Commit 8)
     requires: dict[str, int] = field(default_factory=dict)  # {wood_pickaxe: 1}
     condition: str | None = None  # "nearby", None
     confidence: float = 0.5  # starts at 0.5 (from textbook), grows with verification
+
+    # Stage 77a additions — structured dispatch
+    kind: str = "action_triggered"  # discriminator for new effect-based dispatch
+    effect: "RuleEffect | None" = None  # structured effect (replaces `result`)
 
 
 MAX_OBSERVATIONS = 20  # raw feature samples per concept for metric learning
