@@ -21,6 +21,8 @@ from typing import Any
 
 import numpy as np
 
+import torch
+
 from snks.agent.concept_store import (
     ConceptStore,
     _apply_player_move,
@@ -36,6 +38,39 @@ from snks.agent.forward_sim_types import (
     Trajectory,
 )
 from snks.agent.perception import HomeostaticTracker, VisualField, verify_outcome
+
+
+def perceive_tile_field(pixels, segmenter) -> VisualField:
+    """Run tile segmenter on raw pixels → VisualField.
+
+    Single canonical implementation (moved from the now-deleted
+    continuous_agent.py in Commit 7). Uses the segmenter.classify_tiles
+    method directly.
+    """
+    from snks.agent.decode_head import NEAR_CLASSES
+
+    px_tensor = torch.from_numpy(pixels) if isinstance(pixels, np.ndarray) else pixels
+    class_ids, confidences = segmenter.classify_tiles(px_tensor)
+    H, W = class_ids.shape
+    cr, cc = H // 2, W // 2
+    adjacent_pos = {(cr - 1, cc), (cr + 1, cc), (cr, cc - 1), (cr, cc + 1)}
+
+    vf = VisualField()
+    for tr in range(H):
+        for tc in range(W):
+            cls_idx = int(class_ids[tr, tc].item())
+            conf = float(confidences[tr, tc].item())
+            if cls_idx < len(NEAR_CLASSES):
+                cls_name = NEAR_CLASSES[cls_idx]
+            else:
+                cls_name = f"class_{cls_idx}"
+            if cls_name == "empty":
+                continue
+            vf.detections.append((cls_name, conf, tr, tc))
+            if (tr, tc) in adjacent_pos and conf > vf.near_similarity:
+                vf.near_concept = cls_name
+                vf.near_similarity = conf
+    return vf
 
 
 # ---------------------------------------------------------------------------
@@ -442,7 +477,7 @@ def run_mpc_episode(
         action_entropy.
     """
     if perceive_fn is None:
-        from snks.agent.continuous_agent import perceive_tile_field as perceive_fn
+        perceive_fn = perceive_tile_field
 
     # Pre-populate entity_tracker with known dynamic concepts from store
     entity_tracker = DynamicEntityTracker()
