@@ -240,9 +240,10 @@ class TestInventoryEncoding:
         b_pickaxe = enc.encode({"wood_pickaxe": 1}, VisualField(), CrafterSpatialMap(),
                                (0, 0), body_variables=set())
         region = slice(INV_PRESENCE_START, INV_PRESENCE_END)
-        # Different fixed SDRs → near-zero overlap
+        # Expected overlap for 40-bit random subsets of 400-bit domain
+        # = 40*40/400 = 4.0 with std ≈ 1.9. 3σ upper bound ≈ 10.
         overlap = np.logical_and(b_sword[region], b_pickaxe[region]).sum()
-        assert overlap <= 5  # random sparse overlap expected tiny
+        assert overlap <= 10, f"overlap={overlap} exceeded 3σ bound of 10"
 
     def test_presence_items_detected_by_name_heuristic(self):
         enc = StateEncoder()
