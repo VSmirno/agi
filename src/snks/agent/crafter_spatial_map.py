@@ -23,6 +23,12 @@ class CrafterSpatialMap:
     """Cognitive map: visited (y, x) → near_str observed by NearDetector.
 
     Built incrementally as agent explores. Unknown cells = never visited.
+
+    Stage 77a: tracks `blocked` tiles — positions that failed to accept
+    agent movement. Updated from observation (agent attempts move_X at
+    position P, position doesn't change → the target tile P+dir is
+    blocked). This is observation-based world modeling, not a hardcoded
+    stuck-avoidance rule in policy code. See IDEOLOGY Stage 73.
     """
 
     def __init__(self, world_size: int = 64) -> None:
@@ -30,6 +36,15 @@ class CrafterSpatialMap:
         # (y, x) → near_str
         self._map: dict[tuple[int, int], str] = {}
         self._visited: set[tuple[int, int]] = set()
+        # Tiles observed to reject movement (walls, water edges, trees).
+        self._blocked: set[tuple[int, int]] = set()
+
+    def mark_blocked(self, pos: tuple[int, int]) -> None:
+        """Record that `pos` is impassable (learned from failed movement)."""
+        self._blocked.add((int(pos[0]), int(pos[1])))
+
+    def is_blocked(self, pos: tuple[int, int]) -> bool:
+        return (int(pos[0]), int(pos[1])) in self._blocked
 
     def update(self, player_pos: tuple[int, int], near_str: str) -> None:
         """Record NearDetector output at current position.
@@ -63,21 +78,30 @@ class CrafterSpatialMap:
     def unvisited_neighbors(
         self, player_pos: tuple[int, int], radius: int = 5
     ) -> list[tuple[int, int]]:
-        """Find unvisited positions within radius for exploration."""
+        """Find unvisited non-blocked positions within radius for exploration.
+
+        Stage 77a: filters out `self._blocked` tiles so exploration doesn't
+        repeatedly pick the same impassable cell (observation-based stuck
+        avoidance, not a hardcoded if-else).
+        """
         py, px = int(player_pos[0]), int(player_pos[1])
         result = []
         for dy in range(-radius, radius + 1):
             for dx in range(-radius, radius + 1):
                 ny, nx = py + dy, px + dx
                 if 0 <= ny < self.world_size and 0 <= nx < self.world_size:
-                    if (ny, nx) not in self._visited:
-                        result.append((ny, nx))
+                    if (ny, nx) in self._visited:
+                        continue
+                    if (ny, nx) in self._blocked:
+                        continue
+                    result.append((ny, nx))
         return result
 
     def reset(self) -> None:
         """Clear for new episode."""
         self._map.clear()
         self._visited.clear()
+        self._blocked.clear()
 
     @property
     def n_visited(self) -> int:
