@@ -318,3 +318,76 @@ deficit × delta action scoring, softmax selection, opt-in AttentionWeights. 90 
   (legit через textbook), update учится для всех observed_variables.
 - **Next:** Stage 77 — forward simulation через SDM transitions. Query SDM as a simulator, roll
   forward N шагов, scoring по накопленным body_delta по траектории. Re-uses Stage 76 substrate.
+
+
+---
+
+## Stage 77a — ConceptStore Forward Simulation + MPC
+**Что сделано:** Полный MPC loop через `simulate_forward` по structured `RuleEffect` правилам.
+Stage 76 memory substrate полностью удалён (Commit 7). Три категории знаний —
+facts (textbook YAML) / mechanisms (simulate_forward dispatch) / experience (tracker + spatial_map)
+— разделены и протестированы. 140 stage77 тестов зелёные, полный пайплайн без хардкода.
+
+**Компоненты:**
+- `forward_sim_types.py` — RuleEffect (10 kinds), StatefulCondition, SimState, SimEvent,
+  Trajectory, Failure, Plan, PlannedStep (unified, no legacy fields)
+- `concept_store.simulate_forward(plan, state, tracker, horizon)` — 6-фазный tick dispatch
+  (body_rate → stateful → action_triggered → clamp → spatial → movement → step)
+- `concept_store.plan_toward_rule(rule, state, store)` — backward chain с resolved prerequisites
+- `concept_store.find_remedies(failure)` — query world model for counter-rules
+- `HomeostaticTracker` — innate/observed split + Bayesian `w·innate + (1-w)·observed`,
+  `vital_mins` только для catastrophic death, `init_from_textbook` идемпотентна
+- `mpc_agent.run_mpc_episode` — ре-планирование каждый тик, 5-7 кандидатов, лексикографический
+  score `(survived, neg_time_to_death, resources_gained, exploration)`, execute first primitive only
+- `crafter_spatial_map._blocked` — observation-based blocked-tile learning
+  (`prev_move && prev_pos==pos → mark_blocked`), без хардкоденных wall-avoidance reflexes
+- `configs/crafter_textbook.yaml` — structured-YAML only (regex fallback removed), rough
+  directional priors (`body decay -0.02`, `zombie spatial -0.5`, `skeleton range=5 -0.5`)
+
+**Результаты (exp137_run8, minipc):**
+| Phase | avg_len | Notes |
+|---|---|---|
+| Warmup A (no enemies) | 222 | Tracker накапливает background rates |
+| Warmup B (enemies on) | 203 | Spatial/stateful damage conditioning |
+| Eval run 0 (20 eps) | 193 | wood=0.4, cause=health×20, max=393 |
+| Eval run 1 (20 eps) | 171 | wood=0.1, cause=health×20, max=396 |
+| Eval run 2 (20 eps) | 175 | wood=0.1, cause=health×20, max=250 |
+| **Overall eval** | **180** | per-run ≥200: False, overall: False |
+
+- **Gate 1 (survival ≥200) FAIL at 180** — same wall as Stage 76 (178). Variance 171-193 между
+  runs, max-per-episode 393/396/250 → архитектура имеет запас, но без runtime rule induction
+  не может найти правильный план стабильно.
+- **Gate 3 (wood ≥3) FAIL at 0/20** — MPC scoring `(survival > wood)` лексикографически
+  душит wood gathering. Это следствие vital_mins и rough priors, не архитектурный баг.
+
+**Допущения/ограничения:**
+- **Rough directional priors only.** Textbook хранит качественные значения (`body -0.02`,
+  `damage -0.5`), не точные данные из Crafter source. Точные ставки должны приходить через
+  `tracker.observed_rates` — Bayesian combination уверенно сдвигает rate к наблюдению после
+  ~200 observations. Идеологическое решение от user: "я за идеологию, пусть метрики хуже".
+- **No surprise-driven rule induction.** Когда `simulate_forward` предсказывает health=9 а
+  наблюдается health=3, обсервация попадает в `tracker.observed_rates`, но **нового правила
+  не появляется**. Агент не может узнать, что zombie-at-distance-2 даёт урон — только что
+  middle rate health'а падает. Это Stage 77b scope.
+- **No conditional rates.** `observed_rates` глобальная per-variable; не кондиционирована
+  на visible_concepts/inventory. `food rate while zombie visible` не может дивергировать от
+  `food rate in open field`.
+- **No when-clause conjunction grammar.** `passive_stateful` поддерживает только один
+  предикат (`food > 0`), не AND/OR цепочки. Stage 77b.
+- **No enemy spawn modelling.** MPC видит только текущие позиции DynamicEntity — не может
+  учесть "скелет появится через 5 тиков с вероятностью 0.3". Нет passive spawn-rate rule.
+- **Lava/water hazards не моделируются.** Пропущено после Run 6, когда выяснилось что real
+  cause early deaths — skeleton arrows range=5, а не environment hazards.
+- **`ConceptStore.save/load` stubbed to NotImplementedError.** RuleEffect нужен dedicated
+  JSON serializer; реинтродуцировать когда понадобится. Сейчас textbook всегда грузится из
+  YAML, experience живёт в tracker/spatial_map, persistence не критична.
+- **Confidence threshold 0.1** — rules ниже не fire в simulate_forward. Магическое число,
+  TODO(77b): probabilistic weighted firing через multi-rollout.
+- **Все stage71/72/73 тесты удалены** — покрывали Stage 72-74 dead perception code
+  (ground_/retrain_/select_goal). Stage 75 tests остались (визуальный encoder) но
+  TestStepToward преexisting fail (axis convention change до моих работ).
+- **Preexisting failures в full suite:** test_encoder/test_replay/test_stage15/47/66 —
+  6 failures, все не трогают ConceptStore/perception/mpc. Unrelated к Stage 77a.
+- **Next:** Stage 77b — runtime rule induction from surprise. Когда предсказание `sim`
+  расходится с наблюдением > threshold, emit candidate rule c confidence=0.3, verify при
+  следующей похожей ситуации. Плюс when-clause grammar и conditional rate learning.
