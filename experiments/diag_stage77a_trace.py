@@ -136,6 +136,11 @@ def aggregate(traces: list[tuple[list[dict], dict]]) -> None:
     move_attempts = 0
     move_failed = 0
 
+    # Blocked-step diagnosis: how often does the agent CHOOSE a move into a tile
+    # already known-blocked? (= explore-direction bug fingerprint)
+    move_into_blocked = 0
+    blocked_set_size_final: list[int] = []
+
     # Near-concept time: where does the agent stand
     near_time: Counter = Counter()
 
@@ -170,9 +175,10 @@ def aggregate(traces: list[tuple[list[dict], dict]]) -> None:
                 origins_generated[origin] += cnt
             if e["primitive"].startswith("move_"):
                 move_attempts += 1
-                # prev_primitive_landed refers to the PREVIOUS move — so look at the NEXT entry
-                # We can instead count via "self failed" by looking backward:
-            # Separate pass for stuck detection
+            if e.get("next_step_blocked"):
+                move_into_blocked += 1
+        if entries:
+            blocked_set_size_final.append(entries[-1].get("n_blocked_known", 0))
         # Count stuck moves by scanning pairs
         for i in range(1, len(entries)):
             prev = entries[i - 1]
@@ -213,6 +219,11 @@ def aggregate(traces: list[tuple[list[dict], dict]]) -> None:
     print(f"  move_* attempts: {move_attempts}")
     print(f"  move_* failed (pos unchanged): {move_failed} "
           f"({100 * move_failed / max(1, move_attempts):.1f}%)")
+    print(f"  move_* INTO known-blocked tile: {move_into_blocked} "
+          f"({100 * move_into_blocked / max(1, move_attempts):.1f}%)  "
+          f"← bug fingerprint: should be 0 after explore-direction fix")
+    if blocked_set_size_final:
+        print(f"  blocked tiles known at episode end (per ep): {blocked_set_size_final}")
 
     print("\n[NEAR-CONCEPT TIME]")
     for concept, cnt in near_time.most_common(10):

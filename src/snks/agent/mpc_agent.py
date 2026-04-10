@@ -632,6 +632,11 @@ def run_mpc_episode(
                     and prev_player_pos is not None
                     and prev_player_pos != player_pos
                 ),
+                "next_step_blocked": (
+                    primitive.startswith("move_")
+                    and spatial_map.is_blocked(_apply_player_move(player_pos, primitive))
+                ),
+                "n_blocked_known": len(spatial_map._blocked),
             }
             trace_fh.write(json.dumps(trace_entry, default=_json_default) + "\n")
             trace_fh.flush()

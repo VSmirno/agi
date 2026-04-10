@@ -953,29 +953,85 @@ def _nearest_concept(sim: SimState) -> str | None:
 def _explore_direction(sim: SimState) -> str:
     """Pick a move primitive for exploration.
 
-    Prefers the least-visited neighbor. If no spatial_map info available,
-    cycles through cardinal directions based on step counter so the agent
-    doesn't stall on one axis.
+    Prefers the least-visited neighbor whose immediate step is NOT a known
+    blocked tile. `unvisited_neighbors` already filters blocked targets, but
+    the path TOWARD an unblocked target may still cross a blocked tile (e.g.
+    target at (X-2, Y) requires stepping into (X-1, Y) first). Without this
+    check the agent loops issuing the same move into a wall it already
+    learned about. Fall-back cycling also skips blocked directions.
     """
+    has_map = sim.spatial_map is not None and hasattr(sim.spatial_map, "is_blocked")
+
+    def step_is_blocked(primitive: str) -> bool:
+        if not has_map:
+            return False
+        return sim.spatial_map.is_blocked(_apply_player_move(sim.player_pos, primitive))
+
     if sim.spatial_map is not None and hasattr(sim.spatial_map, "unvisited_neighbors"):
         try:
             unvisited = sim.spatial_map.unvisited_neighbors(sim.player_pos, radius=3)
         except Exception:
             unvisited = []
-        if unvisited:
-            # Pick the closest unvisited neighbor (Manhattan distance)
-            closest = min(
-                unvisited,
-                key=lambda p: abs(p[0] - sim.player_pos[0]) + abs(p[1] - sim.player_pos[1]),
-            )
-            return _direction_primitive(
-                sim.player_pos, _step_toward_pos(sim.player_pos, closest)
-            )
+        # Sort by Manhattan distance — try closest first, fall back to next
+        # if the immediate step is blocked.
+        unvisited.sort(
+            key=lambda p: abs(p[0] - sim.player_pos[0]) + abs(p[1] - sim.player_pos[1])
+        )
+        for target in unvisited:
+            next_step = _step_toward_pos(sim.player_pos, target)
+            if next_step == sim.player_pos:
+                continue  # already there, picks no direction
+            primitive = _direction_primitive(sim.player_pos, next_step)
+            if step_is_blocked(primitive):
+                continue
+            return primitive
 
     # Fall back: cycle through 4 cardinal directions so the agent doesn't
-    # walk in one direction forever. Uses sim.step to pick direction.
+    # walk in one direction forever. Skip directions known to be blocked.
     dirs = ["move_up", "move_right", "move_down", "move_left"]
+    for offset in range(4):
+        primitive = dirs[(sim.step + offset) % 4]
+        if not step_is_blocked(primitive):
+            return primitive
+    # Surrounded — return arbitrary cycle direction (the env will reject it
+    # but at least the agent isn't infinite-looping in this function).
     return dirs[sim.step % 4]
+
+
+def _step_toward_target(sim: SimState, target_pos: tuple[int, int]) -> str:
+    """Pick a move primitive toward `target_pos` that is not known-blocked.
+
+    Tries the Manhattan-greedy direction first; if that immediate step is
+    a known blocked tile, tries the orthogonal direction; if that's also
+    blocked, falls through to _explore_direction.
+    """
+    has_map = sim.spatial_map is not None and hasattr(sim.spatial_map, "is_blocked")
+
+    def step_blocked(primitive: str) -> bool:
+        if not has_map:
+            return False
+        return sim.spatial_map.is_blocked(_apply_player_move(sim.player_pos, primitive))
+
+    dx = target_pos[0] - sim.player_pos[0]
+    dy = target_pos[1] - sim.player_pos[1]
+
+    # Preferred and orthogonal candidates, in order of preference
+    candidates: list[str] = []
+    if abs(dx) >= abs(dy) and dx != 0:
+        candidates.append("move_right" if dx > 0 else "move_left")
+        if dy != 0:
+            candidates.append("move_down" if dy > 0 else "move_up")
+    elif dy != 0:
+        candidates.append("move_down" if dy > 0 else "move_up")
+        if dx != 0:
+            candidates.append("move_right" if dx > 0 else "move_left")
+
+    for primitive in candidates:
+        if not step_blocked(primitive):
+            return primitive
+
+    # Both Manhattan-greedy directions blocked — fall back to exploration
+    return _explore_direction(sim)
 
 
 def _expand_to_primitive(
@@ -1015,9 +1071,7 @@ def _expand_to_primitive(
             dist = abs(target_pos[0] - sim.player_pos[0]) + abs(target_pos[1] - sim.player_pos[1])
             if dist <= 1:
                 return "do"
-            return _direction_primitive(
-                sim.player_pos, _step_toward_pos(sim.player_pos, target_pos)
-            )
+            return _step_toward_target(sim, target_pos)
 
         # Unknown target location — explore to find it
         return _explore_direction(sim)
@@ -1049,9 +1103,7 @@ def _expand_to_primitive(
         if near_target and sim.spatial_map is not None:
             target_pos = sim.spatial_map.find_nearest(near_target, sim.player_pos)
             if target_pos is not None:
-                return _direction_primitive(
-                    sim.player_pos, _step_toward_pos(sim.player_pos, target_pos)
-                )
+                return _step_toward_target(sim, target_pos)
         return _explore_direction(sim)
 
     if step.action == "sleep":
