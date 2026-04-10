@@ -1,59 +1,175 @@
-# Crafter Textbook — atomic causal rules
-# Stage 71: Text-Visual Integration
+# Crafter Textbook — structured declarative facts
+# Stage 77a: rewritten to structured YAML (Stage 71 was regex-parsed strings)
 #
-# Format: only atomic facts. No chains, no prerequisites.
-# The world model derives chains via backward chaining.
+# Format: each rule is a dict with either `action` (agent-triggered) or
+# `passive` (per-tick in simulation). See
+# docs/superpowers/specs/2026-04-10-stage77a-conceptstore-forward-sim-design.md
+
 domain: crafter
 
 vocabulary:
   # Visible objects (visually groundable)
-  - { id: tree, category: resource }
-  - { id: stone, category: resource }
-  - { id: coal, category: resource }
-  - { id: iron, category: resource }
-  - { id: table, category: crafted }
-  - { id: empty, category: terrain }
-  - { id: zombie, category: enemy, dangerous: true }
+  - { id: tree,     category: resource }
+  - { id: stone,    category: resource }
+  - { id: coal,     category: resource }
+  - { id: iron,     category: resource }
+  - { id: table,    category: crafted }
+  - { id: empty,    category: terrain }
+  - { id: zombie,   category: enemy, dangerous: true }
+  - { id: skeleton, category: enemy, dangerous: true }
   # Survival resources
   - { id: water, category: resource }
-  - { id: cow, category: resource }
+  - { id: cow,   category: resource }
   # Inventory items (text grounding only)
-  - { id: wood, category: item }
-  - { id: stone_item, category: item }
-  - { id: coal_item, category: item }
-  - { id: iron_item, category: item }
-  - { id: wood_pickaxe, category: tool }
-  - { id: stone_pickaxe, category: tool }
-  - { id: wood_sword, category: weapon }
+  - { id: wood,           category: item }
+  - { id: stone_item,     category: item }
+  - { id: coal_item,      category: item }
+  - { id: iron_item,      category: item }
+  - { id: wood_pickaxe,   category: tool }
+  - { id: stone_pickaxe,  category: tool }
+  - { id: wood_sword,     category: weapon }
+
+body:
+  prior_strength: 20
+  variables:
+    - { name: health, initial: 9, reference_min: 0, reference_max: 9 }
+    - { name: food,   initial: 9, reference_min: 0, reference_max: 9 }
+    - { name: drink,  initial: 9, reference_min: 0, reference_max: 9 }
+    - { name: energy, initial: 9, reference_min: 0, reference_max: 9 }
 
 rules:
-  # Gathering
-  - "do tree gives wood"
-  - "do stone gives stone_item requires wood_pickaxe"
-  - "do coal gives coal_item requires wood_pickaxe"
-  - "do iron gives iron_item requires stone_pickaxe"
-  # Crafting
-  - "place table on empty requires wood and wood"
-  - "make wood_pickaxe near table requires wood"
-  - "make stone_pickaxe near table requires wood and stone_item"
-  - "make wood_sword near table requires wood"
-  # Combat
-  - "do zombie with wood_sword kills zombie"
-  - "zombie nearby without wood_sword means flee"
-  # Survival
-  - "do water restores drink"
-  - "do cow restores food"
-  - "sleep restores energy"
-  # Indirect: in Crafter, food/drink > 0 regenerates HP passively.
-  # Textbook teaches this as direct causality so restore_health plans exist.
-  - "do cow restores health"
-  - "do water restores health"
+  # ===== ACTION-TRIGGERED: gathering =====
 
-# Body rules — innate knowledge, how the body works (the "DNA")
-# These initialize HomeostaticTracker conditional_rates before any experience.
-# Like a baby knowing pain = bad. Not learned, pre-wired.
-body:
-  - { concept: _background, variable: food, rate: -0.04 }    # food depletes slowly
-  - { concept: _background, variable: drink, rate: -0.04 }   # drink depletes slowly
-  - { concept: _background, variable: energy, rate: -0.03 }  # energy depletes slowly
-  - { concept: zombie, variable: health, rate: -2.0 }        # zombie hurts fast
+  - action: do
+    target: tree
+    effect: { inventory: { wood: +1 } }
+
+  - action: do
+    target: stone
+    requires: { wood_pickaxe: 1 }
+    effect: { inventory: { stone_item: +1 } }
+
+  - action: do
+    target: coal
+    requires: { wood_pickaxe: 1 }
+    effect: { inventory: { coal_item: +1 } }
+
+  - action: do
+    target: iron
+    requires: { stone_pickaxe: 1 }
+    effect: { inventory: { iron_item: +1 } }
+
+  # ===== ACTION-TRIGGERED: consumption (body delta directly) =====
+
+  - action: do
+    target: cow
+    effect: { body: { food: +5 } }
+
+  - action: do
+    target: water
+    effect: { body: { drink: +5 } }
+
+  # ===== ACTION-TRIGGERED: combat (scene_remove) =====
+
+  - action: do
+    target: zombie
+    requires: { wood_sword: 1 }
+    effect: { remove_entity: zombie }
+
+  - action: do
+    target: skeleton
+    requires: { wood_sword: 1 }
+    effect: { remove_entity: skeleton }
+
+  # ===== ACTION-TRIGGERED: crafting =====
+
+  - action: make
+    result: wood_pickaxe
+    near: table
+    requires: { wood: 1 }
+    effect: { inventory: { wood_pickaxe: +1, wood: -1 } }
+
+  - action: make
+    result: stone_pickaxe
+    near: table
+    requires: { wood: 1, stone_item: 1 }
+    effect: { inventory: { stone_pickaxe: +1, wood: -1, stone_item: -1 } }
+
+  - action: make
+    result: wood_sword
+    near: table
+    requires: { wood: 1 }
+    effect: { inventory: { wood_sword: +1, wood: -1 } }
+
+  # ===== ACTION-TRIGGERED: placement =====
+
+  - action: place
+    item: table
+    near: empty
+    requires: { wood: 2 }
+    effect:
+      world_place: { item: table, where: adjacent_empty }
+      inventory: { wood: -2 }
+
+  # ===== ACTION-TRIGGERED: self (sleep) =====
+
+  - action: sleep
+    effect: { body: { energy: +5 } }
+
+  # ===== PASSIVE: background body decay =====
+
+  - passive: body_rate
+    variable: food
+    rate: -0.04
+
+  - passive: body_rate
+    variable: drink
+    rate: -0.04
+
+  - passive: body_rate
+    variable: energy
+    rate: -0.03
+
+  # ===== PASSIVE: entity movement =====
+
+  - passive: movement
+    entity: zombie
+    behavior: chase_player
+
+  - passive: movement
+    entity: skeleton
+    behavior: chase_player
+
+  - passive: movement
+    entity: cow
+    behavior: random_walk
+
+  # ===== PASSIVE: spatial damage (adjacent = manhattan ≤ range) =====
+
+  - passive: spatial
+    entity: zombie
+    range: 1
+    effect: { body: { health: -2 } }
+
+  - passive: spatial
+    entity: skeleton
+    range: 1
+    effect: { body: { health: -1 } }
+
+  # ===== PASSIVE: stateful body dynamics =====
+
+  - passive: stateful
+    when: { var: food, op: ">", value: 0 }
+    effect: { body: { health: +0.1 } }
+
+  - passive: stateful
+    when: { var: drink, op: ">", value: 0 }
+    effect: { body: { health: +0.1 } }
+
+  - passive: stateful
+    when: { var: food, op: "==", value: 0 }
+    effect: { body: { health: -0.5 } }
+
+  - passive: stateful
+    when: { var: drink, op: "==", value: 0 }
+    effect: { body: { health: -0.5 } }
