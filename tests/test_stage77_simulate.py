@@ -332,25 +332,3 @@ class TestConfidenceThreshold:
         assert traj.final_state.body["food"] == 9.0
 
 
-# ---------------------------------------------------------------------------
-# CausalLink.result backward compat via legacy plan()
-# ---------------------------------------------------------------------------
-
-
-class TestLegacyPlanBackwardCompat:
-    def test_legacy_plan_string_still_works(self, loaded_store):
-        plan = loaded_store.plan("wood")
-        assert len(plan) == 1
-        assert plan[0].action == "do"
-        assert plan[0].target == "tree"
-        assert plan[0].expected_gain == "wood"  # legacy field populated
-        assert plan[0].rule is not None  # new field populated too
-
-    def test_legacy_plan_nonexistent(self, loaded_store):
-        plan = loaded_store.plan("unicorn_horn")
-        assert plan == []
-
-    def test_legacy_plan_with_inventory(self, loaded_store):
-        # Already have a sword — no need to re-craft
-        plan = loaded_store.plan("wood_sword", inventory={"wood_sword": 1})
-        assert plan == []

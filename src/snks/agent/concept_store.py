@@ -55,14 +55,13 @@ class CausalLink:
     """
 
     action: str  # "do", "make", "place", "sleep", or "_passive" for passive rules
-    result: str = ""  # DEPRECATED: string outcome id, kept for backward compat (removed in Commit 8)
     requires: dict[str, int] = field(default_factory=dict)  # {wood_pickaxe: 1}
-    condition: str | None = None  # "nearby", None
+    condition: str | None = None  # "nearby", None — legacy
     confidence: float = 0.5  # starts at 0.5 (from textbook), grows with verification
 
-    # Stage 77a additions — structured dispatch
-    kind: str = "action_triggered"  # discriminator for new effect-based dispatch
-    effect: "RuleEffect | None" = None  # structured effect (replaces `result`)
+    # Stage 77a — structured dispatch
+    kind: str = "action_triggered"  # "action_triggered" | "passive_*"
+    effect: "RuleEffect | None" = None  # structured effect — replaces legacy string `result`
     concept: str | None = None  # concept_id the rule is tied to (entity for passive rules)
 
 
@@ -283,81 +282,20 @@ class ConceptStore:
             return None
         return concept.find_causal(action=action, check_requires=inventory)
 
-    def plan(
-        self,
-        goal_id: str,
-        inventory: dict[str, int] | None = None,
-    ) -> list[PlannedStep]:
-        """Backward chaining: find sequence of steps to achieve goal.
-
-        Returns forward-ordered list of PlannedStep (ready to execute).
-
-        Args:
-            goal_id: target concept id to produce.
-            inventory: current inventory. If provided, prerequisites already
-                       present are skipped — avoids redundant steps when the
-                       agent already holds required items (e.g. don't re-craft
-                       sword if already wielding one).
-        """
-        steps: list[PlannedStep] = []
-        visited: set[str] = set()
-        inv = dict(inventory) if inventory else {}
-        self._plan_recursive(goal_id, steps, visited, inv)
-        return steps
-
-    def _plan_recursive(
-        self,
-        goal_id: str,
-        steps: list[PlannedStep],
-        visited: set[str],
-        inventory: dict[str, int] | None = None,
-    ) -> None:
-        """Backward chaining helper. Builds plan in forward order.
-
-        Skips subgoals whose result is already in inventory (quantity ≥ 1).
-        """
-        if goal_id in visited:
-            return
-        visited.add(goal_id)
-
-        # Skip if the goal itself is already satisfied in inventory
-        # (e.g., don't plan 'make wood_sword' if sword already held)
-        if inventory is not None and inventory.get(goal_id, 0) >= 1:
-            return
-
-        # Find which concept produces this goal
-        for concept in self.concepts.values():
-            for link in concept.causal_links:
-                if link.result != goal_id:
-                    continue
-
-                # For make/place: ensure the near-target concept exists
-                # e.g. "make wood_pickaxe near table" → need table first
-                if link.action in ("make", "place"):
-                    self._plan_recursive(concept.id, steps, visited, inventory)
-
-                # Recurse into prerequisites (inventory items)
-                for req_item in link.requires:
-                    self._plan_recursive(req_item, steps, visited, inventory)
-
-                steps.append(
-                    PlannedStep(
-                        action=link.action,
-                        target=concept.id,
-                        near=concept.id if link.action in ("make", "place") else None,
-                        rule=link,
-                        expected_gain=link.result,
-                        requires=dict(link.requires),
-                    )
-                )
-                return  # found a way to produce goal_id
+    # Legacy `plan(goal_id)` removed in Commit 8.
+    # Use `plan_toward_rule(rule, inventory)` instead — see below.
 
     # --- Verification ---
 
     def verify(
         self, concept_id: str, action: str, actual_outcome: str | None
     ) -> None:
-        """Update confidence based on prediction vs actual outcome."""
+        """Update confidence based on actual outcome vs rule effect.
+
+        Stage 77a: checks `effect.inventory_delta` / `effect.body_delta` /
+        `effect.scene_remove` to determine if the outcome matches what the
+        rule would produce. No more string `result` comparison.
+        """
         concept = self.query_text(concept_id)
         if concept is None:
             return
@@ -365,35 +303,42 @@ class ConceptStore:
         for link in concept.causal_links:
             if link.action != action:
                 continue
-            if actual_outcome == link.result:
+            if link.effect is None:
+                continue
+            matched = self._effect_matches_outcome(link.effect, actual_outcome)
+            if matched:
                 link.confidence = min(1.0, link.confidence + CONFIRM_DELTA)
             else:
                 link.confidence = max(0.0, link.confidence - REFUTE_DELTA)
             return
 
+    @staticmethod
+    def _effect_matches_outcome(
+        effect: RuleEffect, actual_outcome: str | None,
+    ) -> bool:
+        """Check if an observed outcome label matches this rule effect."""
+        if actual_outcome is None:
+            return False
+        # Gather/craft — any inventory item with positive delta
+        for item, delta in effect.inventory_delta.items():
+            if delta > 0 and actual_outcome == item:
+                return True
+        # Consume/self — restore_<var> labels
+        if actual_outcome.startswith("restore_"):
+            var = actual_outcome[len("restore_"):]
+            if effect.body_delta.get(var, 0) > 0:
+                return True
+        # Remove (combat)
+        if effect.scene_remove and actual_outcome == f"kill_{effect.scene_remove}":
+            return True
+        # Place
+        if effect.world_place and actual_outcome == effect.world_place[0]:
+            return True
+        return False
+
     def record_surprise(self, outcome: str, action: str, near: str | None = None) -> None:
         """Log an unexpected event (no matching rule)."""
         self.surprises.append(SurpriseEvent(outcome=outcome, action=action, near=near))
-
-    # --- Prediction helper ---
-
-    def predict_before_action(
-        self, near: str, action: str, inventory: dict[str, int]
-    ) -> Prediction | None:
-        """Create a prediction for upcoming action."""
-        concept = self.query_text(near)
-        if concept is None:
-            return None
-        link = concept.find_causal(action=action, check_requires=inventory)
-        if link is None:
-            return None
-        return Prediction(
-            concept_id=near,
-            action=action,
-            expected=link.result,
-            confidence=link.confidence,
-            link=link,
-        )
 
     def verify_after_action(
         self,
@@ -421,71 +366,24 @@ class ConceptStore:
     # --- Persistence ---
 
     def save(self, path: str) -> None:
-        """Save concept store to directory (JSON metadata + tensors)."""
-        p = Path(path)
-        p.mkdir(parents=True, exist_ok=True)
+        """Save/load removed in Commit 8.
 
-        meta = {}
-        tensors = {}
-        for cid, concept in self.concepts.items():
-            meta[cid] = {
-                "attributes": concept.attributes,
-                "confidence": concept.confidence,
-                "causal_links": [
-                    {
-                        "action": l.action,
-                        "result": l.result,
-                        "requires": l.requires,
-                        "condition": l.condition,
-                        "confidence": l.confidence,
-                    }
-                    for l in concept.causal_links
-                ],
-            }
-            if concept.visual is not None:
-                tensors[f"{cid}_visual"] = concept.visual
-            if concept.text_sdr is not None:
-                tensors[f"{cid}_text_sdr"] = concept.text_sdr
-            for i, obs in enumerate(concept.observations):
-                tensors[f"{cid}_obs_{i}"] = obs
-
-        (p / "concepts.json").write_text(json.dumps(meta, indent=2))
-        if tensors:
-            torch.save(tensors, p / "tensors.pt")
+        The legacy JSON format serialized `link.result` as a string, but
+        Stage 77a uses structured `RuleEffect` objects which don't have a
+        natural JSON form without a dedicated serializer. Since save/load
+        was only used by legacy Stage 72-74 experiments that no longer
+        run, the methods are removed. Re-introduce when needed with
+        RuleEffect serialization.
+        """
+        raise NotImplementedError(
+            "ConceptStore.save/load removed in Stage 77a Commit 8 "
+            "(structured RuleEffect needs new serializer)"
+        )
 
     def load(self, path: str) -> None:
-        """Load concept store from directory."""
-        p = Path(path)
-        meta = json.loads((p / "concepts.json").read_text())
-        tensors_path = p / "tensors.pt"
-        tensors = torch.load(tensors_path, weights_only=True) if tensors_path.exists() else {}
-
-        for cid, info in meta.items():
-            concept = self.register(cid, info["attributes"])
-            concept.confidence = info["confidence"]
-            for ldata in info["causal_links"]:
-                concept.causal_links.append(
-                    CausalLink(
-                        action=ldata["action"],
-                        result=ldata["result"],
-                        requires=ldata.get("requires", {}),
-                        condition=ldata.get("condition"),
-                        confidence=ldata.get("confidence", 0.5),
-                    )
-                )
-            vis_key = f"{cid}_visual"
-            if vis_key in tensors:
-                concept.visual = tensors[vis_key]
-            sdr_key = f"{cid}_text_sdr"
-            if sdr_key in tensors:
-                concept.text_sdr = tensors[sdr_key]
-            # Load observations
-            for i in range(MAX_OBSERVATIONS):
-                obs_key = f"{cid}_obs_{i}"
-                if obs_key in tensors:
-                    concept.observations.append(tensors[obs_key])
-                else:
-                    break
+        raise NotImplementedError(
+            "ConceptStore.save/load removed in Stage 77a Commit 8"
+        )
 
     # =========================================================================
     # Stage 77a: Forward simulation API
@@ -636,8 +534,6 @@ class ConceptStore:
             target=rule.concept,
             near=rule.concept if rule.action in ("make", "place") else None,
             rule=rule,
-            # Legacy fields for backward compat (removed in Commit 8)
-            expected_gain=rule.result,
             requires=dict(rule.requires),
         ))
 

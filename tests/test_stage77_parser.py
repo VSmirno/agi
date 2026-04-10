@@ -1,8 +1,8 @@
 """Stage 77a Commit 2: Tests for structured YAML textbook parser.
 
 Verifies that each rule type (action_triggered × 4 + passive × 4) parses
-into a correct CausalLink with structured RuleEffect. Also verifies that
-legacy string rules still parse (backward compat during transition).
+into a correct CausalLink with structured RuleEffect. Legacy string parser
+and `result` backward-compat were removed in Commit 8.
 """
 
 from __future__ import annotations
@@ -14,9 +14,7 @@ import pytest
 from snks.agent.concept_store import CausalLink, ConceptStore
 from snks.agent.crafter_textbook import (
     CrafterTextbook,
-    _parse_rule,
     _parse_rule_dict,
-    _parse_rule_legacy,
 )
 from snks.agent.forward_sim_types import RuleEffect, StatefulCondition
 
@@ -37,7 +35,6 @@ class TestParseActionRules:
         assert link.kind == "action_triggered"
         assert link.effect.kind == "gather"
         assert link.effect.inventory_delta == {"wood": 1}
-        assert link.result == "wood"  # derived legacy string
         assert link.confidence == 0.5
 
     def test_do_gather_with_requires(self):
@@ -50,7 +47,7 @@ class TestParseActionRules:
         _, link = _parse_rule_dict(entry)
         assert link.requires == {"wood_pickaxe": 1}
         assert link.effect.kind == "gather"
-        assert link.result == "stone_item"
+        assert link.effect.inventory_delta == {"stone_item": 1}
 
     def test_do_consume(self):
         """`do cow` updates body, not inventory — kind=consume."""
@@ -58,7 +55,6 @@ class TestParseActionRules:
         _, link = _parse_rule_dict(entry)
         assert link.effect.kind == "consume"
         assert link.effect.body_delta == {"food": 5.0}
-        assert link.result == "restore_food"  # derived for legacy plan() lookup
 
     def test_do_remove(self):
         """Combat: do zombie with sword removes it from scene."""
@@ -73,12 +69,10 @@ class TestParseActionRules:
         assert link.effect.kind == "remove"
         assert link.effect.scene_remove == "zombie"
         assert link.requires == {"wood_sword": 1}
-        assert link.result == "kill_zombie"  # legacy
 
     def test_make_craft(self):
         entry = {
             "action": "make",
-            "result": "wood_sword",
             "near": "table",
             "requires": {"wood": 1},
             "effect": {"inventory": {"wood_sword": 1, "wood": -1}},
@@ -88,7 +82,6 @@ class TestParseActionRules:
         assert link.action == "make"
         assert link.effect.kind == "craft"
         assert link.effect.inventory_delta == {"wood_sword": 1, "wood": -1}
-        assert link.result == "wood_sword"
 
     def test_place(self):
         entry = {
@@ -106,7 +99,6 @@ class TestParseActionRules:
         assert link.effect.kind == "place"
         assert link.effect.world_place == ("table", "adjacent_empty")
         assert link.effect.inventory_delta == {"wood": -2}
-        assert link.result == "table"
 
     def test_sleep(self):
         entry = {"action": "sleep", "effect": {"body": {"energy": 5}}}
@@ -115,7 +107,6 @@ class TestParseActionRules:
         assert link.action == "sleep"
         assert link.effect.kind == "self"
         assert link.effect.body_delta == {"energy": 5.0}
-        assert link.result == "restore_energy"
 
 
 # ---------------------------------------------------------------------------
@@ -198,53 +189,6 @@ class TestParsePassiveRules:
 
 
 # ---------------------------------------------------------------------------
-# Legacy string parser (unchanged)
-# ---------------------------------------------------------------------------
-
-
-class TestLegacyParser:
-    def test_legacy_gather(self):
-        parsed = _parse_rule_legacy("do tree gives wood")
-        assert parsed is not None
-        assert parsed["concept"] == "tree"
-        assert parsed["action"] == "do"
-        assert parsed["result"] == "wood"
-
-    def test_legacy_craft(self):
-        parsed = _parse_rule_legacy("make wood_sword near table requires wood")
-        assert parsed["concept"] == "table"
-        assert parsed["action"] == "make"
-        assert parsed["result"] == "wood_sword"
-        assert parsed["requires"] == {"wood": 1}
-
-    def test_legacy_combat(self):
-        parsed = _parse_rule_legacy("do zombie with wood_sword kills zombie")
-        assert parsed["result"] == "kill_zombie"
-        assert parsed["requires"] == {"wood_sword": 1}
-
-
-class TestPolymorphicDispatcher:
-    """_parse_rule accepts both strings and dicts, returns legacy-shape dict."""
-
-    def test_accepts_string(self):
-        result = _parse_rule("do tree gives wood")
-        assert result["result"] == "wood"
-
-    def test_accepts_dict(self):
-        result = _parse_rule(
-            {"action": "do", "target": "tree", "effect": {"inventory": {"wood": 1}}}
-        )
-        assert result["concept"] == "tree"
-        assert result["action"] == "do"
-        assert result["result"] == "wood"
-        assert result["type"] == "gather"
-
-    def test_unknown_type_returns_none(self):
-        assert _parse_rule(42) is None
-        assert _parse_rule(None) is None
-
-
-# ---------------------------------------------------------------------------
 # Full textbook loading
 # ---------------------------------------------------------------------------
 
@@ -287,22 +231,6 @@ class TestLoadIntoStore:
         stateful = store.stateful_rules()
         assert len(stateful) >= 4  # food>0, drink>0, food==0, drink==0
 
-    def test_body_rules_backward_compat(self):
-        """body_rules property synthesizes legacy format from new YAML."""
-        tb = CrafterTextbook("configs/crafter_textbook.yaml")
-        rules = tb.body_rules
-
-        # Should contain background rates (rough directional prior in textbook)
-        bg_food = [r for r in rules if r.get("concept") == "_background" and r.get("variable") == "food"]
-        assert len(bg_food) == 1
-        assert bg_food[0]["rate"] == -0.02
-
-        # Should contain conditional rates (from spatial passive rules).
-        # Rough directional prior — exact value comes from observation.
-        zombie_health = [r for r in rules if r.get("concept") == "zombie" and r.get("variable") == "health"]
-        assert len(zombie_health) == 1
-        assert zombie_health[0]["rate"] == -0.5
-
     def test_body_block_new_format(self):
         tb = CrafterTextbook("configs/crafter_textbook.yaml")
         body = tb.body_block
@@ -312,32 +240,6 @@ class TestLoadIntoStore:
         health_var = next(v for v in variables if v["name"] == "health")
         assert health_var["reference_min"] == 0
         assert health_var["reference_max"] == 9
-
-    def test_legacy_result_strings_derived_correctly(self):
-        """Tests that rely on store.plan('wood'), plan('restore_food'), etc.
-        still work because _derive_legacy_result produces the right strings."""
-        tb = CrafterTextbook("configs/crafter_textbook.yaml")
-        store = ConceptStore()
-        tb.load_into(store)
-
-        # tree rule should have result="wood"
-        tree = store.concepts["tree"]
-        gather_links = [l for l in tree.causal_links if l.effect and l.effect.kind == "gather"]
-        assert len(gather_links) == 1
-        assert gather_links[0].result == "wood"
-
-        # cow rule should have result="restore_food"
-        cow = store.concepts["cow"]
-        consume_links = [l for l in cow.causal_links if l.effect and l.effect.kind == "consume"]
-        assert len(consume_links) == 1
-        assert consume_links[0].result == "restore_food"
-
-        # zombie rule should have result="kill_zombie"
-        zombie = store.concepts["zombie"]
-        remove_links = [l for l in zombie.causal_links if l.effect and l.effect.kind == "remove"]
-        assert len(remove_links) == 1
-        assert remove_links[0].result == "kill_zombie"
-
 
 # ---------------------------------------------------------------------------
 # ConceptStore passive rule helpers

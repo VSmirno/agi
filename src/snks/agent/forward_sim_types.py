@@ -228,21 +228,15 @@ class PlannedStep:
     """One symbolic step in a plan.
 
     Expanded into primitive env actions by expand_to_primitive (mpc_agent).
-    The `rule` reference is used for completion checking (did this step's
-    rule actually fire?).
-
-    Stage 71-76 legacy fields (`expected_gain`, `requires`) are kept for
-    backward compat with tests that read them. Commit 8 removes them.
+    The `rule` reference is used for completion checking and for executing
+    the rule's effect when the step fires.
     """
 
     action: str  # "do" | "make" | "place" | "sleep" | "inertia" | "move"
     target: str | None  # concept_id to interact with / navigate toward
     near: str | None  # for make/place: what must be adjacent
     rule: Any = None  # CausalLink | None — reference to the rule this step applies
-
-    # Legacy fields (Stage 71-76 backward compat, removed in Commit 8)
-    expected_gain: str = ""  # legacy: string result of the rule ("wood", "iron_item")
-    requires: dict = field(default_factory=dict)  # legacy: required items from rule
+    requires: dict = field(default_factory=dict)  # carried from rule.requires for convenience
 
 
 @dataclass

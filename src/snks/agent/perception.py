@@ -1,19 +1,16 @@
-"""Stage 74: Homeostatic Agent — goal-free self-organizing behavior.
+"""Stage 77a: Perception primitives — HomeostaticTracker, VisualField,
+tile-based perception, verification.
 
-The agent has NO explicit goal. Its "goal" is its body — homeostatic
-variables that must stay in range. All behavior emerges from:
-  body (DNA) + world model (textbook + experience) + curiosity (drive to know)
+Post-cleanup (Commit 8): this file holds only the live path's perception
+primitives. All Stage 72-74 cosine-matching, grounding, and strategy
+functions were removed as dead code.
 
-Drives are NOT hardcoded. They are OBSERVED:
-  - Rate of change of homeostatic variables → urgency
-  - Conditional rates (what's visible when variable drops) → cause identification
-  - Curiosity (model incompleteness) → exploration when body is fine
-
-Strategy emerges from urgency + world model planning:
-  health dropping fast + zombie visible → world model: "zombie causes this" →
-  "sword kills zombie" → plan: craft sword. No programmer told the agent this.
-
-Design: docs/superpowers/specs/2026-04-07-stage74-homeostatic-agent-design.md
+Live consumers:
+- mpc_agent.run_mpc_episode — uses HomeostaticTracker, VisualField,
+  perceive_tile_field, verify_outcome
+- concept_store.simulate_forward — uses HomeostaticTracker via TYPE_CHECKING
+- tests/test_stage75.py — uses perceive_tile_field, VisualField
+- tests/test_stage77_*.py — uses HomeostaticTracker, VisualField
 """
 
 from __future__ import annotations
@@ -23,24 +20,9 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 if TYPE_CHECKING:
-    from snks.agent.concept_store import Concept, ConceptStore, PlannedStep
-    from snks.agent.outcome_labeler import OutcomeLabeler
-
-
-MIN_SIMILARITY = 0.5
-EMA_ALPHA = 0.2       # prototype refinement (faster convergence for 256-dim)
-RATE_EMA_ALPHA = 0.05  # homeostatic rate tracking (slow — body changes gradually)
-
-# The body — the ONLY hardcoded thing (the "DNA")
-HOMEOSTATIC_VARS = {"health", "food", "drink", "energy"}
-
-# Grid center positions are computed from feature map size
-def _center_positions(grid_size: int) -> set[tuple[int, int]]:
-    c0 = grid_size // 2 - 1
-    return {(c0, c0), (c0, c0+1), (c0+1, c0), (c0+1, c0+1)}
+    from snks.agent.concept_store import ConceptStore
 
 
 # ---------------------------------------------------------------------------
@@ -50,108 +32,43 @@ def _center_positions(grid_size: int) -> set[tuple[int, int]]:
 
 @dataclass
 class HomeostaticTracker:
-    """Tracks rate of change of body variables and what causes changes.
+    """Tracks body variable rates from observation.
 
-    This is the agent's interoception — sensing its own body.
-    No formulas, just observation: "when zombie visible, health drops fast."
+    Stage 77a architecture (ideology-first):
+    - `innate_rates`: rough directional prior loaded from textbook body block
+    - `observed_rates`: running mean updated from real env observations
+    - `get_rate(var)`: Bayesian combination, prior-weighted early then
+      observation-weighted as experience accumulates
 
-    Persists across episodes (agent remembers what hurts).
-
-    Stage 76 extensions:
-    - `observed_max` tracks rolling max per variable (replaces hardcoded 9)
-    - `observed_variables()` returns set of variables seen (no hardcoded list)
-
-    Stage 77a refactor (dual-mode during staged transition):
-    - NEW fields: `innate_rates`, `observed_rates`, `observation_counts`,
-      `prior_strength`, `reference_min`, `reference_max`
-    - NEW method: `init_from_textbook(body_block, rules)` uses structured
-      YAML body block and passive_body_rate rules
-    - get_rate(var) without visible_concepts uses Bayesian combination of
-      innate + observed rates (running mean, not EMA)
-    - LEGACY fields `rates` + `conditional_rates` + EMA path kept until
-      Commit 8 for backward compat with Stage 72-76 code. The two paths
-      coexist during transition.
+    No hardcoded HOMEOSTATIC_VARS — the tracker learns which variables
+    matter from what the env actually exposes in inventory dicts and what
+    the textbook declares innate for.
     """
 
-    # === Legacy fields (Stage 72-76), removed in Commit 8 ===
-
-    # Background rates: average delta per step (EMA). Tests write directly.
-    rates: dict[str, float] = field(default_factory=lambda: {
-        v: 0.0 for v in HOMEOSTATIC_VARS
-    })
-
-    # Conditional rates: (concept_id, variable) → average delta (EMA).
-    # Stage 77a: forward sim uses spatial rules in ConceptStore instead,
-    # this field is retained only for backward compat with select_goal and
-    # Stage 72-73 tests that write to it directly.
-    conditional_rates: dict[tuple[str, str], float] = field(default_factory=dict)
-
-    _initialized: bool = False
-
-    # === Stage 76 ===
-
-    # Rolling max per variable (replaces hardcoded 9 default).
+    # === Stage 76: observed_max rolling max per variable ===
     observed_max: dict[str, int] = field(default_factory=dict)
 
-    # === Stage 77a — new fields ===
-
-    # Innate rates loaded from textbook body block (immutable after init).
+    # === Stage 77a: innate + observed split with Bayesian combination ===
     innate_rates: dict[str, float] = field(default_factory=dict)
-
-    # Running-mean observed rates (Bayesian combination with innate via get_rate).
     observed_rates: dict[str, float] = field(default_factory=dict)
-
-    # Count of observations per variable — used for Bayesian weight.
     observation_counts: dict[str, int] = field(default_factory=dict)
-
-    # Prior strength — loaded from textbook body block or default 20.
     prior_strength: int = 20
 
-    # Body var bounds (loaded from textbook body block).
     reference_min: dict[str, float] = field(default_factory=dict)
     reference_max: dict[str, float] = field(default_factory=dict)
-
-    # Vital variables — hitting their reference_min means death.
-    # Non-vital vars (food, drink, energy) can be at 0 without terminating
-    # the episode (starvation triggers stateful damage to vital vars instead).
     vital_mins: dict[str, float] = field(default_factory=dict)
 
-    def init_from_body_rules(self, body_rules: list[dict]) -> None:
-        """Legacy (Stage 72-76): populate rates + conditional_rates from
-        a list of {concept, variable, rate} dicts.
-
-        Stage 77a: this method is backward-compat. It now ALSO populates
-        `innate_rates` with _background rules, so the new get_rate path
-        works for legacy callers that use init_from_body_rules.
-
-        Like a baby knowing pain = bad. Not learned, pre-wired.
-        """
-        if self._initialized:
-            return
-        for rule in body_rules:
-            concept = rule.get("concept")
-            var = rule.get("variable")
-            rate = rule.get("rate", 0.0)
-            if concept and var:
-                if concept == "_background":
-                    self.rates[var] = rate         # legacy path
-                    self.innate_rates[var] = rate  # new path
-                else:
-                    self.conditional_rates[(concept, var)] = rate  # legacy only
-        self._initialized = True
+    _initialized: bool = False
 
     def init_from_textbook(
         self,
         body_block: dict,
         passive_rules: list[Any] | None = None,
     ) -> None:
-        """Stage 77a: populate from structured YAML textbook body block.
+        """Stage 77a: initialize from structured textbook body block.
 
-        `body_block` comes from CrafterTextbook.body_block (new format):
-            {prior_strength: 20, variables: [{name, initial, reference_min, reference_max}]}
-
-        `passive_rules` is a list of CausalLink objects from ConceptStore.passive_rules
-        or similar; body_rate rules populate innate_rates. Pass None to skip.
+        Reads `prior_strength`, `variables[*].reference_min/max/initial/vital`,
+        and any `passive_body_rate` rules from `passive_rules` for innate rates.
         """
         if self._initialized:
             return
@@ -164,7 +81,6 @@ class HomeostaticTracker:
             initial = int(var_def.get("initial", 9))
             if name not in self.observed_max:
                 self.observed_max[name] = initial
-            # vital variables cause death when they reach reference_min
             if var_def.get("vital", False):
                 self.vital_mins[name] = float(var_def.get("reference_min", 0))
 
@@ -174,9 +90,6 @@ class HomeostaticTracker:
                     effect = getattr(rule, "effect", None)
                     if effect and effect.body_rate_variable:
                         self.innate_rates[effect.body_rate_variable] = effect.body_rate
-                        # Also populate legacy `rates` so old get_rate(visible_concepts)
-                        # continues to work during transition
-                        self.rates[effect.body_rate_variable] = effect.body_rate
 
         self._initialized = True
 
@@ -186,25 +99,11 @@ class HomeostaticTracker:
         inv_after: dict[str, int],
         visible_concepts: set[str],
     ) -> None:
-        """Called every step: observe what changed and what was visible.
-
-        Stage 77a: updates BOTH paths.
-          - Legacy: rates (EMA) + conditional_rates (EMA) — kept until Commit 8
-          - New: observed_rates (running mean) + observation_counts
+        """Observe real env transitions. Running mean on observed_rates
+        and rolling max on observed_max. `visible_concepts` is accepted
+        for API compatibility but not used in current implementation
+        (conditional rates from visible concepts are a Stage 77b feature).
         """
-        # === Legacy path: EMA on HOMEOSTATIC_VARS ===
-        for var in HOMEOSTATIC_VARS:
-            delta = inv_after.get(var, 0) - inv_before.get(var, 0)
-            old = self.rates.get(var, 0.0)
-            self.rates[var] = old * (1 - RATE_EMA_ALPHA) + delta * RATE_EMA_ALPHA
-            for concept in visible_concepts:
-                key = (concept, var)
-                old_c = self.conditional_rates.get(key, 0.0)
-                self.conditional_rates[key] = (
-                    old_c * (1 - RATE_EMA_ALPHA) + delta * RATE_EMA_ALPHA
-                )
-
-        # === New path: running mean for ALL variables in inventory dicts ===
         all_vars = set(inv_before) | set(inv_after)
         for var in all_vars:
             delta = float(inv_after.get(var, 0) - inv_before.get(var, 0))
@@ -214,7 +113,6 @@ class HomeostaticTracker:
             self.observed_rates[var] = (old_rate * old_count + delta) / new_count
             self.observation_counts[var] = new_count
 
-        # === observed_max for all variables in both inv dicts ===
         for inv in (inv_before, inv_after):
             for var, value in inv.items():
                 current_max = self.observed_max.get(var, 0)
@@ -222,53 +120,28 @@ class HomeostaticTracker:
                     self.observed_max[var] = value
 
     def observed_variables(self) -> set[str]:
-        """Set of body variables observed at least once.
-
-        Stage 77a: also includes variables from innate_rates (loaded from
-        textbook), not just observed_max. This ensures body vars the teacher
-        knows about are in the set even before first observation.
-        """
+        """Set of body variables the tracker knows about (from observation
+        or from innate textbook prior). Replaces hardcoded drive list."""
         return set(self.observed_max.keys()) | set(self.innate_rates.keys())
 
-    def get_rate(self, variable: str, visible_concepts: set[str] | None = None) -> float:
-        """Effective rate for a variable.
-
-        Stage 77a dual mode:
-          - If visible_concepts provided (legacy select_goal path, dies in
-            Commit 8): use EMA rates + worst-of-conditional_rates.
-          - Otherwise: Bayesian combination of innate + observed rates
-            (the new stable path used by forward sim).
-
-        Bayesian formula:
+    def get_rate(self, variable: str) -> float:
+        """Effective rate via Bayesian combination:
             w = prior_strength / (prior_strength + n)
             effective = w * innate + (1 - w) * observed
         """
-        if visible_concepts is not None:
-            # Legacy path
-            worst = self.rates.get(variable, 0.0)
-            for concept in visible_concepts:
-                key = (concept, variable)
-                cr = self.conditional_rates.get(key, 0.0)
-                if cr < worst:
-                    worst = cr
-            return worst
-
-        # New path: Bayesian combination of innate + observed
         n = self.observation_counts.get(variable, 0)
         innate = self.innate_rates.get(variable, 0.0)
         observed = self.observed_rates.get(variable, 0.0)
 
-        # If neither innate nor observations exist, fall back to legacy rates
-        # (backward compat for tests that only set `rates` directly)
         if n == 0 and variable not in self.innate_rates:
-            return self.rates.get(variable, 0.0)
+            return 0.0
 
         w = self.prior_strength / (self.prior_strength + n)
         return w * innate + (1 - w) * observed
 
 
 # ---------------------------------------------------------------------------
-# Visual Field (from Stage 73)
+# Visual Field
 # ---------------------------------------------------------------------------
 
 
@@ -279,8 +152,8 @@ class VisualField:
     detections: list[tuple[str, float, int, int]] = field(default_factory=list)
     near_concept: str = "empty"
     near_similarity: float = 0.0
-    center_feature: torch.Tensor | None = None       # projected (for matching)
-    raw_center_feature: torch.Tensor | None = None    # unprojected (for observations)
+    center_feature: torch.Tensor | None = None
+    raw_center_feature: torch.Tensor | None = None
 
     def visible_concepts(self) -> set[str]:
         return {cid for cid, _, _, _ in self.detections}
@@ -293,73 +166,13 @@ class VisualField:
 
 
 # ---------------------------------------------------------------------------
-# Perception
+# Tile-based perception (Stage 75)
 # ---------------------------------------------------------------------------
 
 
-def perceive_field(
-    pixels: torch.Tensor,
-    encoder: Any,
-    concept_store: ConceptStore,
-    min_similarity: float = MIN_SIMILARITY,
-) -> VisualField:
-    """Perceive visual field: match prototypes at each grid position."""
-    has_proj = hasattr(encoder, "metric_proj") and encoder.metric_proj is not None
-
-    with torch.no_grad():
-        out = encoder(pixels.unsqueeze(0) if pixels.dim() == 3 else pixels)
-        fmap = out.feature_map
-        if fmap.dim() == 4:
-            fmap = fmap.squeeze(0)
-
-    C, H, W = fmap.shape
-    center_pos = _center_positions(H)
-
-    vf = VisualField()
-    c0 = H // 2 - 1
-    raw_center = fmap[:, c0:c0+2, c0:c0+2].mean(dim=(1, 2))  # (C,)
-
-    vf.raw_center_feature = raw_center  # always store raw for observations
-    if has_proj:
-        with torch.no_grad():
-            vf.center_feature = encoder.metric_proj(raw_center.unsqueeze(0)).squeeze(0)
-    else:
-        vf.center_feature = raw_center
-
-    for gy in range(H):
-        for gx in range(W):
-            feat = fmap[:, gy, gx]
-            # Project through metric head if available
-            if has_proj:
-                with torch.no_grad():
-                    feat = encoder.metric_proj(feat.unsqueeze(0)).squeeze(0)
-            feat_norm = F.normalize(feat.unsqueeze(0), dim=1)
-
-            best_concept = None
-            best_sim = -1.0
-            second_sim = -1.0
-            for concept in concept_store.concepts.values():
-                if concept.visual is None:
-                    continue
-                c_norm = F.normalize(concept.visual.unsqueeze(0), dim=1)
-                sim = (feat_norm @ c_norm.T).item()
-                if sim > best_sim:
-                    second_sim = best_sim
-                    best_sim = sim
-                    best_concept = concept
-                elif sim > second_sim:
-                    second_sim = sim
-
-            margin = best_sim - max(second_sim, 0.0)
-            if (best_concept is not None
-                    and best_sim >= min_similarity
-                    and margin >= 0.1):
-                vf.detections.append((best_concept.id, best_sim, gy, gx))
-                if (gy, gx) in center_pos and best_sim > vf.near_similarity:
-                    vf.near_concept = best_concept.id
-                    vf.near_similarity = best_sim
-
-    return vf
+def _center_positions(grid_size: int) -> set[tuple[int, int]]:
+    c0 = grid_size // 2 - 1
+    return {(c0, c0), (c0, c0 + 1), (c0 + 1, c0), (c0 + 1, c0 + 1)}
 
 
 def perceive_tile_field(
@@ -367,19 +180,18 @@ def perceive_tile_field(
     encoder: Any,
     min_confidence: float = 0.3,
 ) -> VisualField:
-    """Perceive visual field via tile_head (Stage 75).
+    """Perceive visual field via encoder.classify_tiles.
 
-    Per-tile classification — no cosine matching, no prototypes.
-    Returns class_ids (int) as concept names ("class_0"..."class_11").
-    Agent maps class_id → object name through interaction (ConceptStore).
+    Per-tile classification (no cosine matching). Returns a VisualField
+    populated with detections above `min_confidence`. The center of the
+    viewport determines `near_concept`.
 
     Args:
-        pixels: (3, 64, 64) float32 [0, 1].
-        encoder: CNNEncoder with trained tile_head.
-        min_confidence: minimum softmax confidence to report detection.
-
-    Returns:
-        VisualField with detections as (class_name, confidence, gy, gx).
+        pixels: (3, H, W) float tensor or compatible.
+        encoder: object with `.classify_tiles(pixels)` method returning
+            (class_ids, confidences) tensors. Both CNNEncoder (Stage 75)
+            and TileSegmenter (Stage 77a) satisfy this interface.
+        min_confidence: minimum softmax confidence to report a detection.
     """
     from snks.agent.decode_head import NEAR_CLASSES
 
@@ -389,15 +201,19 @@ def perceive_tile_field(
 
     vf = VisualField()
 
-    # Store center feature for grounding (raw, before any projection)
-    with torch.no_grad():
-        out = encoder(pixels.unsqueeze(0) if pixels.dim() == 3 else pixels)
-        fmap = out.feature_map
-        if fmap.dim() == 4:
-            fmap = fmap.squeeze(0)
-    c0 = H // 2 - 1
-    vf.raw_center_feature = fmap[:, c0:c0+2, c0:c0+2].mean(dim=(1, 2))
-    vf.center_feature = vf.raw_center_feature
+    # Capture raw center feature when available (for grounding tests)
+    try:
+        with torch.no_grad():
+            out = encoder(pixels.unsqueeze(0) if pixels.dim() == 3 else pixels)
+            fmap = out.feature_map
+            if fmap.dim() == 4:
+                fmap = fmap.squeeze(0)
+        c0 = H // 2 - 1
+        vf.raw_center_feature = fmap[:, c0:c0 + 2, c0:c0 + 2].mean(dim=(1, 2))
+        vf.center_feature = vf.raw_center_feature
+    except Exception:
+        # Some encoders (e.g., bare TileSegmenter) may not return feature_map
+        pass
 
     for gy in range(H):
         for gx in range(W):
@@ -407,13 +223,11 @@ def perceive_tile_field(
             if conf < min_confidence:
                 continue
 
-            # Use actual class name from NEAR_CLASSES
             if cls_idx < len(NEAR_CLASSES):
                 cls_name = NEAR_CLASSES[cls_idx]
             else:
                 cls_name = f"class_{cls_idx}"
 
-            # Skip "empty" detections for non-center
             if cls_name == "empty" and (gy, gx) not in center_pos:
                 continue
 
@@ -426,268 +240,30 @@ def perceive_tile_field(
     return vf
 
 
-def perceive(
-    pixels: torch.Tensor,
-    encoder: Any,
-    concept_store: ConceptStore,
-    min_similarity: float = MIN_SIMILARITY,
-) -> tuple[Any, torch.Tensor]:
-    """Legacy perceive — returns (concept, center_feature)."""
-    vf = perceive_field(pixels, encoder, concept_store, min_similarity)
-    concept = concept_store.query_text(vf.near_concept) if vf.near_similarity > 0 else None
-    cf = vf.center_feature if vf.center_feature is not None else torch.zeros(256)
-    return concept, cf
-
-
-# ---------------------------------------------------------------------------
-# Bootstrap grounding
-# ---------------------------------------------------------------------------
-
-
-def ground_empty_on_start(
-    pixels: torch.Tensor, encoder: Any, concept_store: ConceptStore,
-) -> bool:
-    concept = concept_store.query_text("empty")
-    if concept is None or concept.visual is not None:
-        return False
-    with torch.no_grad():
-        out = encoder(pixels.unsqueeze(0) if pixels.dim() == 3 else pixels)
-        fmap = out.feature_map
-        if fmap.dim() == 4:
-            fmap = fmap.squeeze(0)
-        H = fmap.shape[1]
-        c0 = H // 2 - 1
-        center_feat = fmap[:, c0:c0+2, c0:c0+2].mean(dim=(1, 2))
-        z_norm = F.normalize(center_feat.unsqueeze(0), dim=1).squeeze(0)
-        concept_store.ground_visual("empty", z_norm)
-    return True
-
-
-def ground_zombie_on_damage(
-    inv_before: dict[str, int], inv_after: dict[str, int],
-    visual_field: VisualField, concept_store: ConceptStore,
-) -> bool:
-    health_before = inv_before.get("health", 9)
-    health_after = inv_after.get("health", 9)
-    if health_after >= health_before:
-        return False
-    if inv_after.get("food", 0) == 0 or inv_after.get("drink", 0) == 0:
-        return False
-    concept = concept_store.query_text("zombie")
-    if concept is None or visual_field.center_feature is None:
-        return False
-    z_norm = F.normalize(visual_field.center_feature.unsqueeze(0), dim=1).squeeze(0)
-    if concept.visual is None:
-        concept_store.ground_visual("zombie", z_norm)
-    else:
-        concept.visual = F.normalize(
-            ((1 - EMA_ALPHA) * concept.visual + EMA_ALPHA * z_norm).unsqueeze(0),
-            dim=1,
-        ).squeeze(0)
-    return True
-
-
-# ---------------------------------------------------------------------------
-# Experiential grounding
-# ---------------------------------------------------------------------------
-
-_STAT_GAIN_TO_NEAR: dict[str, str] = {"food": "cow", "drink": "water"}
-
-
-def on_action_outcome(
-    action: str, inv_before: dict[str, int], inv_after: dict[str, int],
-    center_feature: torch.Tensor, concept_store: ConceptStore,
-    labeler: Any,
-    encoder: Any = None,
-) -> str | None:
-    label = labeler.label(action, inv_before, inv_after)
-    if label is None and action == "do":
-        for stat, near in _STAT_GAIN_TO_NEAR.items():
-            if inv_after.get(stat, 0) > inv_before.get(stat, 0):
-                label = near
-                break
-    if label is None:
-        return None
-    concept = concept_store.query_text(label)
-    if concept is None:
-        return None
-
-    # Store RAW observation (before projection) for metric learning
-    z_raw = F.normalize(center_feature.unsqueeze(0), dim=1).squeeze(0)
-    concept.add_observation(z_raw)  # always raw dim, never projected
-
-    # Project through metric head if available
-    has_proj = encoder is not None and hasattr(encoder, "metric_proj") and encoder.metric_proj is not None
-    if has_proj:
-        with torch.no_grad():
-            z_proj = encoder.metric_proj(z_raw.unsqueeze(0)).squeeze(0)
-        z_match = F.normalize(z_proj.unsqueeze(0), dim=1).squeeze(0)
-    else:
-        z_match = z_raw
-
-    if concept.visual is None:
-        concept.visual = z_match
-    else:
-        concept.visual = F.normalize(
-            ((1 - EMA_ALPHA) * concept.visual + EMA_ALPHA * z_match).unsqueeze(0),
-            dim=1,
-        ).squeeze(0)
-    return label
-
-
-# ---------------------------------------------------------------------------
-# Self-supervised metric learning — CNN learns from agent's experience
-# ---------------------------------------------------------------------------
-
-MIN_RETRAIN_CONCEPTS = 3   # need ≥3 concepts with enough observations
-MIN_RETRAIN_OBS = 5        # minimum observations per concept to include
-
-
-def should_retrain(concept_store: ConceptStore) -> bool:
-    """Check if enough verified observations for metric learning."""
-    n = sum(
-        1 for c in concept_store.concepts.values()
-        if len(c.observations) >= MIN_RETRAIN_OBS
-    )
-    return n >= MIN_RETRAIN_CONCEPTS
-
-
-def retrain_features(
-    encoder: Any,
-    concept_store: ConceptStore,
-    epochs: int = 100,
-    lr: float = 1e-3,
-) -> bool:
-    """Train projection head for cosine matching using agent's experience.
-
-    Observations are detached features (no grad). We train a small MLP
-    projection head that maps features → metric space optimized for SupCon.
-
-    The projection head is stored on the encoder and used in perceive_field.
-    Self-supervised: labels from agent's own grounding.
-
-    Returns True if retrain happened.
-    """
-    import torch.nn as nn
-    from snks.encoder.predictive_trainer import supcon_loss
-
-    # Collect training data
-    features_list = []
-    labels_list = []
-    label_idx = 0
-    for concept in concept_store.concepts.values():
-        if len(concept.observations) < MIN_RETRAIN_OBS:
-            continue
-        for obs in concept.observations:
-            features_list.append(obs)
-            labels_list.append(label_idx)
-        label_idx += 1
-
-    if label_idx < MIN_RETRAIN_CONCEPTS:
-        return False
-
-    device = next(encoder.parameters()).device
-    features = torch.stack(features_list).to(device)
-    labels = torch.tensor(labels_list, device=device)
-
-    # Balance
-    min_count = min(
-        sum(1 for l in labels_list if l == i)
-        for i in range(label_idx)
-    )
-    balanced_idx = []
-    for i in range(label_idx):
-        idx = [j for j, l in enumerate(labels_list) if l == i][:min_count]
-        balanced_idx.extend(idx)
-    features = features[balanced_idx]
-    labels = labels[balanced_idx]
-
-    feat_dim = features.shape[1]
-    proj_dim = feat_dim  # same dim as input — no information loss
-
-    print(f"  Metric retrain: {len(features)} samples, {label_idx} concepts, "
-          f"{min_count}/concept, {feat_dim}→{proj_dim}")
-
-    # Measure BEFORE
-    z_before = F.normalize(features, dim=1)
-    sim_before = z_before @ z_before.T
-    same = labels.unsqueeze(0) == labels.unsqueeze(1)
-    diff = ~same
-    eye = torch.eye(len(labels), dtype=torch.bool, device=device)
-    intra_before = sim_before[same & ~eye].mean().item()
-    inter_before = sim_before[diff].mean().item()
-    print(f"  Before: intra={intra_before:.3f}, inter={inter_before:.3f}")
-
-    # Create projection head
-    proj_head = nn.Sequential(
-        nn.Linear(feat_dim, 256),
-        nn.ReLU(),
-        nn.Linear(256, proj_dim),
-    ).to(device)
-
-    optimizer = torch.optim.Adam(proj_head.parameters(), lr=lr)
-
-    for epoch in range(epochs):
-        z = proj_head(features)
-        z_norm = F.normalize(z, dim=1)
-        loss = supcon_loss(z_norm, labels, temperature=0.07)
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        if epoch % 20 == 0:
-            print(f"    epoch {epoch}: loss={loss.item():.4f}")
-
-    # Measure AFTER (in projected space)
-    with torch.no_grad():
-        z_after = F.normalize(proj_head(features), dim=1)
-    sim_after = z_after @ z_after.T
-    intra_after = sim_after[same & ~eye].mean().item()
-    inter_after = sim_after[diff].mean().item()
-    print(f"  After:  intra={intra_after:.3f}, inter={inter_after:.3f}")
-
-    # Store projection head on encoder for use in perceive_field
-    encoder.metric_proj = proj_head
-    encoder.metric_proj.eval()
-
-    # Re-ground all prototypes through projection head
-    print("  Re-grounding prototypes through projection...")
-    regrounded = 0
-    for concept in concept_store.concepts.values():
-        if concept.observations:
-            with torch.no_grad():
-                obs_tensor = torch.stack(concept.observations).to(device)
-                projected = encoder.metric_proj(obs_tensor)
-                proto = F.normalize(projected.mean(dim=0, keepdim=True), dim=1).squeeze(0)
-            concept.visual = proto
-            regrounded += 1
-        elif concept.visual is not None:
-            # Can't project — clear stale prototype to avoid dim mismatch
-            concept.visual = None
-    print(f"  Re-grounded {regrounded} concepts (cleared {sum(1 for c in concept_store.concepts.values() if c.visual is None and c.id != '_self')} stale)")
-
-    return True
-
-
 # ---------------------------------------------------------------------------
 # Verification
 # ---------------------------------------------------------------------------
 
 
 def verify_outcome(
-    near_label: str | None, action: str, actual_outcome: str | None,
-    concept_store: ConceptStore,
+    near_label: str | None,
+    action: str,
+    actual_outcome: str | None,
+    concept_store: "ConceptStore",
 ) -> None:
+    """Update rule confidence based on the observed outcome of an action."""
     if near_label is None or actual_outcome is None:
         return
     concept_store.verify(near_label, action, actual_outcome)
 
 
 def outcome_to_verify(
-    action: str, inv_before: dict[str, int], inv_after: dict[str, int],
+    action: str,
+    inv_before: dict[str, int],
+    inv_after: dict[str, int],
 ) -> str | None:
-    survival = {"health", "food", "drink", "energy"}
+    """Compute a label for the verification step. Used by mpc_agent to
+    update ConceptStore rule confidence after each action."""
     gains, losses = {}, {}
     for k in set(inv_before) | set(inv_after):
         d = inv_after.get(k, 0) - inv_before.get(k, 0)
@@ -695,9 +271,12 @@ def outcome_to_verify(
             gains[k] = d
         elif d < 0:
             losses[k] = -d
+
+    body_vars = {"health", "food", "drink", "energy"}
+
     if action == "do":
         for k in gains:
-            if k not in survival:
+            if k not in body_vars:
                 return k
         for stat in ("food", "drink"):
             if gains.get(stat, 0) > 0:
@@ -709,199 +288,3 @@ def outcome_to_verify(
         crafted = action.replace("make_", "")
         return crafted if gains.get(crafted, 0) > 0 else None
     return None
-
-
-# ---------------------------------------------------------------------------
-# Curiosity / Motor Babbling
-# ---------------------------------------------------------------------------
-
-BABBLE_BASE_PROB = 0.20
-BABBLE_MIN_PROB = 0.03
-_DIRECTIONS = ["move_up", "move_down", "move_left", "move_right"]
-
-
-def babble_probability(concept_store: ConceptStore) -> float:
-    n_grounded = sum(1 for c in concept_store.concepts.values() if c.visual is not None)
-    prob = BABBLE_BASE_PROB / (1 + n_grounded * 0.3)
-    return max(BABBLE_MIN_PROB, prob)
-
-
-def compute_curiosity(concept_store: ConceptStore, spatial_map: Any) -> float:
-    """How incomplete is the agent's world model? Biological curiosity.
-
-    Curiosity is a BACKGROUND drive — it only dominates when body is fine.
-    Its raw value is moderate (0.0-0.3 range) so that even mild body
-    urgency overrides it. A hungry animal doesn't explore.
-    """
-    total = len(concept_store.concepts)
-    grounded = sum(1 for c in concept_store.concepts.values() if c.visual is not None)
-    visual_gap = 1.0 - (grounded / max(1, total))
-
-    confidences = [
-        link.confidence
-        for c in concept_store.concepts.values()
-        for link in c.causal_links
-    ]
-    mean_conf = sum(confidences) / max(1, len(confidences))
-    knowledge_gap = 1.0 - mean_conf
-
-    visited = spatial_map.n_visited if spatial_map else 0
-    map_gap = 1.0 / max(1, visited / 50)
-
-    # Scale down to background level — body drives should override easily
-    # Curiosity maxes at ~0.03, body drives start at ~0.04 for mildly low stats
-    return (visual_gap + knowledge_gap + map_gap) / 3.0 * 0.05
-
-
-def explore_action(
-    rng: np.random.RandomState,
-    concept_store: ConceptStore,
-    inventory: dict[str, int] | None = None,
-) -> str:
-    p = babble_probability(concept_store)
-    if rng.random() < p:
-        if inventory is not None and inventory.get("wood", 0) >= 2:
-            if rng.random() < 0.3:
-                return "babble_place_table"
-        if inventory is not None and inventory.get("wood", 0) >= 1:
-            if rng.random() < 0.15:
-                return "babble_make_wood_pickaxe"
-        return "babble_do"
-    return str(rng.choice(_DIRECTIONS))
-
-
-# ---------------------------------------------------------------------------
-# Drive computation — NO hardcoded weights
-# ---------------------------------------------------------------------------
-
-
-def compute_drive(variable: str, current_value: float, rate: float) -> float:
-    """Urgency = inverse of time until variable reaches zero.
-
-    No magic numbers. Pure physics of the body.
-    """
-    if rate >= 0:
-        return 0.0  # stable or rising
-    steps_until_zero = current_value / abs(rate)
-    return 1.0 / max(1.0, steps_until_zero)
-
-
-def select_goal(
-    inventory: dict[str, int],
-    concept_store: ConceptStore,
-    tracker: HomeostaticTracker | None = None,
-    visual_field: VisualField | None = None,
-    spatial_map: Any = None,
-) -> tuple[str, list]:
-    """Goal selection from body urgency + curiosity. Zero hardcoded strategy.
-
-    1. Compute urgency for each homeostatic variable from observed rates
-    2. Add curiosity drive (model incompleteness)
-    3. Most urgent wins
-    4. Plan from world model (Strategy 1: restore, Strategy 2: remove cause)
-    """
-    visible = visual_field.visible_concepts() if visual_field else set()
-
-    # Compute urgency for each body variable
-    urgencies: dict[str, float] = {}
-    for var in HOMEOSTATIC_VARS:
-        value = inventory.get(var, 9)
-        if tracker:
-            rate = tracker.get_rate(var, visible)
-        else:
-            rate = 0.0
-        urgencies[var] = compute_drive(var, float(value), rate)
-
-    # Preparation drive: known threats the agent can't yet handle
-    # "I know zombie hurts (from body rules/experience) but I have no sword"
-    # This creates urgency to PREPARE before the threat materializes
-    if tracker:
-        for (concept_id, var), rate in tracker.conditional_rates.items():
-            if var == "health" and rate < -0.5 and concept_id != "_background":
-                # Severe health threat known. Can we handle it?
-                cause_concept = concept_store.query_text(concept_id)
-                if cause_concept:
-                    for link in cause_concept.causal_links:
-                        if link.action == "do" and link.requires:
-                            # Need weapon/tool to handle this threat
-                            has_req = all(
-                                inventory.get(r, 0) >= n
-                                for r, n in link.requires.items()
-                            )
-                            if not has_req:
-                                # Can't handle threat → preparation urgency
-                                # Scale: proportional to threat severity
-                                urgencies["preparation"] = min(0.1, abs(rate) * 0.05)
-
-    # Curiosity drive
-    if spatial_map is not None:
-        urgencies["curiosity"] = compute_curiosity(concept_store, spatial_map)
-    else:
-        urgencies["curiosity"] = 0.5
-
-    # Most urgent need
-    critical = max(urgencies, key=urgencies.get)  # type: ignore[arg-type]
-
-    if critical == "curiosity":
-        return "explore", []
-
-    if critical == "preparation":
-        # Find what we need to prepare for the threat
-        if tracker:
-            for (concept_id, var), rate in tracker.conditional_rates.items():
-                if var == "health" and rate < -0.5 and concept_id != "_background":
-                    cause_concept = concept_store.query_text(concept_id)
-                    if cause_concept:
-                        for link in cause_concept.causal_links:
-                            if link.action == "do":
-                                plan = concept_store.plan(link.result, inventory)
-                                if plan:
-                                    return link.result, plan
-        return "explore", []
-
-    # Strategy 1: direct restore ("do cow restores food")
-    plan = concept_store.plan(f"restore_{critical}", inventory)
-    if plan:
-        return f"restore_{critical}", plan
-
-    # Strategy 2: find cause → remove it
-    # "health dropping because zombie" → "kill zombie" → "craft sword"
-    if tracker:
-        worst_cause = None
-        worst_rate = 0.0
-        for (concept_id, var), rate in tracker.conditional_rates.items():
-            if var == critical and rate < worst_rate:
-                worst_rate = rate
-                worst_cause = concept_id
-
-        if worst_cause:
-            cause_concept = concept_store.query_text(worst_cause)
-            if cause_concept:
-                for link in cause_concept.causal_links:
-                    if link.action == "do":
-                        cause_plan = concept_store.plan(link.result, inventory)
-                        if cause_plan:
-                            return link.result, cause_plan
-
-    # Nothing helps → curiosity (explore, maybe discover solution)
-    return "explore", []
-
-
-def get_drive_strengths(
-    inventory: dict[str, int],
-    tracker: HomeostaticTracker | None = None,
-    visual_field: VisualField | None = None,
-    spatial_map: Any = None,
-) -> dict[str, float]:
-    """Drive strengths for UI display."""
-    visible = visual_field.visible_concepts() if visual_field else set()
-    drives: dict[str, float] = {}
-    for var in HOMEOSTATIC_VARS:
-        value = inventory.get(var, 9)
-        rate = tracker.get_rate(var, visible) if tracker else 0.0
-        drives[var] = compute_drive(var, float(value), rate)
-    if spatial_map is not None:
-        from snks.agent.concept_store import ConceptStore
-        # Can't compute curiosity without store — show 0
-        drives["curiosity"] = 0.0
-    return drives
