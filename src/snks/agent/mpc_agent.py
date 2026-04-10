@@ -23,6 +23,7 @@ import numpy as np
 
 from snks.agent.concept_store import (
     ConceptStore,
+    _apply_player_move,
     _expand_to_primitive as expand_to_primitive,
 )
 from snks.agent.crafter_spatial_map import CrafterSpatialMap
@@ -453,6 +454,7 @@ def run_mpc_episode(
     spatial_map = CrafterSpatialMap()
     prev_inv: dict[str, int] | None = None
     prev_action: str | None = None
+    prev_player_pos: tuple[int, int] | None = None
     action_counts: Counter = Counter()
     steps_taken = 0
     cause_of_death = "alive"
@@ -462,6 +464,21 @@ def run_mpc_episode(
         steps_taken = step + 1
         inv = dict(info.get("inventory", {}))
         player_pos = tuple(info.get("player_pos", (32, 32)))
+
+        # --- Observation: did the last move action succeed? ---
+        # If the previous action was a move_* but player_pos didn't change,
+        # the target tile is impassable. Record this in spatial_map as a
+        # blocked tile so exploration stops trying it. This is observation-
+        # based world modeling (factual update), not a hardcoded
+        # stuck-avoidance rule in policy code.
+        if (
+            prev_action
+            and prev_action.startswith("move_")
+            and prev_player_pos is not None
+            and prev_player_pos == player_pos
+        ):
+            blocked_tile = _apply_player_move(prev_player_pos, prev_action)
+            spatial_map.mark_blocked(blocked_tile)
 
         # --- Perception ---
         vf = perceive_fn(pixels, segmenter)
@@ -524,6 +541,7 @@ def run_mpc_episode(
 
         prev_inv = inv
         prev_action = primitive
+        prev_player_pos = player_pos
 
         if done:
             # Diagnose cause of death — which vital var hit min?
