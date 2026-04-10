@@ -275,7 +275,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--smoke", action="store_true",
                         help="Quick local smoke run (5 eps × 2 phases, no eval)")
-    parser.add_argument("--horizon", type=int, default=20)
+    parser.add_argument("--horizon", type=int, default=40)
     args = parser.parse_args()
 
     t_start = time.time()

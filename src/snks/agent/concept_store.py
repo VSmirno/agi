@@ -582,34 +582,53 @@ class ConceptStore:
     ) -> None:
         """Recursive backward-chaining helper.
 
-        Assumes `inventory` is a working copy we can mutate to reflect
-        prerequisites already satisfied by earlier plan steps.
+        Stage 77a Attempt 3:
+        1. Handles quantity > 1: loops producer calls until inventory
+           satisfied. Leaf gather rules can be added multiple times.
+        2. Order: spatial prereqs BEFORE item prereqs, so item prereqs
+           see the post-consumption inventory. Fixes bug where plan
+           had 5 steps for combat chain but 3rd wood was missing
+           (place_table consumed both wood before make_sword got its 1).
+        3. After adding a step, updates inventory with the rule's net
+           effect (production + consumption) so the caller sees the
+           post-step state.
         """
-        # Identity key for this rule: (concept, action)
-        key = (rule.concept or "", rule.action or "_passive")
-        if key in visited:
-            return
-        visited.add(key)
+        # Leaf gather rules (no requires) can be repeated; everything else
+        # uses the visited set to avoid cycles.
+        is_leaf_gather = (
+            rule.action == "do"
+            and not rule.requires
+            and rule.effect
+            and rule.effect.kind in ("gather",)
+        )
+        if not is_leaf_gather:
+            key = (rule.concept or "", rule.action or "_passive")
+            if key in visited:
+                return
+            visited.add(key)
 
-        # Resolve item prerequisites
-        for item, count in rule.requires.items():
-            if inventory.get(item, 0) >= count:
-                continue
-            producer = self._find_rule_producing_item(item)
-            if producer is not None:
-                self._plan_for_rule(producer, steps, visited, inventory)
-                # Assume the producer adds to inventory (for further chaining)
-                if producer.effect:
-                    for k, v in producer.effect.inventory_delta.items():
-                        inventory[k] = inventory.get(k, 0) + v
-
-        # Resolve spatial preconditions for make/place (must be near concept)
+        # Resolve spatial preconditions FIRST (they may consume resources,
+        # which the item-prereq loop must see). For `make X near Y`, Y
+        # must be placeable — which consumes items via a `place` rule.
         if rule.action == "make" and rule.concept:
-            # Need to be adjacent to `rule.concept` (the crafting station).
-            # If it's a crafted item (e.g. "table"), we need a rule that places it.
             producer = self._find_rule_producing_world_place(rule.concept)
             if producer is not None:
                 self._plan_for_rule(producer, steps, visited, inventory)
+
+        # Resolve item prerequisites — loop until quantity satisfied.
+        # inventory has been updated by any spatial prereqs (consumption
+        # reflected), so this sees the accurate pre-execution state.
+        for item, count in rule.requires.items():
+            max_retries = 20  # safety against infinite loops
+            retries = 0
+            while inventory.get(item, 0) < count and retries < max_retries:
+                retries += 1
+                producer = self._find_rule_producing_item(item)
+                if producer is None:
+                    break
+                self._plan_for_rule(producer, steps, visited, inventory)
+                # plan_for_rule already updated inventory with producer's
+                # net effect — no manual update here.
 
         # Add this rule's execution as the final step
         steps.append(PlannedStep(
@@ -621,6 +640,13 @@ class ConceptStore:
             expected_gain=rule.result,
             requires=dict(rule.requires),
         ))
+
+        # Update inventory with THIS rule's net effect (production + consumption).
+        # The caller will see the post-step state, so further prerequisites
+        # in the caller are evaluated correctly.
+        if rule.effect:
+            for k, v in rule.effect.inventory_delta.items():
+                inventory[k] = inventory.get(k, 0) + v
 
     def simulate_forward(
         self,
