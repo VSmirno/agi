@@ -176,7 +176,7 @@ def _center_positions(grid_size: int) -> set[tuple[int, int]]:
 
 
 def perceive_tile_field(
-    pixels: torch.Tensor,
+    pixels: torch.Tensor | np.ndarray,
     encoder: Any,
     min_confidence: float = 0.3,
 ) -> VisualField:
@@ -187,13 +187,18 @@ def perceive_tile_field(
     viewport determines `near_concept`.
 
     Args:
-        pixels: (3, H, W) float tensor or compatible.
+        pixels: (3, H, W) float tensor or numpy array. Numpy input (as
+            returned by CrafterPixelEnv) is wrapped into a torch tensor
+            before classification.
         encoder: object with `.classify_tiles(pixels)` method returning
             (class_ids, confidences) tensors. Both CNNEncoder (Stage 75)
             and TileSegmenter (Stage 77a) satisfy this interface.
         min_confidence: minimum softmax confidence to report a detection.
     """
     from snks.agent.decode_head import NEAR_CLASSES
+
+    if isinstance(pixels, np.ndarray):
+        pixels = torch.from_numpy(pixels)
 
     class_ids, confidences = encoder.classify_tiles(pixels)
     H, W = class_ids.shape
