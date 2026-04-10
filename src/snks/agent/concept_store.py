@@ -51,6 +51,7 @@ class CausalLink:
     # Stage 77a additions — structured dispatch
     kind: str = "action_triggered"  # discriminator for new effect-based dispatch
     effect: "RuleEffect | None" = None  # structured effect (replaces `result`)
+    concept: str | None = None  # concept_id the rule is tied to (entity for passive rules)
 
 
 MAX_OBSERVATIONS = 20  # raw feature samples per concept for metric learning
@@ -157,6 +158,10 @@ class ConceptStore:
     def __init__(self) -> None:
         self.concepts: dict[str, Concept] = {}
         self.surprises: list[SurpriseEvent] = []
+        # Stage 77a: passive rules (body_rate, movement, spatial, stateful).
+        # Kept in a flat list separate from concept.causal_links — they're
+        # not tied to an "action on a concept", they're per-tick world updates.
+        self.passive_rules: list[CausalLink] = []
 
     # --- Registration ---
 
@@ -175,6 +180,43 @@ class ConceptStore:
         if concept_id not in self.concepts:
             self.register(concept_id)
         self.concepts[concept_id].causal_links.append(link)
+
+    def add_passive_rule(self, link: CausalLink) -> None:
+        """Add a passive rule (body_rate, movement, spatial, stateful).
+
+        Stage 77a: passive rules are applied per sim tick by simulate_forward,
+        not triggered by agent actions. They're stored in a flat list on the
+        store rather than inside Concept.causal_links, because most of them
+        aren't "actions on a concept" (body_rate, stateful are global).
+        """
+        self.passive_rules.append(link)
+        # For entity-tied passive rules (movement, spatial), also register
+        # the entity concept if not already known
+        if link.concept and link.kind in ("passive_movement", "passive_spatial"):
+            if link.concept not in self.concepts:
+                self.register(link.concept)
+
+    def body_rate_rules(self) -> list[CausalLink]:
+        """All passive_body_rate rules (background per-tick decay)."""
+        return [r for r in self.passive_rules if r.kind == "passive_body_rate"]
+
+    def stateful_rules(self) -> list[CausalLink]:
+        """All passive_stateful rules (per-tick when condition holds)."""
+        return [r for r in self.passive_rules if r.kind == "passive_stateful"]
+
+    def movement_rule_for(self, concept_id: str) -> CausalLink | None:
+        """The (single) movement rule for a given entity concept, if any."""
+        for r in self.passive_rules:
+            if r.kind == "passive_movement" and r.concept == concept_id:
+                return r
+        return None
+
+    def spatial_rules_for(self, concept_id: str) -> list[CausalLink]:
+        """All spatial rules tied to a given entity concept."""
+        return [
+            r for r in self.passive_rules
+            if r.kind == "passive_spatial" and r.concept == concept_id
+        ]
 
     # --- Grounding ---
 
