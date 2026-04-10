@@ -60,29 +60,66 @@ class HomeostaticTracker:
     Stage 76 extensions:
     - `observed_max` tracks rolling max per variable (replaces hardcoded 9)
     - `observed_variables()` returns set of variables seen (no hardcoded list)
+
+    Stage 77a refactor (dual-mode during staged transition):
+    - NEW fields: `innate_rates`, `observed_rates`, `observation_counts`,
+      `prior_strength`, `reference_min`, `reference_max`
+    - NEW method: `init_from_textbook(body_block, rules)` uses structured
+      YAML body block and passive_body_rate rules
+    - get_rate(var) without visible_concepts uses Bayesian combination of
+      innate + observed rates (running mean, not EMA)
+    - LEGACY fields `rates` + `conditional_rates` + EMA path kept until
+      Commit 8 for backward compat with Stage 72-76 code. The two paths
+      coexist during transition.
     """
 
-    # Background rates: average delta per step for each variable
+    # === Legacy fields (Stage 72-76), removed in Commit 8 ===
+
+    # Background rates: average delta per step (EMA). Tests write directly.
     rates: dict[str, float] = field(default_factory=lambda: {
         v: 0.0 for v in HOMEOSTATIC_VARS
     })
 
-    # Conditional rates: (concept_id, variable) → average delta
-    # "when concept X is visible, variable Y changes by this much"
+    # Conditional rates: (concept_id, variable) → average delta (EMA).
+    # Stage 77a: forward sim uses spatial rules in ConceptStore instead,
+    # this field is retained only for backward compat with select_goal and
+    # Stage 72-73 tests that write to it directly.
     conditional_rates: dict[tuple[str, str], float] = field(default_factory=dict)
 
-    # Initial rates from body rules (innate knowledge, set once from textbook)
     _initialized: bool = False
 
-    # Stage 76: observed max per variable (rolling max since first observation)
-    # Replaces hardcoded 9 default. Initialized from first observation.
+    # === Stage 76 ===
+
+    # Rolling max per variable (replaces hardcoded 9 default).
     observed_max: dict[str, int] = field(default_factory=dict)
 
+    # === Stage 77a — new fields ===
+
+    # Innate rates loaded from textbook body block (immutable after init).
+    innate_rates: dict[str, float] = field(default_factory=dict)
+
+    # Running-mean observed rates (Bayesian combination with innate via get_rate).
+    observed_rates: dict[str, float] = field(default_factory=dict)
+
+    # Count of observations per variable — used for Bayesian weight.
+    observation_counts: dict[str, int] = field(default_factory=dict)
+
+    # Prior strength — loaded from textbook body block or default 20.
+    prior_strength: int = 20
+
+    # Body var bounds (loaded from textbook body block).
+    reference_min: dict[str, float] = field(default_factory=dict)
+    reference_max: dict[str, float] = field(default_factory=dict)
+
     def init_from_body_rules(self, body_rules: list[dict]) -> None:
-        """Set initial rates from textbook body rules (innate knowledge).
+        """Legacy (Stage 72-76): populate rates + conditional_rates from
+        a list of {concept, variable, rate} dicts.
+
+        Stage 77a: this method is backward-compat. It now ALSO populates
+        `innate_rates` with _background rules, so the new get_rate path
+        works for legacy callers that use init_from_body_rules.
 
         Like a baby knowing pain = bad. Not learned, pre-wired.
-        _background rules set unconditional baseline rates.
         """
         if self._initialized:
             return
@@ -92,10 +129,47 @@ class HomeostaticTracker:
             rate = rule.get("rate", 0.0)
             if concept and var:
                 if concept == "_background":
-                    # Background rate = unconditional baseline
-                    self.rates[var] = rate
+                    self.rates[var] = rate         # legacy path
+                    self.innate_rates[var] = rate  # new path
                 else:
-                    self.conditional_rates[(concept, var)] = rate
+                    self.conditional_rates[(concept, var)] = rate  # legacy only
+        self._initialized = True
+
+    def init_from_textbook(
+        self,
+        body_block: dict,
+        passive_rules: list[Any] | None = None,
+    ) -> None:
+        """Stage 77a: populate from structured YAML textbook body block.
+
+        `body_block` comes from CrafterTextbook.body_block (new format):
+            {prior_strength: 20, variables: [{name, initial, reference_min, reference_max}]}
+
+        `passive_rules` is a list of CausalLink objects from ConceptStore.passive_rules
+        or similar; body_rate rules populate innate_rates. Pass None to skip.
+        """
+        if self._initialized:
+            return
+
+        self.prior_strength = int(body_block.get("prior_strength", 20))
+        for var_def in body_block.get("variables", []):
+            name = var_def["name"]
+            self.reference_min[name] = float(var_def.get("reference_min", 0))
+            self.reference_max[name] = float(var_def.get("reference_max", 9))
+            initial = int(var_def.get("initial", 9))
+            if name not in self.observed_max:
+                self.observed_max[name] = initial
+
+        if passive_rules:
+            for rule in passive_rules:
+                if getattr(rule, "kind", None) == "passive_body_rate":
+                    effect = getattr(rule, "effect", None)
+                    if effect and effect.body_rate_variable:
+                        self.innate_rates[effect.body_rate_variable] = effect.body_rate
+                        # Also populate legacy `rates` so old get_rate(visible_concepts)
+                        # continues to work during transition
+                        self.rates[effect.body_rate_variable] = effect.body_rate
+
         self._initialized = True
 
     def update(
@@ -106,16 +180,15 @@ class HomeostaticTracker:
     ) -> None:
         """Called every step: observe what changed and what was visible.
 
-        Updates rates (EMA), conditional_rates (EMA), and observed_max.
+        Stage 77a: updates BOTH paths.
+          - Legacy: rates (EMA) + conditional_rates (EMA) — kept until Commit 8
+          - New: observed_rates (running mean) + observation_counts
         """
+        # === Legacy path: EMA on HOMEOSTATIC_VARS ===
         for var in HOMEOSTATIC_VARS:
             delta = inv_after.get(var, 0) - inv_before.get(var, 0)
-
-            # Update background rate (unconditional)
             old = self.rates.get(var, 0.0)
             self.rates[var] = old * (1 - RATE_EMA_ALPHA) + delta * RATE_EMA_ALPHA
-
-            # Update conditional rates (what's nearby affects what?)
             for concept in visible_concepts:
                 key = (concept, var)
                 old_c = self.conditional_rates.get(key, 0.0)
@@ -123,8 +196,17 @@ class HomeostaticTracker:
                     old_c * (1 - RATE_EMA_ALPHA) + delta * RATE_EMA_ALPHA
                 )
 
-        # Stage 76: update observed_max for all variables in both inv dicts.
-        # Dynamic — picks up any variable the env exposes, not just HOMEOSTATIC_VARS.
+        # === New path: running mean for ALL variables in inventory dicts ===
+        all_vars = set(inv_before) | set(inv_after)
+        for var in all_vars:
+            delta = float(inv_after.get(var, 0) - inv_before.get(var, 0))
+            old_rate = self.observed_rates.get(var, 0.0)
+            old_count = self.observation_counts.get(var, 0)
+            new_count = old_count + 1
+            self.observed_rates[var] = (old_rate * old_count + delta) / new_count
+            self.observation_counts[var] = new_count
+
+        # === observed_max for all variables in both inv dicts ===
         for inv in (inv_before, inv_after):
             for var, value in inv.items():
                 current_max = self.observed_max.get(var, 0)
@@ -134,18 +216,27 @@ class HomeostaticTracker:
     def observed_variables(self) -> set[str]:
         """Set of body variables observed at least once.
 
-        Stage 76: replaces hardcoded ('health', 'food', 'drink', 'energy') list.
-        Agent learns which variables matter from the env's inventory dict.
+        Stage 77a: also includes variables from innate_rates (loaded from
+        textbook), not just observed_max. This ensures body vars the teacher
+        knows about are in the set even before first observation.
         """
-        return set(self.observed_max.keys())
+        return set(self.observed_max.keys()) | set(self.innate_rates.keys())
 
     def get_rate(self, variable: str, visible_concepts: set[str] | None = None) -> float:
-        """Get effective rate for a variable given what's visible.
+        """Effective rate for a variable.
 
-        Uses conditional rates if available, falls back to background rate.
+        Stage 77a dual mode:
+          - If visible_concepts provided (legacy select_goal path, dies in
+            Commit 8): use EMA rates + worst-of-conditional_rates.
+          - Otherwise: Bayesian combination of innate + observed rates
+            (the new stable path used by forward sim).
+
+        Bayesian formula:
+            w = prior_strength / (prior_strength + n)
+            effective = w * innate + (1 - w) * observed
         """
-        if visible_concepts:
-            # Use the WORST (most negative) conditional rate among visible concepts
+        if visible_concepts is not None:
+            # Legacy path
             worst = self.rates.get(variable, 0.0)
             for concept in visible_concepts:
                 key = (concept, variable)
@@ -153,7 +244,19 @@ class HomeostaticTracker:
                 if cr < worst:
                     worst = cr
             return worst
-        return self.rates.get(variable, 0.0)
+
+        # New path: Bayesian combination of innate + observed
+        n = self.observation_counts.get(variable, 0)
+        innate = self.innate_rates.get(variable, 0.0)
+        observed = self.observed_rates.get(variable, 0.0)
+
+        # If neither innate nor observations exist, fall back to legacy rates
+        # (backward compat for tests that only set `rates` directly)
+        if n == 0 and variable not in self.innate_rates:
+            return self.rates.get(variable, 0.0)
+
+        w = self.prior_strength / (self.prior_strength + n)
+        return w * innate + (1 - w) * observed
 
 
 # ---------------------------------------------------------------------------
