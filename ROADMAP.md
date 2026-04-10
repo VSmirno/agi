@@ -1,8 +1,15 @@
-# СНКС — Roadmap v2 (Milestone-Driven)
+# СНКС — Roadmap v3 (Real Learning на top of Rules)
 
-**Последнее обновление:** 2026-04-03
-**Статус:** M1 COMPLETE → M2 COMPLETE → M3 COMPLETE → M4 IN PROGRESS (8/9) — architecture pivot at Stage 59
-**Полная спецификация:** [docs/superpowers/specs/2026-04-02-roadmap-v2-design.md](docs/superpowers/specs/2026-04-02-roadmap-v2-design.md)
+**Последнее обновление:** 2026-04-11
+**Статус:** Stage 77a COMPLETE (partial PASS, wall ~180) → Stage 78 IN PLANNING (real learning strategy)
+**Стратегия v3:** [docs/superpowers/specs/2026-04-11-strategy-real-learning-design.md](docs/superpowers/specs/2026-04-11-strategy-real-learning-design.md)
+**История v2:** [docs/superpowers/specs/2026-04-02-roadmap-v2-design.md](docs/superpowers/specs/2026-04-02-roadmap-v2-design.md)
+
+## Vision
+
+Crafter — минимальная, но почти полноценная копия мировой модели. Ограниченный домен для наших ресурсов. Прицел: Crafter → другие 2D envs → Minecraft → grant → hardware → AGI.
+
+**Architectural invariant:** rules (textbook) как база + self-organizing parametric learning поверх. Не reward shaping, не supervised backprop на labels. Только self-supervised predictive signals + symbolic priors.
 
 ---
 
@@ -71,6 +78,64 @@
 | 65 | 100% уверенность → uncertainty | COMPLETE (2026-04-04) — Brier=0.12, ρ=0.17, ideal calibration curve, 87% Crafter, 94% MG |
 | 66 | Symbolic features → пиксели | COMPLETE (2026-04-06) — 100% Crafter QA (7/7) from pixels, prototype memory k-NN, JEPA+SupCon encoder |
 | 67 | Symbolic near → CNN near | COMPLETE (2026-04-06) — 99% smoke, 100% QA gate, 100% regression. NearDetector (near_weight=1.0), CrafterPixelEnv без _to_symbolic() |
+| 68-71 | Pixel navigation, scenario curriculum, text-visual integration | COMPLETE (2026-04-07) |
+| 72 | IDEOLOGY pivot: CNN=V1, continuous learning | COMPLETE (2026-04-07) |
+| 73 | Autonomous craft: backward chaining + grounding | COMPLETE (2026-04-07) |
+| 74 | Homeostatic agent | COMPLETE (2026-04-08) — axis bug fix, survival 173 |
+| 75 | Per-tile perception | COMPLETE (2026-04-09) — 82% per-tile acc, survival 178, coord mapping fix |
+| 76 | Continuous memory learning (SDM) | COMPLETE (2026-04-10) — reverted, memory ≡ bootstrap, architecture review |
+| 77a | ConceptStore forward sim + MPC | **COMPLETE partial PASS (2026-04-10)** — 140/140 tests, wall 180 |
+
+### Roadmap v5: Real Learning on Top of Rules (2026-04-11)
+**Новая цель**: self-organizing parametric learning поверх rules. Стратегия v3 (3 branch'а) — см. [strategy spec](docs/superpowers/specs/2026-04-11-strategy-real-learning-design.md).
+
+**Branch A (primary, fastest proof)** — Neural residual Dreamer-CDP style
+
+| Stage | Название | Gate | Est |
+|-------|----------|------|-----|
+| 78 | Residual JEPA Trainer | Online trainer forked from `predictive_trainer.py`, neg cosine similarity loss, stop-gradient, replay buffer. Synthetic test: выучивает conjunctive (state, action) → delta за <5 эпох | 1 нед |
+| 79 | Residual integration with MPC | `simulate_forward` queries hybrid: rules_prediction + small_neural_residual. Eval на Crafter: survival ≥200 | 1 нед |
+| 80 | Surprise Accumulator + Rule Nursery | Per-context surprise bucketing, candidate rule emission, verification via repeated observation. Cycle: neural detects → nursery emits → rules promote. Eval: wood ≥50%, survival ≥220 | 2 нед |
+| 81 | Alternating training (Neuro-Symbolic Synergy pattern) | Neural fine-tune только на rule-uncovered трассах, rules добавляются из residual clusters. Eval: 30% меньше gradient steps при том же gate | 1 нед |
+
+**Branch B (fallback / interpretability)** — Symbolic OneLife-style induction
+
+| Stage | Название | Gate | Est |
+|-------|----------|------|-----|
+| 78b | Symbolic law grammar | (precondition, effect) pairs with weights θ_i | 1 нед |
+| 79b | Candidate generation w/o LLM | Template-based + surprise clustering | 2 нед |
+| 80b | Law weight learning via L-BFGS on MLE | OneLife-style observable prediction | 1 нед |
+
+**Branch C (research bet, parallel track)** — DAF / Active Predictive Coding
+
+| Stage | Название | Gate | Est |
+|-------|----------|------|-----|
+| 78c | DAF substrate spike on synthetic | Fair test: oscillatory FHN (I_base>1), longer sim (1000+ steps), readout via SKS clusters. Can STDP learn conjunctive body delta? | 2 нед |
+| 79c | Active Predictive Coding port | Hypernetwork state-action hierarchies (Rao 2024) | 3 нед |
+| 80c | DAF bridge to Crafter | CNN features → DAF input zone injection | 3 нед |
+
+### M5: Transfer to Second Environment (after Branch A Gate closed)
+**Gate:** сохранение архитектуры + работающая агент на 2-ом discrete env (MiniHack, NetHack, or custom).
+
+| Stage | Название | Gate |
+|-------|----------|------|
+| 82 | Environment abstraction layer | Unified env interface, rules loader per env |
+| 83 | Transfer test | Residual JEPA works on new env с минимальными изменениями |
+
+### M6: Scaling — Minecraft (requires more compute / grant)
+**Gate:** end-to-end working agent in Minecraft. Grant proposal material.
+
+| Stage | Название | Gate |
+|-------|----------|------|
+| 84 | VPT dataset offline pretraining | V-JEPA 2-AC style на gameplay videos |
+| 85 | H-JEPA hierarchical (crafting / exploration / combat timescales) | Multi-level predictors |
+| 86 | Minecraft basic survival | Day 1 gameplay: wood, food, shelter |
+
+### M7: AGI vision (long-term, hardware-dependent)
+- H-JEPA 3+ levels
+- Active Predictive Coding if Branch C proved viable
+- Open-ended discovery
+- Real-world sensorimotor
 
 ### Architecture Pivot (Stage 59, 2026-04-03)
 **Stages 47-58: символический BFS + SDM = тупик.** SDM паразитирует на BFS — либо BFS решает всё (SDM не нужен), либо BFS не справляется (SDM не получает данных).
