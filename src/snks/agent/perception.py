@@ -139,21 +139,6 @@ class HomeostaticTracker:
         """
         return set(self.observed_max.keys())
 
-    def body_variables(self) -> set[str]:
-        """Subset of observed variables that have innate background decay.
-
-        These are the variables the tracker's `rates` dict was initialized
-        with from textbook body_rules (health/food/drink/energy in Crafter,
-        whatever the textbook declares in another environment). Inventory
-        items (wood, stone, sapling, ...) are excluded because they have
-        no passive decay and "being without them" is not lethal.
-
-        Used for deficit-weighted scoring and attention masking — only
-        variables whose depletion is actually dangerous should shape the
-        agent's urgency calculation.
-        """
-        return {var for var in self.rates.keys() if var in self.observed_max}
-
     def get_rate(self, variable: str, visible_concepts: set[str] | None = None) -> float:
         """Get effective rate for a variable given what's visible.
 

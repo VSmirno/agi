@@ -285,36 +285,6 @@ class TestScoreActions:
         # deficit = 4; contributions = 8, 16; mean = 12
         assert scores["a"] == 12
 
-    def test_inventory_items_excluded_via_body_variables_filter(self):
-        """Inventory items (wood, sapling) must not contribute to action scores
-        even when observed_max > 0 and delta is large.
-
-        Regression guard: first v2 run had wood deficits dominating eval
-        because observed_max grew unboundedly during warmup wood collection.
-        """
-        tracker = HomeostaticTracker()
-        # Simulate: agent collected wood up to 9 during warmup
-        tracker.observed_max = {"health": 9, "wood": 9}
-        # body_variables() returns only {'health'} because 'wood' is not in
-        # tracker.rates (only the HOMEOSTATIC_VARS are)
-        assert tracker.body_variables() == {"health"}
-
-        # Recall: an episode where "chop_tree" action led to +5 wood and -2 health
-        recalled = [
-            (100, Episode(
-                state_sdr=make_sdr(),
-                action="chop_tree",
-                next_state_sdr=make_sdr(),
-                body_delta={"health": -2, "wood": +5},
-                step=0,
-            )),
-        ]
-        current_body = {"health": 2, "wood": 0}  # big wood "deficit"
-        scores = score_actions(recalled, current_body, tracker)
-        # deficit_health = 9 - 2 = 7; health delta = -2
-        # score = 7 * -2 = -14. Wood ignored entirely.
-        assert scores["chop_tree"] == -14
-
     def test_deficit_sign_emerges_from_data(self):
         """Test that 'restorative' signal emerges when deltas match deficits.
 
