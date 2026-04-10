@@ -24,6 +24,17 @@ Synthetic task: conjunctive body-delta rule
 A 3-category ideology textbook cannot express this without AND/OR grammar,
 so it's our canonical "something learning has to discover" target.
 
+**Ideology note — this is a DIAGNOSTIC probe only, not an agent component.**
+The supervised MLP readout (Linear → ReLU → Linear trained with MSE on
+body_delta labels) is used here strictly to measure whether the substrate
+*carries* the conditional signal — it is NOT a proposal for how learning
+should happen in a production agent. Strategy v5 rejects supervised backprop
+on labeled loss as an agent learning mechanism; Stage 78b residual learner
+(if it happens) will use the Dreamer-CDP stop-gradient + neg cosine pattern
+on intrinsic predictive signal, not an MSE head on ground-truth body deltas.
+``LinearBaseline`` uses the *same* supervised head, so the comparison is a
+fair probe of "substrate contribution" not "MLP training efficacy".
+
 Exit criterion (Stage 78a gate): **at least one regime beats the linear
 no-DAF baseline on conjunctive health MSE, by at least 10% relative, with
 feature discrimination > 0.1**. That answers "yes, substrate can carry
@@ -79,6 +90,14 @@ class Sample:
 
 
 def true_body_delta(visible: set[str], body: dict[str, float], action: str) -> dict[str, float]:
+    """SYNTHETIC ORACLE — not a real-world / Crafter rule.
+
+    Generates ground-truth body delta for the spike test dataset. This is an
+    in-experiment oracle used to supervise a diagnostic readout; it does not
+    represent the mechanism by which an agent should acquire rules. Real
+    agents learn via surprise + verification (Stage 79+), not via access to
+    such an oracle.
+    """
     delta = {v: 0.0 for v in BODY_VARS}
     delta["food"] -= 0.04
     delta["drink"] -= 0.04
@@ -465,7 +484,9 @@ class LinearBaseline:
     Answers 'does DAF add value over the static state encoding alone?'.
     """
 
-    def __init__(self, device: str = "cpu") -> None:
+    def __init__(self, device: str = "auto") -> None:
+        # Match DAF predictor device for fair comparison — baseline should run
+        # on the same hardware as the substrate being probed.
         self.device = torch.device(device if device != "auto" else (
             "cuda" if torch.cuda.is_available() else "cpu"
         ))
@@ -577,10 +598,16 @@ def run_regime(
     print(f"  predictor ready (n_edges={predictor.engine.graph.num_edges}) "
           f"device={predictor.device}", flush=True)
 
-    # STDP warmup (substrate shaping) if requested
+    # STDP warmup (substrate shaping) if requested.
+    # IDEOLOGY: warmup samples MUST be disjoint from readout training samples
+    # so the substrate exposure is a "fresh stream" — matches the "self-induced
+    # rules" principle that the substrate shapes to input statistics without
+    # any leakage from the supervised readout split.
     if regime.enable_stdp_warmup:
-        print("  -- STDP warmup pass --", flush=True)
-        predictor.warmup_stdp(train[: min(len(train), 500)], n_passes=1, log_every=100)
+        print("  -- STDP warmup pass (disjoint unlabeled stream) --", flush=True)
+        warmup_rng = np.random.RandomState(99)  # different seed from train/test
+        warmup_samples = generate_dataset(500, warmup_rng)
+        predictor.warmup_stdp(warmup_samples, n_passes=1, log_every=100)
 
     # Cluster discovery if sks_cluster readout
     n_clusters = 0
@@ -633,7 +660,7 @@ def run_baseline(train: list[Sample], test_general: list[Sample], test_conj: lis
     print("\n" + "=" * 72)
     print("BASELINE: linear (no DAF) on same encoding")
     print("=" * 72, flush=True)
-    b = LinearBaseline(device="cpu")
+    b = LinearBaseline(device="auto")
     ev_gen_before = evaluate(b, test_general)
     ev_con_before = evaluate(b, test_conj)
     print(f"  before: general={ev_gen_before['overall_mse']:.4f} "
@@ -687,7 +714,8 @@ def verdict(results: dict) -> dict:
         ranked.append((regime_name, health, disc))
         if disc < 0.10:
             continue
-        if health < baseline_health:
+        # STRONG_PASS needs ≥10% margin to avoid noise-triggered wins.
+        if health <= baseline_health * 0.90:
             strong_passing.append(regime_name)
             passing.append(regime_name)
         elif health <= baseline_health * 1.20:
@@ -767,10 +795,14 @@ def main() -> int:
     print(f"  conjunctive cases in train: {conj_in_train} "
           f"({100*conj_in_train/len(train):.1f}%)", flush=True)
 
-    # Smoke regime subset — cheapest 2 only
+    # Smoke regime subset — R1 (cheap reference) + R3 (Stage 44 main untested case)
     regimes = build_regimes()
     if args.smoke:
-        regimes = [regimes[0], regimes[3]]  # R1 + R4 as sanity
+        by_name = {r.name: r for r in regimes}
+        regimes = [
+            by_name["R1_baseline_excitable_short"],
+            by_name["R3_oscillatory_default_tau"],
+        ]
     elif args.regimes != "all":
         want = set(args.regimes.split(","))
         regimes = [r for r in regimes if r.name in want]
@@ -828,7 +860,8 @@ def main() -> int:
     for name, health, disc in v["ranked_regimes_by_conj_health_mse"]:
         print(f"    {name:45s}  health_mse={health:.4f}  disc={disc:.3f}")
     print(f"\n  full results → {args.output}")
-    return 0 if v["status"] == "PASS" else 2
+    # Exit code: 0 for PASS or STRONG_PASS, 2 for FAIL.
+    return 0 if v["status"] in ("PASS", "STRONG_PASS") else 2
 
 
 if __name__ == "__main__":
