@@ -1,0 +1,543 @@
+{
+  "regimes": {
+    "R1_baseline_excitable_short": {
+      "regime": {
+        "name": "R1_baseline_excitable_short",
+        "I_base": 0.5,
+        "tau": 12.5,
+        "sim_steps": 100,
+        "noise_sigma": 0.02,
+        "coupling": 0.3,
+        "enable_stdp_warmup": false,
+        "readout": "voltage",
+        "description": "Prior spike reference \u2014 excitable, 100 steps, voltage readout."
+      },
+      "n_clusters": 0,
+      "activity": {
+        "mean_spikes_per_sample": 0.0,
+        "feature_norm_mean": 1.6075403690338135,
+        "pairwise_dist_mean": 2.2606301307678223,
+        "pairwise_dist_min": 2.143904209136963,
+        "pairwise_dist_max": 2.3933143615722656,
+        "discrimination_ratio": 1.4062664766089439,
+        "feature_dim": 1000
+      },
+      "eval_general_before": {
+        "overall_mse": 0.4831334444120942,
+        "per_var_mse": {
+          "health": 0.12148107803688375,
+          "food": 0.9036102570304668,
+          "drink": 0.9036280304901402,
+          "energy": 0.0038144120908859586
+        }
+      },
+      "eval_conj_before": {
+        "overall_mse": 0.034273716588031126,
+        "per_var_mse": {
+          "health": 0.13350322727472574,
+          "food": 0.001596016479997555,
+          "drink": 0.0015969349029466107,
+          "energy": 0.00039868769445461783
+        }
+      },
+      "eval_general": {
+        "overall_mse": 0.45911384287598445,
+        "per_var_mse": {
+          "health": 0.07811359525118415,
+          "food": 0.8745659244158984,
+          "drink": 0.8798323040533963,
+          "energy": 0.003943547783458484
+        }
+      },
+      "eval_conj": {
+        "overall_mse": 0.037548366780877356,
+        "per_var_mse": {
+          "health": 0.07564886465436166,
+          "food": 0.05356536805760868,
+          "drink": 0.020717405410958855,
+          "energy": 0.0002618290005802138
+        }
+      },
+      "loss_curve": [
+        0.3521801619302278,
+        0.34932879063747047
+      ],
+      "elapsed_s": 29.518402814865112
+    },
+    "R2_excitable_long": {
+      "regime": {
+        "name": "R2_excitable_long",
+        "I_base": 0.5,
+        "tau": 12.5,
+        "sim_steps": 2000,
+        "noise_sigma": 0.02,
+        "coupling": 0.3,
+        "enable_stdp_warmup": false,
+        "readout": "voltage",
+        "description": "Same excitable regime but 20x more steps \u2014 isolates 'was sim too short?'."
+      },
+      "n_clusters": 0,
+      "activity": {
+        "mean_spikes_per_sample": 248097.6875,
+        "feature_norm_mean": 3.9398341178894043,
+        "pairwise_dist_mean": 2.339508295059204,
+        "pairwise_dist_min": 2.229323387145996,
+        "pairwise_dist_max": 2.4477877616882324,
+        "discrimination_ratio": 0.593808831807491,
+        "feature_dim": 1000
+      },
+      "eval_general_before": {
+        "overall_mse": 0.48309506176950606,
+        "per_var_mse": {
+          "health": 0.12146408162142479,
+          "food": 0.9034106358194458,
+          "drink": 0.9036921322005408,
+          "energy": 0.0038133974366131086
+        }
+      },
+      "eval_conj_before": {
+        "overall_mse": 0.034274859354178025,
+        "per_var_mse": {
+          "health": 0.13347310676522903,
+          "food": 0.0016490631644800824,
+          "drink": 0.0015792155136130101,
+          "energy": 0.0003980519733899769
+        }
+      },
+      "eval_general": {
+        "overall_mse": 0.46453381993490855,
+        "per_var_mse": {
+          "health": 0.08716009502984545,
+          "food": 0.8814018232645264,
+          "drink": 0.8856041755165275,
+          "energy": 0.003969185928734651
+        }
+      },
+      "eval_conj": {
+        "overall_mse": 0.035667489386530235,
+        "per_var_mse": {
+          "health": 0.09025035028048832,
+          "food": 0.03609864793874998,
+          "drink": 0.01624426924277735,
+          "energy": 7.669008410530463e-05
+        }
+      },
+      "loss_curve": [
+        0.35177547773802265,
+        0.3486937956834057
+      ],
+      "elapsed_s": 420.64586091041565
+    },
+    "R3_oscillatory_default_tau": {
+      "regime": {
+        "name": "R3_oscillatory_default_tau",
+        "I_base": 1.1,
+        "tau": 12.5,
+        "sim_steps": 10000,
+        "noise_sigma": 0.02,
+        "coupling": 0.3,
+        "enable_stdp_warmup": false,
+        "readout": "voltage",
+        "description": "Stage 44 R1.1 untested case \u2014 I_base above bifurcation, long sim."
+      },
+      "n_clusters": 0,
+      "activity": {
+        "mean_spikes_per_sample": 32054199.0,
+        "feature_norm_mean": 48.823814392089844,
+        "pairwise_dist_mean": 3.1333720684051514,
+        "pairwise_dist_min": 2.3847568035125732,
+        "pairwise_dist_max": 3.517378330230713,
+        "discrimination_ratio": 0.06417712559780668,
+        "feature_dim": 1000
+      },
+      "eval_general_before": {
+        "overall_mse": 0.4825867302746112,
+        "per_var_mse": {
+          "health": 0.1201111259372573,
+          "food": 0.9033496077765995,
+          "drink": 0.9030669355694669,
+          "energy": 0.003819251815120986
+        }
+      },
+      "eval_conj_before": {
+        "overall_mse": 0.03395707475221617,
+        "per_var_mse": {
+          "health": 0.13184116850090416,
+          "food": 0.0016634381575443547,
+          "drink": 0.0017692178250457392,
+          "energy": 0.0005544745253704278
+        }
+      },
+      "eval_general": {
+        "overall_mse": 0.4635269358049849,
+        "per_var_mse": {
+          "health": 0.07663509048124341,
+          "food": 0.8832390922652572,
+          "drink": 0.8903114599340669,
+          "energy": 0.003922100539372152
+        }
+      },
+      "eval_conj": {
+        "overall_mse": 0.027851823610219824,
+        "per_var_mse": {
+          "health": 0.07282926911116468,
+          "food": 0.028827204718876624,
+          "drink": 0.009633763447752672,
+          "energy": 0.00011705716308532765
+        }
+      },
+      "loss_curve": [
+        0.3528160735756198,
+        0.3483036834921222
+      ],
+      "elapsed_s": 2233.7588305473328
+    },
+    "R4_oscillatory_fast_tau": {
+      "regime": {
+        "name": "R4_oscillatory_fast_tau",
+        "I_base": 1.1,
+        "tau": 1.0,
+        "sim_steps": 2000,
+        "noise_sigma": 0.02,
+        "coupling": 0.3,
+        "enable_stdp_warmup": false,
+        "readout": "voltage",
+        "description": "Oscillatory with compressed recovery timescale (faster intrinsic rhythm)."
+      },
+      "n_clusters": 0,
+      "activity": {
+        "mean_spikes_per_sample": 266948.125,
+        "feature_norm_mean": 7.515878200531006,
+        "pairwise_dist_mean": 2.3241078853607178,
+        "pairwise_dist_min": 2.204843044281006,
+        "pairwise_dist_max": 2.4520649909973145,
+        "discrimination_ratio": 0.3092263902302883,
+        "feature_dim": 1000
+      },
+      "eval_general_before": {
+        "overall_mse": 0.4830794573144226,
+        "per_var_mse": {
+          "health": 0.1213968358109251,
+          "food": 0.9036170062755101,
+          "drink": 0.9034908256249601,
+          "energy": 0.003813161546294967
+        }
+      },
+      "eval_conj_before": {
+        "overall_mse": 0.034256236427824154,
+        "per_var_mse": {
+          "health": 0.13338844043389295,
+          "food": 0.0015908272275224698,
+          "drink": 0.0016300305078374808,
+          "energy": 0.0004156475420437347
+        }
+      },
+      "eval_general": {
+        "overall_mse": 0.4649772880548706,
+        "per_var_mse": {
+          "health": 0.08734786748045818,
+          "food": 0.8827675652445452,
+          "drink": 0.8858166223030677,
+          "energy": 0.003977097191411303
+        }
+      },
+      "eval_conj": {
+        "overall_mse": 0.03640006105435622,
+        "per_var_mse": {
+          "health": 0.0902854848700688,
+          "food": 0.038727249622203176,
+          "drink": 0.016516127301627007,
+          "energy": 7.13824235258842e-05
+        }
+      },
+      "loss_curve": [
+        0.3527672213315964,
+        0.34936198162070164
+      ],
+      "elapsed_s": 426.30668783187866
+    },
+    "R5_oscillatory_fast_tau_sks": {
+      "regime": {
+        "name": "R5_oscillatory_fast_tau_sks",
+        "I_base": 1.1,
+        "tau": 1.0,
+        "sim_steps": 2000,
+        "noise_sigma": 0.02,
+        "coupling": 0.3,
+        "enable_stdp_warmup": false,
+        "readout": "sks_cluster",
+        "description": "Same as R4 but SKS cluster readout instead of raw voltage."
+      },
+      "n_clusters": 0,
+      "activity": {
+        "mean_spikes_per_sample": 267094.4375,
+        "feature_norm_mean": 0.0,
+        "pairwise_dist_mean": 0.0,
+        "pairwise_dist_min": 0.0,
+        "pairwise_dist_max": 0.0,
+        "discrimination_ratio": 0.0,
+        "feature_dim": 1000
+      },
+      "eval_general_before": {
+        "overall_mse": 0.48310885249999996,
+        "per_var_mse": {
+          "health": 0.12142207666666668,
+          "food": 0.9036,
+          "drink": 0.9036000000000002,
+          "energy": 0.003813333333333333
+        }
+      },
+      "eval_conj_before": {
+        "overall_mse": 0.034258,
+        "per_var_mse": {
+          "health": 0.133432,
+          "food": 0.0016000000000000003,
+          "drink": 0.0016000000000000003,
+          "energy": 0.0004000000000000001
+        }
+      },
+      "eval_general": {
+        "overall_mse": 0.46323296337361874,
+        "per_var_mse": {
+          "health": 0.07657638093619726,
+          "food": 0.8830881735361826,
+          "drink": 0.8893447776357425,
+          "energy": 0.003922521386352196
+        }
+      },
+      "eval_conj": {
+        "overall_mse": 0.028792736246967245,
+        "per_var_mse": {
+          "health": 0.07268272919694406,
+          "food": 0.03154961680146162,
+          "drink": 0.0108219740808104,
+          "energy": 0.0001166249086529158
+        }
+      },
+      "loss_curve": [
+        0.35159260515642626,
+        0.3478717010538094
+      ],
+      "elapsed_s": 431.5113139152527
+    },
+    "R6_oscillatory_fast_tau_stdp": {
+      "regime": {
+        "name": "R6_oscillatory_fast_tau_stdp",
+        "I_base": 1.1,
+        "tau": 1.0,
+        "sim_steps": 2000,
+        "noise_sigma": 0.02,
+        "coupling": 0.3,
+        "enable_stdp_warmup": true,
+        "readout": "voltage",
+        "description": "R4 + STDP warmup pass: substrate adapts to input statistics first."
+      },
+      "n_clusters": 0,
+      "activity": {
+        "mean_spikes_per_sample": 265337.8125,
+        "feature_norm_mean": 7.5570807456970215,
+        "pairwise_dist_mean": 2.1896812915802,
+        "pairwise_dist_min": 2.059549331665039,
+        "pairwise_dist_max": 2.310131072998047,
+        "discrimination_ratio": 0.2897522688012826,
+        "feature_dim": 1000
+      },
+      "eval_general_before": {
+        "overall_mse": 0.48291803801266137,
+        "per_var_mse": {
+          "health": 0.120734499490064,
+          "food": 0.903473072070056,
+          "drink": 0.9036519789500445,
+          "energy": 0.0038126015404807787
+        }
+      },
+      "eval_conj_before": {
+        "overall_mse": 0.03406735281420338,
+        "per_var_mse": {
+          "health": 0.132605618136344,
+          "food": 0.001637356706270577,
+          "drink": 0.0015906837362231183,
+          "energy": 0.00043575267797583603
+        }
+      },
+      "eval_general": {
+        "overall_mse": 0.4645510297256622,
+        "per_var_mse": {
+          "health": 0.08588004819683613,
+          "food": 0.8825190324162808,
+          "drink": 0.8858361886999345,
+          "energy": 0.0039688495895971255
+        }
+      },
+      "eval_conj": {
+        "overall_mse": 0.03522397251528342,
+        "per_var_mse": {
+          "health": 0.08822811740822299,
+          "food": 0.036096364943905675,
+          "drink": 0.01649409101197802,
+          "energy": 7.731669702699296e-05
+        }
+      },
+      "loss_curve": [
+        0.3515243769726173,
+        0.34904271734296344
+      ],
+      "elapsed_s": 488.7072756290436
+    },
+    "R7_oscillatory_fast_tau_stdp_sks": {
+      "regime": {
+        "name": "R7_oscillatory_fast_tau_stdp_sks",
+        "I_base": 1.1,
+        "tau": 1.0,
+        "sim_steps": 2000,
+        "noise_sigma": 0.02,
+        "coupling": 0.3,
+        "enable_stdp_warmup": true,
+        "readout": "sks_cluster",
+        "description": "R6 + SKS cluster readout. Most-featureful combination."
+      },
+      "n_clusters": 0,
+      "activity": {
+        "mean_spikes_per_sample": 265270.0,
+        "feature_norm_mean": 0.0,
+        "pairwise_dist_mean": 0.0,
+        "pairwise_dist_min": 0.0,
+        "pairwise_dist_max": 0.0,
+        "discrimination_ratio": 0.0,
+        "feature_dim": 1000
+      },
+      "eval_general_before": {
+        "overall_mse": 0.48310885249999996,
+        "per_var_mse": {
+          "health": 0.12142207666666668,
+          "food": 0.9036,
+          "drink": 0.9036000000000002,
+          "energy": 0.003813333333333333
+        }
+      },
+      "eval_conj_before": {
+        "overall_mse": 0.034258,
+        "per_var_mse": {
+          "health": 0.133432,
+          "food": 0.0016000000000000003,
+          "drink": 0.0016000000000000003,
+          "energy": 0.0004000000000000001
+        }
+      },
+      "eval_general": {
+        "overall_mse": 0.46327821931783814,
+        "per_var_mse": {
+          "health": 0.0765791201568416,
+          "food": 0.8830906223711769,
+          "drink": 0.8895205686162198,
+          "energy": 0.003922566127114238
+        }
+      },
+      "eval_conj": {
+        "overall_mse": 0.02871881862575435,
+        "per_var_mse": {
+          "health": 0.07268963730979315,
+          "food": 0.03147487911158803,
+          "drink": 0.010594179031281343,
+          "energy": 0.00011657905035489854
+        }
+      },
+      "loss_curve": [
+        0.35159260515642626,
+        0.3476847848140945
+      ],
+      "elapsed_s": 493.6368405818939
+    }
+  },
+  "meta": {
+    "n_train": 1200,
+    "n_test_general": 300,
+    "n_test_conj": 200,
+    "n_epochs": 2,
+    "n_nodes": 5000,
+    "device_requested": "auto",
+    "smoke": false
+  },
+  "baseline": {
+    "eval_general_before": {
+      "overall_mse": 0.482961644673,
+      "per_var_mse": {
+        "health": 0.12119461968672036,
+        "food": 0.903287280090675,
+        "drink": 0.9035430063449678,
+        "energy": 0.0038216725696367197
+      }
+    },
+    "eval_conj_before": {
+      "overall_mse": 0.034191921979531005,
+      "per_var_mse": {
+        "health": 0.13315111001965807,
+        "food": 0.00165775957745455,
+        "drink": 0.0015837941322875383,
+        "energy": 0.00037502418872386006
+      }
+    },
+    "eval_general": {
+      "overall_mse": 0.39259175831560367,
+      "per_var_mse": {
+        "health": 0.010626312884469033,
+        "food": 0.6907397027992417,
+        "drink": 0.8642339949987633,
+        "energy": 0.004767022579940698
+      }
+    },
+    "eval_conj": {
+      "overall_mse": 0.07273261537613657,
+      "per_var_mse": {
+        "health": 0.007235532775352912,
+        "food": 0.2674434616637582,
+        "drink": 0.015797562564580377,
+        "energy": 0.00045390450085477604
+      }
+    }
+  },
+  "verdict": {
+    "status": "FAIL",
+    "strong_passing_regimes": [],
+    "passing_regimes": [],
+    "baseline_conj_health_mse": 0.007235532775352912,
+    "ranked_regimes_by_conj_health_mse": [
+      [
+        "R5_oscillatory_fast_tau_sks",
+        0.07268272919694406,
+        0.0
+      ],
+      [
+        "R7_oscillatory_fast_tau_stdp_sks",
+        0.07268963730979315,
+        0.0
+      ],
+      [
+        "R3_oscillatory_default_tau",
+        0.07282926911116468,
+        0.06417712559780668
+      ],
+      [
+        "R1_baseline_excitable_short",
+        0.07564886465436166,
+        1.4062664766089439
+      ],
+      [
+        "R6_oscillatory_fast_tau_stdp",
+        0.08822811740822299,
+        0.2897522688012826
+      ],
+      [
+        "R2_excitable_long",
+        0.09025035028048832,
+        0.593808831807491
+      ],
+      [
+        "R4_oscillatory_fast_tau",
+        0.0902854848700688,
+        0.3092263902302883
+      ]
+    ],
+    "recommendation": "DAF substrate destroys conditional info. Stage 78b: use MLP residual (Dreamer-CDP style). DAF-as-residual novelty dropped; retain rule induction novelty."
+  }
+}
