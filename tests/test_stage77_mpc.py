@@ -248,13 +248,18 @@ class TestGenerateCandidatePlans:
             for p in remedies
         )
 
-    def test_safe_state_gives_only_baseline(self, loaded_store, tracker):
-        """With full body and no enemies, baseline survives → no remedies needed."""
+    def test_safe_state_gives_baseline_plus_proactive_remedies(self, loaded_store, tracker):
+        """Stage 77a Attempt 2: even in a safe state, proactive remedy plans
+        are generated for known dangerous concepts (zombie, skeleton from
+        spatial rules) and decaying body vars (food/drink/energy from
+        innate_rates). Baseline is still one of the candidates."""
         state = _mkstate()
         candidates = generate_candidate_plans(state, loaded_store, tracker, horizon=10)
-        # Baseline should survive cleanly over 10 ticks with full stats
-        assert len(candidates) == 1  # only baseline
-        assert candidates[0].origin == "baseline"
+        # Must contain baseline
+        assert any(c.origin == "baseline" for c in candidates)
+        # Must contain proactive remedies (combat + consume plans)
+        remedies = [c for c in candidates if c.origin == "remedy"]
+        assert len(remedies) > 0
 
 
 # ---------------------------------------------------------------------------
