@@ -120,6 +120,10 @@ rules:
     effect: { body: { energy: +5 } }
 
   # ===== PASSIVE: background body decay =====
+  # Measured from real Crafter via diag_crafter_mechanics.py:
+  # food: -1 per ~26 steps ≈ -0.04/tick
+  # drink: -1 per ~21 steps ≈ -0.05/tick (faster than I had)
+  # energy: -1 per ~31 steps ≈ -0.033/tick
 
   - passive: body_rate
     variable: food
@@ -127,11 +131,11 @@ rules:
 
   - passive: body_rate
     variable: drink
-    rate: -0.04
+    rate: -0.05
 
   - passive: body_rate
     variable: energy
-    rate: -0.03
+    rate: -0.033
 
   # ===== PASSIVE: entity movement =====
 
@@ -141,38 +145,70 @@ rules:
 
   - passive: movement
     entity: skeleton
-    behavior: chase_player
+    behavior: chase_player   # TODO: real skeleton kites at dist 3-5
 
   - passive: movement
     entity: cow
     behavior: random_walk
 
-  # ===== PASSIVE: spatial damage (adjacent = manhattan ≤ range) =====
+  # ===== PASSIVE: spatial damage =====
+  # Values from Crafter source (objects.py):
+  #
+  # Zombie: damage 2 with cooldown 5 ticks when adjacent (dist ≤ 1).
+  # Effective average: -2 / 6 ticks ≈ -0.33/tick.
+  #
+  # Skeleton: shoots ARROWS from range 3-5 (kiting enemy, not adjacent).
+  # damage 2 per arrow, reload 4 ticks. Average: -2 / 5 ticks = -0.4/tick
+  # while skeleton stays in the 3-5 range.
 
   - passive: spatial
     entity: zombie
     range: 1
-    effect: { body: { health: -2 } }
+    effect: { body: { health: -0.33 } }
 
   - passive: spatial
     entity: skeleton
-    range: 1
-    effect: { body: { health: -1 } }
+    range: 5                           # arrow range, not adjacency
+    effect: { body: { health: -0.4 } }
 
   # ===== PASSIVE: stateful body dynamics =====
+  # Real Crafter _degen_or_regen_health (from objects.py):
+  #   if all(food>0, drink>0, energy>0 or sleeping):
+  #     recover += 1  (reaches +25 → HP +1 → avg +0.04/tick)
+  #   else:
+  #     recover -= 1  (reaches -15 → HP -1 → avg -0.067/tick)
+  #
+  # Our grammar doesn't support AND/OR conditions in `when` yet, so we
+  # approximate by splitting additively across the three variables.
+  # TODO: when grammar supports conjunction, replace with one rule:
+  #   when: { and: [food>0, drink>0, energy>0] } → +0.04
+  #   when: { or:  [food==0, drink==0, energy==0] } → -0.067
+  #
+  # Current approximation: each var contributes 1/3 of the full effect.
+  # At all-3-on: 3 × 0.013 = 0.04 ✓
+  # At any-at-0: −0.033 per var at 0, so 1 var → −0.033 (undershoot),
+  #              2 vars → −0.067 ✓, 3 vars → −0.1 (overshoot).
 
   - passive: stateful
     when: { var: food, op: ">", value: 0 }
-    effect: { body: { health: +0.1 } }
+    effect: { body: { health: 0.013 } }
 
   - passive: stateful
     when: { var: drink, op: ">", value: 0 }
-    effect: { body: { health: +0.1 } }
+    effect: { body: { health: 0.013 } }
+
+  - passive: stateful
+    when: { var: energy, op: ">", value: 0 }
+    effect: { body: { health: 0.013 } }
 
   - passive: stateful
     when: { var: food, op: "==", value: 0 }
-    effect: { body: { health: -0.5 } }
+    effect: { body: { health: -0.033 } }
 
   - passive: stateful
     when: { var: drink, op: "==", value: 0 }
-    effect: { body: { health: -0.5 } }
+    effect: { body: { health: -0.033 } }
+
+  - passive: stateful
+    when: { var: energy, op: "==", value: 0 }
+    effect: { body: { health: -0.033 } }

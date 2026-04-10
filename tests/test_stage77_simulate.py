@@ -240,13 +240,20 @@ class TestSimulateForwardBasic:
         assert traj.final_state.body["health"] <= 9.0
 
     def test_zombie_causes_death(self, loaded_store, tracker):
-        """Zombie 3 tiles away + inertia should kill within ~6 ticks."""
+        """Adjacent zombie + low health + longer horizon should kill.
+
+        With the corrected rates (zombie -0.33/tick, regen +0.04/tick when
+        all body vars up), net damage is ~-0.29/tick — much slower than
+        the old -2/tick. So test starts with low health and uses a long
+        enough horizon to see death.
+        """
         state = _mkstate(
+            body={"health": 3.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
             player_pos=(10, 10),
-            entities=[DynamicEntity("zombie", (13, 10))],
+            entities=[DynamicEntity("zombie", (11, 10))],  # adjacent at start
         )
         plan = Plan(steps=[PlannedStep(action="inertia", target=None, near=None, rule=None)])
-        traj = loaded_store.simulate_forward(plan, state, tracker, horizon=20)
+        traj = loaded_store.simulate_forward(plan, state, tracker, horizon=60)
         assert traj.terminated is True
         assert traj.terminated_reason == "body_dead"
         assert traj.failure_step("health") is not None

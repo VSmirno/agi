@@ -82,9 +82,10 @@ class TestInitFromTextbook:
         body, rules = self._load_store_and_block()
         t = HomeostaticTracker()
         t.init_from_textbook(body, rules)
+        # Rates updated to match real Crafter decay (measured via diag)
         assert t.innate_rates["food"] == -0.04
-        assert t.innate_rates["drink"] == -0.04
-        assert t.innate_rates["energy"] == -0.03
+        assert t.innate_rates["drink"] == -0.05
+        assert t.innate_rates["energy"] == -0.033
 
     def test_populates_observed_max_initial(self):
         body, rules = self._load_store_and_block()
