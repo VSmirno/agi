@@ -84,11 +84,9 @@ def _parse_action_rule(entry: dict) -> tuple[str, CausalLink] | None:
         return None
 
     requires = dict(entry.get("requires", {}) or {})
-    legacy_result = _derive_legacy_result(action, entry, effect)
 
     link = CausalLink(
         action=action,
-        result=legacy_result,
         requires=requires,
         confidence=0.5,
         kind="action_triggered",
@@ -144,35 +142,6 @@ def _build_action_effect(
     )
 
 
-def _derive_legacy_result(
-    action: str, entry: dict, effect: RuleEffect
-) -> str:
-    """Derive the legacy `result: str` from the new effect structure.
-
-    Stage 71-76 code reads `link.result` for plan lookup, verification, and
-    tests. This keeps those callers working during the staged refactor until
-    Commit 8 removes the `result` field entirely.
-    """
-    if effect.kind == "gather":
-        positives = [k for k, v in effect.inventory_delta.items() if v > 0]
-        return positives[0] if positives else ""
-    if effect.kind == "craft":
-        # Prefer explicit `result` field in YAML; fall back to largest positive delta
-        explicit = entry.get("result")
-        if explicit:
-            return str(explicit)
-        positives = [k for k, v in effect.inventory_delta.items() if v > 0]
-        return positives[0] if positives else ""
-    if effect.kind == "place":
-        return str(entry.get("item", effect.world_place[0] if effect.world_place else ""))
-    if effect.kind in ("consume", "self"):
-        positives = [k for k, v in effect.body_delta.items() if v > 0]
-        return f"restore_{positives[0]}" if positives else ""
-    if effect.kind == "remove":
-        return f"kill_{effect.scene_remove}" if effect.scene_remove else ""
-    return ""
-
-
 def _parse_passive_rule(entry: dict) -> tuple[str, CausalLink] | None:
     """Parse a passive rule (body_rate / movement / spatial / stateful).
 
@@ -194,7 +163,7 @@ def _parse_passive_rule(entry: dict) -> tuple[str, CausalLink] | None:
         )
         link = CausalLink(
             action="_passive",
-            result="",
+
             kind="passive_body_rate",
             effect=effect,
             confidence=1.0,  # innate, fully trusted
@@ -211,7 +180,7 @@ def _parse_passive_rule(entry: dict) -> tuple[str, CausalLink] | None:
         )
         link = CausalLink(
             action="_passive",
-            result="",
+
             kind="passive_movement",
             effect=effect,
             confidence=0.5,
@@ -231,7 +200,7 @@ def _parse_passive_rule(entry: dict) -> tuple[str, CausalLink] | None:
         )
         link = CausalLink(
             action="_passive",
-            result="",
+
             kind="passive_spatial",
             effect=effect,
             confidence=0.5,
@@ -255,7 +224,7 @@ def _parse_passive_rule(entry: dict) -> tuple[str, CausalLink] | None:
         )
         link = CausalLink(
             action="_passive",
-            result="",
+
             kind="passive_stateful",
             effect=effect,
             confidence=1.0,
@@ -267,158 +236,14 @@ def _parse_passive_rule(entry: dict) -> tuple[str, CausalLink] | None:
 
 
 # ---------------------------------------------------------------------------
-# Legacy regex parser (Stage 71-76 compatibility)
-# ---------------------------------------------------------------------------
-
-
-def _parse_rule_legacy(text: str) -> dict[str, Any] | None:
-    """Parse a legacy string rule into a dict form (old format).
-
-    Supported formats:
-        "do OBJECT gives RESULT"
-        "do OBJECT gives RESULT requires ITEM"
-        "do OBJECT gives RESULT requires ITEM1 and ITEM2"
-        "place RESULT on OBJECT requires ITEM"
-        "make RESULT near OBJECT requires ITEM"
-        "make RESULT near OBJECT requires ITEM1 and ITEM2"
-        "do OBJECT with ITEM kills OBJECT"  (combat)
-        "OBJECT nearby without ITEM means flee" (survival)
-        "do OBJECT restores STAT"
-        "sleep restores STAT"
-
-    Returns dict with keys: concept, action, result, requires, type.
-    This is the Stage 71 format; caller builds a CausalLink from it.
-    """
-    text = text.strip().lower()
-
-    # Combat: "do zombie with wood_sword kills zombie"
-    m = re.match(r"do (\w+) with (\w+) kills (\w+)", text)
-    if m:
-        return {
-            "concept": m.group(1),
-            "action": "do",
-            "result": f"kill_{m.group(3)}",
-            "requires": {m.group(2): 1},
-            "type": "combat",
-        }
-
-    # Survival: "zombie nearby without wood_sword means flee"
-    m = re.match(r"(\w+) nearby without (\w+) means flee", text)
-    if m:
-        return {
-            "concept": m.group(1),
-            "action": "nearby",
-            "result": "flee",
-            "requires": {},
-            "without": m.group(2),
-            "type": "survival",
-        }
-
-    # Restore: "do OBJECT restores STAT" or "sleep restores STAT"
-    m = re.match(r"do (\w+) restores (\w+)", text)
-    if m:
-        return {
-            "concept": m.group(1),
-            "action": "do",
-            "result": f"restore_{m.group(2)}",
-            "requires": {},
-            "type": "need",
-            "restores": m.group(2),
-        }
-    m = re.match(r"sleep restores (\w+)", text)
-    if m:
-        return {
-            "concept": "_self",
-            "action": "sleep",
-            "result": f"restore_{m.group(1)}",
-            "requires": {},
-            "type": "need",
-            "restores": m.group(1),
-        }
-
-    # Gather: "do OBJECT gives RESULT [requires ...]"
-    m = re.match(r"do (\w+) gives (\w+)(?:\s+requires\s+(.+))?$", text)
-    if m:
-        requires = _parse_requires(m.group(3)) if m.group(3) else {}
-        return {
-            "concept": m.group(1),
-            "action": "do",
-            "result": m.group(2),
-            "requires": requires,
-            "type": "gather",
-        }
-
-    # Place: "place RESULT on OBJECT requires ..."
-    m = re.match(r"place (\w+) on (\w+)(?:\s+requires\s+(.+))?$", text)
-    if m:
-        requires = _parse_requires(m.group(3)) if m.group(3) else {}
-        return {
-            "concept": m.group(2),  # "empty"
-            "action": "place",
-            "result": m.group(1),  # "table"
-            "requires": requires,
-            "type": "craft",
-        }
-
-    # Make: "make RESULT near OBJECT requires ..."
-    m = re.match(r"make (\w+) near (\w+)(?:\s+requires\s+(.+))?$", text)
-    if m:
-        requires = _parse_requires(m.group(3)) if m.group(3) else {}
-        return {
-            "concept": m.group(2),  # "table"
-            "action": "make",
-            "result": m.group(1),  # "wood_pickaxe"
-            "requires": requires,
-            "type": "craft",
-        }
-
-    return None
-
-
-def _parse_requires(text: str) -> dict[str, int]:
-    """Parse 'wood and stone_item' → {'wood': 1, 'stone_item': 1}"""
-    items = re.split(r"\s+and\s+", text.strip())
-    result: dict[str, int] = {}
-    for item in items:
-        item = item.strip()
-        if item:
-            result[item] = result.get(item, 0) + 1
-    return result
-
-
-# Backward-compat dispatcher for Stage 71-76 tests that import the old name.
-# Polymorphic on input type: string → legacy regex parser, dict → new
-# structured parser (converted back to legacy dict shape so test assertions
-# still work). Removed in Commit 8 along with other legacy shims.
-def _parse_rule(rule: Any) -> dict[str, Any] | None:
-    if isinstance(rule, str):
-        return _parse_rule_legacy(rule)
-    if isinstance(rule, dict):
-        result = _parse_rule_dict(rule)
-        if result is None:
-            return None
-        _, link = result
-        return {
-            "concept": link.concept or "",
-            "action": link.action,
-            "result": link.result,
-            "requires": link.requires,
-            "type": link.effect.kind if link.effect else "",
-        }
-    return None
-
-
-# ---------------------------------------------------------------------------
 # CrafterTextbook — unified loader
 # ---------------------------------------------------------------------------
 
 
 class CrafterTextbook:
-    """Loads a YAML textbook and registers concepts + rules into ConceptStore.
-
-    Supports both new structured dict format (Stage 77a) and legacy string
-    format (Stage 71-76) in the same file. Detection is per-rule by type:
-    strings → legacy regex parser, dicts → structured parser.
+    """Loads a structured YAML textbook and registers concepts + rules into
+    ConceptStore. Stage 77a structured-only — legacy string format removed
+    in Commit 8.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -432,7 +257,7 @@ class CrafterTextbook:
 
     @property
     def rules(self) -> list:
-        """Raw rules list — may contain strings (legacy) or dicts (new)."""
+        """Raw rules list — list of dicts in structured YAML format."""
         return self.data.get("rules", [])
 
     @property
@@ -441,52 +266,13 @@ class CrafterTextbook:
 
     @property
     def body_block(self) -> dict:
-        """New-format body block (dict with `variables`, `prior_strength`, ...).
-
-        Returns empty dict for legacy format (where `body` is a list).
-        Used by HomeostaticTracker.init_from_textbook (Stage 77a Commit 3).
+        """Body block: dict with `variables`, `prior_strength`, etc.
+        Used by HomeostaticTracker.init_from_textbook.
         """
         body = self.data.get("body", {})
         if isinstance(body, dict):
             return body
         return {}
-
-    @property
-    def body_rules(self) -> list[dict[str, Any]]:
-        """Legacy format: list of {concept, variable, rate} entries.
-
-        For new format, synthesizes the same shape from `passive: body_rate`
-        rules in the `rules` block, plus `passive: spatial` rules which
-        legacy callers used to represent conditional rates. This keeps
-        tracker.init_from_body_rules working during the staged refactor.
-        """
-        body = self.data.get("body", [])
-
-        # Legacy format: body is already a list of {concept, variable, rate}
-        if isinstance(body, list):
-            return body
-
-        # New format: synthesize from rules
-        result: list[dict[str, Any]] = []
-        for rule_entry in self.rules:
-            if not isinstance(rule_entry, dict):
-                continue
-            if rule_entry.get("passive") == "body_rate":
-                result.append({
-                    "concept": "_background",
-                    "variable": rule_entry["variable"],
-                    "rate": rule_entry["rate"],
-                })
-            elif rule_entry.get("passive") == "spatial":
-                # Legacy conditional rate from spatial damage rule
-                body_delta = (rule_entry.get("effect", {}) or {}).get("body", {}) or {}
-                for var, rate in body_delta.items():
-                    result.append({
-                        "concept": rule_entry["entity"],
-                        "variable": var,
-                        "rate": rate,
-                    })
-        return result
 
     def load_into(self, store: ConceptStore) -> int:
         """Parse vocabulary and rules, register into ConceptStore.
@@ -500,42 +286,16 @@ class CrafterTextbook:
 
         links_added = 0
         for rule_entry in self.rules:
-            if isinstance(rule_entry, str):
-                # Legacy string format → regex parser → manual CausalLink build
-                parsed = _parse_rule_legacy(rule_entry)
-                if parsed is None:
-                    continue
-                concept_id = parsed["concept"]
-                store.register(concept_id)
-                if parsed["result"] not in ("flee",):
-                    store.register(parsed["result"])
-                link = CausalLink(
-                    action=parsed["action"],
-                    result=parsed["result"],
-                    requires=parsed.get("requires", {}),
-                    confidence=0.5,
-                    kind="action_triggered",
-                    concept=concept_id,
-                )
-                if parsed["type"] == "survival":
-                    link.condition = f"without_{parsed.get('without', '')}"
-                store.add_causal(concept_id, link)
-                links_added += 1
-
-            elif isinstance(rule_entry, dict):
-                # New structured format
+            if isinstance(rule_entry, dict):
                 result = _parse_rule_dict(rule_entry)
                 if result is None:
                     continue
                 concept_id, link = result
                 if link.kind == "action_triggered":
                     store.register(concept_id)
-                    # Also register any result item so plan() can find it
-                    if link.result and link.result not in ("flee",):
-                        store.register(link.result)
                     store.add_causal(concept_id, link)
                 else:
-                    # Passive rule — goes into flat list
+                    # Passive rule — flat list on store
                     store.add_passive_rule(link)
                 links_added += 1
 

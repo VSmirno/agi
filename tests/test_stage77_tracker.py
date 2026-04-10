@@ -1,8 +1,8 @@
-"""Stage 77a Commit 3: Tests for HomeostaticTracker innate/observed split.
+"""Stage 77a: Tests for HomeostaticTracker innate/observed split.
 
-Verifies the new Bayesian combination of innate + observed rates, the new
-init_from_textbook path, and that legacy behavior (init_from_body_rules,
-get_rate with visible_concepts) still works during the staged transition.
+Verifies Bayesian combination of innate + observed rates and the
+init_from_textbook path. Legacy `init_from_body_rules` and
+`get_rate(visible_concepts=...)` were removed in Commit 8.
 """
 
 from __future__ import annotations
@@ -12,41 +12,6 @@ import pytest
 from snks.agent.concept_store import ConceptStore
 from snks.agent.crafter_textbook import CrafterTextbook
 from snks.agent.perception import HomeostaticTracker
-
-
-# ---------------------------------------------------------------------------
-# Legacy init_from_body_rules backward compat
-# ---------------------------------------------------------------------------
-
-
-class TestLegacyInit:
-    def test_legacy_init_populates_both_paths(self):
-        t = HomeostaticTracker()
-        t.init_from_body_rules([
-            {"concept": "_background", "variable": "food", "rate": -0.04},
-            {"concept": "zombie", "variable": "health", "rate": -2.0},
-        ])
-        # Legacy fields populated
-        assert t.rates["food"] == -0.04
-        assert t.conditional_rates[("zombie", "health")] == -2.0
-        # New path — innate_rates gets the _background rules
-        assert t.innate_rates["food"] == -0.04
-        # Conditional rates NOT in innate_rates (different mechanism)
-        assert "zombie" not in t.innate_rates
-
-    def test_legacy_init_idempotent(self):
-        """Second call should be skipped (as before)."""
-        t = HomeostaticTracker()
-        t.init_from_body_rules([
-            {"concept": "_background", "variable": "food", "rate": -0.04},
-        ])
-        # Change the values then re-init
-        t.rates["food"] = -99.0
-        t.init_from_body_rules([
-            {"concept": "_background", "variable": "food", "rate": -0.01},
-        ])
-        # Should NOT have overwritten because _initialized is True
-        assert t.rates["food"] == -99.0
 
 
 # ---------------------------------------------------------------------------
@@ -137,42 +102,9 @@ class TestBayesianGetRate:
         expected = (20 / 220) * -0.04 + (200 / 220) * -1.0
         assert t.get_rate("food") == pytest.approx(expected)
 
-    def test_no_innate_no_observations_falls_back_to_legacy_rates(self):
-        """If neither innate nor observed populated, fall back to legacy rates."""
-        t = HomeostaticTracker()
-        t.rates["food"] = -99.0
-        # No innate, no observations
-        assert t.get_rate("food") == -99.0
-
     def test_missing_var_returns_zero(self):
         t = HomeostaticTracker()
         assert t.get_rate("nonexistent") == 0.0
-
-
-class TestLegacyGetRateStillWorks:
-    """Legacy path with visible_concepts — used by select_goal (dies in Commit 8)."""
-
-    def test_visible_concepts_returns_worst_conditional(self):
-        t = HomeostaticTracker()
-        t.rates["health"] = 0.0
-        t.conditional_rates[("zombie", "health")] = -2.0
-        t.conditional_rates[("skeleton", "health")] = -1.0
-        # Worst (most negative) among visible
-        assert t.get_rate("health", visible_concepts={"zombie", "skeleton"}) == -2.0
-
-    def test_empty_visible_set_uses_rates(self):
-        t = HomeostaticTracker()
-        t.rates["food"] = -0.04
-        # Empty visible set (falsy) → falls through to new path;
-        # because legacy rates populated, the new path uses fallback
-        assert t.get_rate("food", visible_concepts=set()) == -0.04
-
-    def test_none_visible_uses_new_bayesian(self):
-        """None signals 'new path', NOT 'no context' — these differ."""
-        t = HomeostaticTracker()
-        t.innate_rates["food"] = -0.04
-        # visible_concepts=None → new path (Bayesian)
-        assert t.get_rate("food", visible_concepts=None) == pytest.approx(-0.04)
 
 
 # ---------------------------------------------------------------------------

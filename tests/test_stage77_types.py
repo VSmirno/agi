@@ -401,7 +401,7 @@ class TestFailure:
 
 class TestPlan:
     def test_planned_step_construct(self):
-        link = CausalLink(action="do", result="wood", kind="action_triggered")
+        link = CausalLink(action="do", kind="action_triggered")
         step = PlannedStep(action="do", target="tree", near=None, rule=link)
         assert step.action == "do"
         assert step.target == "tree"
@@ -420,39 +420,25 @@ class TestPlan:
 
 
 # ---------------------------------------------------------------------------
-# CausalLink backward compatibility
+# CausalLink structured effect
 # ---------------------------------------------------------------------------
 
 
-class TestCausalLinkBackwardCompat:
-    """Verify the updated CausalLink still works with Stage 71-76 code that
-    uses the legacy `result: str` field."""
+class TestCausalLinkStructured:
+    """CausalLink post-Stage 77a: structured `effect: RuleEffect`, no `result`."""
 
-    def test_legacy_result_field(self):
-        link = CausalLink(action="do", result="wood", requires={})
-        assert link.result == "wood"
-        assert link.kind == "action_triggered"  # default
-        assert link.effect is None
-
-    def test_new_effect_field(self):
+    def test_effect_field(self):
         effect = RuleEffect(kind="gather", inventory_delta={"wood": 1})
         link = CausalLink(
             action="do",
-            result="",  # deprecated, empty default
             kind="action_triggered",
             effect=effect,
+            concept="tree",
         )
         assert link.effect is effect
         assert link.effect.kind == "gather"
+        assert link.concept == "tree"
 
-    def test_both_result_and_effect_coexist(self):
-        """During transition, both fields may be set."""
-        effect = RuleEffect(kind="gather", inventory_delta={"wood": 1})
-        link = CausalLink(
-            action="do",
-            result="wood",  # legacy, still set
-            kind="action_triggered",
-            effect=effect,
-        )
-        assert link.result == "wood"
-        assert link.effect is not None
+    def test_default_kind(self):
+        link = CausalLink(action="do")
+        assert link.kind == "action_triggered"
