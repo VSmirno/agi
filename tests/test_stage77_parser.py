@@ -275,9 +275,10 @@ class TestLoadIntoStore:
         assert zombie_movement.effect.movement_behavior == "chase_player"
 
         # Passive: spatial damage for zombie
+        # Value from real Crafter: -2 damage per 6 ticks cooldown ≈ -0.33/tick
         zombie_spatial = store.spatial_rules_for("zombie")
         assert len(zombie_spatial) >= 1
-        assert zombie_spatial[0].effect.body_delta == {"health": -2.0}
+        assert zombie_spatial[0].effect.body_delta == {"health": -0.33}
 
         # Passive: body_rate rules
         body_rates = store.body_rate_rules()
@@ -297,10 +298,11 @@ class TestLoadIntoStore:
         assert len(bg_food) == 1
         assert bg_food[0]["rate"] == -0.04
 
-        # Should contain conditional rates (from spatial passive rules)
+        # Should contain conditional rates (from spatial passive rules).
+        # Value reflects real Crafter zombie damage/cooldown ratio.
         zombie_health = [r for r in rules if r.get("concept") == "zombie" and r.get("variable") == "health"]
         assert len(zombie_health) == 1
-        assert zombie_health[0]["rate"] == -2
+        assert zombie_health[0]["rate"] == -0.33
 
     def test_body_block_new_format(self):
         tb = CrafterTextbook("configs/crafter_textbook.yaml")
@@ -381,7 +383,8 @@ class TestConceptStorePassiveHelpers:
         store = self._make_loaded_store()
         rules = store.spatial_rules_for("zombie")
         assert len(rules) == 1
-        assert rules[0].effect.body_delta == {"health": -2.0}
+        # Real Crafter damage/cooldown: -2/6 ticks ≈ -0.33/tick
+        assert rules[0].effect.body_delta == {"health": -0.33}
 
     def test_spatial_rules_for_unknown_entity(self):
         store = self._make_loaded_store()
