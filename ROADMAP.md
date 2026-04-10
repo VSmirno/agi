@@ -1,7 +1,7 @@
 # СНКС — Roadmap v3 (Real Learning на top of Rules)
 
 **Последнее обновление:** 2026-04-11
-**Статус:** Stage 77a COMPLETE (partial PASS, wall ~180) → Stage 78a COMPLETE (FAIL, DAF residual dropped) → Stage 78b NEXT (MLP residual, Dreamer-CDP fallback)
+**Статус:** Stage 77a COMPLETE (partial PASS, wall ~180) → Stage 78a COMPLETE (FAIL, DAF residual dropped) → **Stage 78b COMPLETE (PASS, synthetic gate met)** → Stage 79 NEXT (surprise accumulator + rule nursery, no-LLM)
 **Стратегия v3:** [docs/superpowers/specs/2026-04-11-strategy-real-learning-design.md](docs/superpowers/specs/2026-04-11-strategy-real-learning-design.md)
 **История v2:** [docs/superpowers/specs/2026-04-02-roadmap-v2-design.md](docs/superpowers/specs/2026-04-02-roadmap-v2-design.md)
 
@@ -103,7 +103,7 @@ Key findings: R3 (oscillatory default tau, Stage 44 R1.1 untested case) saturate
 
 | Stage | Название | Gate | Est |
 |-------|----------|------|-----|
-| 78b | MLP Residual Trainer (Dreamer-CDP scaffolding) | Forked from `predictive_trainer.py`: neg cosine similarity loss, stop-gradient target, small MLP residual on top of `simulate_forward` prediction. Synthetic test: учит conjunctive rule за <5 эпох, residual bottleneck kept small | 1 нед |
+| 78b | MLP Residual Trainer (Dreamer-CDP scaffolding) | Forked from `predictive_trainer.py`: neg cosine similarity loss, stop-gradient target, small MLP residual on top of `simulate_forward` prediction. Synthetic test: учит conjunctive rule за <5 эпох, residual bottleneck kept small | **COMPLETE PASS 2026-04-11** — conj_health_mse=0.0064 (gate ≤0.008), gen_health_mse=0.0002 (gate ≤0.012). 9/9 unit tests. Report: `docs/reports/stage-78b-report.md` |
 | 79 | Surprise Accumulator + Rule Nursery (no-LLM) | Per-context surprise bucketing with two-level context key (coarse (visible, action), refined by body quartiles). Template-based candidate rule emission from mean observed delta. Verification gate → promotion to ConceptStore.learned_rules. Sketch: `docs/superpowers/specs/2026-04-11-stage79-surprise-accumulator-sketch.md` | 2 нед |
 | 80 | Residual + Rule Nursery Crafter integration | Both mechanisms live in MPC tick loop. Eval on Crafter: survival ≥200 (close Stage 77a wall), wood ≥30% | 1-2 нед |
 | 81 | Alternating training (Neuro-Symbolic Synergy pattern) | Residual fine-tune только на rule-uncovered трассах, rules bump confidence on trivially-matched traces. Eval: stable gate с growing rule count per episode | 1 нед |
