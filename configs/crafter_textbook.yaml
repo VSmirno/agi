@@ -120,22 +120,26 @@ rules:
     effect: { body: { energy: +5 } }
 
   # ===== PASSIVE: background body decay =====
-  # Measured from real Crafter via diag_crafter_mechanics.py:
-  # food: -1 per ~26 steps ≈ -0.04/tick
-  # drink: -1 per ~21 steps ≈ -0.05/tick (faster than I had)
-  # energy: -1 per ~31 steps ≈ -0.033/tick
+  # ROUGH directional prior. The teacher knows "food depletes slowly", not
+  # the exact rate. All three start at the same rough -0.02/tick (something
+  # on the order of 1 per 50 ticks).
+  #
+  # Forward simulation reads `tracker.get_rate(var)` which Bayesian-combines
+  # these innate priors with the agent's observed running mean. After ~20
+  # episodes, sim predictions converge to the real env rates without the
+  # textbook ever knowing the exact values.
 
   - passive: body_rate
     variable: food
-    rate: -0.04
+    rate: -0.02
 
   - passive: body_rate
     variable: drink
-    rate: -0.05
+    rate: -0.02
 
   - passive: body_rate
     variable: energy
-    rate: -0.033
+    rate: -0.02
 
   # ===== PASSIVE: entity movement =====
 
@@ -145,70 +149,62 @@ rules:
 
   - passive: movement
     entity: skeleton
-    behavior: chase_player   # TODO: real skeleton kites at dist 3-5
+    behavior: chase_player
 
   - passive: movement
     entity: cow
     behavior: random_walk
 
   # ===== PASSIVE: spatial damage =====
-  # Values from Crafter source (objects.py):
+  # Rough qualitative: "zombie hurts when adjacent" (strong damage),
+  # "skeleton can hurt from a distance" (shoots).
+  # The teacher knows the DIRECTION (damages health) and rough MAGNITUDE
+  # (significant) and rough RANGE (skeleton farther than zombie). Exact
+  # numbers come from observation, not from this textbook.
   #
-  # Zombie: damage 2 with cooldown 5 ticks when adjacent (dist ≤ 1).
-  # Effective average: -2 / 6 ticks ≈ -0.33/tick.
-  #
-  # Skeleton: shoots ARROWS from range 3-5 (kiting enemy, not adjacent).
-  # damage 2 per arrow, reload 4 ticks. Average: -2 / 5 ticks = -0.4/tick
-  # while skeleton stays in the 3-5 range.
+  # TODO(Stage 77b): refine via observation-based rule learning. The agent
+  # should learn via surprise when an entity at distance X causes damage Y.
 
   - passive: spatial
     entity: zombie
     range: 1
-    effect: { body: { health: -0.33 } }
+    effect: { body: { health: -0.5 } }
 
   - passive: spatial
     entity: skeleton
-    range: 5                           # arrow range, not adjacency
-    effect: { body: { health: -0.4 } }
+    range: 5
+    effect: { body: { health: -0.5 } }
 
   # ===== PASSIVE: stateful body dynamics =====
-  # Real Crafter _degen_or_regen_health (from objects.py):
-  #   if all(food>0, drink>0, energy>0 or sleeping):
-  #     recover += 1  (reaches +25 → HP +1 → avg +0.04/tick)
-  #   else:
-  #     recover -= 1  (reaches -15 → HP -1 → avg -0.067/tick)
+  # Rough directional facts:
+  #   "when food > 0, health recovers slowly" — positive, small
+  #   "when food is depleted (== 0), health drops" — negative, larger
+  # (Same for drink, energy.)
   #
-  # Our grammar doesn't support AND/OR conditions in `when` yet, so we
-  # approximate by splitting additively across the three variables.
-  # TODO: when grammar supports conjunction, replace with one rule:
-  #   when: { and: [food>0, drink>0, energy>0] } → +0.04
-  #   when: { or:  [food==0, drink==0, energy==0] } → -0.067
-  #
-  # Current approximation: each var contributes 1/3 of the full effect.
-  # At all-3-on: 3 × 0.013 = 0.04 ✓
-  # At any-at-0: −0.033 per var at 0, so 1 var → −0.033 (undershoot),
-  #              2 vars → −0.067 ✓, 3 vars → −0.1 (overshoot).
+  # TODO(Stage 77b): conjunction support in `when` clause. Real Crafter
+  # rule: `all three > 0 → heal, any == 0 → degen`. Currently approximated
+  # per-var additively. See memory/project_stage77a_todo.md.
 
   - passive: stateful
     when: { var: food, op: ">", value: 0 }
-    effect: { body: { health: 0.013 } }
+    effect: { body: { health: 0.02 } }
 
   - passive: stateful
     when: { var: drink, op: ">", value: 0 }
-    effect: { body: { health: 0.013 } }
+    effect: { body: { health: 0.02 } }
 
   - passive: stateful
     when: { var: energy, op: ">", value: 0 }
-    effect: { body: { health: 0.013 } }
+    effect: { body: { health: 0.02 } }
 
   - passive: stateful
     when: { var: food, op: "==", value: 0 }
-    effect: { body: { health: -0.033 } }
+    effect: { body: { health: -0.05 } }
 
   - passive: stateful
     when: { var: drink, op: "==", value: 0 }
-    effect: { body: { health: -0.033 } }
+    effect: { body: { health: -0.05 } }
 
   - passive: stateful
     when: { var: energy, op: "==", value: 0 }
-    effect: { body: { health: -0.033 } }
+    effect: { body: { health: -0.05 } }

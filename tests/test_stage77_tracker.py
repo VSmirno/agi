@@ -82,10 +82,11 @@ class TestInitFromTextbook:
         body, rules = self._load_store_and_block()
         t = HomeostaticTracker()
         t.init_from_textbook(body, rules)
-        # Rates updated to match real Crafter decay (measured via diag)
-        assert t.innate_rates["food"] == -0.04
-        assert t.innate_rates["drink"] == -0.05
-        assert t.innate_rates["energy"] == -0.033
+        # Rough directional priors — teacher knows "depletes slowly".
+        # Exact values refined by tracker.observed_rates from experience.
+        assert t.innate_rates["food"] == -0.02
+        assert t.innate_rates["drink"] == -0.02
+        assert t.innate_rates["energy"] == -0.02
 
     def test_populates_observed_max_initial(self):
         body, rules = self._load_store_and_block()
@@ -240,13 +241,15 @@ class TestTextbookIntegration:
         # reference_min used by SimState.is_dead check
         assert t.reference_min["health"] == 0.0
 
-        # Innate food decay
-        assert t.get_rate("food") == pytest.approx(-0.04)
+        # Innate food decay — rough directional prior from textbook
+        assert t.get_rate("food") == pytest.approx(-0.02)
 
-        # After observing steady decay, running mean matches innate
+        # After observing steady decay, running mean refines innate.
+        # Start: innate = -0.02, observed = 0, n = 0 → effective = -0.02
         for _ in range(200):
-            t.update({"food": 9}, {"food": 9}, set())  # no change
-        # observed = 0 (no delta), innate = -0.04
-        # w = 20/220 ≈ 0.091; effective = 0.091 * -0.04 + 0.909 * 0 ≈ -0.0036
+            t.update({"food": 9}, {"food": 9}, set())  # no delta → observed trends to 0
+        # After 200 obs: w = 20/220 ≈ 0.091
+        # effective = 0.091 * -0.02 + 0.909 * 0 ≈ -0.00182
+        # Should be close to 0 (mostly observed) with slight pull from innate
         result = t.get_rate("food")
-        assert -0.01 < result < 0  # mostly observed (near zero) with some innate pull
+        assert -0.01 < result < 0
