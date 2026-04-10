@@ -674,7 +674,7 @@ class ConceptStore:
             prev_inv = dict(sim.inventory)
             prev_enemies = {e.concept_id for e in sim.dynamic_entities}
 
-            self._apply_tick(sim, primitive, tracker, traj, tick)
+            self._apply_tick(sim, primitive, tracker, traj, tick, planned_step=current_step)
 
             # Snapshot body_series
             for var, value in sim.body.items():
@@ -717,8 +717,16 @@ class ConceptStore:
         tracker: "HomeostaticTracker",
         traj: Trajectory,
         tick: int,
+        planned_step: "PlannedStep | None" = None,
     ) -> None:
-        """One tick of simulation. Six phases in fixed order."""
+        """One tick of simulation. Six phases in fixed order.
+
+        Stage 77a Attempt 2: planned_step is optionally passed so Phase 6 "do"
+        can fire a rule by target proximity (manhattan ≤1) instead of relying
+        on last_action facing direction. In the sim, navigation walks through
+        target tiles, making facing-based rules never fire — proximity check
+        works around that.
+        """
 
         # === Phase 1: Dynamic entities move ===
         for entity in sim.dynamic_entities:
@@ -783,11 +791,44 @@ class ConceptStore:
 
         # === Phase 6: Action-driven effects ===
         if primitive == "do":
-            near = _nearest_concept(sim)
-            if near:
-                rule = self._find_do_rule(near, sim.inventory)
-                if rule and rule.confidence >= self.CONFIDENCE_THRESHOLD:
-                    _apply_effect_to_sim(sim, rule.effect, traj, tick, near)
+            # Attempt 2: use planned_step.target + proximity if available
+            # (sim navigation walks through tiles, so facing-based lookup fails).
+            fired = False
+            if (
+                planned_step
+                and planned_step.action == "do"
+                and planned_step.target
+                and planned_step.rule
+                and planned_step.rule.confidence >= self.CONFIDENCE_THRESHOLD
+            ):
+                target = planned_step.target
+                # Check adjacency via dynamic_entities (for mobs) or spatial_map
+                target_pos = None
+                for e in sim.dynamic_entities:
+                    if e.concept_id == target:
+                        target_pos = e.pos
+                        break
+                if target_pos is None and sim.spatial_map is not None:
+                    target_pos = sim.spatial_map.find_nearest(target, sim.player_pos)
+                if target_pos is not None and _manhattan(target_pos, sim.player_pos) <= 1:
+                    # Check requires still satisfied in sim inventory
+                    if all(
+                        sim.inventory.get(r, 0) >= c
+                        for r, c in planned_step.rule.requires.items()
+                    ):
+                        _apply_effect_to_sim(
+                            sim, planned_step.rule.effect, traj, tick,
+                            f"do:{target}",
+                        )
+                        fired = True
+
+            # Fallback: original facing-based lookup (for non-planned "do")
+            if not fired:
+                near = _nearest_concept(sim)
+                if near:
+                    rule = self._find_do_rule(near, sim.inventory)
+                    if rule and rule.confidence >= self.CONFIDENCE_THRESHOLD:
+                        _apply_effect_to_sim(sim, rule.effect, traj, tick, near)
         elif primitive.startswith("place_"):
             item = primitive[len("place_"):]
             rule = self._find_place_rule(item, sim.inventory)
@@ -1024,14 +1065,27 @@ def _expand_to_primitive(
     target = step.target
 
     if step.action == "do":
-        if _nearest_concept(sim) == target:
-            return "do"
+        # Attempt 2: proximity-based "do". If the target is in a dynamic
+        # entity or spatial_map within manhattan 1, emit "do". Don't rely
+        # on _nearest_concept facing direction.
         target_pos = None
-        if target and sim.spatial_map is not None:
+        # Dynamic entities (mobs) take precedence
+        for e in sim.dynamic_entities:
+            if e.concept_id == target:
+                target_pos = e.pos
+                break
+        # Fall back to spatial_map
+        if target_pos is None and target and sim.spatial_map is not None:
             target_pos = sim.spatial_map.find_nearest(target, sim.player_pos)
+
         if target_pos is not None:
-            primitive_pos = _step_toward_pos(sim.player_pos, target_pos)
-            return _direction_primitive(sim.player_pos, primitive_pos)
+            dist = abs(target_pos[0] - sim.player_pos[0]) + abs(target_pos[1] - sim.player_pos[1])
+            if dist <= 1:
+                return "do"
+            return _direction_primitive(
+                sim.player_pos, _step_toward_pos(sim.player_pos, target_pos)
+            )
+
         # Unknown target location — explore to find it
         return _explore_direction(sim)
 

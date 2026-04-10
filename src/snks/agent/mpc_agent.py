@@ -163,14 +163,21 @@ def generate_candidate_plans(
     """Produce candidate plans via baseline rollout + remedy search.
 
     1. Run an inertia baseline rollout for `horizon` ticks.
-    2. Extract failures (what went wrong, when).
-    3. For each failure, query the world model (find_remedies) for rules
+    2. Extract failures (what went wrong, when) from baseline.
+    3. Inject PROACTIVE failures for things the world model knows are
+       dangerous even if baseline doesn't currently predict them:
+       - body vars with negative innate rate (will eventually deplete)
+       - entity concepts with known spatial damage on vital vars
+    4. For each failure, query the world model (find_remedies) for rules
        that counteract it.
-    4. For each remedy rule, backward-chain a plan (plan_toward_rule).
-    5. Return baseline + all generated plans as candidates.
+    5. For each remedy rule, backward-chain a plan (plan_toward_rule).
+    6. Return baseline + all generated plans as candidates.
 
-    Drives emerge from predicted failures — no hardcoded drive categories,
-    no Strategy 1/2/Preparation branches.
+    Drives emerge from predicted failures + proactive world-model threats —
+    no hardcoded drive categories, no Strategy 1/2/Preparation branches.
+    The "proactive" injection isn't a strategy, it's an observation: the
+    world model says "this concept damages vital vars" and the agent plans
+    accordingly, regardless of whether the threat is currently visible.
     """
     # 1. Baseline rollout
     baseline = Plan(
@@ -181,10 +188,44 @@ def generate_candidate_plans(
 
     candidates: list[Plan] = [baseline]
 
-    # 2. Extract failures
+    # 2. Extract failures from baseline trajectory
     failures = extract_failures(baseline_traj)
 
-    # 3-4. For each failure, find remedies and plan toward each
+    # 3. Proactive failure injection: things the world model knows are
+    # dangerous even if baseline doesn't see them within `horizon` ticks.
+    seen_causes = {f.cause for f in failures if f.cause}
+    seen_var_depleted = {f.var for f in failures if f.kind == "var_depleted"}
+
+    # 3a. Body vars with negative innate rate → future depletion
+    for var, rate in tracker.innate_rates.items():
+        if rate < 0 and var not in seen_var_depleted:
+            failures.append(Failure(
+                kind="var_depleted",
+                var=var,
+                cause=None,
+                step=horizon * 10,  # far future, lower priority than baseline-observed
+                severity=0.5,
+            ))
+
+    # 3b. Entity concepts with known spatial damage on vital body vars
+    for rule in store.passive_rules:
+        if rule.kind != "passive_spatial" or not rule.concept or not rule.effect:
+            continue
+        # Does this rule damage any vital var?
+        for var, delta in rule.effect.body_delta.items():
+            if delta < 0 and var in tracker.vital_mins:
+                if rule.concept not in seen_causes:
+                    failures.append(Failure(
+                        kind="attributed_to",
+                        var=None,
+                        cause=rule.concept,
+                        step=horizon * 10,  # proactive, not imminent
+                        severity=0.5,
+                    ))
+                    seen_causes.add(rule.concept)
+                break
+
+    # 4-5. For each failure, find remedies and plan toward each
     seen_rules: set[int] = set()
     for failure in failures:
         remedies = store.find_remedies(failure)
