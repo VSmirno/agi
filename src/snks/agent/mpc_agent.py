@@ -23,6 +23,17 @@ from typing import Any
 
 import numpy as np
 
+
+def _json_default(obj: Any) -> Any:
+    """JSON encoder hook for numpy scalars/arrays that sneak into trace dicts."""
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    raise TypeError(f"not JSON serializable: {type(obj).__name__}")
+
 from snks.agent.concept_store import (
     ConceptStore,
     _apply_player_move,
@@ -622,7 +633,7 @@ def run_mpc_episode(
                     and prev_player_pos != player_pos
                 ),
             }
-            trace_fh.write(json.dumps(trace_entry) + "\n")
+            trace_fh.write(json.dumps(trace_entry, default=_json_default) + "\n")
             trace_fh.flush()
             prev_predicted_next_body = predicted_next_body
             prev_chosen_origin = best_plan.origin
@@ -655,7 +666,7 @@ def run_mpc_episode(
             "length": steps_taken,
             "cause_of_death": cause_of_death,
             "final_inv": {str(k): int(v) for k, v in inv_after.items()},
-        }) + "\n")
+        }, default=_json_default) + "\n")
         trace_fh.close()
 
     return {
