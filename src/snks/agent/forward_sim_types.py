@@ -171,15 +171,18 @@ class SimState:
             step=self.step,
         )
 
-    def is_dead(self, reference_min: dict[str, float]) -> bool:
-        """Any body var reached its reference_min → catastrophic state.
+    def is_dead(self, vital_mins: dict[str, float]) -> bool:
+        """A vital body variable reached its catastrophic minimum → dead.
 
-        Accepts reference_min dict instead of tracker to avoid circular import.
-        Caller (simulate_forward) passes tracker.reference_min.
+        `vital_mins` maps {vital_var_name: min_threshold}. Only variables in
+        this dict cause death. Non-vital vars (food, drink, energy in Crafter)
+        can be at 0 without terminating the episode — they trigger stateful
+        damage to vital vars instead.
+
+        Caller (simulate_forward) passes tracker.vital_mins.
         """
-        for var, value in self.body.items():
-            ref_min = reference_min.get(var, 0.0)
-            if value <= ref_min:
+        for var, ref_min in vital_mins.items():
+            if self.body.get(var, 0.0) <= ref_min:
                 return True
         return False
 
@@ -227,12 +230,19 @@ class PlannedStep:
     Expanded into primitive env actions by expand_to_primitive (mpc_agent).
     The `rule` reference is used for completion checking (did this step's
     rule actually fire?).
+
+    Stage 71-76 legacy fields (`expected_gain`, `requires`) are kept for
+    backward compat with tests that read them. Commit 8 removes them.
     """
 
     action: str  # "do" | "make" | "place" | "sleep" | "inertia" | "move"
     target: str | None  # concept_id to interact with / navigate toward
     near: str | None  # for make/place: what must be adjacent
-    rule: Any  # CausalLink | None — reference to the rule this step applies
+    rule: Any = None  # CausalLink | None — reference to the rule this step applies
+
+    # Legacy fields (Stage 71-76 backward compat, removed in Commit 8)
+    expected_gain: str = ""  # legacy: string result of the rule ("wood", "iron_item")
+    requires: dict = field(default_factory=dict)  # legacy: required items from rule
 
 
 @dataclass

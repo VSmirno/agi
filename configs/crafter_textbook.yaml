@@ -32,7 +32,10 @@ vocabulary:
 body:
   prior_strength: 20
   variables:
-    - { name: health, initial: 9, reference_min: 0, reference_max: 9 }
+    # `vital: true` means this variable hitting reference_min = death.
+    # Non-vital vars can hit their min without terminating the episode
+    # (e.g., food=0 is starvation, not instant death — health drops from it).
+    - { name: health, initial: 9, reference_min: 0, reference_max: 9, vital: true }
     - { name: food,   initial: 9, reference_min: 0, reference_max: 9 }
     - { name: drink,  initial: 9, reference_min: 0, reference_max: 9 }
     - { name: energy, initial: 9, reference_min: 0, reference_max: 9 }

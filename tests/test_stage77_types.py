@@ -216,33 +216,41 @@ class TestSimState:
 
     def test_is_dead_false_with_full_body(self):
         s = self._make()
-        ref_min = {"health": 0, "food": 0, "drink": 0, "energy": 0}
-        assert s.is_dead(ref_min) is False
+        vital_mins = {"health": 0}
+        assert s.is_dead(vital_mins) is False
 
     def test_is_dead_true_on_zero_health(self):
         s = self._make()
         s.body["health"] = 0.0
-        ref_min = {"health": 0, "food": 0, "drink": 0, "energy": 0}
-        assert s.is_dead(ref_min) is True
+        vital_mins = {"health": 0}
+        assert s.is_dead(vital_mins) is True
 
     def test_is_dead_true_on_negative(self):
         s = self._make()
         s.body["health"] = -0.5
-        ref_min = {"health": 0, "food": 0, "drink": 0, "energy": 0}
-        assert s.is_dead(ref_min) is True
+        vital_mins = {"health": 0}
+        assert s.is_dead(vital_mins) is True
 
-    def test_is_dead_respects_nonzero_reference_min(self):
+    def test_is_dead_respects_nonzero_vital_min(self):
         s = self._make()
-        s.body["food"] = 2.0
-        ref_min = {"health": 0, "food": 3, "drink": 0, "energy": 0}
-        # food (2) <= reference_min (3) → dead
-        assert s.is_dead(ref_min) is True
+        s.body["health"] = 2.0
+        vital_mins = {"health": 3}
+        # health (2) <= vital_min (3) → dead
+        assert s.is_dead(vital_mins) is True
 
-    def test_is_dead_missing_var_defaults_to_zero(self):
+    def test_non_vital_var_at_zero_not_dead(self):
+        """food=0 is not death in Crafter — only vital vars count."""
         s = self._make()
-        # food not in reference_min → default 0; food=7 > 0 → alive for this var
-        ref_min = {"health": 0}
-        assert s.is_dead(ref_min) is False
+        s.body["food"] = 0.0
+        # Only health is vital; food=0 without health=0 → not dead
+        vital_mins = {"health": 0}
+        assert s.is_dead(vital_mins) is False
+
+    def test_empty_vital_mins_never_dead(self):
+        s = self._make()
+        s.body["health"] = -100.0  # catastrophically low
+        # But if nothing is marked vital → not "dead" per this semantics
+        assert s.is_dead({}) is False
 
 
 # ---------------------------------------------------------------------------

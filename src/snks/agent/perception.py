@@ -111,6 +111,11 @@ class HomeostaticTracker:
     reference_min: dict[str, float] = field(default_factory=dict)
     reference_max: dict[str, float] = field(default_factory=dict)
 
+    # Vital variables — hitting their reference_min means death.
+    # Non-vital vars (food, drink, energy) can be at 0 without terminating
+    # the episode (starvation triggers stateful damage to vital vars instead).
+    vital_mins: dict[str, float] = field(default_factory=dict)
+
     def init_from_body_rules(self, body_rules: list[dict]) -> None:
         """Legacy (Stage 72-76): populate rates + conditional_rates from
         a list of {concept, variable, rate} dicts.
@@ -159,6 +164,9 @@ class HomeostaticTracker:
             initial = int(var_def.get("initial", 9))
             if name not in self.observed_max:
                 self.observed_max[name] = initial
+            # vital variables cause death when they reach reference_min
+            if var_def.get("vital", False):
+                self.vital_mins[name] = float(var_def.get("reference_min", 0))
 
         if passive_rules:
             for rule in passive_rules:
