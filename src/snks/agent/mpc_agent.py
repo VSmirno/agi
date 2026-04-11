@@ -437,6 +437,9 @@ def run_mpc_episode(
     residual_predictor: Any = None,
     residual_optimizer: Any = None,
     residual_train: bool = False,
+    surprise_accumulator: Any = None,
+    rule_nursery: Any = None,
+    nursery_tick_every: int = 1,
 ) -> dict:
     """Run one episode with MPC + forward-sim planning.
 
@@ -466,17 +469,42 @@ def run_mpc_episode(
             when residual_train=True.
         residual_train: if True, after each env.step the residual is
             trained with a single SGD step on the observed body gap.
+        surprise_accumulator: Stage 79 — optional SurpriseAccumulator. When
+            provided, after each env.step the (predicted_delta, actual_delta)
+            pair is fed to the accumulator for runtime rule induction.
+            Predicted delta is computed via the same 1-tick rules-only
+            replay (with planned_step propagation) as Stage 78c training.
+        rule_nursery: Stage 79 — optional RuleNursery. When provided,
+            `nursery.tick(accumulator, store, current_tick=step)` is called
+            every `nursery_tick_every` env steps. Promoted rules go into
+            `store.learned_rules` and become available to subsequent
+            `simulate_forward` calls in the same episode (and beyond).
+        nursery_tick_every: how often to run the nursery emit/verify cycle.
+            Default 1 = every env step. Increase to amortise cost in long
+            episodes if profiling shows it.
 
     Returns:
         Dict with episode metrics: length, final_inv, cause_of_death,
-        action_counts, bootstrap_ratio (always 1.0 — no bootstrap in Stage 77a),
-        action_entropy, residual_loss_mean (if training).
+        action_counts, action_entropy, plus residual_loss_* (if training)
+        and nursery_stats / accumulator_stats (if Stage 79 enabled).
     """
     if perceive_fn is None:
         perceive_fn = perceive_tile_field
     if residual_train and (residual_predictor is None or residual_optimizer is None):
         raise ValueError(
             "residual_train=True requires both residual_predictor and residual_optimizer"
+        )
+    if rule_nursery is not None and surprise_accumulator is None:
+        raise ValueError(
+            "rule_nursery requires surprise_accumulator (the nursery reads from the accumulator)"
+        )
+
+    # Lazy import to avoid making mpc_agent depend on snks.learning
+    # at module load time when the nursery isn't being used.
+    if surprise_accumulator is not None:
+        from snks.learning.surprise_accumulator import (
+            BODY_ORDER as _NURSERY_BODY_ORDER,
+            ContextKey as _NurseryContextKey,
         )
 
     trace_fh = None
@@ -673,6 +701,68 @@ def run_mpc_episode(
             residual_optimizer.step()
             residual_losses.append(float(loss.item()))
 
+        # --- Stage 79: surprise accumulator + rule nursery -------------------
+        # Reuses the same 1-tick rules-only replay (with planned_step
+        # propagation, the Bug 1 fix from Stage 78c) to compute the
+        # planner's actual prediction. Surprise is fed to the accumulator;
+        # the nursery emits/verifies/promotes candidate rules from
+        # saturated buckets. Promoted rules go into store.learned_rules
+        # and become available to subsequent simulate_forward calls.
+        if surprise_accumulator is not None:
+            # 1-tick rules-only replay (a SECOND copy if we already did
+            # one for residual training; the cost is microseconds and
+            # keeps the two consumers independent so future stages can
+            # disable one without breaking the other).
+            nursery_rules_sim = state.copy()
+            nursery_rules_traj = Trajectory(
+                plan=Plan(steps=[], origin="nursery_probe"),
+                body_series={var: [] for var in nursery_rules_sim.body},
+                events=[],
+                final_state=nursery_rules_sim,
+                terminated=False,
+                terminated_reason="horizon",
+                plan_progress=0,
+            )
+            nursery_chosen_step = best_plan.steps[0] if best_plan.steps else None
+            store._apply_tick(
+                nursery_rules_sim,
+                primitive,
+                tracker,
+                nursery_rules_traj,
+                tick=0,
+                planned_step=nursery_chosen_step,
+                visible_concepts=visible_concepts,
+            )
+
+            nursery_predicted_delta = {
+                var: float(nursery_rules_sim.body.get(var, 0.0))
+                     - float(state.body.get(var, 0.0))
+                for var in _NURSERY_BODY_ORDER
+            }
+            nursery_actual_delta = {
+                var: float(inv_after.get(var, 0))
+                     - float(state.body.get(var, 0.0))
+                for var in _NURSERY_BODY_ORDER
+            }
+            nursery_context = _NurseryContextKey.from_state(
+                visible=set(visible_concepts),
+                body=dict(state.body),
+                action=primitive,
+            )
+            surprise_accumulator.observe(
+                context=nursery_context,
+                predicted=nursery_predicted_delta,
+                actual=nursery_actual_delta,
+                tick_id=step,
+            )
+
+            if rule_nursery is not None and (step % nursery_tick_every == 0):
+                rule_nursery.tick(
+                    surprise_accumulator,
+                    store,
+                    current_tick=step,
+                )
+
         # --- Trace: write one JSONL line per tick ---
         if trace_fh is not None:
             predicted_next_body: dict[str, float] = {}
@@ -783,4 +873,9 @@ def run_mpc_episode(
         result["residual_loss_final"] = float(residual_losses[-1])
         result["residual_loss_early"] = float(np.mean(residual_losses[: max(1, len(residual_losses) // 5)]))
         result["residual_steps"] = len(residual_losses)
+    if surprise_accumulator is not None:
+        result["accumulator_stats"] = surprise_accumulator.stats()
+    if rule_nursery is not None:
+        result["nursery_stats"] = rule_nursery.stats()
+        result["learned_rule_count"] = len(store.learned_rules)
     return result
