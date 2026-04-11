@@ -201,6 +201,12 @@ class ConceptStore:
         # Kept in a flat list separate from concept.causal_links — they're
         # not tied to an "action on a concept", they're per-tick world updates.
         self.passive_rules: list[CausalLink] = []
+        # Stage 79: rules learned at runtime by the surprise accumulator +
+        # rule nursery. Stored in a flat list, applied in Phase 7 of
+        # _apply_tick (after textbook rules, before residual injection).
+        # Kept separate from textbook rules per the three-category
+        # ideology — facts (textbook) are never rewritten by experience.
+        self.learned_rules: list[Any] = []
 
     # --- Registration ---
 
@@ -256,6 +262,15 @@ class ConceptStore:
             r for r in self.passive_rules
             if r.kind == "passive_spatial" and r.concept == concept_id
         ]
+
+    def add_learned_rule(self, rule: Any) -> None:
+        """Stage 79: register a runtime-learned rule from the nursery.
+
+        The rule must be a `LearnedRule` instance (`snks.agent.learned_rule`).
+        It will be applied in Phase 7 of `_apply_tick` for any tick whose
+        (visible, body_quartiles, action) matches the rule's precondition.
+        """
+        self.learned_rules.append(rule)
 
     # --- Grounding ---
 
@@ -648,7 +663,11 @@ class ConceptStore:
             # the rules-only delta for training signal consumers.
             body_pre_tick = dict(sim.body)
 
-            self._apply_tick(sim, primitive, tracker, traj, tick, planned_step=current_step)
+            self._apply_tick(
+                sim, primitive, tracker, traj, tick,
+                planned_step=current_step,
+                visible_concepts=visible_for_residual,
+            )
 
             # Stage 78c: apply residual body-delta correction on top of rules.
             if residual_predictor is not None:
@@ -732,14 +751,23 @@ class ConceptStore:
         traj: Trajectory,
         tick: int,
         planned_step: "PlannedStep | None" = None,
+        visible_concepts: set[str] | frozenset[str] | None = None,
     ) -> None:
-        """One tick of simulation. Six phases in fixed order.
+        """One tick of simulation. Six phases in fixed order, plus optional
+        Phase 7 for Stage 79 learned rules.
 
         Stage 77a Attempt 2: planned_step is optionally passed so Phase 6 "do"
         can fire a rule by target proximity (manhattan ≤1) instead of relying
         on last_action facing direction. In the sim, navigation walks through
         target tiles, making facing-based rules never fire — proximity check
         works around that.
+
+        Stage 79: when `visible_concepts` is provided AND `self.learned_rules`
+        is non-empty, Phase 7 iterates the learned rules after Phase 6 and
+        before the final clamp, applying any whose precondition matches
+        (visible, body, primitive). When `learned_rules` is empty (the
+        default for Stage 78c regression and existing tests), Phase 7 is
+        a no-op.
         """
 
         # === Phase 1: Dynamic entities move ===
@@ -868,6 +896,23 @@ class ConceptStore:
             rule = self._find_sleep_rule()
             if rule and rule.confidence >= self.CONFIDENCE_THRESHOLD:
                 _apply_effect_to_sim(sim, rule.effect, traj, tick, "sleep")
+
+        # === Phase 7: Stage 79 learned rules ===
+        # Apply runtime-learned rules whose precondition matches the
+        # current (visible, body, primitive). No-op when learned_rules
+        # is empty (default for Stage 78c regression and existing tests).
+        if self.learned_rules and visible_concepts is not None:
+            for lr in self.learned_rules:
+                if lr.confidence < self.CONFIDENCE_THRESHOLD:
+                    continue
+                if not lr.matches(visible_concepts, sim.body, primitive):
+                    continue
+                for var, delta in lr.effect.items():
+                    sim.body[var] = sim.body.get(var, 0.0) + float(delta)
+                    traj.events.append(SimEvent(
+                        step=tick, kind="body_delta", var=var,
+                        amount=float(delta), source=f"learned:{lr.source}",
+                    ))
 
         # Clamp all body variables to their reference bounds
         self._clamp_body(sim, tracker)
