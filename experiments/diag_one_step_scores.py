@@ -70,72 +70,78 @@ def main() -> bool:
 
     inv = dict(info.get("inventory", {}))
     player_pos = tuple(info.get("player_pos", (32, 32)))
+    prev_action: str | None = None
+
     print(f"\nInitial player_pos: {player_pos}")
     print(f"Initial inv: {inv}")
 
-    # Perceive + update maps
-    vf = perceive_tile_field(pixels, segmenter)
-    update_spatial_map_from_viewport(spatial_map, vf, player_pos)
-    entity_tracker.update(vf, player_pos)
+    # Run 10 steps. At each step, print ALL candidate scores.
+    for step in range(10):
+        print("\n" + "=" * 80)
+        print(f"STEP {step}")
+        print("=" * 80)
 
-    print(f"\nVisible concepts: {sorted(vf.visible_concepts())}")
-    print(f"near_concept: {vf.near_concept}")
-    print(f"Spatial map contents (resources within ~7 tiles):")
-    for (y, x), concept in spatial_map._map.items():
-        if concept != "empty":
-            dist = abs(y - player_pos[0]) + abs(x - player_pos[1])
-            print(f"  {(y, x)} = {concept} (manhattan {dist})")
+        # Perceive + update maps
+        vf = perceive_tile_field(pixels, segmenter)
+        update_spatial_map_from_viewport(spatial_map, vf, player_pos)
+        entity_tracker.update(vf, player_pos)
 
-    # Build state
-    state = build_sim_state(
-        inventory=inv,
-        player_pos=player_pos,
-        spatial_map=spatial_map,
-        entity_tracker=entity_tracker,
-        tracker=tracker,
-        last_action=None,
-        step=0,
-    )
+        print(f"player_pos: {player_pos}  near: {vf.near_concept}")
+        print(f"visible: {sorted(vf.visible_concepts())}")
+        print(f"body: H{inv.get('health', 0)}F{inv.get('food', 0)}D{inv.get('drink', 0)}E{inv.get('energy', 0)}  W{inv.get('wood', 0)}")
 
-    print(f"\nstate.body: {state.body}")
-
-    # Generate candidates
-    candidates = generate_candidate_plans(state, store, tracker, horizon=20)
-    print(f"\nGenerated {len(candidates)} candidate plans")
-    print()
-
-    # Score each, print in detail
-    scored: list = []
-    for plan in candidates:
-        traj = store.simulate_forward(
-            plan, state, tracker, horizon=20,
-            visible_concepts=vf.visible_concepts(),
+        # Build state
+        state = build_sim_state(
+            inventory=inv,
+            player_pos=player_pos,
+            spatial_map=spatial_map,
+            entity_tracker=entity_tracker,
+            tracker=tracker,
+            last_action=prev_action,
+            step=step,
         )
-        sc = score_trajectory(traj, tracker)
-        scored.append((sc, plan, traj))
 
-    scored.sort(key=lambda x: x[0], reverse=True)
+        candidates = generate_candidate_plans(state, store, tracker, horizon=20)
+        scored: list = []
+        for plan in candidates:
+            traj = store.simulate_forward(
+                plan, state, tracker, horizon=20,
+                visible_concepts=vf.visible_concepts(),
+            )
+            sc = score_trajectory(traj, tracker)
+            scored.append((sc, plan, traj))
 
-    print("=== RANKED CANDIDATES (best first) ===")
-    for i, (sc, plan, traj) in enumerate(scored):
-        steps_summary = ", ".join(
-            f"{s.action}({s.target or '-'})" for s in plan.steps[:6]
-        )
-        if len(plan.steps) > 6:
-            steps_summary += f"... +{len(plan.steps)-6}"
-        # has_gain — count inv_gain events
-        gain_events = [e for e in traj.events if e.kind == "inv_gain" and e.amount > 0]
-        gain_str = ",".join(f"{e.var}+{e.amount}" for e in gain_events[:5])
-        print(
-            f"{i:2d} {plan.origin:8s} score={tuple(round(x, 3) if isinstance(x, float) else x for x in sc)}"
-            f" ticks={traj.tick_count():2d} term={traj.terminated} reason={traj.terminated_reason} prog={traj.plan_progress}"
-        )
-        print(f"     plan: {steps_summary}")
-        if gain_events:
-            print(f"     inv_gain: {gain_str}")
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        print(f"  {len(candidates)} candidates:")
+        for i, (sc, plan, traj) in enumerate(scored[:12]):
+            gain_events = [e for e in traj.events if e.kind == "inv_gain" and e.amount > 0]
+            gain_str = ",".join(f"{e.var}+{e.amount}" for e in gain_events[:3]) if gain_events else "-"
+            steps_summary = "+".join(
+                f"{s.action}({s.target or '-'})" for s in plan.steps[:5]
+            )
+            if len(plan.steps) > 5:
+                steps_summary += f"...+{len(plan.steps)-5}"
+            score_str = "(" + ",".join(f"{round(x,2) if isinstance(x,float) else x}" for x in sc) + ")"
+            print(f"  [{i:2d}] {plan.origin:8s} {score_str} term={traj.terminated} prog={traj.plan_progress} gain={gain_str}  {steps_summary[:60]}")
+
+        # Pick best, execute
+        sc, plan, traj = scored[0]
+        if plan.steps:
+            from snks.agent.concept_store import _expand_to_primitive as expand_to_primitive
+            primitive = expand_to_primitive(plan.steps[0], state, store)
         else:
-            print(f"     inv_gain: NONE")
-        print()
+            primitive = "move_right"
+
+        print(f"  → CHOSEN: {plan.origin} primitive={primitive} (plan steps={len(plan.steps)})")
+
+        pixels, _, done, info = env.step(primitive)
+        inv = dict(info.get("inventory", {}))
+        player_pos = tuple(info.get("player_pos", (32, 32)))
+        prev_action = primitive
+        if done:
+            print(f"  EPISODE DONE at step {step}")
+            break
 
     return True
 
