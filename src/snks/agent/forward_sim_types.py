@@ -157,7 +157,24 @@ class SimState:
     step: int
 
     def copy(self) -> "SimState":
-        """Deep-copy for starting a fresh rollout. spatial_map is shared (read-only)."""
+        """Deep-copy for starting a fresh rollout.
+
+        Stage 81 (Bug 7): spatial_map is now COPIED (was shared by
+        reference). Sim rollouts need to mutate the spatial_map
+        locally — when sim fires a "do" rule that gathers a
+        resource, that tile must be marked as empty in sim so
+        subsequent rollout ticks don't oscillate trying to gather
+        the same already-collected resource. Real planner state
+        is unaffected (the copy is independent).
+
+        spatial_map.copy() is supplied for objects with that method;
+        otherwise the field is passed through (lightweight stubs in
+        unit tests use None or simple dicts).
+        """
+        if self.spatial_map is not None and hasattr(self.spatial_map, "copy"):
+            spatial_copy = self.spatial_map.copy()
+        else:
+            spatial_copy = self.spatial_map
         return SimState(
             inventory=dict(self.inventory),
             body=dict(self.body),
@@ -166,7 +183,7 @@ class SimState:
                 DynamicEntity(concept_id=e.concept_id, pos=tuple(e.pos))
                 for e in self.dynamic_entities
             ],
-            spatial_map=self.spatial_map,  # shared reference, rollout doesn't mutate
+            spatial_map=spatial_copy,
             last_action=self.last_action,
             step=self.step,
         )

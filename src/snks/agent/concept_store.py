@@ -904,6 +904,22 @@ class ConceptStore:
                             f"do:{target}",
                         )
                         fired = True
+                        # Stage 81 (Bug 7): mark sim's spatial_map tile as
+                        # empty so the next rollout tick doesn't see this
+                        # already-gathered resource. SimState.copy() now
+                        # gives sim its own copy of spatial_map, so this
+                        # mutation is local to the rollout and doesn't
+                        # leak to the planner's real spatial_map.
+                        if (
+                            sim.spatial_map is not None
+                            and hasattr(sim.spatial_map, "update")
+                            and planned_step.rule.effect
+                            and any(
+                                d > 0
+                                for d in planned_step.rule.effect.inventory_delta.values()
+                            )
+                        ):
+                            sim.spatial_map.update(target_pos, "empty")
 
             # Fallback: original facing-based lookup (for non-planned "do")
             if not fired:
