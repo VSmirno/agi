@@ -1,0 +1,339 @@
+{
+  "args": {
+    "fast": false,
+    "horizon": 20,
+    "residual_lr": 0.001,
+    "only": "both",
+    "test_residual_combo": false
+  },
+  "device": "cuda",
+  "budget": {
+    "n_warmup_a": 50,
+    "n_warmup_b": 50,
+    "n_eval_runs": 3,
+    "n_eval_eps": 20,
+    "warmup_max_steps": 500,
+    "eval_max_steps": 1000,
+    "horizon": 20
+  },
+  "stage77a_baseline": {
+    "warmup_a_avg_len": 222.0,
+    "warmup_b_avg_len": 203.0,
+    "eval_avg_len": 180.0
+  },
+  "stage78c_reference": {
+    "warmup_a_off": 215.9,
+    "warmup_a_on": 259.5,
+    "warmup_b_off": 182.3,
+    "warmup_b_on": 159.8,
+    "eval_off": 169.2,
+    "eval_on": 152.1
+  },
+  "nursery_off": {
+    "label": "nursery_off",
+    "nursery_enabled": false,
+    "residual_enabled": false,
+    "warmup_a": {
+      "name": "nursery_off/warmup_a",
+      "n": 50,
+      "avg_len": 215.9,
+      "std_len": 127.56445429664176,
+      "median_len": 183,
+      "min_len": 41,
+      "max_len": 500,
+      "avg_entropy": 1.1406503248615039,
+      "avg_wood": 0.2,
+      "wood_3_count": 0,
+      "wood_3_rate": 0.0,
+      "avg_coal": 0.0,
+      "coal_1_count": 0,
+      "avg_iron": 0.0,
+      "causes": {
+        "health": 49,
+        "alive": 1
+      },
+      "rules_per_ep_mean": 0.0,
+      "nursery_emitted_mean": 0.0,
+      "nursery_promoted_mean": 0.0,
+      "nursery_rejected_mean": 0.0
+    },
+    "warmup_b": {
+      "name": "nursery_off/warmup_b",
+      "n": 50,
+      "avg_len": 190.3,
+      "std_len": 57.41646105430044,
+      "median_len": 177,
+      "min_len": 66,
+      "max_len": 380,
+      "avg_entropy": 0.9699991298413841,
+      "avg_wood": 0.08,
+      "wood_3_count": 0,
+      "wood_3_rate": 0.0,
+      "avg_coal": 0.0,
+      "coal_1_count": 0,
+      "avg_iron": 0.0,
+      "causes": {
+        "health": 50
+      },
+      "rules_per_ep_mean": 0.0,
+      "nursery_emitted_mean": 0.0,
+      "nursery_promoted_mean": 0.0,
+      "nursery_rejected_mean": 0.0
+    },
+    "eval_runs": [
+      {
+        "name": "nursery_off/eval_run0",
+        "n": 20,
+        "avg_len": 168.65,
+        "std_len": 28.61166720063688,
+        "median_len": 168,
+        "min_len": 102,
+        "max_len": 217,
+        "avg_entropy": 0.724523200992191,
+        "avg_wood": 0.15,
+        "wood_3_count": 0,
+        "wood_3_rate": 0.0,
+        "avg_coal": 0.0,
+        "coal_1_count": 0,
+        "avg_iron": 0.0,
+        "causes": {
+          "health": 20
+        },
+        "rules_per_ep_mean": 0.0,
+        "nursery_emitted_mean": 0.0,
+        "nursery_promoted_mean": 0.0,
+        "nursery_rejected_mean": 0.0
+      },
+      {
+        "name": "nursery_off/eval_run1",
+        "n": 20,
+        "avg_len": 173.75,
+        "std_len": 33.0104150231408,
+        "median_len": 175,
+        "min_len": 96,
+        "max_len": 231,
+        "avg_entropy": 0.9089907070857388,
+        "avg_wood": 0.1,
+        "wood_3_count": 0,
+        "wood_3_rate": 0.0,
+        "avg_coal": 0.0,
+        "coal_1_count": 0,
+        "avg_iron": 0.0,
+        "causes": {
+          "health": 20
+        },
+        "rules_per_ep_mean": 0.0,
+        "nursery_emitted_mean": 0.0,
+        "nursery_promoted_mean": 0.0,
+        "nursery_rejected_mean": 0.0
+      },
+      {
+        "name": "nursery_off/eval_run2",
+        "n": 20,
+        "avg_len": 170.15,
+        "std_len": 67.7010155019849,
+        "median_len": 166,
+        "min_len": 42,
+        "max_len": 292,
+        "avg_entropy": 0.6671239980988763,
+        "avg_wood": 0.1,
+        "wood_3_count": 0,
+        "wood_3_rate": 0.0,
+        "avg_coal": 0.0,
+        "coal_1_count": 0,
+        "avg_iron": 0.0,
+        "causes": {
+          "health": 20
+        },
+        "rules_per_ep_mean": 0.0,
+        "nursery_emitted_mean": 0.0,
+        "nursery_promoted_mean": 0.0,
+        "nursery_rejected_mean": 0.0
+      }
+    ],
+    "eval_combined": {
+      "name": "nursery_off/eval_combined",
+      "n": 60,
+      "avg_len": 170.85,
+      "std_len": 46.56709317389981,
+      "median_len": 168,
+      "min_len": 42,
+      "max_len": 292,
+      "avg_entropy": 0.7668793020589352,
+      "avg_wood": 0.11666666666666667,
+      "wood_3_count": 0,
+      "wood_3_rate": 0.0,
+      "avg_coal": 0.0,
+      "coal_1_count": 0,
+      "avg_iron": 0.0,
+      "causes": {
+        "health": 60
+      },
+      "rules_per_ep_mean": 0.0,
+      "nursery_emitted_mean": 0.0,
+      "nursery_promoted_mean": 0.0,
+      "nursery_rejected_mean": 0.0
+    },
+    "elapsed_min": 1.987358522415161,
+    "final_learned_rule_count": 0
+  },
+  "nursery_on": {
+    "label": "nursery_on",
+    "nursery_enabled": true,
+    "residual_enabled": false,
+    "warmup_a": {
+      "name": "nursery_on/warmup_a",
+      "n": 50,
+      "avg_len": 228.38,
+      "std_len": 134.5417243831816,
+      "median_len": 178,
+      "min_len": 42,
+      "max_len": 424,
+      "avg_entropy": 0.8820489173483385,
+      "avg_wood": 0.14,
+      "wood_3_count": 0,
+      "wood_3_rate": 0.0,
+      "avg_coal": 0.0,
+      "coal_1_count": 0,
+      "avg_iron": 0.0,
+      "causes": {
+        "health": 50
+      },
+      "rules_per_ep_mean": 25.88,
+      "nursery_emitted_mean": 371.5,
+      "nursery_promoted_mean": 25.88,
+      "nursery_rejected_mean": 120.92
+    },
+    "warmup_b": {
+      "name": "nursery_on/warmup_b",
+      "n": 50,
+      "avg_len": 169.98,
+      "std_len": 34.729520584079474,
+      "median_len": 165,
+      "min_len": 76,
+      "max_len": 264,
+      "avg_entropy": 0.6325214626728687,
+      "avg_wood": 0.02,
+      "wood_3_count": 0,
+      "wood_3_rate": 0.0,
+      "avg_coal": 0.0,
+      "coal_1_count": 0,
+      "avg_iron": 0.0,
+      "causes": {
+        "health": 50
+      },
+      "rules_per_ep_mean": 65.04,
+      "nursery_emitted_mean": 881.12,
+      "nursery_promoted_mean": 65.04,
+      "nursery_rejected_mean": 364.36
+    },
+    "eval_runs": [
+      {
+        "name": "nursery_on/eval_run0",
+        "n": 20,
+        "avg_len": 157.3,
+        "std_len": 50.11397010814449,
+        "median_len": 165,
+        "min_len": 33,
+        "max_len": 218,
+        "avg_entropy": 0.5640429451273135,
+        "avg_wood": 0.15,
+        "wood_3_count": 0,
+        "wood_3_rate": 0.0,
+        "avg_coal": 0.0,
+        "coal_1_count": 0,
+        "avg_iron": 0.0,
+        "causes": {
+          "health": 20
+        },
+        "rules_per_ep_mean": 79.45,
+        "nursery_emitted_mean": 1044.75,
+        "nursery_promoted_mean": 79.45,
+        "nursery_rejected_mean": 442.7
+      },
+      {
+        "name": "nursery_on/eval_run1",
+        "n": 20,
+        "avg_len": 164.5,
+        "std_len": 45.30397333567995,
+        "median_len": 161,
+        "min_len": 61,
+        "max_len": 248,
+        "avg_entropy": 0.551757201690293,
+        "avg_wood": 0.15,
+        "wood_3_count": 0,
+        "wood_3_rate": 0.0,
+        "avg_coal": 0.0,
+        "coal_1_count": 0,
+        "avg_iron": 0.0,
+        "causes": {
+          "health": 20
+        },
+        "rules_per_ep_mean": 87.65,
+        "nursery_emitted_mean": 1122.45,
+        "nursery_promoted_mean": 87.65,
+        "nursery_rejected_mean": 486.75
+      },
+      {
+        "name": "nursery_on/eval_run2",
+        "n": 20,
+        "avg_len": 144.6,
+        "std_len": 55.285079361433496,
+        "median_len": 158,
+        "min_len": 41,
+        "max_len": 212,
+        "avg_entropy": 0.4200670745866071,
+        "avg_wood": 0.0,
+        "wood_3_count": 0,
+        "wood_3_rate": 0.0,
+        "avg_coal": 0.0,
+        "coal_1_count": 0,
+        "avg_iron": 0.0,
+        "causes": {
+          "health": 20
+        },
+        "rules_per_ep_mean": 97.25,
+        "nursery_emitted_mean": 1197.7,
+        "nursery_promoted_mean": 97.25,
+        "nursery_rejected_mean": 529.7
+      }
+    ],
+    "eval_combined": {
+      "name": "nursery_on/eval_combined",
+      "n": 60,
+      "avg_len": 155.46666666666667,
+      "std_len": 51.06644908569836,
+      "median_len": 161,
+      "min_len": 33,
+      "max_len": 248,
+      "avg_entropy": 0.5119557404680711,
+      "avg_wood": 0.1,
+      "wood_3_count": 0,
+      "wood_3_rate": 0.0,
+      "avg_coal": 0.0,
+      "coal_1_count": 0,
+      "avg_iron": 0.0,
+      "causes": {
+        "health": 60
+      },
+      "rules_per_ep_mean": 88.11666666666666,
+      "nursery_emitted_mean": 1121.6333333333334,
+      "nursery_promoted_mean": 88.11666666666666,
+      "nursery_rejected_mean": 486.3833333333333
+    },
+    "elapsed_min": 5.5498640497525535,
+    "final_learned_rule_count": 101
+  },
+  "comparison": {
+    "delta_on_minus_off_eval": -15.383333333333326,
+    "delta_on_minus_77a_eval": -24.53333333333333,
+    "gates": {
+      "nursery_on_beats_off": false,
+      "nursery_on_ge_77a_baseline": false,
+      "entropy_not_collapsed": false,
+      "at_least_one_rule_per_ep": true,
+      "wood_3_at_least_5pct": false
+    }
+  },
+  "total_time_min": 7.5523892919222515
+}
