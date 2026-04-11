@@ -63,12 +63,26 @@ class CrafterSpatialMap:
         """Find nearest known position where target was observed.
 
         Returns (y, x) of nearest known position, or None if not in map.
+
+        Stage 80 Bug 5 fix: positions equal to the player's current
+        position are SKIPPED. Crafter blocks walking onto impassable
+        resources (tree/stone/water/coal/iron/diamond/cow), so the
+        player can never actually be on a resource tile in env. But
+        the Stage 75 tile segmenter sometimes mis-classifies the
+        player's own sprite (or its underlayer) as a resource and
+        the perception loop writes that classification to
+        spatial_map at the player's position. Without this guard,
+        find_nearest returns the player's own position (manhattan 0)
+        and the planner enters an infinite loop in sim while env
+        does nothing useful with the resulting "do" primitive.
         """
         py, px = int(player_pos[0]), int(player_pos[1])
         best_pos: tuple[int, int] | None = None
         best_dist = float("inf")
         for (y, x), near in self._map.items():
             if near == target:
+                if (y, x) == (py, px):
+                    continue  # stale entry at player's tile — env blocks this
                 d = abs(y - py) + abs(x - px)
                 if d < best_dist:
                     best_dist = d
