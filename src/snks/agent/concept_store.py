@@ -1221,7 +1221,25 @@ def _expand_to_primitive(
             dx = target_pos[0] - sim.player_pos[0]
             dy = target_pos[1] - sim.player_pos[1]
             dist = abs(dx) + abs(dy)
-            if dist <= 1:
+            if dist == 0:
+                # Bug 4 fix (Stage 80): sim-only artifact. The env blocks
+                # walking onto impassable tiles (tree/stone/water), so the
+                # player can never actually BE on a target tile in real
+                # env. But sim has no blocking, so during a rollout the
+                # player can walk through the target. The previous fix
+                # returned a navigation step here, which oscillated forever
+                # (move off → adjacent with wrong facing → move back on →
+                # repeat). Result: gather plan rollouts after a "do" event
+                # would never re-fire because the sim player ended up on
+                # top of the next target.
+                #
+                # Fix: emit "do" immediately. The planner's _apply_tick
+                # Phase 6 'do' branch with planned_step uses a proximity
+                # check (manhattan ≤ 1), so the rule fires correctly even
+                # when player is at exact target. This branch only ever
+                # triggers in sim rollouts, never in env primitives.
+                return "do"
+            if dist == 1:
                 # Adjacent: check if the target is in the FACING tile.
                 # _nearest_concept default facing is dy=+1 (down), and
                 # changes per last_action — match its convention exactly.
