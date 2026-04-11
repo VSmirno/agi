@@ -88,9 +88,8 @@ class RuleNursery:
 
     # Minimum bucket size before we attempt to emit a candidate.
     # L1 (coarse, body-independent) needs fewer because there are far
-    # fewer possible L1 contexts (visible × action ≈ 200) so each one
-    # accumulates faster. L2 needs more because there are 256× as many
-    # possible buckets and we want stronger evidence before splitting.
+    # fewer possible L1 contexts (visible × action ≈ 200). L2 needs more
+    # because there are 256× as many possible buckets.
     MIN_OBS_L1: int = 5
     MIN_OBS_L2: int = 10
 
@@ -110,9 +109,33 @@ class RuleNursery:
     MAD_K: float = 2.0
 
     # Floor on absolute mean magnitude. Anything smaller is treated
-    # as noise regardless of the MAD test (avoids false positives on
-    # tightly-clustered near-zero distributions).
+    # as noise regardless of the MAD test.
+    #
+    # Stage 79 v2 experiment: raising floor to 0.05 broke the synthetic
+    # conjunctive test because the gap between Stage 78a oracle (-0.067)
+    # and textbook stateful prediction (-0.01) was only ~0.026 — same
+    # order of magnitude as noise corrections that we wanted to filter.
+    # Magnitude alone does not separate signal from noise at this
+    # encoding granularity. Reverted to 0.01.
     SIGNIFICANCE_FLOOR: float = 0.01
+
+    # Cap on absolute mean magnitude. Anything LARGER is treated as
+    # a textbook-cancellation artifact, not a novel rule.
+    #
+    # Stage 79 v2 inspection: the 151 promoted rules included ~10
+    # with effects ≥ 1.0 — all of them were the nursery cancelling
+    # textbook predictions that didn't fire in env (drink: -5 for do
+    # in non-water-facing contexts, energy: -1 for sleep when energy
+    # was at clamp ceiling). These are environment-mismatch facts,
+    # not new physics. Promoting them poisons the planner because
+    # Phase 7 then re-applies them to all matching contexts during
+    # planning, suppressing valid plans.
+    #
+    # 0.5 is a permissive cap: legitimate clamping corrections
+    # (~0.5–1.0 range when sleep gives +5 energy from energy=4) are
+    # filtered, but real per-tick body deltas (food/drink/energy
+    # rates ≤0.05; spatial damage ≤0.5) survive.
+    MAX_ABS_EFFECT: float = 0.5
 
     def __init__(self) -> None:
         self._candidates: dict[ContextKey, CandidateRule] = {}
@@ -221,6 +244,19 @@ class RuleNursery:
 
         if not any(significant.values()):
             return None
+
+        # Stage 79 v3 (Bug 3 mitigation): drop rules whose effect on any
+        # var exceeds MAX_ABS_EFFECT — these are almost always nursery
+        # cancellations of textbook predictions that didn't fire in env,
+        # not novel physics. Promoting them poisons the planner because
+        # Phase 7 then re-applies them to all matching contexts.
+        # We reject the WHOLE candidate if any var blows the cap, to
+        # keep multi-var rules consistent (a rule with food: -5 and
+        # health: +0.05 is mostly cancellation noise even if health is
+        # legitimate).
+        for var, is_sig in significant.items():
+            if is_sig and abs(mean[var]) > self.MAX_ABS_EFFECT:
+                return None
 
         return CandidateRule(
             context=key,
