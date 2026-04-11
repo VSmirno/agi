@@ -1,0 +1,195 @@
+Device: cuda
+
+[Phase 0] Load Stage 75 segmenter
+  Loaded demos/checkpoints/exp135/segmenter_9x9.pt, segmenter device=cuda
+Budget: warmup_a=50 warmup_b=50 eval=3×20
+Max steps: warmup=500 eval=1000
+
+######################################################################
+# Ablation: nursery_off  (nursery=False, residual=False)
+######################################################################
+  Store: 18 concepts, 13 action rules, 14 passive rules
+
+  [Phase 1] Warmup A — 50 eps, enemies OFF, max_steps=500
+/opt/agi/venv/lib/python3.12/site-packages/torch/nn/modules/conv.py:549: UserWarning: Attempting to use hipBLASLt on an unsupported architecture! Overriding blas backend to hipblas (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:310.)
+  return F.conv2d(
+  [nursery_off/warmup_a] ep  0/50 len=  43 H0F8D8E8 W0 cause=health ETA=0.4m
+  [nursery_off/warmup_a] ep  1/50 len=  39 H0F8D8E8 W0 cause=health ETA=0.3m
+  [nursery_off/warmup_a] ep  2/50 len=  51 H0F8D7E9 W0 cause=health ETA=0.2m
+  [nursery_off/warmup_a] ep 10/50 len= 400 H0F0D0E9 W0 cause=health ETA=0.6m
+  [nursery_off/warmup_a] ep 20/50 len= 142 H0F5D4E9 W0 cause=health ETA=0.4m
+  [nursery_off/warmup_a] ep 30/50 len=  78 H0F7D6E8 W0 cause=health ETA=0.2m
+  [nursery_off/warmup_a] ep 40/50 len= 176 H0F3D2E8 W0 cause=health ETA=0.1m
+  [nursery_off/warmup_a] ep 49/50 len= 179 H0F3D2E8 W0 cause=health ETA=0.0m
+
+  [nursery_off/warmup_a] n=50 avg_len=223.0±137.4 median=171 min=39 max=443
+  [nursery_off/warmup_a] avg_entropy=0.92
+  [nursery_off/warmup_a] causes: {'health': 50}
+  [nursery_off/warmup_a] wood avg=0.12 ≥3:0/50  coal avg=0.00  iron avg=0.00
+
+  [Phase 2] Warmup B — 50 eps, enemies ON, max_steps=500
+  [nursery_off/warmup_b] ep  0/50 len= 180 H0F3D2E9 W0 cause=health ETA=0.6m
+  [nursery_off/warmup_b] ep  1/50 len= 156 H0F4D5E8 W0 cause=health ETA=0.5m
+  [nursery_off/warmup_b] ep  2/50 len= 161 H0F4D9E8 W0 cause=health ETA=0.5m
+  [nursery_off/warmup_b] ep 10/50 len= 145 H0F5D3E9 W0 cause=health ETA=0.4m
+  [nursery_off/warmup_b] ep 20/50 len= 164 H0F4D3E8 W0 cause=health ETA=0.3m
+  [nursery_off/warmup_b] ep 30/50 len= 162 H0F4D3E8 W0 cause=health ETA=0.2m
+  [nursery_off/warmup_b] ep 40/50 len= 141 H0F5D4E9 W0 cause=health ETA=0.1m
+  [nursery_off/warmup_b] ep 49/50 len= 189 H0F3D6E8 W0 cause=health ETA=0.0m
+
+  [nursery_off/warmup_b] n=50 avg_len=184.2±52.0 median=173 min=82 max=427
+  [nursery_off/warmup_b] avg_entropy=1.02
+  [nursery_off/warmup_b] causes: {'health': 50}
+  [nursery_off/warmup_b] wood avg=0.08 ≥3:0/50  coal avg=0.00  iron avg=0.00
+
+  [Phase 3] Eval — 3 runs × 20 eps, enemies ON, max_steps=1000
+
+  --- Eval run 1/3 ---
+  [nursery_off/eval_run0] ep  0/20 len= 148 H0F4D3E7 W0 cause=health ETA=0.2m
+  [nursery_off/eval_run0] ep  1/20 len= 151 H0F4D3E9 W0 cause=health ETA=0.2m
+  [nursery_off/eval_run0] ep  2/20 len= 163 H0F4D4E8 W0 cause=health ETA=0.2m
+  [nursery_off/eval_run0] ep 10/20 len= 200 H0F3D1E9 W0 cause=health ETA=0.1m
+  [nursery_off/eval_run0] ep 19/20 len= 159 H0F4D3E8 W0 cause=health ETA=0.0m
+
+  [nursery_off/eval_run0] n=20 avg_len=186.7±75.3 median=165 min=94 max=400
+  [nursery_off/eval_run0] avg_entropy=1.02
+  [nursery_off/eval_run0] causes: {'health': 20}
+  [nursery_off/eval_run0] wood avg=0.05 ≥3:0/20  coal avg=0.00  iron avg=0.00
+
+  --- Eval run 2/3 ---
+  [nursery_off/eval_run1] ep  0/20 len= 242 H0F1D0E8 W4 cause=health ETA=0.3m
+  [nursery_off/eval_run1] ep  1/20 len= 274 H0F0D0E8 W0 cause=health ETA=0.3m
+  [nursery_off/eval_run1] ep  2/20 len= 167 H0F4D2E8 W0 cause=health ETA=0.3m
+  [nursery_off/eval_run1] ep 10/20 len= 241 H0F1D0E9 W0 cause=health ETA=0.1m
+  [nursery_off/eval_run1] ep 19/20 len= 178 H0F3D7E8 W0 cause=health ETA=0.0m
+
+  [nursery_off/eval_run1] n=20 avg_len=186.9±50.3 median=175 min=47 max=274
+  [nursery_off/eval_run1] avg_entropy=1.01
+  [nursery_off/eval_run1] causes: {'health': 20}
+  [nursery_off/eval_run1] wood avg=0.25 ≥3:1/20  coal avg=0.00  iron avg=0.00
+
+  --- Eval run 3/3 ---
+  [nursery_off/eval_run2] ep  0/20 len= 162 H0F4D3E8 W1 cause=health ETA=0.2m
+  [nursery_off/eval_run2] ep  1/20 len= 193 H0F3D3E9 W0 cause=health ETA=0.2m
+  [nursery_off/eval_run2] ep  2/20 len= 162 H0F4D5E8 W0 cause=health ETA=0.2m
+  [nursery_off/eval_run2] ep 10/20 len=  92 H0F6D6E9 W0 cause=health ETA=0.1m
+  [nursery_off/eval_run2] ep 19/20 len= 125 H0F5D4E8 W0 cause=health ETA=0.0m
+
+  [nursery_off/eval_run2] n=20 avg_len=157.7±41.4 median=162 min=43 max=251
+  [nursery_off/eval_run2] avg_entropy=0.88
+  [nursery_off/eval_run2] causes: {'health': 20}
+  [nursery_off/eval_run2] wood avg=0.25 ≥3:0/20  coal avg=0.00  iron avg=0.00
+
+  [nursery_off/eval_combined] n=60 avg_len=177.1±59.1 median=166 min=43 max=400
+  [nursery_off/eval_combined] avg_entropy=0.97
+  [nursery_off/eval_combined] causes: {'health': 60}
+  [nursery_off/eval_combined] wood avg=0.18 ≥3:1/60  coal avg=0.00  iron avg=0.00
+  Learned rules dumped: _docs/stage79_learned_rules_nursery_off.jsonl (n=0)
+
+  [nursery_off] total time: 2.0 min, final learned_rules count: 0
+
+######################################################################
+# Ablation: nursery_on  (nursery=True, residual=False)
+######################################################################
+  Store: 18 concepts, 13 action rules, 14 passive rules
+  Stage 79: SurpriseAccumulator + RuleNursery enabled
+
+  [Phase 1] Warmup A — 50 eps, enemies OFF, max_steps=500
+  [nursery_on/warmup_a] ep  0/50 len=  44 H0F8D7E8 W0 cause=health rules=1 ns_e=2p1r0 ETA=0.2m
+  [nursery_on/warmup_a] ep  1/50 len=  48 H0F8D7E9 W0 cause=health rules=2 ns_e=2p2r0 ETA=0.2m
+  [nursery_on/warmup_a] ep  2/50 len=  51 H0F8D7E9 W0 cause=health rules=2 ns_e=2p2r0 ETA=0.2m
+  [nursery_on/warmup_a] ep 10/50 len= 322 H0F0D0E9 W0 cause=health rules=19 ns_e=106p19r17 ETA=0.9m
+  [nursery_on/warmup_a] ep 20/50 len= 194 H0F3D1E9 W0 cause=health rules=26 ns_e=186p26r37 ETA=0.7m
+  [nursery_on/warmup_a] ep 30/50 len=  61 H0F7D7E9 W0 cause=health rules=37 ns_e=237p37r43 ETA=0.5m
+  [nursery_on/warmup_a] ep 40/50 len= 162 H0F4D3E8 W0 cause=health rules=47 ns_e=331p47r73 ETA=0.3m
+  [nursery_on/warmup_a] ep 49/50 len= 414 H0F0D0E8 W1 cause=health rules=59 ns_e=397p59r100 ETA=0.0m
+
+  [nursery_on/warmup_a] n=50 avg_len=227.7±131.9 median=205 min=44 max=437
+  [nursery_on/warmup_a] avg_entropy=0.77
+  [nursery_on/warmup_a] causes: {'health': 50}
+  [nursery_on/warmup_a] wood avg=0.12 ≥3:0/50  coal avg=0.00  iron avg=0.00
+  [nursery_on/warmup_a] nursery: rules_per_ep_mean=30.70  emitted/ep=206.12  promoted/ep=30.70  rejected/ep=43.44
+
+  [Phase 2] Warmup B — 50 eps, enemies ON, max_steps=500
+  [nursery_on/warmup_b] ep  0/50 len= 300 H0F0D0E8 W2 cause=health rules=60 ns_e=410p60r105 ETA=4.1m
+  [nursery_on/warmup_b] ep  1/50 len= 163 H0F4D5E8 W0 cause=health rules=61 ns_e=413p61r106 ETA=3.1m
+  [nursery_on/warmup_b] ep  2/50 len=  76 H0F7D6E8 W0 cause=health rules=61 ns_e=413p61r106 ETA=2.4m
+  [nursery_on/warmup_b] ep 10/50 len= 164 H0F4D2E8 W0 cause=health rules=69 ns_e=439p69r113 ETA=2.0m
+  [nursery_on/warmup_b] ep 20/50 len= 231 H0F2D0E9 W0 cause=health rules=81 ns_e=491p81r133 ETA=1.6m
+  [nursery_on/warmup_b] ep 30/50 len= 195 H0F3D2E9 W1 cause=health rules=94 ns_e=523p94r145 ETA=1.1m
+  [nursery_on/warmup_b] ep 40/50 len=  69 H0F7D6E9 W0 cause=health rules=101 ns_e=554p101r152 ETA=0.5m
+  [nursery_on/warmup_b] ep 49/50 len= 137 H0F5D4E9 W0 cause=health rules=108 ns_e=580p108r161 ETA=0.0m
+
+  [nursery_on/warmup_b] n=50 avg_len=175.4±50.9 median=166 min=69 max=395
+  [nursery_on/warmup_b] avg_entropy=0.77
+  [nursery_on/warmup_b] causes: {'health': 50}
+  [nursery_on/warmup_b] wood avg=0.16 ≥3:0/50  coal avg=0.00  iron avg=0.00
+  [nursery_on/warmup_b] nursery: rules_per_ep_mean=85.86  emitted/ep=499.56  promoted/ep=85.86  rejected/ep=134.94
+
+  [Phase 3] Eval — 3 runs × 20 eps, enemies ON, max_steps=1000
+
+  --- Eval run 1/3 ---
+  [nursery_on/eval_run0] ep  0/20 len= 289 H0F0D0E8 W0 cause=health rules=109 ns_e=584p109r162 ETA=1.9m
+  [nursery_on/eval_run0] ep  1/20 len= 166 H0F4D2E8 W0 cause=health rules=109 ns_e=589p109r163 ETA=1.5m
+  [nursery_on/eval_run0] ep  2/20 len= 159 H0F4D3E8 W0 cause=health rules=109 ns_e=592p109r163 ETA=1.2m
+  [nursery_on/eval_run0] ep 10/20 len= 211 H0F2D0E7 W1 cause=health rules=113 ns_e=606p113r172 ETA=0.6m
+  [nursery_on/eval_run0] ep 19/20 len= 174 H0F3D2E8 W0 cause=health rules=117 ns_e=633p117r180 ETA=0.0m
+
+  [nursery_on/eval_run0] n=20 avg_len=174.4±67.2 median=171 min=33 max=323
+  [nursery_on/eval_run0] avg_entropy=0.71
+  [nursery_on/eval_run0] causes: {'health': 20}
+  [nursery_on/eval_run0] wood avg=0.15 ≥3:0/20  coal avg=0.00  iron avg=0.00
+  [nursery_on/eval_run0] nursery: rules_per_ep_mean=113.25  emitted/ep=608.50  promoted/ep=113.25  rejected/ep=171.50
+
+  --- Eval run 2/3 ---
+  [nursery_on/eval_run1] ep  0/20 len= 162 H0F4D3E8 W0 cause=health rules=117 ns_e=639p117r181 ETA=1.2m
+  [nursery_on/eval_run1] ep  1/20 len= 124 H0F5D4E8 W0 cause=health rules=117 ns_e=639p117r181 ETA=1.0m
+  [nursery_on/eval_run1] ep  2/20 len= 163 H0F4D2E8 W0 cause=health rules=117 ns_e=640p117r181 ETA=1.0m
+  [nursery_on/eval_run1] ep 10/20 len= 156 H0F4D3E8 W0 cause=health rules=122 ns_e=670p122r192 ETA=0.7m
+  [nursery_on/eval_run1] ep 19/20 len= 285 H0F0D0E9 W0 cause=health rules=126 ns_e=692p126r202 ETA=0.0m
+
+  [nursery_on/eval_run1] n=20 avg_len=187.7±72.5 median=171 min=96 max=438
+  [nursery_on/eval_run1] avg_entropy=0.76
+  [nursery_on/eval_run1] causes: {'health': 20}
+  [nursery_on/eval_run1] wood avg=0.15 ≥3:0/20  coal avg=0.00  iron avg=0.00
+  [nursery_on/eval_run1] nursery: rules_per_ep_mean=121.15  emitted/ep=665.85  promoted/ep=121.15  rejected/ep=190.15
+
+  --- Eval run 3/3 ---
+  [nursery_on/eval_run2] ep  0/20 len= 218 H0F2D0E9 W0 cause=health rules=127 ns_e=694p127r203 ETA=1.8m
+  [nursery_on/eval_run2] ep  1/20 len= 203 H0F2D1E8 W0 cause=health rules=128 ns_e=696p128r203 ETA=1.6m
+  [nursery_on/eval_run2] ep  2/20 len= 162 H0F4D4E8 W0 cause=health rules=129 ns_e=699p129r203 ETA=1.4m
+  [nursery_on/eval_run2] ep 10/20 len= 168 H0F4D2E8 W1 cause=health rules=133 ns_e=726p133r216 ETA=0.7m
+  [nursery_on/eval_run2] ep 19/20 len= 175 H0F3D2E8 W0 cause=health rules=137 ns_e=745p137r230 ETA=0.0m
+
+  [nursery_on/eval_run2] n=20 avg_len=170.2±71.6 median=171 min=39 max=373
+  [nursery_on/eval_run2] avg_entropy=0.79
+  [nursery_on/eval_run2] causes: {'health': 20}
+  [nursery_on/eval_run2] wood avg=0.20 ≥3:0/20  coal avg=0.00  iron avg=0.00
+  [nursery_on/eval_run2] nursery: rules_per_ep_mean=132.65  emitted/ep=722.15  promoted/ep=132.65  rejected/ep=215.50
+
+  [nursery_on/eval_combined] n=60 avg_len=177.4±70.9 median=171 min=33 max=438
+  [nursery_on/eval_combined] avg_entropy=0.75
+  [nursery_on/eval_combined] causes: {'health': 60}
+  [nursery_on/eval_combined] wood avg=0.17 ≥3:0/60  coal avg=0.00  iron avg=0.00
+  [nursery_on/eval_combined] nursery: rules_per_ep_mean=122.35  emitted/ep=665.50  promoted/ep=122.35  rejected/ep=192.38
+  Learned rules dumped: _docs/stage79_learned_rules_nursery_on.jsonl (n=137)
+
+  [nursery_on] total time: 9.1 min, final learned_rules count: 137
+
+================================================================================
+Stage 79 — Ablation comparison
+================================================================================
+  warmup_a       off= 223.0  on= 227.7  Δ(on-off)=+4.8 | 77a=222 (off Δ=+1.0, on Δ=+5.7)
+  warmup_b       off= 184.2  on= 175.4  Δ(on-off)=-8.8 | 77a=203 (off Δ=-18.8, on Δ=-27.6)
+  eval           off= 177.1  on= 177.4  Δ(on-off)=+0.4 | 77a=180 (off Δ=-2.9, on Δ=-2.6)
+
+  Action entropy (smoking-gun proxy from Stage 78c):
+    off: warmup_a 0.92  warmup_b 1.02  eval 0.97
+    on:  warmup_a 0.77  warmup_b 0.77  eval 0.75
+
+  Nursery (on, eval): final_rules=137, rules/ep_mean=122.35, emitted/ep=665.50, promoted/ep=122.35
+
+  Gates: {'nursery_on_beats_off': True, 'nursery_on_ge_77a_baseline': False, 'entropy_not_collapsed': False, 'at_least_one_rule_per_ep': True, 'wood_3_at_least_5pct': False}
+
+Total time: 11.1 min
+Results saved: _docs/stage79_results.json

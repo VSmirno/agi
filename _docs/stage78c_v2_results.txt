@@ -1,0 +1,205 @@
+Device: cuda
+
+[Phase 0] Load Stage 75 segmenter
+  Loaded demos/checkpoints/exp135/segmenter_9x9.pt, segmenter device=cuda
+Budget: warmup_a=50 warmup_b=50 eval=3×20
+Max steps: warmup=500 eval=1000
+
+######################################################################
+# Ablation: residual_off  (residual_enabled=False)
+######################################################################
+  Store: 18 concepts, 13 action rules, 14 passive rules
+  Tracker: vital=['health'] innate=['food', 'drink', 'energy']
+
+  [Phase 1] Warmup A — 50 eps, enemies OFF, max_steps=500
+/opt/agi/venv/lib/python3.12/site-packages/torch/nn/modules/conv.py:549: UserWarning: Attempting to use hipBLASLt on an unsupported architecture! Overriding blas backend to hipblas (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:310.)
+  return F.conv2d(
+  [residual_off/warmup_a] ep  0/50 len=  43 H0F8D8E8 W0 cause=health ETA=0.4m
+  [residual_off/warmup_a] ep  1/50 len=  39 H0F8D8E8 W0 cause=health ETA=0.3m
+  [residual_off/warmup_a] ep  2/50 len=  51 H0F8D7E9 W0 cause=health ETA=0.2m
+  [residual_off/warmup_a] ep 10/50 len= 400 H0F0D0E9 W0 cause=health ETA=0.6m
+  [residual_off/warmup_a] ep 20/50 len= 142 H0F5D4E9 W0 cause=health ETA=0.4m
+  [residual_off/warmup_a] ep 30/50 len=  78 H0F7D6E8 W0 cause=health ETA=0.2m
+  [residual_off/warmup_a] ep 40/50 len= 176 H0F3D2E8 W0 cause=health ETA=0.1m
+  [residual_off/warmup_a] ep 49/50 len= 179 H0F3D2E8 W0 cause=health ETA=0.0m
+
+  [residual_off/warmup_a] n=50 avg_len=223.1±137.6 median=171 min=39 max=443
+  [residual_off/warmup_a] avg_entropy=0.92
+  [residual_off/warmup_a] causes: {'health': 50}
+  [residual_off/warmup_a] wood avg=0.12 wood≥3: 0/50
+  [residual_off/warmup_a] coal avg=0.00 iron avg=0.00
+
+  [Phase 2] Warmup B — 50 eps, enemies ON, max_steps=500
+  [residual_off/warmup_b] ep  0/50 len= 211 H0F2D0E8 W0 cause=health ETA=0.7m
+  [residual_off/warmup_b] ep  1/50 len= 156 H0F4D5E8 W0 cause=health ETA=0.6m
+  [residual_off/warmup_b] ep  2/50 len= 170 H0F3D2E5 W1 cause=health ETA=0.5m
+  [residual_off/warmup_b] ep 10/50 len= 178 H0F3D2E8 W1 cause=health ETA=0.5m
+  [residual_off/warmup_b] ep 20/50 len= 164 H0F4D3E8 W0 cause=health ETA=0.3m
+  [residual_off/warmup_b] ep 30/50 len= 206 H0F6D1E8 W0 cause=health ETA=0.2m
+  [residual_off/warmup_b] ep 40/50 len= 159 H0F4D3E9 W0 cause=health ETA=0.1m
+  [residual_off/warmup_b] ep 49/50 len= 192 H0F3D7E8 W0 cause=health ETA=0.0m
+
+  [residual_off/warmup_b] n=50 avg_len=185.2±46.9 median=176 min=82 max=393
+  [residual_off/warmup_b] avg_entropy=1.06
+  [residual_off/warmup_b] causes: {'health': 50}
+  [residual_off/warmup_b] wood avg=0.14 wood≥3: 0/50
+  [residual_off/warmup_b] coal avg=0.00 iron avg=0.00
+
+  [Phase 3] Eval — 3 runs × 20 eps, enemies ON, max_steps=1000
+
+  --- Eval run 1/3 ---
+  [residual_off/eval_run0] ep  0/20 len= 225 H0F2D0E8 W0 cause=health ETA=0.3m
+  [residual_off/eval_run0] ep  1/20 len= 151 H0F4D3E9 W0 cause=health ETA=0.2m
+  [residual_off/eval_run0] ep  2/20 len= 166 H0F4D4E8 W0 cause=health ETA=0.2m
+  [residual_off/eval_run0] ep 10/20 len= 306 H0F0D0E8 W0 cause=health ETA=0.1m
+  [residual_off/eval_run0] ep 19/20 len= 155 H0F4D3E7 W1 cause=health ETA=0.0m
+
+  [residual_off/eval_run0] n=20 avg_len=181.0±47.9 median=175 min=93 max=306
+  [residual_off/eval_run0] avg_entropy=0.99
+  [residual_off/eval_run0] causes: {'health': 20}
+  [residual_off/eval_run0] wood avg=0.20 wood≥3: 0/20
+  [residual_off/eval_run0] coal avg=0.00 iron avg=0.00
+
+  --- Eval run 2/3 ---
+  [residual_off/eval_run1] ep  0/20 len= 269 H0F0D0E9 W3 cause=health ETA=0.4m
+  [residual_off/eval_run1] ep  1/20 len= 281 H0F0D0E7 W0 cause=health ETA=0.3m
+  [residual_off/eval_run1] ep  2/20 len= 163 H0F4D2E8 W0 cause=health ETA=0.3m
+  [residual_off/eval_run1] ep 10/20 len= 169 H0F4D2E8 W0 cause=health ETA=0.1m
+  [residual_off/eval_run1] ep 19/20 len= 158 H0F4D5E8 W0 cause=health ETA=0.0m
+
+  [residual_off/eval_run1] n=20 avg_len=184.6±48.6 median=175 min=47 max=281
+  [residual_off/eval_run1] avg_entropy=1.06
+  [residual_off/eval_run1] causes: {'health': 20}
+  [residual_off/eval_run1] wood avg=0.35 wood≥3: 1/20
+  [residual_off/eval_run1] coal avg=0.00 iron avg=0.00
+
+  --- Eval run 3/3 ---
+  [residual_off/eval_run2] ep  0/20 len= 166 H0F4D2E8 W0 cause=health ETA=0.2m
+  [residual_off/eval_run2] ep  1/20 len= 193 H0F3D3E9 W0 cause=health ETA=0.2m
+  [residual_off/eval_run2] ep  2/20 len= 162 H0F4D5E8 W0 cause=health ETA=0.2m
+  [residual_off/eval_run2] ep 10/20 len= 159 H0F4D3E8 W0 cause=health ETA=0.1m
+  [residual_off/eval_run2] ep 19/20 len= 125 H0F5D4E8 W0 cause=health ETA=0.0m
+
+  [residual_off/eval_run2] n=20 avg_len=175.8±59.2 median=163 min=43 max=314
+  [residual_off/eval_run2] avg_entropy=0.96
+  [residual_off/eval_run2] causes: {'health': 20}
+  [residual_off/eval_run2] wood avg=0.20 wood≥3: 0/20
+  [residual_off/eval_run2] coal avg=0.00 iron avg=0.00
+
+  [residual_off/eval_combined] n=60 avg_len=180.4±52.3 median=170 min=43 max=314
+  [residual_off/eval_combined] avg_entropy=1.01
+  [residual_off/eval_combined] causes: {'health': 60}
+  [residual_off/eval_combined] wood avg=0.25 wood≥3: 1/60
+  [residual_off/eval_combined] coal avg=0.00 iron avg=0.00
+
+  [residual_off] total time: 2.0 min
+
+######################################################################
+# Ablation: residual_on  (residual_enabled=True)
+######################################################################
+  Store: 18 concepts, 13 action rules, 14 passive rules
+  Tracker: vital=['health'] innate=['food', 'drink', 'energy']
+  Residual: 67396 params, device=cuda, lr=0.001
+
+  [Phase 1] Warmup A — 50 eps, enemies OFF, max_steps=500
+  [residual_on/warmup_a] ep  0/50 len=  46 H0F8D7E8 W0 cause=health rl=0.1408 ETA=4.1m
+  [residual_on/warmup_a] ep  1/50 len=  43 H0F8D7E8 W0 cause=health rl=0.2189 ETA=4.3m
+  [residual_on/warmup_a] ep  2/50 len=  51 H0F8D7E9 W0 cause=health rl=0.3567 ETA=4.0m
+  [residual_on/warmup_a] ep 10/50 len= 375 H0F0D0E9 W0 cause=health rl=0.9921 ETA=26.5m
+  [residual_on/warmup_a] ep 20/50 len=  94 H0F6D5E9 W0 cause=health rl=0.1474 ETA=18.4m
+  [residual_on/warmup_a] ep 30/50 len=  48 H0F8D7E9 W0 cause=health rl=0.1740 ETA=11.0m
+  [residual_on/warmup_a] ep 40/50 len= 379 H0F0D0E9 W0 cause=health rl=0.2078 ETA=5.3m
+  [residual_on/warmup_a] ep 49/50 len= 393 H0F0D0E9 W0 cause=health rl=0.0841 ETA=0.0m
+
+  [residual_on/warmup_a] n=50 avg_len=230.3±137.3 median=212 min=43 max=400
+  [residual_on/warmup_a] avg_entropy=0.44
+  [residual_on/warmup_a] causes: {'health': 50}
+  [residual_on/warmup_a] wood avg=0.16 wood≥3: 0/50
+  [residual_on/warmup_a] coal avg=0.00 iron avg=0.00
+  [residual_on/warmup_a] residual_loss_mean=0.3058
+  Checkpoint: demos/checkpoints/exp138/residual_residual_on_after_warmup_a.pt
+
+  [Phase 2] Warmup B — 50 eps, enemies ON, max_steps=500
+  [residual_on/warmup_b] ep  0/50 len= 157 H0F4D3E8 W0 cause=health rl=0.1102 ETA=21.0m
+  [residual_on/warmup_b] ep  1/50 len= 162 H0F4D3E8 W0 cause=health rl=0.1087 ETA=21.0m
+  [residual_on/warmup_b] ep  2/50 len= 143 H0F5D3E9 W0 cause=health rl=0.1636 ETA=20.6m
+  [residual_on/warmup_b] ep 10/50 len= 157 H0F4D3E8 W0 cause=health rl=0.1664 ETA=16.8m
+  [residual_on/warmup_b] ep 20/50 len= 165 H0F4D2E8 W0 cause=health rl=0.1527 ETA=12.0m
+  [residual_on/warmup_b] ep 30/50 len= 274 H0F0D0E9 W0 cause=health rl=0.0675 ETA=8.0m
+  [residual_on/warmup_b] ep 40/50 len= 136 H0F5D4E9 W0 cause=health rl=0.1522 ETA=3.8m
+  [residual_on/warmup_b] ep 49/50 len= 200 H0F3D1E8 W0 cause=health rl=0.4122 ETA=0.0m
+
+  [residual_on/warmup_b] n=50 avg_len=168.2±36.6 median=161 min=58 max=285
+  [residual_on/warmup_b] avg_entropy=0.35
+  [residual_on/warmup_b] causes: {'health': 50}
+  [residual_on/warmup_b] wood avg=0.00 wood≥3: 0/50
+  [residual_on/warmup_b] coal avg=0.00 iron avg=0.00
+  [residual_on/warmup_b] residual_loss_mean=0.1632
+  Checkpoint: demos/checkpoints/exp138/residual_residual_on_after_warmup_b.pt
+
+  [Phase 3] Eval — 3 runs × 20 eps, enemies ON, max_steps=1000
+
+  --- Eval run 1/3 ---
+  [residual_on/eval_run0] ep  0/20 len= 170 H0F4D2E8 W0 cause=health rl=0.1836 ETA=7.1m
+  [residual_on/eval_run0] ep  1/20 len= 136 H0F5D4E9 W0 cause=health rl=0.1420 ETA=6.1m
+  [residual_on/eval_run0] ep  2/20 len= 159 H0F4D3E8 W0 cause=health rl=0.0880 ETA=6.0m
+  [residual_on/eval_run0] ep 10/20 len= 221 H0F2D0E8 W1 cause=health rl=0.2137 ETA=3.4m
+  [residual_on/eval_run0] ep 19/20 len= 172 H0F3D2E8 W0 cause=health rl=0.1674 ETA=0.0m
+
+  [residual_on/eval_run0] n=20 avg_len=166.9±59.1 median=169 min=33 max=274
+  [residual_on/eval_run0] avg_entropy=0.42
+  [residual_on/eval_run0] causes: {'health': 20}
+  [residual_on/eval_run0] wood avg=0.15 wood≥3: 0/20
+  [residual_on/eval_run0] coal avg=0.00 iron avg=0.00
+  [residual_on/eval_run0] residual_loss_mean=0.2501
+
+  --- Eval run 2/3 ---
+  [residual_on/eval_run1] ep  0/20 len= 201 H0F3D1E8 W1 cause=health rl=0.2595 ETA=10.1m
+  [residual_on/eval_run1] ep  1/20 len= 124 H0F5D4E8 W0 cause=health rl=0.1460 ETA=7.9m
+  [residual_on/eval_run1] ep  2/20 len= 209 H0F2D1E8 W0 cause=health rl=0.1674 ETA=7.8m
+  [residual_on/eval_run1] ep 10/20 len= 192 H0F3D1E9 W0 cause=health rl=0.2106 ETA=3.9m
+  [residual_on/eval_run1] ep 19/20 len= 159 H0F4D4E8 W0 cause=health rl=0.1272 ETA=0.0m
+
+  [residual_on/eval_run1] n=20 avg_len=148.8±39.8 median=158 min=54 max=209
+  [residual_on/eval_run1] avg_entropy=0.38
+  [residual_on/eval_run1] causes: {'health': 20}
+  [residual_on/eval_run1] wood avg=0.10 wood≥3: 0/20
+  [residual_on/eval_run1] coal avg=0.00 iron avg=0.00
+  [residual_on/eval_run1] residual_loss_mean=0.2193
+
+  --- Eval run 3/3 ---
+  [residual_on/eval_run2] ep  0/20 len= 164 H0F4D3E8 W0 cause=health rl=0.1341 ETA=8.0m
+  [residual_on/eval_run2] ep  1/20 len= 199 H0F3D1E8 W0 cause=health rl=0.0909 ETA=8.2m
+  [residual_on/eval_run2] ep  2/20 len= 163 H0F4D4E8 W0 cause=health rl=0.3495 ETA=7.3m
+  [residual_on/eval_run2] ep 10/20 len= 170 H0F4D2E8 W1 cause=health rl=0.2344 ETA=3.6m
+  [residual_on/eval_run2] ep 19/20 len= 206 H0F2D1E8 W0 cause=health rl=0.2950 ETA=0.0m
+
+  [residual_on/eval_run2] n=20 avg_len=147.7±50.6 median=164 min=38 max=235
+  [residual_on/eval_run2] avg_entropy=0.37
+  [residual_on/eval_run2] causes: {'health': 20}
+  [residual_on/eval_run2] wood avg=0.05 wood≥3: 0/20
+  [residual_on/eval_run2] coal avg=0.00 iron avg=0.00
+  [residual_on/eval_run2] residual_loss_mean=0.2020
+
+  [residual_on/eval_combined] n=60 avg_len=154.5±51.2 median=163 min=33 max=274
+  [residual_on/eval_combined] avg_entropy=0.39
+  [residual_on/eval_combined] causes: {'health': 60}
+  [residual_on/eval_combined] wood avg=0.10 wood≥3: 0/60
+  [residual_on/eval_combined] coal avg=0.00 iron avg=0.00
+  [residual_on/eval_combined] residual_loss_mean=0.2238
+  Checkpoint: demos/checkpoints/exp138/residual_residual_on_after_eval.pt
+
+  [residual_on] total time: 75.0 min
+
+======================================================================
+Stage 78c — Ablation comparison
+======================================================================
+  warmup_a       off= 223.1 on= 230.3 (Δon-off=+7.2) wood≥3 off= 0.0% on= 0.0% | Stage77a baseline=222 (off Δ=+1.1, on Δ=+8.3)
+  warmup_b       off= 185.2 on= 168.2 (Δon-off=-17.1) wood≥3 off= 0.0% on= 0.0% | Stage77a baseline=203 (off Δ=-17.8, on Δ=-34.8)
+  eval           off= 180.4 on= 154.5 (Δon-off=-26.0) wood≥3 off= 1.7% on= 0.0% | Stage77a baseline=180 (off Δ=+0.4, on Δ=-25.5)
+  residual_loss_mean (on, eval) = 0.2238
+
+  Gates: {'residual_on_beats_off': False, 'residual_on_ge_baseline': False, 'residual_on_meaningful_delta': True}
+
+Total time: 76.9 min
+Results saved: _docs/stage78c_results.json
