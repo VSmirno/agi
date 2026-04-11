@@ -142,6 +142,42 @@ def _build_action_effect(
     )
 
 
+def _parse_stateful_condition(when: dict) -> StatefulCondition:
+    """Parse a `when:` clause into a StatefulCondition.
+
+    Stage 82 grammar (ideology-audit 1.1): the clause is either
+
+      atomic:   { var: food, op: ">", value: 0 }
+      any_of:   { any_of: [ {var:...,op:...,value:...}, ... ] }
+      all_of:   { all_of: [ {var:...,op:...,value:...}, ... ] }
+
+    Any form may additionally carry `action_filter: <primitive>` to
+    restrict the rule to ticks where the current action is that
+    primitive (e.g., sleep-specific starvation damage).
+
+    This is how the teacher writes conjunctive rules directly instead
+    of forcing the surprise nursery to rediscover them (Stage 78a/c/79
+    motivation is removed).
+    """
+    action_filter = when.get("action_filter")
+    if "any_of" in when or "all_of" in when:
+        mode = "any_of" if "any_of" in when else "all_of"
+        raw_children = when.get("any_of") or when.get("all_of") or []
+        children = [_parse_stateful_condition(child) for child in raw_children]
+        return StatefulCondition(
+            mode=mode,
+            children=children,
+            action_filter=action_filter,
+        )
+    return StatefulCondition(
+        var=when["var"],
+        op=when["op"],
+        threshold=float(when["value"]),
+        mode="atomic",
+        action_filter=action_filter,
+    )
+
+
 def _parse_passive_rule(entry: dict) -> tuple[str, CausalLink] | None:
     """Parse a passive rule (body_rate / movement / spatial / stateful).
 
@@ -210,11 +246,7 @@ def _parse_passive_rule(entry: dict) -> tuple[str, CausalLink] | None:
 
     if passive_type == "stateful":
         when = entry.get("when", {}) or {}
-        cond = StatefulCondition(
-            var=when["var"],
-            op=when["op"],
-            threshold=float(when["value"]),
-        )
+        cond = _parse_stateful_condition(when)
         effect_inner = entry.get("effect", {}) or {}
         body_delta = {k: float(v) for k, v in effect_inner.get("body", {}).items()}
         effect = RuleEffect(

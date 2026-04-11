@@ -211,3 +211,18 @@ rules:
   - passive: stateful
     when: { var: energy, op: "==", value: 0 }
     effect: { body: { health: -0.05 } }
+
+  # Stage 82 (ideology-audit 1.1): conjunctive stateful rule with
+  # action_filter. Crafter's real dynamics include sleep + any-var
+  # depleted → health drops faster than the per-var stateful rules
+  # above would predict. Previously we spent Stage 78a / 78c / 79
+  # asking the surprise nursery to rediscover this. With any_of + an
+  # action_filter the teacher declares it directly.
+  - passive: stateful
+    when:
+      action_filter: sleep
+      any_of:
+        - { var: food,   op: "==", value: 0 }
+        - { var: drink,  op: "==", value: 0 }
+        - { var: energy, op: "==", value: 0 }
+    effect: { body: { health: -0.067 } }
