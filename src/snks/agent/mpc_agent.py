@@ -258,6 +258,41 @@ def generate_candidate_plans(
             if plan_steps:
                 candidates.append(Plan(steps=plan_steps, origin="remedy"))
 
+    # 6. Stage 80 (Bug 3 fix): proactive gather plans.
+    #
+    # The original Stage 77a generator only emits plans as REMEDIES for
+    # failures (body vars that will deplete or entities that will damage
+    # vital vars). Wood / stone / coal / iron are not body vars and
+    # never appear as failures, so the agent never plans to gather them
+    # unless a tool-requiring need bubbles up via plan_toward_rule.
+    # Combined with the score_trajectory bias toward "high min_body",
+    # this produced agents that spent ~70% of their time sleeping (it
+    # locally maximises min_body) and never gathered ANYTHING.
+    #
+    # Fix: for every action-triggered rule whose effect is `inventory:
+    # { X: +N }` (i.e. it produces an item), emit a candidate plan toward
+    # that rule. This adds wood/stone/coal/iron gathering and table /
+    # tool crafting plans to the candidate set on every step. Whether
+    # they're chosen depends on score_trajectory (the lex tuple now
+    # prefers any-gain over no-gain among alive plans).
+    for concept in store.concepts.values():
+        for link in concept.causal_links:
+            if link.kind != "action_triggered":
+                continue
+            if id(link) in seen_rules:
+                continue
+            if not link.effect:
+                continue
+            # Must produce at least one positive inventory delta —
+            # filters out combat rules (scene_remove only) and any
+            # rules that don't add to inventory.
+            if not any(d > 0 for d in link.effect.inventory_delta.values()):
+                continue
+            seen_rules.add(id(link))
+            plan_steps = store.plan_toward_rule(link, state.inventory)
+            if plan_steps:
+                candidates.append(Plan(steps=plan_steps, origin="gather"))
+
     return candidates
 
 
@@ -272,24 +307,28 @@ def score_trajectory(
 ) -> tuple:
     """Return a lexicographic sort key — higher tuple = better plan.
 
-    The tuple shape differs between alive and dead trajectories because the
-    dominant concern is different:
+    Stage 80 Bug 3 fix: the alive tuple now includes `has_inv_gain` as
+    a top-priority component (just below `alive`). The original
+    formulation `(1, min_body, n_ticks, final_body)` produced
+    sleep-dominance: sleep plans always slightly raise min_body via
+    energy clamping + stateful health regen, so they outscored every
+    alternative — including gathering plans that ACTUALLY make
+    progress. The Stage 80 diagnostic showed 69.5% of agent actions
+    were `sleep` and 0/5 episodes gathered any wood/stone/coal/iron.
 
-    ALIVE bucket — primary concern is safety:
-        (1, min_body, n_ticks, final_body)
-      - All alive trajectories run to horizon, so n_ticks is typically equal.
-      - min_body (worst moment) rewards safer plans.
-      - final_body is a tiebreaker.
+    The new tuple shape:
 
-    DEAD bucket — primary concern is how close we came to surviving:
-        (0, n_ticks, min_body, final_body)
-      - Longer survival means the plan held on more, gives MPC more room
-        for the next-step re-plan to find a better option.
-      - min_body is a tiebreaker (among equally-long dead, safer is better).
+    ALIVE: (1, has_gain, min_body, n_ticks, final_body)
+      - has_gain = 1 if the rollout produced ANY positive inventory_delta
+        event (wood +1, stone_item +1, etc), else 0
+      - Among alive plans, gathering plans beat non-gathering plans
+      - Within "any-gain" or "no-gain" subsets, min_body is the next
+        priority (safer wins)
+      - n_ticks is the next tiebreaker (longer rollout = more room)
+      - final_body is the last tiebreaker
 
-    Python compares tuples lexicographically; the leading 1/0 puts alive
-    above any dead regardless of the remaining elements. Within a bucket,
-    the order is consistent and meaningful.
+    DEAD: (0, n_ticks, min_body, final_body)
+      - Unchanged. Once you're dead, gathering doesn't matter.
 
     Normalization: each var divided by its reference_max (from textbook).
     If reference_max unknown, uses observed_max as fallback, else 1.
@@ -316,7 +355,16 @@ def score_trajectory(
         final_body = 0.0
 
     if alive:
-        return (1, min_body, n_ticks, final_body)
+        # Stage 80: has_gain dominates min_body. Any rollout that
+        # produces an inventory positive (do tree, do stone with
+        # pickaxe, place table, make pickaxe) outranks any rollout
+        # that doesn't (sleep, navigate-aimlessly).
+        has_gain = 0
+        for ev in traj.events:
+            if ev.kind == "inv_gain" and ev.amount > 0:
+                has_gain = 1
+                break
+        return (1, has_gain, min_body, n_ticks, final_body)
     return (0, n_ticks, min_body, final_body)
 
 
