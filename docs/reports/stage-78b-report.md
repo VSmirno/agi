@@ -1,9 +1,34 @@
 # Stage 78b — MLP Residual over Rules (Synthetic Validation) Report
 
 **Date:** 2026-04-11 (overnight, same-day as Stage 78a FAIL)
-**Status:** PASS — residual learns the conjunctive correction on the synthetic task
+**Status:** unit-PASS / Crafter-pending — residual learns the conjunctive correction on the synthetic task; Crafter eval with standard metrics (survival, wood, coal, achievements) is **not yet run** and is required before Stage 78b can be considered COMPLETE. See Stage 78c in ROADMAP.
 **Spec:** [2026-04-11-stage78b-mlp-residual-design.md](../superpowers/specs/2026-04-11-stage78b-mlp-residual-design.md)
 **Prior stage:** [Stage 78a FAIL report](stage-78a-report.md)
+
+## Status revision (2026-04-11, later)
+
+The original Stage 78b gate was purely a synthetic unit-level validation
+of the residual-over-rules pattern (conj_health_mse on an oracle-generated
+1200/300/200-sample dataset). After review, we established a stricter
+project-wide rule: **every Roadmap v5 stage must end with a Crafter eval
+with standard metrics** (survival episode length, wood/coal/iron rates,
+achievements, episode distribution). Synthetic / unit validation is
+allowed as a sub-gate inside a stage but does not close it.
+
+Under that rule, Stage 78b is **not COMPLETE**. The synthetic gate is
+passed (numbers below are valid as a unit-level result), but:
+
+- `ResidualBodyPredictor` is not yet plugged into
+  `ConceptStore.simulate_forward` — the MPC tick loop does not see it.
+- No online training loop from `env.step()` rollouts exists.
+- No Crafter eval has been run comparing residual-on vs residual-off
+  against the Stage 77a baseline (wall=180).
+
+The follow-up work is tracked as **Stage 78c — Residual Crafter
+integration + eval** in ROADMAP.md. Stage 78b status is changed from
+"COMPLETE PASS" to "unit-PASS / Crafter-pending" and will be promoted
+to COMPLETE only once Stage 78c produces a Crafter delta (positive or
+explicitly-explained null) against the Stage 77a baseline.
 
 ## Summary
 
@@ -88,7 +113,7 @@ and 20 epochs is short. Despite that, both gate thresholds pass:
 | gen_health_mse | **0.0002** | ≤ 0.012 | PASS |
 | Residual stays small on easy cases | residual_abs_mean(food)=0.004, drink=0.003, general gen_health=0.0002 | qualitative | PASS |
 
-**Status: PASS.**
+**Status: unit-level PASS (synthetic gate met). Stage 78b remains Crafter-pending — see Stage 78c.**
 
 ## Comparison with Stage 78a
 

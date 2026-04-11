@@ -35,9 +35,11 @@ def _json_default(obj: Any) -> Any:
     raise TypeError(f"not JSON serializable: {type(obj).__name__}")
 
 from snks.agent.concept_store import (
+    RESIDUAL_BODY_ORDER,
     ConceptStore,
     _apply_player_move,
     _expand_to_primitive as expand_to_primitive,
+    primitive_to_action_idx,
 )
 from snks.agent.crafter_spatial_map import CrafterSpatialMap
 from snks.agent.forward_sim_types import (
@@ -432,6 +434,9 @@ def run_mpc_episode(
     perceive_fn: Any = None,
     verbose: bool = False,
     trace_path: str | Path | None = None,
+    residual_predictor: Any = None,
+    residual_optimizer: Any = None,
+    residual_train: bool = False,
 ) -> dict:
     """Run one episode with MPC + forward-sim planning.
 
@@ -454,14 +459,25 @@ def run_mpc_episode(
         perceive_fn: override perception function for testing (default: imports
             from snks.agent.continuous_agent).
         verbose: print per-step diagnostics.
+        residual_predictor: Stage 78c — optional ResidualBodyPredictor; when
+            provided it is passed to simulate_forward for MPC inference and
+            can also be trained online via SGD when residual_train=True.
+        residual_optimizer: torch.optim.Optimizer for the residual, required
+            when residual_train=True.
+        residual_train: if True, after each env.step the residual is
+            trained with a single SGD step on the observed body gap.
 
     Returns:
         Dict with episode metrics: length, final_inv, cause_of_death,
         action_counts, bootstrap_ratio (always 1.0 — no bootstrap in Stage 77a),
-        action_entropy.
+        action_entropy, residual_loss_mean (if training).
     """
     if perceive_fn is None:
         perceive_fn = perceive_tile_field
+    if residual_train and (residual_predictor is None or residual_optimizer is None):
+        raise ValueError(
+            "residual_train=True requires both residual_predictor and residual_optimizer"
+        )
 
     trace_fh = None
     if trace_path is not None:
@@ -487,6 +503,8 @@ def run_mpc_episode(
     prev_predicted_next_body: dict[str, float] | None = None
     prev_chosen_origin: str | None = None
     prev_primitive: str | None = None
+    # Stage 78c — residual SGD loss history (populated per training step).
+    residual_losses: list[float] = []
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -532,9 +550,20 @@ def run_mpc_episode(
         candidates = generate_candidate_plans(state, store, tracker, horizon=horizon)
 
         # --- Simulate and score each candidate ---
+        # Stage 78c: residual is held constant across rollouts for one env
+        # step (same perception snapshot). All candidates see the same
+        # corrected dynamics, so the scoring stays consistent.
+        visible_concepts = vf.visible_concepts()
         scored: list[tuple[tuple, Plan, Trajectory]] = []
         for plan in candidates:
-            traj = store.simulate_forward(plan, state, tracker, horizon=horizon)
+            traj = store.simulate_forward(
+                plan,
+                state,
+                tracker,
+                horizon=horizon,
+                residual_predictor=residual_predictor,
+                visible_concepts=visible_concepts,
+            )
             score = score_trajectory(traj, tracker)
             scored.append((score, plan, traj))
 
@@ -575,6 +604,62 @@ def run_mpc_episode(
         if outcome:
             verify_outcome(vf.near_concept, primitive, outcome, store)
             verified = True
+
+        # --- Stage 78c: online residual SGD step -----------------------------
+        # After env.step we know the actual body at t+1. Train residual on
+        # (prev_state_t, prev_primitive_t) → (actual_delta_t - rules_delta_t).
+        # rules_delta is computed by a 1-tick rules-only replay on a copy of
+        # the prev sim-state (residual is NOT passed), isolating the symbolic
+        # prediction from the residual-corrected one used for planning.
+        if (
+            residual_train
+            and residual_predictor is not None
+            and residual_optimizer is not None
+        ):
+            import torch
+
+            # Use the CURRENT step as the training example: we planned from
+            # `state` at step t with `primitive`, then observed inv_after.
+            rules_sim = state.copy()
+            rules_traj = Trajectory(
+                plan=Plan(steps=[], origin="train_probe"),
+                body_series={var: [] for var in rules_sim.body},
+                events=[],
+                final_state=rules_sim,
+                terminated=False,
+                terminated_reason="horizon",
+                plan_progress=0,
+            )
+            store._apply_tick(
+                rules_sim,
+                primitive,
+                tracker,
+                rules_traj,
+                tick=0,
+            )
+            prev_body = state.body
+            actual_delta = [
+                float(inv_after.get(var, 0)) - float(prev_body.get(var, 0.0))
+                for var in RESIDUAL_BODY_ORDER
+            ]
+            rules_delta = [
+                float(rules_sim.body.get(var, 0.0)) - float(prev_body.get(var, 0.0))
+                for var in RESIDUAL_BODY_ORDER
+            ]
+            device = next(residual_predictor.parameters()).device
+            fp = residual_predictor.encode(
+                visible=set(visible_concepts),
+                body=dict(prev_body),
+                action_idx=primitive_to_action_idx(primitive),
+                device=device,
+            )
+            rules_tensor = torch.tensor(rules_delta, dtype=torch.float32, device=device)
+            target_tensor = torch.tensor(actual_delta, dtype=torch.float32, device=device)
+            loss = residual_predictor.residual_loss(fp, rules_tensor, target_tensor)
+            residual_optimizer.zero_grad()
+            loss.backward()
+            residual_optimizer.step()
+            residual_losses.append(float(loss.item()))
 
         # --- Trace: write one JSONL line per tick ---
         if trace_fh is not None:
@@ -674,10 +759,16 @@ def run_mpc_episode(
         }, default=_json_default) + "\n")
         trace_fh.close()
 
-    return {
+    result: dict[str, Any] = {
         "length": steps_taken,
         "final_inv": inv_after,
         "action_counts": dict(action_counts),
         "action_entropy": action_entropy,
         "cause_of_death": cause_of_death,
     }
+    if residual_losses:
+        result["residual_loss_mean"] = float(np.mean(residual_losses))
+        result["residual_loss_final"] = float(residual_losses[-1])
+        result["residual_loss_early"] = float(np.mean(residual_losses[: max(1, len(residual_losses) // 5)]))
+        result["residual_steps"] = len(residual_losses)
+    return result
