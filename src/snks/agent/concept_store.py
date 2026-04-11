@@ -207,6 +207,39 @@ class ConceptStore:
         # Kept separate from textbook rules per the three-category
         # ideology — facts (textbook) are never rewritten by experience.
         self.learned_rules: list[Any] = []
+        # Stage 82 (ideology-audit 2.1): primitive offsets loaded from
+        # textbook. { "move_left": {"dx": -1, "dy": 0}, ... }. Enables
+        # all facing / movement mechanisms to be env-agnostic.
+        self.primitives: dict[str, dict[str, int]] = {}
+        self.env_defaults: dict[str, Any] = {}
+
+    # --- Stage 82: env primitives helpers ---
+
+    def primitive_offset(self, primitive: str | None) -> tuple[int, int]:
+        """Return (dx, dy) for a move primitive, using textbook primitives
+        block. Falls back to env_defaults.default_facing for non-move
+        primitives (or None), so callers can use it unconditionally.
+        """
+        if primitive and primitive in self.primitives:
+            spec = self.primitives[primitive]
+            return (int(spec.get("dx", 0)), int(spec.get("dy", 0)))
+        default = self.env_defaults.get("default_facing", [0, 1])
+        try:
+            return (int(default[0]), int(default[1]))
+        except (TypeError, IndexError):
+            return (0, 1)
+
+    def move_primitives(self) -> list[str]:
+        """Cardinal move primitives, in textbook-declared order."""
+        return list(self.primitives.keys())
+
+    def explore_cycle(self) -> list[str]:
+        """Exploration fallback cycle from env_defaults, or move_primitives
+        order if not declared."""
+        cycle = self.env_defaults.get("explore_cycle")
+        if isinstance(cycle, list) and cycle:
+            return [str(p) for p in cycle]
+        return self.move_primitives()
 
     # --- Registration ---
 
@@ -977,7 +1010,7 @@ class ConceptStore:
         # updates — same here. Without this, sim's player walks through
         # trees and gather plan rollouts oscillate.
         if primitive.startswith("move_"):
-            new_pos = _apply_player_move(sim.player_pos, primitive)
+            new_pos = _apply_player_move(sim.player_pos, primitive, self)
             if not self._sim_pos_blocked(new_pos, sim):
                 sim.player_pos = new_pos
 
@@ -1088,7 +1121,7 @@ class ConceptStore:
 
             # Fallback: original facing-based lookup (for non-planned "do")
             if not fired:
-                near = _nearest_concept(sim)
+                near = _nearest_concept(sim, self)
                 if near:
                     rule = self._find_do_rule(near, sim.inventory)
                     if rule and rule.confidence >= self.CONFIDENCE_THRESHOLD:
@@ -1248,41 +1281,38 @@ def _step_toward_pos(
 
 
 def _apply_player_move(
-    pos: tuple[int, int], primitive: str
+    pos: tuple[int, int],
+    primitive: str,
+    store: "ConceptStore | None" = None,
 ) -> tuple[int, int]:
     """Apply a move primitive to player position.
 
-    Crafter convention (see Stage 75 report):
-      pos[0] = horizontal X, pos[1] = vertical Y
-      move_left → x-1, move_right → x+1
-      move_up → y-1, move_down → y+1
+    Stage 82 (ideology-audit 2.3): reads the (dx, dy) offset from the
+    textbook `primitives` block via store.primitive_offset. New envs
+    override by declaring their own primitives in YAML, no code
+    change. The `store` param is optional for backward compatibility
+    with older call sites; when absent the function is a no-op for
+    non-move primitives (pos unchanged).
     """
-    if primitive == "move_left":
-        return (pos[0] - 1, pos[1])
-    if primitive == "move_right":
-        return (pos[0] + 1, pos[1])
-    if primitive == "move_up":
-        return (pos[0], pos[1] - 1)
-    if primitive == "move_down":
-        return (pos[0], pos[1] + 1)
+    if store is not None and primitive in store.primitives:
+        dx, dy = store.primitive_offset(primitive)
+        return (pos[0] + dx, pos[1] + dy)
     return pos
 
 
-def _nearest_concept(sim: SimState) -> str | None:
+def _nearest_concept(sim: SimState, store: "ConceptStore | None" = None) -> str | None:
     """Concept in the tile immediately in front of the player.
 
-    Direction is determined by last_action (the previous move). If last_action
-    is not a move, defaults to facing "down". Reads from sim.spatial_map._map
-    by (x, y) key matching CrafterSpatialMap.update's storage convention.
+    Stage 82 (ideology-audit 2.1): facing offset comes from the
+    textbook `primitives` block via store.primitive_offset. When
+    last_action is not a move primitive, store.primitive_offset falls
+    back to env_defaults.default_facing.
     """
-    dx, dy = 0, 1  # default: facing down
-    if sim.last_action == "move_left":
-        dx, dy = -1, 0
-    elif sim.last_action == "move_right":
-        dx, dy = 1, 0
-    elif sim.last_action == "move_up":
-        dx, dy = 0, -1
-    elif sim.last_action == "move_down":
+    if store is not None:
+        dx, dy = store.primitive_offset(sim.last_action)
+    else:
+        # Legacy fallback (only hit in isolated unit tests that build a
+        # SimState without a store). Preserves the old Crafter default.
         dx, dy = 0, 1
 
     front = (sim.player_pos[0] + dx, sim.player_pos[1] + dy)
@@ -1298,67 +1328,76 @@ def _nearest_concept(sim: SimState) -> str | None:
     return None
 
 
-def _explore_direction(sim: SimState) -> str:
+def _explore_direction(sim: SimState, store: "ConceptStore | None" = None) -> str:
     """Pick a move primitive for exploration.
 
-    Prefers the least-visited neighbor whose immediate step is NOT a known
-    blocked tile. `unvisited_neighbors` already filters blocked targets, but
-    the path TOWARD an unblocked target may still cross a blocked tile (e.g.
-    target at (X-2, Y) requires stepping into (X-1, Y) first). Without this
-    check the agent loops issuing the same move into a wall it already
-    learned about. Fall-back cycling also skips blocked directions.
+    Stage 82 (ideology-audit 2.6): direction cycle comes from the
+    textbook `env_defaults.explore_cycle`, not a hardcoded list. New
+    envs with diagonal movement or different cardinal order override
+    in YAML.
+
+    Prefers the least-visited neighbor whose immediate step is NOT a
+    known blocked tile. Fall-back cycling also skips blocked directions.
     """
     has_map = sim.spatial_map is not None and hasattr(sim.spatial_map, "is_blocked")
 
     def step_is_blocked(primitive: str) -> bool:
         if not has_map:
             return False
-        return sim.spatial_map.is_blocked(_apply_player_move(sim.player_pos, primitive))
+        return sim.spatial_map.is_blocked(_apply_player_move(sim.player_pos, primitive, store))
 
     if sim.spatial_map is not None and hasattr(sim.spatial_map, "unvisited_neighbors"):
         try:
             unvisited = sim.spatial_map.unvisited_neighbors(sim.player_pos, radius=3)
         except Exception:
             unvisited = []
-        # Sort by Manhattan distance — try closest first, fall back to next
-        # if the immediate step is blocked.
         unvisited.sort(
             key=lambda p: abs(p[0] - sim.player_pos[0]) + abs(p[1] - sim.player_pos[1])
         )
         for target in unvisited:
             next_step = _step_toward_pos(sim.player_pos, target)
             if next_step == sim.player_pos:
-                continue  # already there, picks no direction
-            primitive = _direction_primitive(sim.player_pos, next_step)
+                continue
+            primitive = _direction_primitive(sim.player_pos, next_step, store)
             if step_is_blocked(primitive):
                 continue
             return primitive
 
-    # Fall back: cycle through 4 cardinal directions so the agent doesn't
-    # walk in one direction forever. Skip directions known to be blocked.
-    dirs = ["move_up", "move_right", "move_down", "move_left"]
-    for offset in range(4):
-        primitive = dirs[(sim.step + offset) % 4]
+    # Cycle through declared directions so the agent doesn't walk in one
+    # direction forever. Skip directions known to be blocked.
+    dirs = (
+        store.explore_cycle()
+        if store is not None and store.explore_cycle()
+        else ["move_up", "move_right", "move_down", "move_left"]
+    )
+    if not dirs:
+        dirs = ["move_up", "move_right", "move_down", "move_left"]
+    for offset in range(len(dirs)):
+        primitive = dirs[(sim.step + offset) % len(dirs)]
         if not step_is_blocked(primitive):
             return primitive
-    # Surrounded — return arbitrary cycle direction (the env will reject it
-    # but at least the agent isn't infinite-looping in this function).
-    return dirs[sim.step % 4]
+    return dirs[sim.step % len(dirs)]
 
 
-def _step_toward_target(sim: SimState, target_pos: tuple[int, int]) -> str:
+def _step_toward_target(
+    sim: SimState,
+    target_pos: tuple[int, int],
+    store: "ConceptStore | None" = None,
+) -> str:
     """Pick a move primitive toward `target_pos` that is not known-blocked.
 
-    Tries the Manhattan-greedy direction first; if that immediate step is
-    a known blocked tile, tries the orthogonal direction; if that's also
-    blocked, falls through to _explore_direction.
+    Stage 82 (ideology-audit 2.3): resolves candidate primitives by
+    picking the move primitive whose offset matches the desired
+    (sign(dx), sign(dy)) signature. Reads from textbook primitives block
+    via store, so new envs with e.g. diagonal moves would automatically
+    gain a diagonal candidate.
     """
     has_map = sim.spatial_map is not None and hasattr(sim.spatial_map, "is_blocked")
 
     def step_blocked(primitive: str) -> bool:
         if not has_map:
             return False
-        return sim.spatial_map.is_blocked(_apply_player_move(sim.player_pos, primitive))
+        return sim.spatial_map.is_blocked(_apply_player_move(sim.player_pos, primitive, store))
 
     dx = target_pos[0] - sim.player_pos[0]
     dy = target_pos[1] - sim.player_pos[1]
@@ -1366,20 +1405,19 @@ def _step_toward_target(sim: SimState, target_pos: tuple[int, int]) -> str:
     # Preferred and orthogonal candidates, in order of preference
     candidates: list[str] = []
     if abs(dx) >= abs(dy) and dx != 0:
-        candidates.append("move_right" if dx > 0 else "move_left")
+        candidates.append(_primitive_for_delta((dx, 0), store))
         if dy != 0:
-            candidates.append("move_down" if dy > 0 else "move_up")
+            candidates.append(_primitive_for_delta((0, dy), store))
     elif dy != 0:
-        candidates.append("move_down" if dy > 0 else "move_up")
+        candidates.append(_primitive_for_delta((0, dy), store))
         if dx != 0:
-            candidates.append("move_right" if dx > 0 else "move_left")
+            candidates.append(_primitive_for_delta((dx, 0), store))
 
     for primitive in candidates:
-        if not step_blocked(primitive):
+        if primitive and not step_blocked(primitive):
             return primitive
 
-    # Both Manhattan-greedy directions blocked — fall back to exploration
-    return _explore_direction(sim)
+    return _explore_direction(sim, store)
 
 
 def _expand_to_primitive(
@@ -1397,7 +1435,7 @@ def _expand_to_primitive(
         # that locks the agent into walking in one direction forever —
         # the cycling in _explore_direction is what actually moves the
         # agent through the world to find resources.
-        return _explore_direction(sim)
+        return _explore_direction(sim, store)
 
     target = step.target
 
@@ -1452,17 +1490,9 @@ def _expand_to_primitive(
                 return "do"
             if dist == 1:
                 # Adjacent: check if the target is in the FACING tile.
-                # _nearest_concept default facing is dy=+1 (down), and
-                # changes per last_action — match its convention exactly.
-                facing_dx, facing_dy = 0, 1  # default: down
-                if sim.last_action == "move_left":
-                    facing_dx, facing_dy = -1, 0
-                elif sim.last_action == "move_right":
-                    facing_dx, facing_dy = 1, 0
-                elif sim.last_action == "move_up":
-                    facing_dx, facing_dy = 0, -1
-                elif sim.last_action == "move_down":
-                    facing_dx, facing_dy = 0, 1
+                # Stage 82 (ideology-audit 2.2): facing offset comes
+                # from store.primitive_offset, not a duplicated if/elif.
+                facing_dx, facing_dy = store.primitive_offset(sim.last_action)
                 if (facing_dx, facing_dy) == (dx, dy):
                     return "do"
                 # Adjacent but wrong facing: emit a move toward target so
@@ -1470,13 +1500,13 @@ def _expand_to_primitive(
                 # impassable tile (water/stone/tree) but Crafter still
                 # records the facing change.
                 if abs(dx) >= abs(dy):
-                    return "move_right" if dx > 0 else "move_left"
-                return "move_down" if dy > 0 else "move_up"
+                    return _primitive_for_delta((dx, 0), store)
+                return _primitive_for_delta((0, dy), store)
             # Far away: walk toward target
-            return _step_toward_target(sim, target_pos)
+            return _step_toward_target(sim, target_pos, store)
 
         # Unknown target location — explore to find it
-        return _explore_direction(sim)
+        return _explore_direction(sim, store)
 
     if step.action == "place":
         effect = step.rule.effect if step.rule else None
@@ -1484,11 +1514,11 @@ def _expand_to_primitive(
         if effect and effect.world_place:
             item = effect.world_place[0]
         if item is None:
-            return _explore_direction(sim)
-        near = _nearest_concept(sim)
+            return _explore_direction(sim, store)
+        near = _nearest_concept(sim, store)
         if near == "empty":
             return f"place_{item}"
-        return _explore_direction(sim)
+        return _explore_direction(sim, store)
 
     if step.action == "make":
         near_target = step.near or (step.rule.concept if step.rule else None)
@@ -1499,27 +1529,46 @@ def _expand_to_primitive(
             if positives:
                 result_item = positives[0]
         if result_item is None:
-            return _explore_direction(sim)
-        if _nearest_concept(sim) == near_target:
+            return _explore_direction(sim, store)
+        if _nearest_concept(sim, store) == near_target:
             return f"make_{result_item}"
         if near_target and sim.spatial_map is not None:
             target_pos = sim.spatial_map.find_nearest(near_target, sim.player_pos)
             if target_pos is not None:
-                return _step_toward_target(sim, target_pos)
-        return _explore_direction(sim)
+                return _step_toward_target(sim, target_pos, store)
+        return _explore_direction(sim, store)
 
     if step.action == "sleep":
         return "sleep"
 
-    return _explore_direction(sim)
+    return _explore_direction(sim, store)
 
 
-def _direction_primitive(
-    current: tuple[int, int], target: tuple[int, int]
+def _primitive_for_delta(
+    delta: tuple[int, int],
+    store: "ConceptStore | None" = None,
 ) -> str:
-    """Convert a (dx, dy) step into a move_* primitive."""
-    dx = target[0] - current[0]
-    dy = target[1] - current[1]
+    """Stage 82 (ideology-audit 2.1): find the move primitive whose
+    offset sign matches the requested delta (sign only, magnitude is
+    always 1 per tick). Reads from textbook primitives via store.
+
+    For orthogonal deltas picks the first matching primitive. For pure
+    zero delta returns the first declared move primitive as a safe
+    fallback (caller should avoid zero deltas).
+    """
+    dx = 1 if delta[0] > 0 else (-1 if delta[0] < 0 else 0)
+    dy = 1 if delta[1] > 0 else (-1 if delta[1] < 0 else 0)
+
+    if store is not None and store.primitives:
+        for name, spec in store.primitives.items():
+            pdx = 1 if spec.get("dx", 0) > 0 else (-1 if spec.get("dx", 0) < 0 else 0)
+            pdy = 1 if spec.get("dy", 0) > 0 else (-1 if spec.get("dy", 0) < 0 else 0)
+            if (pdx, pdy) == (dx, dy):
+                return name
+        # No exact match — return the first move primitive
+        return next(iter(store.primitives.keys()))
+
+    # Legacy fallback for isolated unit tests without a store
     if dx > 0:
         return "move_right"
     if dx < 0:
@@ -1529,6 +1578,18 @@ def _direction_primitive(
     if dy < 0:
         return "move_up"
     return "move_right"
+
+
+def _direction_primitive(
+    current: tuple[int, int],
+    target: tuple[int, int],
+    store: "ConceptStore | None" = None,
+) -> str:
+    """Convert a (dx, dy) step into a move_* primitive, via textbook
+    primitives if a store is provided."""
+    dx = target[0] - current[0]
+    dy = target[1] - current[1]
+    return _primitive_for_delta((dx, dy), store)
 
 
 def _is_plan_step_complete(

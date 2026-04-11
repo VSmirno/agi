@@ -69,6 +69,24 @@ def _mkstate(
     )
 
 
+def _store_with_primitives() -> ConceptStore:
+    """Stage 82: a ConceptStore populated with just the primitives block
+    for tests that check facing/movement helpers without loading the full
+    textbook."""
+    store = ConceptStore()
+    store.primitives = {
+        "move_left":  {"dx": -1, "dy": 0},
+        "move_right": {"dx": 1, "dy": 0},
+        "move_up":    {"dx": 0, "dy": -1},
+        "move_down":  {"dx": 0, "dy": 1},
+    }
+    store.env_defaults = {
+        "default_facing": [0, 1],
+        "explore_cycle": ["move_up", "move_right", "move_down", "move_left"],
+    }
+    return store
+
+
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
@@ -106,24 +124,29 @@ class TestHelpers:
         assert _apply_movement((5, 5), (10, 10), None, 0) == (5, 5)
 
     def test_apply_player_move(self):
-        assert _apply_player_move((10, 10), "move_left") == (9, 10)
-        assert _apply_player_move((10, 10), "move_right") == (11, 10)
-        assert _apply_player_move((10, 10), "move_up") == (10, 9)
-        assert _apply_player_move((10, 10), "move_down") == (10, 11)
-        assert _apply_player_move((10, 10), "do") == (10, 10)
+        # Stage 82: offsets come from textbook primitives block
+        store = _store_with_primitives()
+        assert _apply_player_move((10, 10), "move_left", store) == (9, 10)
+        assert _apply_player_move((10, 10), "move_right", store) == (11, 10)
+        assert _apply_player_move((10, 10), "move_up", store) == (10, 9)
+        assert _apply_player_move((10, 10), "move_down", store) == (10, 11)
+        # Non-move primitive → no positional change
+        assert _apply_player_move((10, 10), "do", store) == (10, 10)
 
     def test_direction_primitive(self):
-        assert _direction_primitive((10, 10), (11, 10)) == "move_right"
-        assert _direction_primitive((10, 10), (9, 10)) == "move_left"
-        assert _direction_primitive((10, 10), (10, 11)) == "move_down"
-        assert _direction_primitive((10, 10), (10, 9)) == "move_up"
+        store = _store_with_primitives()
+        assert _direction_primitive((10, 10), (11, 10), store) == "move_right"
+        assert _direction_primitive((10, 10), (9, 10), store) == "move_left"
+        assert _direction_primitive((10, 10), (10, 11), store) == "move_down"
+        assert _direction_primitive((10, 10), (10, 9), store) == "move_up"
 
     def test_nearest_concept_dynamic_entity_precedence(self):
         sim = _mkstate(entities=[DynamicEntity("zombie", (10, 11))])
         sim.last_action = "move_down"
+        store = _store_with_primitives()
         # Player at (10,10), facing down → front = (10, 11)
         # Entity at (10, 11) → nearest = zombie
-        assert _nearest_concept(sim) == "zombie"
+        assert _nearest_concept(sim, store) == "zombie"
 
 
 # ---------------------------------------------------------------------------

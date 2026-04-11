@@ -298,6 +298,44 @@ class TestLoadIntoStore:
         assert health_var["reference_min"] == 0
         assert health_var["reference_max"] == 9
 
+    def test_primitives_block_new_format(self):
+        """Stage 82 (ideology-audit 2.1): primitives block gives the
+        (dx, dy) offset for each move primitive, replacing the
+        hardcoded if/elif chains."""
+        tb = CrafterTextbook("configs/crafter_textbook.yaml")
+        prims = tb.primitives_block
+        assert prims["move_left"] == {"dx": -1, "dy": 0}
+        assert prims["move_right"] == {"dx": 1, "dy": 0}
+        assert prims["move_up"] == {"dx": 0, "dy": -1}
+        assert prims["move_down"] == {"dx": 0, "dy": 1}
+
+    def test_env_defaults_block(self):
+        tb = CrafterTextbook("configs/crafter_textbook.yaml")
+        defaults = tb.env_defaults_block
+        assert defaults["default_facing"] == [0, 1]
+        assert defaults["explore_cycle"] == [
+            "move_up", "move_right", "move_down", "move_left",
+        ]
+
+    def test_load_primitives_onto_store(self):
+        """After load_into, the store exposes primitives/env_defaults
+        so mechanisms can read facing offsets without guessing."""
+        tb = CrafterTextbook("configs/crafter_textbook.yaml")
+        store = ConceptStore()
+        tb.load_into(store)
+        assert store.primitives["move_left"]["dx"] == -1
+        assert store.env_defaults["default_facing"] == [0, 1]
+        # Helper: primitive_offset with a known move
+        assert store.primitive_offset("move_left") == (-1, 0)
+        # Helper: fallback to default_facing for non-move primitive
+        assert store.primitive_offset("do") == (0, 1)
+        assert store.primitive_offset(None) == (0, 1)
+        # Helper: blocking attribute flows through vocabulary
+        assert store.impassable_concepts() >= {
+            "tree", "stone", "water", "cow", "zombie", "skeleton",
+        }
+        assert "empty" not in store.impassable_concepts()
+
 # ---------------------------------------------------------------------------
 # ConceptStore passive rule helpers
 # ---------------------------------------------------------------------------

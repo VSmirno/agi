@@ -710,15 +710,10 @@ def run_mpc_episode(
                         gathered = True
                         break
             if gathered:
-                facing_dx, facing_dy = 0, 1
-                if prev_action == "move_left":
-                    facing_dx, facing_dy = -1, 0
-                elif prev_action == "move_right":
-                    facing_dx, facing_dy = 1, 0
-                elif prev_action == "move_up":
-                    facing_dx, facing_dy = 0, -1
-                elif prev_action == "move_down":
-                    facing_dx, facing_dy = 0, 1
+                # Stage 82 (ideology-audit 2.9): facing offset via
+                # store.primitive_offset instead of hardcoded Crafter
+                # move_* mapping.
+                facing_dx, facing_dy = store.primitive_offset(prev_action)
                 facing_tile = (
                     int(player_pos[0]) + facing_dx,
                     int(player_pos[1]) + facing_dy,
