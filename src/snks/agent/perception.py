@@ -139,6 +139,62 @@ class HomeostaticTracker:
         w = self.prior_strength / (self.prior_strength + n)
         return w * innate + (1 - w) * observed
 
+    # ---- Stage 82: persistence (knowledge flow) ---------------------------
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the observation-derived state (the part that isn't in
+        textbook and constitutes category-3 experience).
+
+        Stage 82: the tracker is category-3 experience — refinement of
+        rates, observed maxima, observation counts. These survive across
+        episodes and represent accumulated knowledge about the env's
+        actual dynamics.
+
+        innate_rates, reference_min/max, vital_mins, prior_strength are
+        NOT serialized — they come from the textbook on every init and
+        are category-1 facts. Saving them would create a drift point.
+        """
+        return {
+            "observed_rates": dict(self.observed_rates),
+            "observed_max": {k: int(v) for k, v in self.observed_max.items()},
+            "observation_counts": {k: int(v) for k, v in self.observation_counts.items()},
+        }
+
+    def load_dict(self, data: dict[str, Any]) -> None:
+        """Load observed state on top of an already-initialized tracker.
+
+        Merges observation counts (additive) and observed rates
+        (running-mean-combined) so that loading accumulated experience
+        refines further from where the previous run left off, rather
+        than overwriting.
+        """
+        if not self._initialized:
+            raise RuntimeError(
+                "HomeostaticTracker.load_dict called before init_from_textbook "
+                "— load rates on top of an initialized tracker, not before"
+            )
+        for var, rate in data.get("observed_rates", {}).items():
+            old_count = self.observation_counts.get(var, 0)
+            new_count = int(data.get("observation_counts", {}).get(var, 0))
+            if new_count <= 0:
+                continue
+            if old_count == 0:
+                self.observed_rates[var] = float(rate)
+                self.observation_counts[var] = new_count
+            else:
+                # Combined running mean
+                old_rate = self.observed_rates.get(var, 0.0)
+                merged_count = old_count + new_count
+                merged_rate = (
+                    old_rate * old_count + float(rate) * new_count
+                ) / merged_count
+                self.observed_rates[var] = merged_rate
+                self.observation_counts[var] = merged_count
+        for var, maxv in data.get("observed_max", {}).items():
+            current_max = self.observed_max.get(var, 0)
+            if int(maxv) > current_max:
+                self.observed_max[var] = int(maxv)
+
 
 # ---------------------------------------------------------------------------
 # Visual Field
