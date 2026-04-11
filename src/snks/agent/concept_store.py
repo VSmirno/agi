@@ -272,6 +272,36 @@ class ConceptStore:
         """
         self.learned_rules.append(rule)
 
+    def gatherable_items(self) -> set[str]:
+        """Stage 80: items the agent can gain via "do" actions.
+
+        Reads from the loaded textbook — any concept's "do" rule whose
+        effect has a positive inventory_delta entry. Used by the MPC
+        loop to detect successful gathering interactions and clear
+        chopped tiles from the spatial map. Env-agnostic — no
+        hardcoded item names.
+
+        Returns BOTH the textbook key (e.g. "stone_item") AND the
+        stripped form ("stone") — Crafter's textbook convention uses
+        "_item" suffixes for extracted resources but env inventory
+        uses bare names. Returning both forms means downstream
+        consumers don't need to know about that naming gap.
+        """
+        items: set[str] = set()
+        for concept in self.concepts.values():
+            for link in concept.causal_links:
+                if link.action != "do" or not link.effect:
+                    continue
+                for item, delta in link.effect.inventory_delta.items():
+                    if delta > 0:
+                        items.add(item)
+                        # Crafter textbook uses "_item" suffix for
+                        # extracted resources; env inventory uses
+                        # bare names. Add both forms.
+                        if item.endswith("_item"):
+                            items.add(item[: -len("_item")])
+        return items
+
     # --- Grounding ---
 
     def ground_visual(self, id: str, z_real: torch.Tensor) -> None:
