@@ -212,6 +212,9 @@ class ConceptStore:
         # all facing / movement mechanisms to be env-agnostic.
         self.primitives: dict[str, dict[str, int]] = {}
         self.env_defaults: dict[str, Any] = {}
+        # Stage 82 (ideology-audit 1.4): env action dispatch semantics
+        # loaded from textbook (do.dispatch, move.updates_facing, etc).
+        self.env_semantics: dict[str, Any] = {}
 
     # --- Stage 82: env primitives helpers ---
 
@@ -240,6 +243,15 @@ class ConceptStore:
         if isinstance(cycle, list) and cycle:
             return [str(p) for p in cycle]
         return self.move_primitives()
+
+    def action_dispatch(self, action: str) -> dict[str, Any]:
+        """Stage 82 (ideology-audit 1.4): env dispatch semantics for an
+        action, e.g. do → {"dispatch": "facing_tile", "range": 1}.
+        Returns an empty dict if no declaration — callers should default
+        to the Crafter convention (facing_tile, range=1) in that case.
+        """
+        spec = self.env_semantics.get(action)
+        return spec if isinstance(spec, dict) else {}
 
     # --- Registration ---
 
@@ -1440,22 +1452,15 @@ def _expand_to_primitive(
     target = step.target
 
     if step.action == "do":
-        # Bug 2 fix (Stage 79): Crafter env's "do" action interacts with
-        # the FACING tile, not any tile in manhattan ≤ 1. The original
-        # Stage 77a workaround used proximity inside _apply_tick to make
-        # the planner's sim agree with itself, but it disagreed with the
-        # env: agent at (10, 10) facing UP could not "do" a water tile at
-        # (11, 10) even though the planner predicted +5 drink. The Stage 79
-        # nursery surfaced this by learning false negative rules
-        # ("drink: -5 for do in this context") that then suppressed all
-        # do-water plans → agent dehydrated.
-        #
-        # The fix: only emit "do" when the target tile IS the facing tile
-        # (matches Crafter env semantics). When the target is adjacent but
-        # not in front, emit a navigation step in the target's direction —
-        # Crafter blocks movement into impassable tiles (water/stone/tree),
-        # but `last_action` still updates to that direction, so the next
-        # iteration's expand will see facing aligned and emit "do".
+        # Stage 82 (ideology-audit 1.4): dispatch mode for "do" comes
+        # from textbook env_semantics. Crafter declares
+        # dispatch: facing_tile (Stage 79 Bug 2 discovered this the hard
+        # way by learning false negative rules against do-water). Other
+        # envs might declare dispatch: proximity — we branch accordingly.
+        do_spec = store.action_dispatch("do")
+        do_dispatch = do_spec.get("dispatch", "facing_tile")
+        do_range = int(do_spec.get("range", 1))
+
         target_pos = None
         # Dynamic entities (mobs) take precedence
         for e in sim.dynamic_entities:
@@ -1488,17 +1493,24 @@ def _expand_to_primitive(
                 # when player is at exact target. This branch only ever
                 # triggers in sim rollouts, never in env primitives.
                 return "do"
-            if dist == 1:
-                # Adjacent: check if the target is in the FACING tile.
+            if dist <= do_range:
+                if do_dispatch == "proximity":
+                    # Area / proximity-dispatched do: fire whenever
+                    # target is within range. MiniGrid-style envs.
+                    return "do"
+                # facing_tile dispatch (default; Crafter convention).
                 # Stage 82 (ideology-audit 2.2): facing offset comes
-                # from store.primitive_offset, not a duplicated if/elif.
+                # from store.primitive_offset.
                 facing_dx, facing_dy = store.primitive_offset(sim.last_action)
                 if (facing_dx, facing_dy) == (dx, dy):
                     return "do"
                 # Adjacent but wrong facing: emit a move toward target so
                 # the env updates last_action. The move may be blocked by
-                # impassable tile (water/stone/tree) but Crafter still
-                # records the facing change.
+                # impassable tile but store.env_semantics.move.updates_facing
+                # tells us whether facing still updates on block (true for
+                # Crafter). The planner emits the move either way; if the
+                # env doesn't update facing, the next tick's plan will
+                # observe no progress and try a different approach.
                 if abs(dx) >= abs(dy):
                     return _primitive_for_delta((dx, 0), store)
                 return _primitive_for_delta((0, dy), store)

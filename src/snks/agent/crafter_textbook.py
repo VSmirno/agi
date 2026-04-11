@@ -326,6 +326,16 @@ class CrafterTextbook:
         defaults = self.data.get("env_defaults", {}) or {}
         return defaults if isinstance(defaults, dict) else {}
 
+    @property
+    def env_semantics_block(self) -> dict[str, Any]:
+        """Stage 82 (ideology-audit 1.4): env action dispatch semantics
+        — `do.dispatch`, `do.range`, `move.updates_facing`, etc.
+        Mechanisms consult store.env_semantics to pick the right
+        dispatch strategy per action, instead of hardcoding Crafter's
+        facing-tile convention in the code."""
+        sem = self.data.get("env_semantics", {}) or {}
+        return sem if isinstance(sem, dict) else {}
+
     def load_into(self, store: ConceptStore) -> int:
         """Parse vocabulary and rules, register into ConceptStore.
 
@@ -341,6 +351,7 @@ class CrafterTextbook:
         # move_left/right/up/down anywhere in Python.
         store.primitives = self.primitives_block
         store.env_defaults = self.env_defaults_block
+        store.env_semantics = self.env_semantics_block
 
         links_added = 0
         for rule_entry in self.rules:

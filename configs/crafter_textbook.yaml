@@ -27,6 +27,21 @@ env_defaults:
   default_facing: [0, 1]  # dy=+1 means facing down
   explore_cycle: [move_up, move_right, move_down, move_left]
 
+# Stage 82 (ideology-audit 1.4): env-level action dispatch semantics.
+# Stage 79 Bug 2 debugged a fact the teacher could just declare:
+# Crafter's "do" action interacts with the FACING tile, not any
+# tile at manhattan ≤ 1, and even a blocked move still updates the
+# facing direction. Declaring these here makes new envs pluggable
+# (MiniGrid "pickup" is range=1 too but dispatch=proximity, etc).
+env_semantics:
+  do:
+    dispatch: facing_tile      # one of: facing_tile | proximity
+    range: 1                   # manhattan distance at which the action resolves
+    interaction_mode: direct   # direct vs area vs projectile
+  move:
+    blocked_by: impassable     # impassable concepts stop the move
+    updates_facing: true       # even a blocked move updates last_action/facing
+
 vocabulary:
   # `blocking: true` means the player cannot walk THROUGH this tile.
   # Stage 82 migrated from `impassable_concepts()` heuristic in code —
