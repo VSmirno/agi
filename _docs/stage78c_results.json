@@ -1,0 +1,291 @@
+{
+  "args": {
+    "fast": false,
+    "horizon": 20,
+    "residual_lr": 0.001,
+    "only": "both"
+  },
+  "device": "cuda",
+  "budget": {
+    "n_warmup_a": 50,
+    "n_warmup_b": 50,
+    "n_eval_runs": 3,
+    "n_eval_eps": 20,
+    "warmup_max_steps": 500,
+    "eval_max_steps": 1000,
+    "horizon": 20
+  },
+  "stage77a_baseline": {
+    "warmup_a_avg_len": 222.0,
+    "warmup_b_avg_len": 203.0,
+    "eval_avg_len": 180.0,
+    "eval_wood_3_rate": 0.0
+  },
+  "residual_off": {
+    "label": "residual_off",
+    "residual_enabled": false,
+    "warmup_a": {
+      "name": "residual_off/warmup_a",
+      "n": 50,
+      "avg_len": 215.9,
+      "std_len": 127.56445429664176,
+      "median_len": 183,
+      "min_len": 41,
+      "max_len": 500,
+      "avg_entropy": 1.1406503248615039,
+      "avg_wood": 0.2,
+      "wood_3_count": 0,
+      "wood_3_rate": 0.0,
+      "avg_coal": 0.0,
+      "coal_1_count": 0,
+      "avg_iron": 0.0,
+      "causes": {
+        "health": 49,
+        "alive": 1
+      },
+      "residual_loss_mean": null
+    },
+    "warmup_b": {
+      "name": "residual_off/warmup_b",
+      "n": 50,
+      "avg_len": 182.3,
+      "std_len": 50.825288980978755,
+      "median_len": 180,
+      "min_len": 38,
+      "max_len": 333,
+      "avg_entropy": 1.246643266828954,
+      "avg_wood": 0.16,
+      "wood_3_count": 0,
+      "wood_3_rate": 0.0,
+      "avg_coal": 0.0,
+      "coal_1_count": 0,
+      "avg_iron": 0.0,
+      "causes": {
+        "health": 50
+      },
+      "residual_loss_mean": null
+    },
+    "eval_runs": [
+      {
+        "name": "residual_off/eval_run0",
+        "n": 20,
+        "avg_len": 170.4,
+        "std_len": 62.47111332447982,
+        "median_len": 168,
+        "min_len": 42,
+        "max_len": 382,
+        "avg_entropy": 1.1764171815543907,
+        "avg_wood": 0.4,
+        "wood_3_count": 0,
+        "wood_3_rate": 0.0,
+        "avg_coal": 0.0,
+        "coal_1_count": 0,
+        "avg_iron": 0.0,
+        "causes": {
+          "health": 20
+        },
+        "residual_loss_mean": null
+      },
+      {
+        "name": "residual_off/eval_run1",
+        "n": 20,
+        "avg_len": 176.8,
+        "std_len": 30.33908370402771,
+        "median_len": 167,
+        "min_len": 126,
+        "max_len": 247,
+        "avg_entropy": 0.6938730110898549,
+        "avg_wood": 0.05,
+        "wood_3_count": 0,
+        "wood_3_rate": 0.0,
+        "avg_coal": 0.0,
+        "coal_1_count": 0,
+        "avg_iron": 0.0,
+        "causes": {
+          "health": 20
+        },
+        "residual_loss_mean": null
+      },
+      {
+        "name": "residual_off/eval_run2",
+        "n": 20,
+        "avg_len": 160.35,
+        "std_len": 58.10273229375706,
+        "median_len": 165,
+        "min_len": 42,
+        "max_len": 273,
+        "avg_entropy": 0.7034529163732498,
+        "avg_wood": 0.15,
+        "wood_3_count": 0,
+        "wood_3_rate": 0.0,
+        "avg_coal": 0.0,
+        "coal_1_count": 0,
+        "avg_iron": 0.0,
+        "causes": {
+          "health": 20
+        },
+        "residual_loss_mean": null
+      }
+    ],
+    "eval_combined": {
+      "name": "residual_off/eval_combined",
+      "n": 60,
+      "avg_len": 169.18333333333334,
+      "std_len": 52.71479604648226,
+      "median_len": 167,
+      "min_len": 42,
+      "max_len": 382,
+      "avg_entropy": 0.8579143696724985,
+      "avg_wood": 0.2,
+      "wood_3_count": 0,
+      "wood_3_rate": 0.0,
+      "avg_coal": 0.0,
+      "coal_1_count": 0,
+      "avg_iron": 0.0,
+      "causes": {
+        "health": 60
+      },
+      "residual_loss_mean": null
+    },
+    "elapsed_min": 1.9615618030230204
+  },
+  "residual_on": {
+    "label": "residual_on",
+    "residual_enabled": true,
+    "warmup_a": {
+      "name": "residual_on/warmup_a",
+      "n": 50,
+      "avg_len": 259.48,
+      "std_len": 144.86783493929906,
+      "median_len": 295,
+      "min_len": 42,
+      "max_len": 500,
+      "avg_entropy": 0.7309745335301122,
+      "avg_wood": 0.2,
+      "wood_3_count": 0,
+      "wood_3_rate": 0.0,
+      "avg_coal": 0.0,
+      "coal_1_count": 0,
+      "avg_iron": 0.0,
+      "causes": {
+        "health": 49,
+        "alive": 1
+      },
+      "residual_loss_mean": 0.7428792456163429
+    },
+    "warmup_b": {
+      "name": "residual_on/warmup_b",
+      "n": 50,
+      "avg_len": 159.76,
+      "std_len": 49.48598185345018,
+      "median_len": 158,
+      "min_len": 32,
+      "max_len": 302,
+      "avg_entropy": 0.23094301510499973,
+      "avg_wood": 0.0,
+      "wood_3_count": 0,
+      "wood_3_rate": 0.0,
+      "avg_coal": 0.0,
+      "coal_1_count": 0,
+      "avg_iron": 0.0,
+      "causes": {
+        "health": 50
+      },
+      "residual_loss_mean": 0.2031287138114507
+    },
+    "eval_runs": [
+      {
+        "name": "residual_on/eval_run0",
+        "n": 20,
+        "avg_len": 150.45,
+        "std_len": 53.77961974577359,
+        "median_len": 157,
+        "min_len": 33,
+        "max_len": 305,
+        "avg_entropy": 0.07839245192502141,
+        "avg_wood": 0.0,
+        "wood_3_count": 0,
+        "wood_3_rate": 0.0,
+        "avg_coal": 0.0,
+        "coal_1_count": 0,
+        "avg_iron": 0.0,
+        "causes": {
+          "health": 20
+        },
+        "residual_loss_mean": 0.15608076040913393
+      },
+      {
+        "name": "residual_on/eval_run1",
+        "n": 20,
+        "avg_len": 142.9,
+        "std_len": 58.38655667189152,
+        "median_len": 158,
+        "min_len": 38,
+        "max_len": 285,
+        "avg_entropy": 0.1348067942013357,
+        "avg_wood": 0.05,
+        "wood_3_count": 0,
+        "wood_3_rate": 0.0,
+        "avg_coal": 0.0,
+        "coal_1_count": 0,
+        "avg_iron": 0.0,
+        "causes": {
+          "health": 20
+        },
+        "residual_loss_mean": 0.1787216871732194
+      },
+      {
+        "name": "residual_on/eval_run2",
+        "n": 20,
+        "avg_len": 162.8,
+        "std_len": 81.04110068354204,
+        "median_len": 159,
+        "min_len": 34,
+        "max_len": 390,
+        "avg_entropy": 0.31788307507716074,
+        "avg_wood": 0.1,
+        "wood_3_count": 0,
+        "wood_3_rate": 0.0,
+        "avg_coal": 0.0,
+        "coal_1_count": 0,
+        "avg_iron": 0.0,
+        "causes": {
+          "health": 20
+        },
+        "residual_loss_mean": 0.31257295433151544
+      }
+    ],
+    "eval_combined": {
+      "name": "residual_on/eval_combined",
+      "n": 60,
+      "avg_len": 152.05,
+      "std_len": 66.00692514173544,
+      "median_len": 158,
+      "min_len": 33,
+      "max_len": 390,
+      "avg_entropy": 0.17702744040117266,
+      "avg_wood": 0.05,
+      "wood_3_count": 0,
+      "wood_3_rate": 0.0,
+      "avg_coal": 0.0,
+      "coal_1_count": 0,
+      "avg_iron": 0.0,
+      "causes": {
+        "health": 60
+      },
+      "residual_loss_mean": 0.21579180063795625
+    },
+    "elapsed_min": 76.73259856700898
+  },
+  "comparison": {
+    "delta_on_minus_off_eval": -17.133333333333326,
+    "delta_on_minus_baseline_eval": -27.94999999999999,
+    "delta_off_minus_baseline_eval": -10.816666666666663,
+    "gates": {
+      "residual_on_beats_off": false,
+      "residual_on_ge_baseline": false,
+      "residual_on_meaningful_delta": true
+    }
+  },
+  "total_time_min": 78.70869137048722
+}
