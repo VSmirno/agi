@@ -611,6 +611,16 @@ def run_mpc_episode(
         # rules_delta is computed by a 1-tick rules-only replay on a copy of
         # the prev sim-state (residual is NOT passed), isolating the symbolic
         # prediction from the residual-corrected one used for planning.
+        #
+        # IMPORTANT (Bug 1 fix): the rules-only replay must propagate the
+        # SAME planned_step that the planner's simulate_forward used for the
+        # chosen plan's first tick. Without it, Phase 6 'do' falls into the
+        # facing-based fallback (`_nearest_concept`) which the Stage 77a
+        # comment in concept_store.py:646 explicitly notes as broken in sim
+        # contexts ("navigation walks through target tiles"). The result was
+        # systematically zero rules_delta for do-water and (intermittently)
+        # do-cow, training the residual to over-predict the body gap and
+        # mislead future planning iterations.
         if (
             residual_train
             and residual_predictor is not None
@@ -630,12 +640,14 @@ def run_mpc_episode(
                 terminated_reason="horizon",
                 plan_progress=0,
             )
+            chosen_planned_step = best_plan.steps[0] if best_plan.steps else None
             store._apply_tick(
                 rules_sim,
                 primitive,
                 tracker,
                 rules_traj,
                 tick=0,
+                planned_step=chosen_planned_step,
             )
             prev_body = state.body
             actual_delta = [
