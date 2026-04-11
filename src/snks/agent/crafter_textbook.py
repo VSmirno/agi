@@ -306,6 +306,26 @@ class CrafterTextbook:
             return body
         return {}
 
+    @property
+    def primitives_block(self) -> dict[str, dict[str, int]]:
+        """Stage 82 (ideology-audit 2.1): { primitive_name: {dx, dy} }.
+        Used by ConceptStore to resolve facing/movement offsets without
+        hardcoding Crafter conventions in mechanisms."""
+        prims = self.data.get("primitives", {}) or {}
+        if not isinstance(prims, dict):
+            return {}
+        return {
+            name: {"dx": int(spec.get("dx", 0)), "dy": int(spec.get("dy", 0))}
+            for name, spec in prims.items()
+            if isinstance(spec, dict)
+        }
+
+    @property
+    def env_defaults_block(self) -> dict[str, Any]:
+        """Stage 82: env-level defaults (default_facing, explore_cycle)."""
+        defaults = self.data.get("env_defaults", {}) or {}
+        return defaults if isinstance(defaults, dict) else {}
+
     def load_into(self, store: ConceptStore) -> int:
         """Parse vocabulary and rules, register into ConceptStore.
 
@@ -315,6 +335,12 @@ class CrafterTextbook:
         for entry in self.vocabulary:
             attrs = {k: v for k, v in entry.items() if k != "id"}
             store.register(entry["id"], attrs)
+
+        # Stage 82: load primitives and env defaults onto the store so the
+        # mechanism can read facing offsets without hardcoding
+        # move_left/right/up/down anywhere in Python.
+        store.primitives = self.primitives_block
+        store.env_defaults = self.env_defaults_block
 
         links_added = 0
         for rule_entry in self.rules:

@@ -7,6 +7,26 @@
 
 domain: crafter
 
+# Stage 82 migration (ideology-audit 2.1/2.2/2.3/2.6/2.9/2.10):
+# cardinal move primitives with their (dx, dy) offsets. Before, every
+# site that needed a facing direction duplicated the same
+# if/elif chain in code. New envs override by declaring their own
+# primitives block.
+#
+# `default_facing` is the offset used when last_action is None or
+# not a move primitive (Crafter starts the agent facing down).
+# `explore_cycle` is the order used by the exploration fallback
+# when no preferred direction exists.
+primitives:
+  move_left:  { dx: -1, dy:  0 }
+  move_right: { dx:  1, dy:  0 }
+  move_up:    { dx:  0, dy: -1 }
+  move_down:  { dx:  0, dy:  1 }
+
+env_defaults:
+  default_facing: [0, 1]  # dy=+1 means facing down
+  explore_cycle: [move_up, move_right, move_down, move_left]
+
 vocabulary:
   # `blocking: true` means the player cannot walk THROUGH this tile.
   # Stage 82 migrated from `impassable_concepts()` heuristic in code —
