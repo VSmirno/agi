@@ -187,6 +187,63 @@ class TestParsePassiveRules:
         assert link.effect.body_delta == {"health": -0.5}
         assert link.effect.stateful_condition.op == "=="
 
+    def test_stateful_any_of(self):
+        """Stage 82 (ideology-audit 1.1): compound any_of."""
+        entry = {
+            "passive": "stateful",
+            "when": {
+                "any_of": [
+                    {"var": "food", "op": "==", "value": 0},
+                    {"var": "drink", "op": "==", "value": 0},
+                ],
+            },
+            "effect": {"body": {"health": -0.05}},
+        }
+        _, link = _parse_rule_dict(entry)
+        cond = link.effect.stateful_condition
+        assert cond.mode == "any_of"
+        assert len(cond.children) == 2
+        assert cond.children[0].var == "food"
+        assert cond.children[1].var == "drink"
+        assert cond.action_filter is None
+
+    def test_stateful_any_of_with_action_filter(self):
+        """Stage 82: canonical conjunctive sleep rule — declared
+        instead of mined by the nursery."""
+        entry = {
+            "passive": "stateful",
+            "when": {
+                "action_filter": "sleep",
+                "any_of": [
+                    {"var": "food", "op": "==", "value": 0},
+                    {"var": "drink", "op": "==", "value": 0},
+                    {"var": "energy", "op": "==", "value": 0},
+                ],
+            },
+            "effect": {"body": {"health": -0.067}},
+        }
+        _, link = _parse_rule_dict(entry)
+        cond = link.effect.stateful_condition
+        assert cond.mode == "any_of"
+        assert cond.action_filter == "sleep"
+        assert len(cond.children) == 3
+
+    def test_stateful_all_of(self):
+        entry = {
+            "passive": "stateful",
+            "when": {
+                "all_of": [
+                    {"var": "food", "op": ">", "value": 0},
+                    {"var": "drink", "op": ">", "value": 0},
+                ],
+            },
+            "effect": {"body": {"health": 0.02}},
+        }
+        _, link = _parse_rule_dict(entry)
+        cond = link.effect.stateful_condition
+        assert cond.mode == "all_of"
+        assert len(cond.children) == 2
+
 
 # ---------------------------------------------------------------------------
 # Full textbook loading

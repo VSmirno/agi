@@ -23,16 +23,47 @@ if TYPE_CHECKING:
 
 @dataclass
 class StatefulCondition:
-    """Predicate on a body variable, evaluated per sim tick.
+    """Predicate over body state, evaluated per sim tick.
 
-    Example: `food > 0` → StatefulCondition(var="food", op=">", threshold=0).
+    Two forms, distinguished by `mode`:
+
+    - "atomic" (default): a single comparison on one body variable.
+      Example: `food > 0` → StatefulCondition(var="food", op=">", threshold=0).
+
+    - "any_of" / "all_of" (Stage 82): a compound over a list of
+      sub-conditions in `children`. Example: `any_of({food==0, drink==0,
+      energy==0})` lets the teacher write "sleep burns health when ANY
+      survival variable is depleted" as a single textbook rule, without
+      asking the surprise nursery to rediscover the conjunction.
+
+    `action_filter` (optional) restricts the rule to ticks where
+    `sim.last_action == action_filter`. Needed for rules whose
+    magnitude only applies to one primitive (e.g., sleep + starvation
+    → health -0.067, but the same starvation under other actions costs
+    less per tick). Without this filter, the conjunctive sleep rule
+    would fire on every step, not just sleep ticks.
     """
 
-    var: str
-    op: str  # ">" | "<" | "==" | ">=" | "<="
-    threshold: float
+    # atomic form
+    var: str = ""
+    op: str = ">"  # ">" | "<" | "==" | ">=" | "<="
+    threshold: float = 0.0
+
+    # compound form
+    mode: str = "atomic"  # "atomic" | "any_of" | "all_of"
+    children: list["StatefulCondition"] = field(default_factory=list)
+
+    # optional primitive gate (applies in both forms)
+    action_filter: str | None = None
 
     def satisfied(self, sim: "SimState") -> bool:
+        if self.action_filter is not None and sim.last_action != self.action_filter:
+            return False
+        if self.mode == "any_of":
+            return any(child.satisfied(sim) for child in self.children)
+        if self.mode == "all_of":
+            return all(child.satisfied(sim) for child in self.children)
+        # atomic
         val = sim.body.get(self.var, 0.0)
         if self.op == ">":
             return val > self.threshold

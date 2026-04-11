@@ -85,6 +85,115 @@ class TestStatefulCondition:
         assert cond.satisfied(_mkstate({"food": 5.0})) is False
 
 
+class TestStatefulConditionCompound:
+    """Stage 82 (ideology-audit 1.1): any_of / all_of / action_filter."""
+
+    def _atom(self, var: str, op: str, value: float) -> StatefulCondition:
+        return StatefulCondition(var=var, op=op, threshold=value, mode="atomic")
+
+    def test_any_of_true_when_one_child_matches(self):
+        cond = StatefulCondition(
+            mode="any_of",
+            children=[
+                self._atom("food", "==", 0),
+                self._atom("drink", "==", 0),
+            ],
+        )
+        # food is depleted, drink is fine → any_of True
+        assert cond.satisfied(_mkstate({"food": 0.0, "drink": 5.0})) is True
+
+    def test_any_of_false_when_no_child_matches(self):
+        cond = StatefulCondition(
+            mode="any_of",
+            children=[
+                self._atom("food", "==", 0),
+                self._atom("drink", "==", 0),
+            ],
+        )
+        assert cond.satisfied(_mkstate({"food": 5.0, "drink": 5.0})) is False
+
+    def test_all_of_true_when_every_child_matches(self):
+        cond = StatefulCondition(
+            mode="all_of",
+            children=[
+                self._atom("food", ">", 0),
+                self._atom("drink", ">", 0),
+            ],
+        )
+        assert cond.satisfied(_mkstate({"food": 3.0, "drink": 5.0})) is True
+
+    def test_all_of_false_when_any_child_fails(self):
+        cond = StatefulCondition(
+            mode="all_of",
+            children=[
+                self._atom("food", ">", 0),
+                self._atom("drink", ">", 0),
+            ],
+        )
+        assert cond.satisfied(_mkstate({"food": 3.0, "drink": 0.0})) is False
+
+    def test_action_filter_gates_on_last_action(self):
+        cond = StatefulCondition(
+            var="food",
+            op="==",
+            threshold=0,
+            action_filter="sleep",
+        )
+        state_sleep = _mkstate({"food": 0.0})
+        state_sleep.last_action = "sleep"
+        state_walk = _mkstate({"food": 0.0})
+        state_walk.last_action = "move_right"
+        assert cond.satisfied(state_sleep) is True
+        assert cond.satisfied(state_walk) is False
+
+    def test_action_filter_with_any_of(self):
+        """Canonical Stage 82 use case — conjunctive sleep + starvation
+        rule written directly in textbook, no nursery required."""
+        cond = StatefulCondition(
+            mode="any_of",
+            action_filter="sleep",
+            children=[
+                self._atom("food", "==", 0),
+                self._atom("drink", "==", 0),
+                self._atom("energy", "==", 0),
+            ],
+        )
+        state = _mkstate({"food": 0.0, "drink": 5.0, "energy": 5.0})
+        state.last_action = "sleep"
+        assert cond.satisfied(state) is True
+
+        state.last_action = "move_left"
+        assert cond.satisfied(state) is False
+
+        state.last_action = "sleep"
+        state.body = {"food": 5.0, "drink": 5.0, "energy": 5.0}
+        assert cond.satisfied(state) is False
+
+    def test_nested_any_of_inside_all_of(self):
+        inner_any = StatefulCondition(
+            mode="any_of",
+            children=[
+                self._atom("food", "==", 0),
+                self._atom("drink", "==", 0),
+            ],
+        )
+        outer_all = StatefulCondition(
+            mode="all_of",
+            children=[
+                inner_any,
+                self._atom("energy", ">", 0),
+            ],
+        )
+        # food=0, energy=5 → inner True and energy>0 True → outer True
+        assert outer_all.satisfied(
+            _mkstate({"food": 0.0, "drink": 5.0, "energy": 5.0})
+        ) is True
+        # food=5, drink=5, energy=5 → inner False → outer False
+        assert outer_all.satisfied(
+            _mkstate({"food": 5.0, "drink": 5.0, "energy": 5.0})
+        ) is False
+
+
 # ---------------------------------------------------------------------------
 # RuleEffect
 # ---------------------------------------------------------------------------
