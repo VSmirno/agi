@@ -416,38 +416,21 @@ class ConceptStore:
         return items
 
     def impassable_concepts(self) -> set[str]:
-        """Stage 81 (Bug 8): concepts the player cannot walk THROUGH.
+        """Concepts the player cannot walk THROUGH.
 
-        Used by sim's Phase 2 (player movement) to mirror env blocking
-        semantics — without it, sim's player walks through trees and
-        stones, which causes oscillation in gather plan rollouts when
-        find_nearest returns adjacent stale resources.
-
-        Heuristic: any concept the agent can "do" to gather a resource
-        is impassable (Crafter convention — resources are blocking
-        tiles), plus any concept that has a `passive_movement` rule
-        (mobile entities like cow / zombie / skeleton are also blocking
-        in Crafter — you can't walk through them).
-
-        Env-agnostic in spirit (reads from the textbook), but the
-        heuristic itself is Crafter-shaped. Future env_model layer
-        should declare blocking explicitly.
+        Stage 82 migration (ideology-audit 2.4): reads the `blocking`
+        attribute from each concept's textbook vocabulary entry. The
+        previous Stage 81 heuristic ("any do-rule with positive
+        inv_delta is blocking, plus mobile entities") was a
+        Crafter-specific physics assumption dressed as a generic rule.
+        New envs (MiniGrid, Minecraft) declare blocking in their own
+        textbook YAML and this method needs no code change.
         """
-        impassable: set[str] = set()
-        # Resources that have a "do <X>" gather rule — assume the X
-        # tile is blocking.
-        for concept_id, concept in self.concepts.items():
-            for link in concept.causal_links:
-                if link.action == "do" and link.effect and any(
-                    d > 0 for d in link.effect.inventory_delta.values()
-                ):
-                    impassable.add(concept_id)
-                    break
-        # Mobile entities — also blocking.
-        for rule in self.passive_rules:
-            if rule.kind == "passive_movement" and rule.concept:
-                impassable.add(rule.concept)
-        return impassable
+        return {
+            cid
+            for cid, concept in self.concepts.items()
+            if concept.attributes.get("blocking", False)
+        }
 
     # --- Grounding ---
 
