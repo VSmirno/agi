@@ -90,6 +90,21 @@ def main() -> bool:
         print(f"visible: {sorted(vf.visible_concepts())}")
         print(f"body: H{inv.get('health', 0)}F{inv.get('food', 0)}D{inv.get('drink', 0)}E{inv.get('energy', 0)}  W{inv.get('wood', 0)}")
 
+        # Print spatial_map nearby resources
+        nearby = []
+        for (y, x), concept in spatial_map._map.items():
+            if concept in ("tree", "water", "cow", "stone", "coal", "iron", "diamond"):
+                d = abs(y - player_pos[0]) + abs(x - player_pos[1])
+                if d <= 5:
+                    nearby.append((d, (y, x), concept))
+        nearby.sort()
+        if nearby:
+            print(f"  spatial_map nearby resources (manhattan ≤ 5):")
+            for d, pos, c in nearby[:8]:
+                print(f"    {pos} = {c} (d={d})")
+        else:
+            print(f"  spatial_map: no resources within 5 tiles")
+
         # Build state
         state = build_sim_state(
             inventory=inv,
