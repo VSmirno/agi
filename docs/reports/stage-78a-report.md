@@ -1,7 +1,9 @@
 # Stage 78a — Fair DAF Spike Test Report
 
 **Date:** 2026-04-11
-**Status:** COMPLETE — **FAIL**. DAF substrate does not carry conditional dynamics in any of the 7 tested regimes. Stage 78b proceeds with MLP residual (Dreamer-CDP style) fallback; DAF-as-residual novelty dropped. Novelties #2 (no-LLM surprise rule induction) and #3 (three-category ideology) retained.
+**Status:** COMPLETE — **FAIL within the tested regime space, scoped**. DAF substrate did not carry conditional dynamics in any of the 7 specific (oscillator, sim_steps, readout, STDP) configurations actually run. Stage 78b proceeds with MLP residual (Dreamer-CDP style) fallback; DAF-as-residual novelty was dropped from the critical path. Novelties #2 (no-LLM surprise rule induction) and #3 (three-category ideology) retained.
+
+**Status revision (2026-04-11, post-Stage 78c bug retro):** the verdict is **correct for the regimes that were run**, but the test matrix has known coverage gaps (see "Methodological gaps and incomplete coverage" below). The original framing "DAF residual dropped" is too strong as an absolute claim — it should be read as "dropped from the Strategy v5 critical path because the available test budget did not produce a passing regime, and the remaining untested configurations are research follow-ups, not critical-path work". A re-test that closes the gaps could in principle reverse the verdict, but it is not on the path to Crafter Gate 1 and is parked as a Branch C grant-track bet.
 **Script:** `experiments/stage78a_daf_spike_fair.py`
 **Strategy:** [Strategy v5 — Real learning on top of rules](../superpowers/specs/2026-04-11-strategy-real-learning-design.md)
 **Prior spike reference:** `experiments/spike_daf_body_predictor.py` (excitable FHN, 100 sim steps, voltage readout)
@@ -295,6 +297,138 @@ None of these change the Stage 78b decision: the residual learner has
 a 5–6 week timeline to close Gate 1 on Crafter, and DAF is not
 viable for that specific role on that specific timeline.
 
+## Methodological gaps and incomplete coverage
+
+Added 2026-04-11 after a Stage 78c retro debugging session uncovered an
+analogous "wrong training signal" failure mode in the Stage 78c MPC loop.
+That bug was technically distinct (no shared code path with 78a), but
+reviewing 78a in the same systematic-debugging frame surfaced four
+coverage gaps the original test did not address. The verdict above
+("FAIL within the tested regime space") is preserved, but the
+generalisation "DAF residual dropped" should be read against this list.
+
+### Gap 1 — `spikerate` readout was never run as a primary readout
+
+`DafPredictor._extract_features` supports three modes: `voltage`,
+`spikerate`, `sks_cluster`. The seven regimes used:
+
+- R1, R2, R3, R4, R6 → `voltage` (terminal membrane V at end of sim)
+- R5, R7 → `sks_cluster` (which fell back to spike-rate over the
+  output zone because zero clusters were discovered)
+- **`spikerate` was never selected as the primary readout for any
+  regime in the test matrix.**
+
+`voltage` is structurally weak: at end of `sim_steps` the FHN nodes
+have settled toward an attractor that is approximately the same across
+inputs (excitable: fixed point; oscillatory saturated: limit cycle;
+oscillatory fast tau: phase-aliased mid-cycle V). This compresses input
+variance into noise around an attractor and limits how much information
+the readout can extract regardless of substrate dynamics. The R5/R7 SKS
+fallback did read spike-rates but only in the *fast tau oscillatory*
+configuration with *zero clusters* — i.e. it observed spike rates over
+an output zone whose feature norm was effectively zero.
+
+A regime that explicitly selects `spikerate` over a non-degenerate
+substrate (e.g. R6 with `readout="spikerate"` instead of `voltage`)
+was never measured. It is plausible — though not yet evidenced — that
+spike-rate features over a STDP-shaped, fast-tau substrate would carry
+the conditional bit even when terminal voltage does not.
+
+### Gap 2 — Motor → output propagation is implicit and unverified
+
+The `MotorEncoder` injects action-encoded current into the motor zone
+`[4500, 5000)`, downstream of the `output_zone [3500, 4500)`. For the
+substrate to learn state×action interaction, motor signals must
+propagate *backward* through the random graph topology
+(`avg_degree=20`, 5000 nodes) to reach the output zone where the
+readout reads.
+
+This was never instrumented. There is no direct measurement of how
+much motor-zone information actually arrives at the output zone within
+`sim_steps`. The linear baseline has the action one-hot at position
+2008 in its flat feature vector, immediately accessible to the readout
+MLP. The DAF predictor's substrate must do a graph propagation that
+the random topology may simply not support reliably. A diagnostic that
+held the state currents fixed and varied only the action, then measured
+output-zone variance, would isolate this — it was not run.
+
+### Gap 3 — `voltage` readout reflects steady-state, not dynamics
+
+Stage 44 audit framed FHN regimes by I_base (excitable vs oscillatory),
+but the *readout time* (end of sim_steps) is itself a measurement
+choice that interacts with the regime. For `voltage` readout:
+
+- **Excitable (R1, R2):** terminal V ≈ resting potential plus
+  sub-threshold noise → encodes nothing about input identity except
+  through occasional supra-threshold transients that don't persist.
+- **Oscillatory saturated (R3):** terminal V is at some phase of the
+  limit cycle, determined more by integration time than by input.
+- **Oscillatory fast tau (R4):** terminal V is at one of several
+  phase-aliased points; partial input modulation but compressed.
+
+The right metric for "did the substrate carry information" with FHN
+oscillators is **firing rate over time** (i.e. `spikerate`) or **phase
+coherence** between input-driven and free regions, not the V vector at
+a single time. The `voltage` readout was the path of least
+implementation effort (it was already in the prior spike), not a
+considered choice for the oscillatory regimes added in 78a.
+
+### Gap 4 — SKS cluster discovery used a single parameter setting
+
+DBSCAN was run with `eps=0.3, min_samples=5, min_size=5` on a single
+combined window of 64 samples × `sim_steps` × 1000 output-zone nodes.
+Zero clusters were found in both R5 and R7. No sweep over `eps`
+(0.1–0.5), `min_samples` (3–10), or window size was performed; no
+alternate clustering algorithm (HDBSCAN, spectral, k-medoids) was
+tried; no different read zone (input zone, hidden zone) was probed.
+
+A single failed parameter setting is not a refutation of "the
+substrate forms cofiring clusters at this scale" — it is a refutation
+of "the substrate forms clusters detectable by DBSCAN(eps=0.3, min=5)
+in the output zone at this scale".
+
+### What this means for the verdict
+
+The Stage 78a `verdict()` function applies its three-level rule
+(STRONG_PASS / PASS / FAIL) to the configurations actually run. Within
+that scope the result is correct: no run-as-implemented regime beat
+the linear baseline, and the discrimination paradox argues that the
+features extracted from this specific (substrate, readout) pairing
+were anti-correlated with the conditional target.
+
+However:
+
+- **The test matrix is not exhaustive.** Three of the most informative
+  cells (`spikerate` × {excitable long, oscillatory fast tau, fast tau
+  + STDP}) were never filled. They cost ~1 GPU-hour each.
+- **The discrimination paradox** is interesting in itself. It suggests
+  the learned features are picking up on things that *increase* the
+  MLP's confidence in the wrong direction. A different readout that
+  forced the residual through a smaller bottleneck (e.g. a 4-d
+  projection) might break this perverse incentive.
+- **Stage 78c found that "DAF can carry conditional dynamics" was not
+  even the right question for the critical path** — the Stage 78c MLP
+  residual (which is just an MLP, no substrate) is sufficient to
+  carry the gap when paired with the planner's symbolic predictions,
+  *as long as* the training signal is computed correctly. The
+  symbolic floor is high enough that a residual only has to absorb a
+  small delta, which an MLP handles fine.
+
+A re-test that closes Gap 1 (run `spikerate` × {R2, R6, R4}) would
+take ≈3 GPU-hours and would either:
+
+(a) confirm that even the missing cells fail and harden the
+"DAF substrate cannot carry the conditional bit at 5K nodes" claim, or
+
+(b) find a passing regime and **reopen DAF-as-residual as a Strategy v5
+novelty**, in which case Stage 78b's MLP-only residual would be revised
+to a DAF residual + symbolic rules hybrid.
+
+This re-test is **not currently scheduled**. It is logged here so that
+if Stage 78c full eval still struggles after the planned_step bug fix,
+revisiting DAF residual is one of the candidate next moves rather than
+treated as definitively closed.
+
 ### Run metadata
 
 - `experiments/stage78a_daf_spike_fair.py` commit `eb791ab` (pre-fix
@@ -347,18 +481,25 @@ written.
 
 **DAF substrate retirement:** not total. DAF remains in the codebase
 for perception research (Stage 44 kept it as perception layer after the
-R1 negative verdict). The Stage 78a result narrows its role: it does
-not learn conditional dynamics targets via output-zone probing at
-5K node × 10K sim step scale. Future research bets (grant track,
-larger networks, different readout) are possible but not on the
-Stage 78b → Gate 1 path.
+R1 negative verdict). The Stage 78a result narrows its role *for the
+specific tested regimes*: it does not learn conditional dynamics
+targets via output-zone `voltage` or degenerate `sks_cluster` readouts
+at 5K node × 2–10K sim step scale. The four methodological gaps
+documented above (`spikerate` readout untested as primary, motor→output
+propagation unmeasured, `voltage` reflects steady-state not dynamics,
+SKS cluster sweep skipped) leave room for a re-test to overturn this
+within the same node budget. That re-test is parked as a Branch C
+research bet, not on the Stage 78b → Gate 1 path.
 
 **Strategy v5 novelty accounting after this result:**
-1. ~~DAF-substrate as learnable dynamics predictor~~ — **dropped**.
+1. ~~DAF-substrate as learnable dynamics predictor~~ — **dropped from
+   the critical path** (within tested regime space). Re-testable: see
+   Methodological gaps. If the re-test finds a passing regime, this
+   novelty is reopened.
 2. Rule induction from surprise accumulator without LLM — **retained**.
 3. Three-category ideology as enforced architectural principle — **retained**.
 
-One novelty out of three is gone; the remaining two are still
+One novelty out of three is parked; the remaining two are still
 grant-worthy and the fallback MLP residual still matches the published
 Dreamer-CDP SOTA path, so Stage 78b is well-defined and unblocked.
 
