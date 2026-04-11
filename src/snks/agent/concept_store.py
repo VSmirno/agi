@@ -32,6 +32,40 @@ if TYPE_CHECKING:
     from snks.agent.perception import HomeostaticTracker
 
 
+# Stage 78c: body-variable order shared with ResidualBodyPredictor.
+# This must match residual_predictor.ResidualBodyPredictor.encode()'s
+# body_order default (("health", "food", "drink", "energy")) so the
+# correction tensor's 4 slots line up with the right sim.body keys.
+RESIDUAL_BODY_ORDER: tuple[str, ...] = ("health", "food", "drink", "energy")
+
+
+def primitive_to_action_idx(primitive: str) -> int:
+    """Stage 78c: map Crafter primitive string to residual action slot [0..7].
+
+    Residual config has n_actions=8. This mapping groups place_* and
+    make_* into single buckets (coarse, but the residual only needs to
+    learn conditional corrections; fine-grained action identity already
+    lives in the symbolic rules).
+    """
+    if primitive == "move_left":
+        return 0
+    if primitive == "move_right":
+        return 1
+    if primitive == "move_up":
+        return 2
+    if primitive == "move_down":
+        return 3
+    if primitive == "do":
+        return 4
+    if primitive == "sleep":
+        return 5
+    if primitive.startswith("place_"):
+        return 6
+    if primitive.startswith("make_"):
+        return 7
+    return 0  # noop / inertia / unknown → fallback
+
+
 @dataclass
 class CausalLink:
     """One causal rule: action on this concept → result.
@@ -550,6 +584,8 @@ class ConceptStore:
         initial_state: SimState,
         tracker: "HomeostaticTracker",
         horizon: int = 20,
+        residual_predictor: Any = None,
+        visible_concepts: set[str] | None = None,
     ) -> Trajectory:
         """Roll out a plan through causal rules for `horizon` ticks.
 
@@ -564,6 +600,16 @@ class ConceptStore:
           4. Stateful passive rules
           5. Spatial adjacency rules
           6. Action-triggered effects (do/make/place/sleep)
+
+        Stage 78c: if `residual_predictor` is provided, after each tick a
+        small MLP correction is added to sim.body. The correction is
+        encoded from (visible_concepts, pre-residual body, primitive action).
+        `visible_concepts` is a perception-time snapshot of what the agent
+        sees; it is held constant across the rollout because planning
+        does not perceive new scenes. The residual is applied with
+        no_grad — training happens outside simulate_forward, in the MPC
+        loop after env.step. Small init guarantees residual≈0 at start,
+        so the Stage 77a baseline is unperturbed on episode 1.
         """
         sim = initial_state.copy()
         traj = Trajectory(
@@ -576,6 +622,7 @@ class ConceptStore:
             plan_progress=0,
         )
         plan_cursor = 0
+        visible_for_residual = visible_concepts or set()
 
         for tick in range(horizon):
             # Termination check BEFORE acting (dead agents don't act)
@@ -596,7 +643,23 @@ class ConceptStore:
             prev_inv = dict(sim.inventory)
             prev_enemies = {e.concept_id for e in sim.dynamic_entities}
 
+            # Body snapshot BEFORE _apply_tick — needed for residual encoding
+            # (residual learns on the pre-step state) and also for computing
+            # the rules-only delta for training signal consumers.
+            body_pre_tick = dict(sim.body)
+
             self._apply_tick(sim, primitive, tracker, traj, tick, planned_step=current_step)
+
+            # Stage 78c: apply residual body-delta correction on top of rules.
+            if residual_predictor is not None:
+                self._apply_residual_correction(
+                    sim,
+                    body_pre_tick,
+                    visible_for_residual,
+                    primitive,
+                    residual_predictor,
+                    tracker,
+                )
 
             # Snapshot body_series
             for var, value in sim.body.items():
@@ -631,6 +694,35 @@ class ConceptStore:
                 sim.body[var] = hi
             elif sim.body[var] < lo:
                 sim.body[var] = lo
+
+    def _apply_residual_correction(
+        self,
+        sim: SimState,
+        body_pre_tick: dict[str, float],
+        visible_concepts: set[str],
+        primitive: str,
+        residual_predictor: Any,
+        tracker: "HomeostaticTracker",
+    ) -> None:
+        """Stage 78c: add MLP residual correction to sim.body after rules tick.
+
+        Encodes (visible_concepts, body_pre_tick, primitive) and adds the
+        4-dim delta produced by the residual to sim.body in-place, then
+        re-clamps. Runs under no_grad because training happens in the MPC
+        loop where actual env deltas are available.
+        """
+        action_idx = primitive_to_action_idx(primitive)
+        with torch.no_grad():
+            fp = residual_predictor.encode(
+                visible=set(visible_concepts),
+                body=body_pre_tick,
+                action_idx=action_idx,
+            )
+            correction = residual_predictor.forward(fp).cpu().numpy()
+        for i, var in enumerate(RESIDUAL_BODY_ORDER):
+            if var in sim.body:
+                sim.body[var] = sim.body.get(var, 0.0) + float(correction[i])
+        self._clamp_body(sim, tracker)
 
     def _apply_tick(
         self,
