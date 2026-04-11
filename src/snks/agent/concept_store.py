@@ -302,6 +302,40 @@ class ConceptStore:
                             items.add(item[: -len("_item")])
         return items
 
+    def impassable_concepts(self) -> set[str]:
+        """Stage 81 (Bug 8): concepts the player cannot walk THROUGH.
+
+        Used by sim's Phase 2 (player movement) to mirror env blocking
+        semantics — without it, sim's player walks through trees and
+        stones, which causes oscillation in gather plan rollouts when
+        find_nearest returns adjacent stale resources.
+
+        Heuristic: any concept the agent can "do" to gather a resource
+        is impassable (Crafter convention — resources are blocking
+        tiles), plus any concept that has a `passive_movement` rule
+        (mobile entities like cow / zombie / skeleton are also blocking
+        in Crafter — you can't walk through them).
+
+        Env-agnostic in spirit (reads from the textbook), but the
+        heuristic itself is Crafter-shaped. Future env_model layer
+        should declare blocking explicitly.
+        """
+        impassable: set[str] = set()
+        # Resources that have a "do <X>" gather rule — assume the X
+        # tile is blocking.
+        for concept_id, concept in self.concepts.items():
+            for link in concept.causal_links:
+                if link.action == "do" and link.effect and any(
+                    d > 0 for d in link.effect.inventory_delta.values()
+                ):
+                    impassable.add(concept_id)
+                    break
+        # Mobile entities — also blocking.
+        for rule in self.passive_rules:
+            if rule.kind == "passive_movement" and rule.concept:
+                impassable.add(rule.concept)
+        return impassable
+
     # --- Grounding ---
 
     def ground_visual(self, id: str, z_real: torch.Tensor) -> None:
@@ -744,6 +778,33 @@ class ConceptStore:
             elif sim.body[var] < lo:
                 sim.body[var] = lo
 
+    def _sim_pos_blocked(self, pos: tuple[int, int], sim: SimState) -> bool:
+        """Stage 81 (Bug 8): is `pos` impassable in sim's spatial map?
+
+        Used by Phase 2 (player moves) to mirror env blocking. Returns
+        True if either:
+          - pos is in spatial_map._blocked (learned from a prior failed
+            env move), or
+          - the spatial_map entry at pos is a concept marked
+            `impassable_concepts()` (resource / mob).
+          - pos is occupied by a tracked dynamic entity.
+        """
+        if sim.spatial_map is None:
+            return False
+        if hasattr(sim.spatial_map, "is_blocked") and sim.spatial_map.is_blocked(pos):
+            return True
+        # Resource / mob tile from spatial_map
+        impassable = self.impassable_concepts()
+        if hasattr(sim.spatial_map, "_map"):
+            tile_concept = sim.spatial_map._map.get(pos)
+            if tile_concept and tile_concept in impassable:
+                return True
+        # Mobile entity at pos
+        for e in sim.dynamic_entities:
+            if tuple(e.pos) == tuple(pos):
+                return True
+        return False
+
     def _apply_residual_correction(
         self,
         sim: SimState,
@@ -813,8 +874,16 @@ class ConceptStore:
             )
 
         # === Phase 2: Player moves ===
+        # Stage 81 (Bug 8): respect blocking. The next tile may be a
+        # known-impassable resource (tree, stone, water, ...) or marked
+        # blocked from a prior failed move. In env, the player would
+        # stay in place but `last_action` (and therefore facing) still
+        # updates — same here. Without this, sim's player walks through
+        # trees and gather plan rollouts oscillate.
         if primitive.startswith("move_"):
-            sim.player_pos = _apply_player_move(sim.player_pos, primitive)
+            new_pos = _apply_player_move(sim.player_pos, primitive)
+            if not self._sim_pos_blocked(new_pos, sim):
+                sim.player_pos = new_pos
 
         # === Phase 3: Background body rates ===
         # Observation-driven: uses tracker.get_rate(var) which Bayesian-
