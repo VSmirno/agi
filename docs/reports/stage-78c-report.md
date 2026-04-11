@@ -357,29 +357,121 @@ on identical seeds is a real signal that residual_on hurts.
   rules* with their own context conditions, rather than averaging an
   MLP correction over collision-prone fingerprints.
 
-## Connection to Stage 78a methodological gaps
+## Connection to Stage 78a — same failure mode, not just analogy
 
 The Stage 78c retro debugging session prompted a re-read of Stage 78a
 under the same systematic-debugging lens. Four coverage gaps were
-documented in the Stage 78a report addendum: spikerate readout was
-never tested as primary, motor → output propagation was never
-measured, voltage readout reflects steady-state not dynamics, and
-SKS DBSCAN used a single parameter setting. None of those are bugs
-in the same way Stage 78c's `planned_step` was — Stage 78a code is
-self-contained and correct for what it tested — but together they
-mean the "DAF residual dropped" verdict should be read as "parked
-on Branch C, re-test cost ~3 GPU-hours, reopens if a passing regime
-is found".
+documented in the Stage 78a report addendum (spikerate readout was
+never tested as primary, motor → output propagation never measured,
+voltage readout reflects steady-state, SKS DBSCAN used a single
+parameter setting). Those are coverage gaps, not bugs.
 
-This is relevant here because Stage 78c's failure to beat Stage 77a
-on enemies-on suggests **the MLP residual at 67K params + this
-encoding is not a strong enough learner** to handle the
-multi-modal-correction regime that enemies-on Crafter presents. If
-Stage 78c had succeeded, the MLP residual would have been the winner
-and DAF would have stayed parked. Since it didn't, the DAF re-test
-becomes a candidate "Plan B" — if a richer substrate can carry
-state×action interactions that the MLP encoding cannot, that might
-unlock the eval delta we wanted here.
+But there is a more important connection — the **discrimination
+paradox** that Stage 78a explicitly documented in its results section,
+and that Stage 78c has now reproduced under a completely different
+implementation. They are the same failure mode, not an analogy.
+
+### The shared pattern
+
+**Stage 78a wording:** "Higher discrimination correlates with **worse**
+conjunctive MSE. The readout MLP overfits to the majority pattern
+(`sleep → health +0.04`, true for 97.3% of sleep samples). When
+features are discriminative the MLP learns the majority rule
+**confidently** and predicts large positive health deltas for all
+sleep samples, including the conjunctive 2.7% — getting them
+spectacularly wrong (error ≈0.11²). When features are bland the MLP
+outputs ≈0 (degenerate solution), landing closer to the −0.067
+target than confident positive predictions would. **The substrate's
+'good' features are all on the wrong attributes** — they encode
+input variety but not the food/drink=0 conditional bit."
+
+**Stage 78c manifestation:**
+
+| | Stage 78a (DAF substrate × MLP head) | Stage 78c (MLP residual over rules) |
+|---|---|---|
+| Higher *X* worsens outcome | Higher disc → worse conj_health_mse | Lower entropy (more confident planner) → worse eval avg_len |
+| What the model learns | Majority rule (sleep → +0.04) confidently | Average correction over fingerprint collisions |
+| When it goes wrong | Conjunctive 2.7% — confidently positive instead of −0.067 | Multi-modal correction states (cow facing right vs facing up) — confident average instead of either mode |
+| Degenerate / bland alternative wins | R5/R7 0-cluster fallback ≈ baseline | residual_off entropy 0.86 ≈ baseline |
+| The wrong attribute | Substrate encodes input variety, not food/drink=0 conditional bit | Residual encoding has visible+body+action but not facing/positions/last_action — averages over conditional structure |
+
+The two stages used different substrates (FHN spiking network vs
+1048→64→4 MLP), different training regimes (offline supervised on
+oracle deltas vs online SGD on env deltas), different feature
+extractors (voltage / spikerate / sks_cluster vs hashed concept bits +
+body buckets), and arrived at the **same failure**: a
+confidently-trained model that predicts the average of a multi-modal
+target distribution and underperforms the no-model baseline because
+the baseline at least doesn't *amplify* the wrong direction.
+
+### Why this is one finding, not two
+
+Both failures are produced by the same recipe:
+
+```
+   features that aggregate samples needing different corrections
+ + MSE-on-labels training (the model is rewarded for matching the average)
+ = a confidently-wrong predictor
+```
+
+The recipe is independent of the substrate (DAF or MLP), independent
+of the readout (voltage, spikerate, MLP head), independent of the
+training signal source (oracle or env rollouts), and independent of
+parameter count (5K-node substrate or 67K MLP).
+
+This matters for what we do next. The Stage 78c report's first version
+framed the problem as "MLP residual at this scale + this encoding
+is not a strong enough learner". That was too narrow. **The problem is
+not learner strength** — we already know from Stage 78a that adding
+substrate complexity didn't help, and from Stage 78c that adding the
+correct training signal didn't help either. Both interventions left
+the underlying recipe untouched.
+
+The recipe breaks only if we either (a) make the features
+**condition-aware** so the model never has to average over
+multi-modal targets, or (b) replace MSE-on-labels with a learning
+mechanism that produces **explicit conditional structure** instead of
+a single averaged correction.
+
+### What this means for the three options
+
+**Option 1 (Stage 79 — surprise accumulator + symbolic rule
+nursery)** explicitly produces conditional structure: a candidate
+rule has the form `(precondition, effect)` where precondition is a
+discrete predicate over the agent's observations. There is no
+averaging — the rule either applies or it doesn't. Multiple rules
+can coexist with non-overlapping preconditions, covering the
+multi-modal case directly. **This is the only option that breaks the
+recipe at its source.**
+
+**Option 2 (Stage 78d — improve residual encoding)** adds more bits
+to the encoding (facing direction, last_action, entity positions).
+This is a direct attempt to *increase discrimination*. But 78a's
+paradox already showed that on the conditional problem, more
+discrimination amplifies the wrong direction more confidently. With
+better encoding the residual will collide on fewer cases, but on the
+cases it still collides on it will be **more** confident, not less.
+The expected best-case is "residual_on no longer hurts" rather than
+"residual_on actually helps the conditional cases".
+
+**Option 3 (Stage 78a re-test with spikerate readout)** changes the
+substrate's feature extractor but does not change the MSE-on-labels
+training paradigm. The discrimination paradox would persist at any
+new operating point — a passing spikerate regime, if it exists, would
+just be a new point on the same curve, not an exit from the curve.
+The bet is that there is some (substrate, readout) pair where the
+features happen to align with the conditional bit by accident — that's
+possible but speculative, and the 4 GPU-hours of compute do not
+purchase a path out of the underlying recipe.
+
+**Decision:** Option 1 is no longer just the default — it is the
+**only structurally sound option** given the paradox. Options 2 and 3
+might still be cheap to run as parallel data-collection (especially
+Option 3 at 3 GPU-hours), but they should not be considered candidates
+for the critical path. Stage 78c's main contribution to Strategy v5 is
+**independent confirmation** that symbolic rule induction with
+explicit preconditions (Stage 79) is the right level of abstraction
+for the conditional structure that Crafter actually has.
 
 ## Strategy v5 novelty accounting
 
@@ -394,65 +486,26 @@ the residual *does* learn (Stage 78b synthetic pass), the wiring is
 correct (Stage 78c warmup_a +43.6), but the **encoding-driven
 generalisation fails** in enemies-on phases.
 
-## Decision points
+## Decision
 
-Three credible next moves; user input needed.
+**Stage 79 (symbolic surprise accumulator + rule nursery), no
+alternatives.** The discrimination paradox argument above rules out
+Option 2 (encoding improvements would amplify the wrong direction on
+remaining collisions) and demotes Option 3 (78a spikerate re-test) to
+optional parallel data-collection rather than a credible critical path.
+Stage 79 explicitly produces `(precondition, effect)` rules with
+discrete applicability — no averaging, no collision-averaging amplification,
+direct representation of multi-modal conditional structure. The Stage 79
+sketch is at
+`docs/superpowers/specs/2026-04-11-stage79-surprise-accumulator-sketch.md`
+and a full design doc is the next deliverable after this report.
 
-### Option 1 — Stage 79 surprise accumulator + rule nursery (most aligned with Strategy v5)
-
-Skip residual encoding improvements, accept the 78c finding as
-informative-negative, and proceed to Stage 79 as planned. The Stage 79
-sketch is already written
-(`docs/superpowers/specs/2026-04-11-stage79-surprise-accumulator-sketch.md`).
-Surprise rule induction adds new *symbolic rules with explicit
-preconditions* to `ConceptStore.learned_rules`, which sidesteps the
-encoding collision problem by representing "skeleton at range 5 →
-damage" as its own discrete rule, not as an averaged correction.
-
-Cost: 2–3 weeks of design + implementation + Crafter eval per the
-Strategy v5 plan.
-
-Pro: this is the central novelty of Strategy v5; the 78c failure
-*supports* the case for symbolic rule induction over averaged
-corrections.
-
-Con: Stage 79 has its own implementation risk and is 2–3 weeks of
-work before we know if it closes the wall.
-
-### Option 2 — Stage 78d residual encoding improvement
-
-Add facing direction, last_action, and skeleton distance to the
-residual fingerprint. Re-train on the same phases and see if the
-warmup_a gain transfers to enemies-on. ~1 week of work, narrow scope.
-
-Pro: directly attacks the diagnosed encoding collision. Cheap and
-fast.
-
-Con: still an averaged-correction approach, may just push the
-collision boundary instead of removing it. Doesn't address Stage
-79's central novelty.
-
-### Option 3 — Stage 78a re-test with spikerate readout (Branch C reopen)
-
-Run R2/R4/R6 with `readout="spikerate"` instead of `voltage`. ~3
-GPU-hours on minipc. If any regime beats baseline, DAF residual
-reopens as Strategy v5 novelty #1, and the residual approach gets
-a substrate that can encode state × action interactions natively
-without MLP encoding gaps.
-
-Pro: closes the largest 78a methodological gap; gives DAF residual
-a fair shot before final retirement.
-
-Con: branch C research bet, not on the Crafter Gate 1 critical path.
-Even if it passes, integrating the substrate into the MPC loop is
-its own engineering job.
-
-**Default recommendation:** Option 1. The Stage 78c failure is
-*evidence for* the Stage 79 hypothesis (symbolic rules >> averaged
-MLP corrections for multi-modal contexts). Stage 79 was already the
-next planned stage, and 78c gives it a stronger empirical case.
-Option 3 (78a re-test) is worth running in parallel as a low-cost
-backup if minipc has spare cycles.
+Stage 78c's main contribution to Strategy v5 is **independent
+confirmation** of the discrimination paradox first observed in 78a.
+That gives the Stage 79 design a much stronger empirical foundation
+than it had before — it is no longer "the next sketch on the roadmap",
+it is "the only known way out of a failure mode that two independent
+implementations have now reproduced".
 
 ## Files
 
