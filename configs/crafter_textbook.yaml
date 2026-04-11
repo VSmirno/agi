@@ -8,18 +8,21 @@
 domain: crafter
 
 vocabulary:
+  # `blocking: true` means the player cannot walk THROUGH this tile.
+  # Stage 82 migrated from `impassable_concepts()` heuristic in code —
+  # teacher declares blocking semantics explicitly (ideology-audit 2.4).
   # Visible objects (visually groundable)
-  - { id: tree,     category: resource }
-  - { id: stone,    category: resource }
-  - { id: coal,     category: resource }
-  - { id: iron,     category: resource }
-  - { id: table,    category: crafted }
-  - { id: empty,    category: terrain }
-  - { id: zombie,   category: enemy, dangerous: true }
-  - { id: skeleton, category: enemy, dangerous: true }
+  - { id: tree,     category: resource, blocking: true }
+  - { id: stone,    category: resource, blocking: true }
+  - { id: coal,     category: resource, blocking: true }
+  - { id: iron,     category: resource, blocking: true }
+  - { id: table,    category: crafted,  blocking: true }
+  - { id: empty,    category: terrain,  blocking: false }
+  - { id: zombie,   category: enemy, dangerous: true, blocking: true }
+  - { id: skeleton, category: enemy, dangerous: true, blocking: true }
   # Survival resources
-  - { id: water, category: resource }
-  - { id: cow,   category: resource }
+  - { id: water, category: resource, blocking: true }
+  - { id: cow,   category: resource, blocking: true }
   # Inventory items (text grounding only)
   - { id: wood,           category: item }
   - { id: stone_item,     category: item }
