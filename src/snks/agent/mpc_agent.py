@@ -681,6 +681,34 @@ def run_mpc_episode(
             verify_outcome(vf.near_concept, primitive, outcome, store)
             verified = True
 
+        # --- Stage 80 Bug 6 fix: clear chopped tile from spatial_map ---
+        # When env.step("do") successfully gathered a resource, the
+        # facing tile in env was emptied (tree chopped, stone broken,
+        # cow eaten, water drained). Stage 75 segmenter sometimes
+        # mis-classifies the now-empty tile as still being the
+        # resource (player sprite confusion / latent pixels), so the
+        # spatial_map keeps reporting the resource at the old position.
+        # find_nearest then loops the planner. Patch: explicitly mark
+        # the facing tile as 'empty' after a successful do interaction.
+        if primitive == "do" and outcome and any(
+            inv_after.get(k, 0) > inv_before_action.get(k, 0)
+            for k in ("wood", "stone", "coal", "iron", "diamond", "sapling")
+        ):
+            facing_dx, facing_dy = 0, 1
+            if prev_action == "move_left":
+                facing_dx, facing_dy = -1, 0
+            elif prev_action == "move_right":
+                facing_dx, facing_dy = 1, 0
+            elif prev_action == "move_up":
+                facing_dx, facing_dy = 0, -1
+            elif prev_action == "move_down":
+                facing_dx, facing_dy = 0, 1
+            facing_tile = (
+                int(player_pos[0]) + facing_dx,
+                int(player_pos[1]) + facing_dy,
+            )
+            spatial_map.update(facing_tile, "empty")
+
         # --- Stage 78c: online residual SGD step -----------------------------
         # After env.step we know the actual body at t+1. Train residual on
         # (prev_state_t, prev_primitive_t) → (actual_delta_t - rules_delta_t).
