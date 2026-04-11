@@ -18,6 +18,7 @@ Design: docs/superpowers/specs/2026-04-11-stage79-rule-nursery-design.md
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from snks.learning.surprise_accumulator import ContextKey, quartile_for
 
@@ -82,3 +83,42 @@ class LearnedRule:
             if current_quartiles != self.precondition.body_quartiles:
                 return False
         return True
+
+    # ---- Stage 82: persistence (knowledge flow) ---------------------------
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a JSON-friendly dict for cross-episode persistence.
+
+        Stage 82: learned rules are the core of the knowledge-flow
+        principle — experience promotes to facts that the next episode
+        (or the next agent, or the teacher) can consume. This format
+        is stable, inspectable, and mergeable with textbook YAML.
+        """
+        return {
+            "precondition": {
+                "visible": sorted(self.precondition.visible),
+                "body_quartiles": list(self.precondition.body_quartiles),
+                "action": self.precondition.action,
+            },
+            "effect": {k: float(v) for k, v in self.effect.items()},
+            "confidence": float(self.confidence),
+            "n_observations": int(self.n_observations),
+            "source": str(self.source),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "LearnedRule":
+        """Deserialize from the format produced by to_dict()."""
+        pre = data["precondition"]
+        context = ContextKey(
+            visible=frozenset(pre["visible"]),
+            body_quartiles=tuple(pre["body_quartiles"]),  # type: ignore[arg-type]
+            action=pre["action"],
+        )
+        return cls(
+            precondition=context,
+            effect=dict(data.get("effect", {})),
+            confidence=float(data.get("confidence", 0.5)),
+            n_observations=int(data.get("n_observations", 0)),
+            source=str(data.get("source", "runtime_nursery")),
+        )

@@ -269,8 +269,121 @@ class ConceptStore:
         The rule must be a `LearnedRule` instance (`snks.agent.learned_rule`).
         It will be applied in Phase 7 of `_apply_tick` for any tick whose
         (visible, body_quartiles, action) matches the rule's precondition.
+
+        Stage 82: deduplication. If a rule with the same precondition already
+        exists in `learned_rules`, keep the one with higher `n_observations`
+        (more evidence). Prevents duplicate promotions when loading from
+        persistence on top of a store that already has the same rules.
         """
+        existing = [r for r in self.learned_rules if r.precondition == rule.precondition]
+        if existing:
+            old = existing[0]
+            if getattr(rule, "n_observations", 0) > getattr(old, "n_observations", 0):
+                self.learned_rules.remove(old)
+                self.learned_rules.append(rule)
+            # else: keep the old one, ignore the new
+            return
         self.learned_rules.append(rule)
+
+    # ---- Stage 82: persistence (knowledge flow) ---------------------------
+
+    def experience_to_dict(self) -> dict[str, Any]:
+        """Serialize the category-3 experience portion of this store.
+
+        Stage 82: captures ONLY the learned state (runtime-discovered
+        rules, modified rule confidences from verify_outcome), NOT the
+        category-1 facts (textbook concepts/rules) which reload from
+        YAML on every init. This keeps the persistence file focused on
+        what actually changes between episodes.
+
+        Tracker state is serialized separately by HomeostaticTracker
+        since it has its own lifecycle; see `save_experience` below
+        for the combined save/load convenience.
+        """
+        data: dict[str, Any] = {
+            "version": 1,
+            "learned_rules": [
+                lr.to_dict() for lr in self.learned_rules
+                if hasattr(lr, "to_dict")
+            ],
+            "rule_confidences": {},
+        }
+        # Save the current confidences of textbook rules (they get
+        # updated by verify_outcome over time).
+        for concept_id, concept in self.concepts.items():
+            for i, link in enumerate(concept.causal_links):
+                key = f"{concept_id}:{link.action}:{i}"
+                data["rule_confidences"][key] = float(link.confidence)
+        for i, rule in enumerate(self.passive_rules):
+            key = f"_passive:{rule.kind}:{i}"
+            data["rule_confidences"][key] = float(rule.confidence)
+        return data
+
+    def load_experience_dict(self, data: dict[str, Any]) -> None:
+        """Apply a serialized experience dict on top of the already-loaded
+        textbook. Merges learned_rules (via add_learned_rule dedup) and
+        restores rule confidences where the key still matches.
+        """
+        from snks.agent.learned_rule import LearnedRule
+
+        for lr_data in data.get("learned_rules", []):
+            try:
+                lr = LearnedRule.from_dict(lr_data)
+            except Exception:
+                continue
+            self.add_learned_rule(lr)
+
+        confidences = data.get("rule_confidences", {})
+        for concept_id, concept in self.concepts.items():
+            for i, link in enumerate(concept.causal_links):
+                key = f"{concept_id}:{link.action}:{i}"
+                if key in confidences:
+                    link.confidence = float(confidences[key])
+        for i, rule in enumerate(self.passive_rules):
+            key = f"_passive:{rule.kind}:{i}"
+            if key in confidences:
+                rule.confidence = float(confidences[key])
+
+    def save_experience(
+        self,
+        path: str | Path,
+        tracker: "HomeostaticTracker | None" = None,
+    ) -> None:
+        """Persist experience (learned rules + rule confidences + optional
+        tracker state) to a JSON file.
+
+        Args:
+            path: file path to write.
+            tracker: optional HomeostaticTracker whose observation-derived
+                state will be merged into the same file under "tracker" key.
+        """
+        data = self.experience_to_dict()
+        if tracker is not None and hasattr(tracker, "to_dict"):
+            data["tracker"] = tracker.to_dict()
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w") as f:
+            json.dump(data, f, indent=2, default=str)
+
+    def load_experience(
+        self,
+        path: str | Path,
+        tracker: "HomeostaticTracker | None" = None,
+    ) -> bool:
+        """Load persisted experience from a JSON file.
+
+        Returns True if the file existed and was loaded, False if it
+        didn't exist (fresh start).
+        """
+        path = Path(path)
+        if not path.exists():
+            return False
+        with path.open("r") as f:
+            data = json.load(f)
+        self.load_experience_dict(data)
+        if tracker is not None and "tracker" in data and hasattr(tracker, "load_dict"):
+            tracker.load_dict(data["tracker"])
+        return True
 
     def gatherable_items(self) -> set[str]:
         """Stage 80: items the agent can gain via "do" actions.
