@@ -1,0 +1,395 @@
+{
+  "version": 1,
+  "fast": true,
+  "n_episodes_per_session": 3,
+  "max_steps": 150,
+  "horizon": 10,
+  "passed": true,
+  "sessions": [
+    {
+      "label": "session_1",
+      "n_episodes": 3,
+      "pre_rules": 0,
+      "loaded_rules": 0,
+      "post_rules": 4,
+      "loaded_obs_counts": {},
+      "post_obs_counts": {
+        "wood_sword": 447,
+        "stone_pickaxe": 447,
+        "diamond": 447,
+        "stone_sword": 447,
+        "iron": 447,
+        "iron_sword": 447,
+        "stone": 447,
+        "coal": 447,
+        "wood": 447,
+        "health": 447,
+        "drink": 447,
+        "energy": 447,
+        "sapling": 447,
+        "food": 447,
+        "wood_pickaxe": 447,
+        "iron_pickaxe": 447
+      },
+      "avg_length": 150.0,
+      "avg_wood": 0.6666666666666666,
+      "episodes": [
+        {
+          "length": 150,
+          "cause_of_death": "alive",
+          "final_inv": {
+            "health": 2,
+            "food": 4,
+            "drink": 2,
+            "energy": 5,
+            "sapling": 0,
+            "wood": 0,
+            "stone": 0,
+            "coal": 0,
+            "iron": 0,
+            "diamond": 0,
+            "wood_pickaxe": 0,
+            "stone_pickaxe": 0,
+            "iron_pickaxe": 0,
+            "wood_sword": 0,
+            "stone_sword": 0,
+            "iron_sword": 0
+          },
+          "learned_rule_count": 4,
+          "nursery_stats": {
+            "emitted": 17,
+            "promoted": 1,
+            "rejected": 4,
+            "in_flight": 12
+          }
+        },
+        {
+          "length": 150,
+          "cause_of_death": "alive",
+          "final_inv": {
+            "health": 9,
+            "food": 4,
+            "drink": 2,
+            "energy": 5,
+            "sapling": 0,
+            "wood": 1,
+            "stone": 0,
+            "coal": 0,
+            "iron": 0,
+            "diamond": 0,
+            "wood_pickaxe": 0,
+            "stone_pickaxe": 0,
+            "iron_pickaxe": 0,
+            "wood_sword": 0,
+            "stone_sword": 0,
+            "iron_sword": 0
+          },
+          "learned_rule_count": 4,
+          "nursery_stats": {
+            "emitted": 33,
+            "promoted": 2,
+            "rejected": 6,
+            "in_flight": 25
+          }
+        },
+        {
+          "length": 150,
+          "cause_of_death": "alive",
+          "final_inv": {
+            "health": 9,
+            "food": 4,
+            "drink": 6,
+            "energy": 9,
+            "sapling": 0,
+            "wood": 1,
+            "stone": 0,
+            "coal": 0,
+            "iron": 0,
+            "diamond": 0,
+            "wood_pickaxe": 0,
+            "stone_pickaxe": 0,
+            "iron_pickaxe": 0,
+            "wood_sword": 0,
+            "stone_sword": 0,
+            "iron_sword": 0
+          },
+          "learned_rule_count": 4,
+          "nursery_stats": {
+            "emitted": 52,
+            "promoted": 4,
+            "rejected": 12,
+            "in_flight": 36
+          }
+        }
+      ]
+    },
+    {
+      "label": "session_2",
+      "n_episodes": 3,
+      "pre_rules": 0,
+      "loaded_rules": 4,
+      "post_rules": 8,
+      "loaded_obs_counts": {
+        "wood_sword": 447,
+        "stone_pickaxe": 447,
+        "diamond": 447,
+        "stone_sword": 447,
+        "iron": 447,
+        "iron_sword": 447,
+        "stone": 447,
+        "coal": 447,
+        "wood": 447,
+        "health": 447,
+        "drink": 447,
+        "energy": 447,
+        "sapling": 447,
+        "food": 447,
+        "wood_pickaxe": 447,
+        "iron_pickaxe": 447
+      },
+      "post_obs_counts": {
+        "wood_sword": 894,
+        "stone_pickaxe": 894,
+        "diamond": 894,
+        "stone_sword": 894,
+        "iron": 894,
+        "iron_sword": 894,
+        "stone": 894,
+        "coal": 894,
+        "wood": 894,
+        "health": 894,
+        "drink": 894,
+        "energy": 894,
+        "sapling": 894,
+        "food": 894,
+        "wood_pickaxe": 894,
+        "iron_pickaxe": 894
+      },
+      "avg_length": 150.0,
+      "avg_wood": 0.3333333333333333,
+      "episodes": [
+        {
+          "length": 150,
+          "cause_of_death": "alive",
+          "final_inv": {
+            "health": 9,
+            "food": 4,
+            "drink": 2,
+            "energy": 5,
+            "sapling": 0,
+            "wood": 0,
+            "stone": 0,
+            "coal": 0,
+            "iron": 0,
+            "diamond": 0,
+            "wood_pickaxe": 0,
+            "stone_pickaxe": 0,
+            "iron_pickaxe": 0,
+            "wood_sword": 0,
+            "stone_sword": 0,
+            "iron_sword": 0
+          },
+          "learned_rule_count": 8,
+          "nursery_stats": {
+            "emitted": 16,
+            "promoted": 2,
+            "rejected": 2,
+            "in_flight": 12
+          }
+        },
+        {
+          "length": 150,
+          "cause_of_death": "alive",
+          "final_inv": {
+            "health": 9,
+            "food": 4,
+            "drink": 2,
+            "energy": 5,
+            "sapling": 0,
+            "wood": 0,
+            "stone": 0,
+            "coal": 0,
+            "iron": 0,
+            "diamond": 0,
+            "wood_pickaxe": 0,
+            "stone_pickaxe": 0,
+            "iron_pickaxe": 0,
+            "wood_sword": 0,
+            "stone_sword": 0,
+            "iron_sword": 0
+          },
+          "learned_rule_count": 8,
+          "nursery_stats": {
+            "emitted": 27,
+            "promoted": 4,
+            "rejected": 5,
+            "in_flight": 18
+          }
+        },
+        {
+          "length": 150,
+          "cause_of_death": "alive",
+          "final_inv": {
+            "health": 9,
+            "food": 4,
+            "drink": 3,
+            "energy": 8,
+            "sapling": 6,
+            "wood": 1,
+            "stone": 0,
+            "coal": 0,
+            "iron": 0,
+            "diamond": 0,
+            "wood_pickaxe": 0,
+            "stone_pickaxe": 0,
+            "iron_pickaxe": 0,
+            "wood_sword": 0,
+            "stone_sword": 0,
+            "iron_sword": 0
+          },
+          "learned_rule_count": 8,
+          "nursery_stats": {
+            "emitted": 38,
+            "promoted": 4,
+            "rejected": 9,
+            "in_flight": 25
+          }
+        }
+      ]
+    },
+    {
+      "label": "session_3",
+      "n_episodes": 3,
+      "pre_rules": 0,
+      "loaded_rules": 8,
+      "post_rules": 10,
+      "loaded_obs_counts": {
+        "wood_sword": 894,
+        "stone_pickaxe": 894,
+        "diamond": 894,
+        "stone_sword": 894,
+        "iron": 894,
+        "iron_sword": 894,
+        "stone": 894,
+        "coal": 894,
+        "wood": 894,
+        "health": 894,
+        "drink": 894,
+        "energy": 894,
+        "sapling": 894,
+        "food": 894,
+        "wood_pickaxe": 894,
+        "iron_pickaxe": 894
+      },
+      "post_obs_counts": {
+        "wood_sword": 1341,
+        "stone_pickaxe": 1341,
+        "diamond": 1341,
+        "stone_sword": 1341,
+        "iron": 1341,
+        "iron_sword": 1341,
+        "stone": 1341,
+        "coal": 1341,
+        "wood": 1341,
+        "health": 1341,
+        "drink": 1341,
+        "energy": 1341,
+        "sapling": 1341,
+        "food": 1341,
+        "wood_pickaxe": 1341,
+        "iron_pickaxe": 1341
+      },
+      "avg_length": 150.0,
+      "avg_wood": 0.0,
+      "episodes": [
+        {
+          "length": 150,
+          "cause_of_death": "alive",
+          "final_inv": {
+            "health": 9,
+            "food": 4,
+            "drink": 3,
+            "energy": 9,
+            "sapling": 1,
+            "wood": 0,
+            "stone": 0,
+            "coal": 0,
+            "iron": 0,
+            "diamond": 0,
+            "wood_pickaxe": 0,
+            "stone_pickaxe": 0,
+            "iron_pickaxe": 0,
+            "wood_sword": 0,
+            "stone_sword": 0,
+            "iron_sword": 0
+          },
+          "learned_rule_count": 10,
+          "nursery_stats": {
+            "emitted": 7,
+            "promoted": 1,
+            "rejected": 1,
+            "in_flight": 5
+          }
+        },
+        {
+          "length": 150,
+          "cause_of_death": "alive",
+          "final_inv": {
+            "health": 9,
+            "food": 4,
+            "drink": 3,
+            "energy": 7,
+            "sapling": 0,
+            "wood": 0,
+            "stone": 0,
+            "coal": 0,
+            "iron": 0,
+            "diamond": 0,
+            "wood_pickaxe": 0,
+            "stone_pickaxe": 0,
+            "iron_pickaxe": 0,
+            "wood_sword": 0,
+            "stone_sword": 0,
+            "iron_sword": 0
+          },
+          "learned_rule_count": 10,
+          "nursery_stats": {
+            "emitted": 12,
+            "promoted": 2,
+            "rejected": 6,
+            "in_flight": 4
+          }
+        },
+        {
+          "length": 150,
+          "cause_of_death": "alive",
+          "final_inv": {
+            "health": 9,
+            "food": 4,
+            "drink": 3,
+            "energy": 8,
+            "sapling": 0,
+            "wood": 0,
+            "stone": 0,
+            "coal": 0,
+            "iron": 0,
+            "diamond": 0,
+            "wood_pickaxe": 0,
+            "stone_pickaxe": 0,
+            "iron_pickaxe": 0,
+            "wood_sword": 0,
+            "stone_sword": 0,
+            "iron_sword": 0
+          },
+          "learned_rule_count": 10,
+          "nursery_stats": {
+            "emitted": 12,
+            "promoted": 2,
+            "rejected": 6,
+            "in_flight": 4
+          }
+        }
+      ]
+    }
+  ]
+}

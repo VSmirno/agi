@@ -1,0 +1,785 @@
+{
+  "version": 1,
+  "learned_rules": [
+    {
+      "precondition": {
+        "visible": [
+          "cow",
+          "empty",
+          "iron",
+          "tree",
+          "water"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_right"
+      },
+      "effect": {
+        "food": 0.013012185523864872,
+        "drink": 0.013012185523864872,
+        "energy": 0.013012185523864872
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "cow",
+          "empty",
+          "iron",
+          "tree",
+          "water",
+          "zombie"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_right"
+      },
+      "effect": {
+        "food": 0.018518287654006826,
+        "drink": 0.029073829877897417
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "empty",
+          "iron",
+          "tree",
+          "water",
+          "zombie"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_up"
+      },
+      "effect": {
+        "drink": 0.04391635837779306,
+        "energy": 0.029545944660594792
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "empty",
+          "iron",
+          "stone",
+          "tree",
+          "water",
+          "zombie"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_up"
+      },
+      "effect": {
+        "food": 0.03270260192473806,
+        "drink": -0.013574379369218547
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "cow",
+          "empty",
+          "iron",
+          "tree"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "sleep"
+      },
+      "effect": {
+        "food": 0.03310941325327867,
+        "drink": 0.032450434670082726
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "cow",
+          "empty",
+          "iron",
+          "tree"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_left"
+      },
+      "effect": {
+        "food": 0.024422512362344762,
+        "drink": 0.023084715979204872,
+        "energy": 0.016395734063505075
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "cow",
+          "empty",
+          "iron",
+          "tree"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_up"
+      },
+      "effect": {
+        "food": 0.030816206721430817,
+        "drink": 0.03615564848009427,
+        "energy": 0.013272326657249778
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "cow",
+          "empty",
+          "iron",
+          "tree"
+        ],
+        "body_quartiles": [
+          3,
+          3,
+          3,
+          3
+        ],
+        "action": "move_up"
+      },
+      "effect": {
+        "food": 0.03075766515981897,
+        "drink": 0.03608696357859955,
+        "energy": 0.01324711321239711
+      },
+      "confidence": 0.5,
+      "n_observations": 20,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "cow",
+          "empty",
+          "iron",
+          "skeleton",
+          "tree",
+          "water"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_up"
+      },
+      "effect": {
+        "health": 0.4400000000000013
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "empty",
+          "iron",
+          "skeleton",
+          "tree",
+          "water"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_up"
+      },
+      "effect": {
+        "health": 0.4400000000000013,
+        "food": 0.03151174217832562,
+        "drink": 0.037189533561807944,
+        "energy": 0.01447836802787954
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "empty",
+          "iron",
+          "stone",
+          "tree",
+          "zombie"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_up"
+      },
+      "effect": {
+        "food": 0.0336873577140012,
+        "drink": 0.03236108378825309,
+        "energy": 0.016445796679276193
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "cow",
+          "diamond",
+          "empty",
+          "iron",
+          "skeleton",
+          "stone",
+          "tree"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_left"
+      },
+      "effect": {
+        "health": 0.4400000000000013,
+        "drink": 0.01387183987184315
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "diamond",
+          "empty",
+          "iron",
+          "stone",
+          "tree",
+          "zombie"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_left"
+      },
+      "effect": {
+        "drink": 0.037939728431533745,
+        "energy": 0.016582927658815905
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "cow",
+          "empty",
+          "iron",
+          "tree"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_down"
+      },
+      "effect": {
+        "food": 0.03226315199586516,
+        "drink": 0.03194493741775872,
+        "energy": 0.0150597468801692
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "cow",
+          "empty",
+          "iron",
+          "stone",
+          "tree",
+          "water",
+          "zombie"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_left"
+      },
+      "effect": {
+        "drink": 0.02414202970207349
+      },
+      "confidence": 0.5,
+      "n_observations": 36,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "cow",
+          "empty",
+          "iron",
+          "table",
+          "tree"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_left"
+      },
+      "effect": {
+        "drink": 0.015714944440910372
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "cow",
+          "empty",
+          "iron",
+          "skeleton",
+          "table",
+          "tree",
+          "water"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_left"
+      },
+      "effect": {
+        "health": 0.4400000000000013
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "cow",
+          "empty",
+          "iron",
+          "tree",
+          "water"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_left"
+      },
+      "effect": {
+        "drink": 0.016154011791257618
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "empty",
+          "iron",
+          "skeleton",
+          "tree",
+          "water"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_left"
+      },
+      "effect": {
+        "health": 0.4400000000000013,
+        "food": 0.03246327634500083,
+        "drink": 0.03958241589434337,
+        "energy": 0.019648825156184734
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "cow",
+          "empty",
+          "iron",
+          "stone",
+          "tree",
+          "water",
+          "zombie"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_up"
+      },
+      "effect": {
+        "food": -0.06431808239073433,
+        "drink": -0.05906136596936964,
+        "energy": -0.039273271858836264
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "cow",
+          "empty",
+          "iron",
+          "skeleton",
+          "table",
+          "tree"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "sleep"
+      },
+      "effect": {
+        "health": 0.4400000000000013
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "cow",
+          "empty",
+          "iron",
+          "skeleton",
+          "tree"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "sleep"
+      },
+      "effect": {
+        "health": 0.4400000000000013
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "cow",
+          "empty",
+          "iron",
+          "stone",
+          "tree",
+          "zombie"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_up"
+      },
+      "effect": {
+        "food": -0.031522930321634314,
+        "drink": -0.028970866539390894
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "cow",
+          "empty",
+          "iron",
+          "stone",
+          "tree",
+          "water",
+          "zombie"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_up"
+      },
+      "effect": {
+        "food": 0.032632554766302314,
+        "drink": 0.0399451720808798,
+        "energy": 0.019835474465791415
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "empty",
+          "iron",
+          "skeleton",
+          "tree"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "move_down"
+      },
+      "effect": {
+        "health": 0.4400000000000013,
+        "food": 0.03263116442518417,
+        "drink": 0.039196309608466075,
+        "energy": 0.017027494749930483
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "cow",
+          "empty",
+          "iron",
+          "stone",
+          "water"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "do"
+      },
+      "effect": {
+        "food": 0.03266617795417761,
+        "energy": 0.015753854646706245
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    },
+    {
+      "precondition": {
+        "visible": [
+          "coal",
+          "empty",
+          "iron",
+          "stone",
+          "zombie"
+        ],
+        "body_quartiles": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "action": "sleep"
+      },
+      "effect": {
+        "food": 0.03281698761557035,
+        "drink": 0.037119914313416304
+      },
+      "confidence": 0.5,
+      "n_observations": 15,
+      "source": "runtime_nursery"
+    }
+  ],
+  "rule_confidences": {
+    "tree:do:0": 0.04999999999999999,
+    "stone:do:0": 0.35,
+    "coal:do:0": 0.5,
+    "iron:do:0": 0.5,
+    "table:make:0": 0.5,
+    "table:make:1": 0.5,
+    "table:make:2": 0.5,
+    "empty:place:0": 0.5,
+    "zombie:do:0": 0.5,
+    "skeleton:do:0": 0.5,
+    "water:do:0": 1.0,
+    "cow:do:0": 0.5,
+    "_self:sleep:0": 0.5,
+    "_passive:passive_body_rate:0": 1.0,
+    "_passive:passive_body_rate:1": 1.0,
+    "_passive:passive_body_rate:2": 1.0,
+    "_passive:passive_movement:3": 0.5,
+    "_passive:passive_movement:4": 0.5,
+    "_passive:passive_movement:5": 0.5,
+    "_passive:passive_spatial:6": 0.5,
+    "_passive:passive_spatial:7": 0.5,
+    "_passive:passive_stateful:8": 1.0,
+    "_passive:passive_stateful:9": 1.0,
+    "_passive:passive_stateful:10": 1.0,
+    "_passive:passive_stateful:11": 1.0,
+    "_passive:passive_stateful:12": 1.0,
+    "_passive:passive_stateful:13": 1.0,
+    "_passive:passive_stateful:14": 1.0
+  },
+  "tracker": {
+    "observed_rates": {
+      "wood_pickaxe": 0.0,
+      "stone_sword": 0.0,
+      "iron_pickaxe": 0.0,
+      "food": -0.032611674431351066,
+      "iron": 0.0,
+      "diamond": 0.0,
+      "drink": -0.035352151274321966,
+      "health": -0.034255960537133624,
+      "stone_pickaxe": 0.0,
+      "wood_sword": 0.0,
+      "coal": 0.0,
+      "stone": 0.0,
+      "energy": -0.013976431899150463,
+      "wood": 0.002466429158673608,
+      "sapling": 0.005206906001644292,
+      "iron_sword": 0.0
+    },
+    "observed_max": {
+      "health": 9,
+      "food": 9,
+      "drink": 9,
+      "energy": 9,
+      "wood": 2,
+      "sapling": 9
+    },
+    "observation_counts": {
+      "wood_pickaxe": 3649,
+      "stone_sword": 3649,
+      "iron_pickaxe": 3649,
+      "food": 3649,
+      "iron": 3649,
+      "diamond": 3649,
+      "drink": 3649,
+      "health": 3649,
+      "stone_pickaxe": 3649,
+      "wood_sword": 3649,
+      "coal": 3649,
+      "stone": 3649,
+      "energy": 3649,
+      "wood": 3649,
+      "sapling": 3649,
+      "iron_sword": 3649
+    }
+  }
+}
