@@ -117,6 +117,25 @@ class CrafterSpatialMap:
         self._visited.clear()
         self._blocked.clear()
 
+    def copy(self) -> "CrafterSpatialMap":
+        """Stage 81 (Bug 7): independent copy for sim rollouts.
+
+        Without this, simulate_forward shares the planner's
+        spatial_map by reference. When sim's _apply_tick fires a
+        "do" rule that gathers a resource, the fired tile is NOT
+        marked as gone in sim — so the next rollout tick still sees
+        the resource at that position and the planner oscillates.
+        Real env's clean-up via Bug 6 only runs in run_mpc_episode
+        after env.step, not in sim rollouts.
+
+        Copy the underlying dicts but share world_size (immutable).
+        """
+        new = CrafterSpatialMap(world_size=self.world_size)
+        new._map = dict(self._map)
+        new._visited = set(self._visited)
+        new._blocked = set(self._blocked)
+        return new
+
     @property
     def n_visited(self) -> int:
         return len(self._visited)
