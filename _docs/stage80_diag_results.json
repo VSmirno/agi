@@ -1,0 +1,196 @@
+{
+  "avg_len": 213.2,
+  "causes": {
+    "health": 5
+  },
+  "total_actions": {
+    "move_left": 83,
+    "do": 55,
+    "move_up": 105,
+    "move_down": 28,
+    "sleep": 711,
+    "move_right": 84
+  },
+  "by_category": {
+    "move": 300,
+    "do": 55,
+    "sleep": 711
+  },
+  "resources": {
+    "wood": {
+      "mean": 0.2,
+      "max": 1
+    },
+    "stone": {
+      "mean": 0.0,
+      "max": 0
+    },
+    "coal": {
+      "mean": 0.0,
+      "max": 0
+    },
+    "iron": {
+      "mean": 0.0,
+      "max": 0
+    }
+  },
+  "episodes": [
+    {
+      "episode": 0,
+      "length": 172,
+      "cause_of_death": "health",
+      "final_inv": {
+        "health": 0,
+        "food": 4,
+        "drink": 2,
+        "energy": 8,
+        "sapling": 3,
+        "wood": 1,
+        "stone": 0,
+        "coal": 0,
+        "iron": 0,
+        "diamond": 0,
+        "wood_pickaxe": 0,
+        "stone_pickaxe": 0,
+        "iron_pickaxe": 0,
+        "wood_sword": 0,
+        "stone_sword": 0,
+        "iron_sword": 0
+      },
+      "action_counts": {
+        "move_left": 43,
+        "do": 13,
+        "move_up": 25,
+        "move_down": 7,
+        "sleep": 68,
+        "move_right": 16
+      },
+      "action_entropy": 1.5401854256753185
+    },
+    {
+      "episode": 1,
+      "length": 207,
+      "cause_of_death": "health",
+      "final_inv": {
+        "health": 0,
+        "food": 2,
+        "drink": 1,
+        "energy": 8,
+        "sapling": 0,
+        "wood": 0,
+        "stone": 0,
+        "coal": 0,
+        "iron": 0,
+        "diamond": 0,
+        "wood_pickaxe": 0,
+        "stone_pickaxe": 0,
+        "iron_pickaxe": 0,
+        "wood_sword": 0,
+        "stone_sword": 0,
+        "iron_sword": 0
+      },
+      "action_counts": {
+        "sleep": 147,
+        "move_right": 13,
+        "move_up": 17,
+        "move_down": 8,
+        "move_left": 5,
+        "do": 17
+      },
+      "action_entropy": 1.0431057135637423
+    },
+    {
+      "episode": 2,
+      "length": 170,
+      "cause_of_death": "health",
+      "final_inv": {
+        "health": 0,
+        "food": 4,
+        "drink": 6,
+        "energy": 8,
+        "sapling": 1,
+        "wood": 0,
+        "stone": 0,
+        "coal": 0,
+        "iron": 0,
+        "diamond": 0,
+        "wood_pickaxe": 0,
+        "stone_pickaxe": 0,
+        "iron_pickaxe": 0,
+        "wood_sword": 0,
+        "stone_sword": 0,
+        "iron_sword": 0
+      },
+      "action_counts": {
+        "move_right": 17,
+        "do": 4,
+        "sleep": 119,
+        "move_down": 3,
+        "move_up": 19,
+        "move_left": 8
+      },
+      "action_entropy": 1.0281442618835994
+    },
+    {
+      "episode": 3,
+      "length": 93,
+      "cause_of_death": "health",
+      "final_inv": {
+        "health": 0,
+        "food": 6,
+        "drink": 6,
+        "energy": 9,
+        "sapling": 0,
+        "wood": 0,
+        "stone": 0,
+        "coal": 0,
+        "iron": 0,
+        "diamond": 0,
+        "wood_pickaxe": 0,
+        "stone_pickaxe": 0,
+        "iron_pickaxe": 0,
+        "wood_sword": 0,
+        "stone_sword": 0,
+        "iron_sword": 0
+      },
+      "action_counts": {
+        "sleep": 82,
+        "move_up": 8,
+        "move_right": 3
+      },
+      "action_entropy": 0.43278930524582826
+    },
+    {
+      "episode": 4,
+      "length": 424,
+      "cause_of_death": "health",
+      "final_inv": {
+        "health": 0,
+        "food": 0,
+        "drink": 0,
+        "energy": 9,
+        "sapling": 0,
+        "wood": 0,
+        "stone": 0,
+        "coal": 0,
+        "iron": 0,
+        "diamond": 0,
+        "wood_pickaxe": 0,
+        "stone_pickaxe": 0,
+        "iron_pickaxe": 0,
+        "wood_sword": 0,
+        "stone_sword": 0,
+        "iron_sword": 0
+      },
+      "action_counts": {
+        "sleep": 295,
+        "move_right": 35,
+        "move_up": 36,
+        "move_left": 27,
+        "do": 21,
+        "move_down": 10
+      },
+      "action_entropy": 1.0802758807895296
+    }
+  ]
+}

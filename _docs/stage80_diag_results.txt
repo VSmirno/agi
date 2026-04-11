@@ -1,0 +1,66 @@
+[Phase 0] Load segmenter
+  segmenter device: cuda
+
+[Phase 1] Build store + tracker
+  18 concepts, 14 passive rules
+
+[Phase 2] Run 5 eval episodes (enemies on, max_steps=1000) with trace
+/opt/agi/venv/lib/python3.12/site-packages/torch/nn/modules/conv.py:549: UserWarning: Attempting to use hipBLASLt on an unsupported architecture! Overriding blas backend to hipblas (Triggered internally at /pytorch/aten/src/ATen/Context.cpp:310.)
+  return F.conv2d(
+
+  ep 0 len= 148 H0F4D3E7  W0S0C0I0  cause=health
+      action_categories: {'sleep': 88, 'move': 56, 'do': 4}
+      action_counts (top 10): {'sleep': 88, 'move_left': 27, 'move_up': 17, 'move_down': 7, 'move_right': 5, 'do': 4}
+      action_entropy: 1.22
+      elapsed: 1s
+
+  ep 1 len= 151 H0F4D3E9  W0S0C0I0  cause=health
+      action_categories: {'sleep': 121, 'move': 30}
+      action_counts (top 10): {'sleep': 121, 'move_up': 14, 'move_right': 10, 'move_down': 5, 'move_left': 1}
+      action_entropy: 0.72
+      elapsed: 1s
+
+  ep 2 len= 210 H0F2D7E8  W0S0C0I0  cause=health
+      action_categories: {'sleep': 126, 'move': 45, 'do': 39}
+      action_counts (top 10): {'sleep': 126, 'do': 39, 'move_up': 26, 'move_right': 13, 'move_left': 4, 'move_down': 2}
+      action_entropy: 1.17
+      elapsed: 2s
+
+  ep 3 len=  94 H0F6D5E9  W0S0C0I0  cause=health
+      action_categories: {'sleep': 84, 'move': 10}
+      action_counts (top 10): {'sleep': 84, 'move_up': 8, 'move_right': 2}
+      action_entropy: 0.39
+      elapsed: 3s
+
+  ep 4 len= 211 H0F2D7E8  W0S0C0I0  cause=health
+      action_categories: {'sleep': 147, 'move': 60, 'do': 4}
+      action_counts (top 10): {'sleep': 147, 'move_right': 25, 'move_up': 17, 'move_left': 17, 'do': 4, 'move_down': 1}
+      action_entropy: 1.01
+      elapsed: 4s
+
+======================================================================
+AGGREGATE (5 eval eps, enemies on, max_steps=1000)
+======================================================================
+  avg_len: 162.8
+  causes: {'health': 5}
+  total actions: 814
+  by category (across 5 eps):
+    sleep   :   566 (69.5%)
+    move    :   201 (24.7%)
+    do      :    47 (5.8%)
+  top 15 individual actions:
+    sleep                    :   566
+    move_up                  :    82
+    move_right               :    55
+    move_left                :    49
+    do                       :    47
+    move_down                :    15
+
+  Resource collection (5 eps):
+    wood:  mean=0.00 max=0 ≥3:0/5
+    stone: mean=0.00 max=0
+    coal:  mean=0.00 max=0
+    iron:  mean=0.00 max=0
+
+  Summary saved: _docs/stage80_diag_results.json
+  Per-episode traces: _docs/stage80_diag_trace/ep{0..4}.jsonl
