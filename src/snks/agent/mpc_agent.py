@@ -684,30 +684,38 @@ def run_mpc_episode(
         # --- Stage 80 Bug 6 fix: clear chopped tile from spatial_map ---
         # When env.step("do") successfully gathered a resource, the
         # facing tile in env was emptied (tree chopped, stone broken,
-        # cow eaten, water drained). Stage 75 segmenter sometimes
-        # mis-classifies the now-empty tile as still being the
-        # resource (player sprite confusion / latent pixels), so the
-        # spatial_map keeps reporting the resource at the old position.
-        # find_nearest then loops the planner. Patch: explicitly mark
-        # the facing tile as 'empty' after a successful do interaction.
-        if primitive == "do" and outcome and any(
-            inv_after.get(k, 0) > inv_before_action.get(k, 0)
-            for k in ("wood", "stone", "coal", "iron", "diamond", "sapling")
-        ):
-            facing_dx, facing_dy = 0, 1
-            if prev_action == "move_left":
-                facing_dx, facing_dy = -1, 0
-            elif prev_action == "move_right":
-                facing_dx, facing_dy = 1, 0
-            elif prev_action == "move_up":
-                facing_dx, facing_dy = 0, -1
-            elif prev_action == "move_down":
+        # etc). Stage 75 segmenter sometimes mis-classifies the
+        # now-empty tile as still being the resource (player sprite
+        # confusion / latent pixels), so the spatial_map keeps
+        # reporting the resource at the old position. find_nearest
+        # then loops the planner. Patch: after a successful do
+        # interaction, explicitly mark the facing tile as 'empty'.
+        #
+        # Resource items are read from the textbook (any rule with
+        # positive inventory_delta) so this stays env-agnostic — no
+        # hardcoded Crafter item names.
+        if primitive == "do" and outcome:
+            gathered = False
+            for inv_var in inv_after.keys():
+                if inv_after.get(inv_var, 0) > inv_before_action.get(inv_var, 0):
+                    if inv_var in store.gatherable_items():
+                        gathered = True
+                        break
+            if gathered:
                 facing_dx, facing_dy = 0, 1
-            facing_tile = (
-                int(player_pos[0]) + facing_dx,
-                int(player_pos[1]) + facing_dy,
-            )
-            spatial_map.update(facing_tile, "empty")
+                if prev_action == "move_left":
+                    facing_dx, facing_dy = -1, 0
+                elif prev_action == "move_right":
+                    facing_dx, facing_dy = 1, 0
+                elif prev_action == "move_up":
+                    facing_dx, facing_dy = 0, -1
+                elif prev_action == "move_down":
+                    facing_dx, facing_dy = 0, 1
+                facing_tile = (
+                    int(player_pos[0]) + facing_dx,
+                    int(player_pos[1]) + facing_dy,
+                )
+                spatial_map.update(facing_tile, "empty")
 
         # --- Stage 78c: online residual SGD step -----------------------------
         # After env.step we know the actual body at t+1. Train residual on
