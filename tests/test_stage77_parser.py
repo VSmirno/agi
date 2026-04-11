@@ -336,6 +336,25 @@ class TestLoadIntoStore:
         }
         assert "empty" not in store.impassable_concepts()
 
+    def test_env_semantics_block(self):
+        """Stage 82 (ideology-audit 1.4): env_semantics declares
+        dispatch mode per action."""
+        tb = CrafterTextbook("configs/crafter_textbook.yaml")
+        sem = tb.env_semantics_block
+        assert sem["do"]["dispatch"] == "facing_tile"
+        assert sem["do"]["range"] == 1
+        assert sem["move"]["updates_facing"] is True
+
+    def test_action_dispatch_helper(self):
+        tb = CrafterTextbook("configs/crafter_textbook.yaml")
+        store = ConceptStore()
+        tb.load_into(store)
+        do_spec = store.action_dispatch("do")
+        assert do_spec["dispatch"] == "facing_tile"
+        assert do_spec["range"] == 1
+        # Unknown action → empty dict (callers treat as default)
+        assert store.action_dispatch("make") == {} or "dispatch" not in store.action_dispatch("make")
+
 # ---------------------------------------------------------------------------
 # ConceptStore passive rule helpers
 # ---------------------------------------------------------------------------
