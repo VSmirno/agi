@@ -419,22 +419,41 @@ def print_comparison(off: dict, on: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def main() -> bool:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--fast",
-        action="store_true",
-        help="Smoke run: tiny episode counts for local sanity, not a real eval",
-    )
-    parser.add_argument("--horizon", type=int, default=20)
-    parser.add_argument("--residual_lr", type=float, default=1e-3)
-    parser.add_argument(
-        "--only",
-        choices=["off", "on", "both"],
-        default="both",
-        help="Run just one side of the ablation (debug/iteration)",
-    )
-    args = parser.parse_args()
+def main(
+    fast: bool = False,
+    horizon: int = 20,
+    residual_lr: float = 1e-3,
+    only: str = "both",
+) -> bool:
+    """Entry point. Args default to full eval; pass fast=True for smoke.
+
+    Exposed as a function (not just argparse) because the minipc launcher
+    invokes `from stage78c_residual_crafter import main_fast; main_fast()`
+    — single quotes inside ssh heredoc PYCMD are swallowed by shell, so
+    we avoid sys.argv hacks entirely.
+    """
+    # Only parse argv if called as a script (no programmatic args)
+    if fast is False and horizon == 20 and residual_lr == 1e-3 and only == "both":
+        if len(sys.argv) > 1:
+            parser = argparse.ArgumentParser()
+            parser.add_argument("--fast", action="store_true")
+            parser.add_argument("--horizon", type=int, default=20)
+            parser.add_argument("--residual_lr", type=float, default=1e-3)
+            parser.add_argument("--only", choices=["off", "on", "both"], default="both")
+            ns = parser.parse_args()
+            fast = ns.fast
+            horizon = ns.horizon
+            residual_lr = ns.residual_lr
+            only = ns.only
+
+    class _Args:
+        pass
+
+    args = _Args()
+    args.fast = fast
+    args.horizon = horizon
+    args.residual_lr = residual_lr
+    args.only = only
 
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -544,6 +563,16 @@ def main() -> bool:
         gates = report["comparison"]["gates"]
         return gates["residual_on_beats_off"] or gates["residual_on_meaningful_delta"]
     return True
+
+
+def main_fast() -> bool:
+    """Smoke entrypoint for minipc launcher (no argv, no quoting issues)."""
+    return main(fast=True)
+
+
+def main_full() -> bool:
+    """Full eval entrypoint for minipc launcher."""
+    return main(fast=False)
 
 
 if __name__ == "__main__":
