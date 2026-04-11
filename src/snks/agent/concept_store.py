@@ -1191,9 +1191,22 @@ def _expand_to_primitive(
     target = step.target
 
     if step.action == "do":
-        # Attempt 2: proximity-based "do". If the target is in a dynamic
-        # entity or spatial_map within manhattan 1, emit "do". Don't rely
-        # on _nearest_concept facing direction.
+        # Bug 2 fix (Stage 79): Crafter env's "do" action interacts with
+        # the FACING tile, not any tile in manhattan ≤ 1. The original
+        # Stage 77a workaround used proximity inside _apply_tick to make
+        # the planner's sim agree with itself, but it disagreed with the
+        # env: agent at (10, 10) facing UP could not "do" a water tile at
+        # (11, 10) even though the planner predicted +5 drink. The Stage 79
+        # nursery surfaced this by learning false negative rules
+        # ("drink: -5 for do in this context") that then suppressed all
+        # do-water plans → agent dehydrated.
+        #
+        # The fix: only emit "do" when the target tile IS the facing tile
+        # (matches Crafter env semantics). When the target is adjacent but
+        # not in front, emit a navigation step in the target's direction —
+        # Crafter blocks movement into impassable tiles (water/stone/tree),
+        # but `last_action` still updates to that direction, so the next
+        # iteration's expand will see facing aligned and emit "do".
         target_pos = None
         # Dynamic entities (mobs) take precedence
         for e in sim.dynamic_entities:
@@ -1205,9 +1218,32 @@ def _expand_to_primitive(
             target_pos = sim.spatial_map.find_nearest(target, sim.player_pos)
 
         if target_pos is not None:
-            dist = abs(target_pos[0] - sim.player_pos[0]) + abs(target_pos[1] - sim.player_pos[1])
+            dx = target_pos[0] - sim.player_pos[0]
+            dy = target_pos[1] - sim.player_pos[1]
+            dist = abs(dx) + abs(dy)
             if dist <= 1:
-                return "do"
+                # Adjacent: check if the target is in the FACING tile.
+                # _nearest_concept default facing is dy=+1 (down), and
+                # changes per last_action — match its convention exactly.
+                facing_dx, facing_dy = 0, 1  # default: down
+                if sim.last_action == "move_left":
+                    facing_dx, facing_dy = -1, 0
+                elif sim.last_action == "move_right":
+                    facing_dx, facing_dy = 1, 0
+                elif sim.last_action == "move_up":
+                    facing_dx, facing_dy = 0, -1
+                elif sim.last_action == "move_down":
+                    facing_dx, facing_dy = 0, 1
+                if (facing_dx, facing_dy) == (dx, dy):
+                    return "do"
+                # Adjacent but wrong facing: emit a move toward target so
+                # the env updates last_action. The move may be blocked by
+                # impassable tile (water/stone/tree) but Crafter still
+                # records the facing change.
+                if abs(dx) >= abs(dy):
+                    return "move_right" if dx > 0 else "move_left"
+                return "move_down" if dy > 0 else "move_up"
+            # Far away: walk toward target
             return _step_toward_target(sim, target_pos)
 
         # Unknown target location — explore to find it
