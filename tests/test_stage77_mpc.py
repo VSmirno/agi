@@ -138,9 +138,9 @@ class TestScoreTrajectory:
     def test_normalization_by_reference_max(self, tracker):
         """Score normalized by reference_max (=9 in Crafter) per var.
 
-        Stage 80 (Bug 3 fix): the alive tuple is now
-        (1, has_gain, min_body, n_ticks, final_body), so min_body is at
-        index 2 (was index 1). With no inv_gain events, has_gain=0.
+        Stage 81: alive tuple is now
+        (1, distinct_gains, total_gains, min_body, n_ticks, final_body).
+        With no inv_gain events, distinct=0, total=0, min_body at index 3.
         """
         body_series = {"health": [9.0], "food": [9.0], "drink": [9.0], "energy": [9.0]}
         traj = Trajectory(
@@ -153,29 +153,38 @@ class TestScoreTrajectory:
             plan_progress=0,
         )
         score = score_trajectory(traj, tracker)
-        # alive bucket: (1, has_gain, min_body, n_ticks, final_body)
-        assert score[0] == 1
-        assert score[1] == 0  # no inv_gain events
-        # min_body = 4 vars × (9/9) = 4.0
-        assert score[2] == pytest.approx(4.0)
+        assert score[0] == 1               # alive
+        assert score[1] == 0               # distinct_gains
+        assert score[2] == 0               # total_gains
+        assert score[3] == pytest.approx(4.0)  # min_body = 4 vars × (9/9)
 
     def test_tuple_order_lexicographic(self, tracker):
         """Python tuple comparison gives correct lexicographic ordering.
 
-        Stage 80: alive tuple is (1, has_gain, min_body, n_ticks, final_body).
+        Stage 81: alive tuple is
+        (1, distinct_gains, total_gains, min_body, n_ticks, final_body).
         """
-        # Same has_gain, different min_body
-        a = (1, 0, 3.5, 20, 3.5)
-        b = (1, 0, 3.4, 20, 3.6)
+        # Same distinct, same total, different min_body
+        a = (1, 0, 0, 3.5, 20, 3.5)
+        b = (1, 0, 0, 3.4, 20, 3.6)
         assert a > b  # higher min_body wins
-        # Different has_gain — gain wins regardless of min_body
-        gain_low = (1, 1, 0.1, 20, 0.1)
-        nogain_high = (1, 0, 3.9, 20, 3.9)
+        # Same distinct, different total — more gains wins
+        a2 = (1, 1, 5, 3.5, 20, 3.5)
+        b2 = (1, 1, 1, 3.5, 20, 3.5)
+        assert a2 > b2
+        # Different distinct — chain (4 distinct, 5 total) beats stack
+        # (1 distinct, 5 total) regardless of min_body
+        chain = (1, 4, 5, 2.0, 20, 2.0)
+        stack = (1, 1, 5, 3.5, 20, 3.5)
+        assert chain > stack
+        # Any-gain beats no-gain regardless of min_body
+        gain_low = (1, 1, 1, 0.1, 20, 0.1)
+        nogain_high = (1, 0, 0, 3.9, 20, 3.9)
         assert gain_low > nogain_high
         # Alive vs dead — alive always wins
-        c = (0, 99, 99.0, 99.0)
-        d = (1, 0, 0.1, 1, 0.1)
-        assert d > c
+        dead = (0, 99, 99.0, 99.0)
+        alive_low = (1, 0, 0, 0.1, 1, 0.1)
+        assert alive_low > dead
 
 
 # ---------------------------------------------------------------------------

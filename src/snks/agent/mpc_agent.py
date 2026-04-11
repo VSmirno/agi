@@ -307,31 +307,40 @@ def score_trajectory(
 ) -> tuple:
     """Return a lexicographic sort key — higher tuple = better plan.
 
-    Stage 80 Bug 3 fix: the alive tuple now includes `has_inv_gain` as
-    a top-priority component (just below `alive`). The original
-    formulation `(1, min_body, n_ticks, final_body)` produced
-    sleep-dominance: sleep plans always slightly raise min_body via
-    energy clamping + stateful health regen, so they outscored every
-    alternative — including gathering plans that ACTUALLY make
-    progress. The Stage 80 diagnostic showed 69.5% of agent actions
-    were `sleep` and 0/5 episodes gathered any wood/stone/coal/iron.
+    Stage 81: The alive tuple now scores GAIN VARIETY and TOTAL
+    above min_body. The Stage 80 binary `has_gain` was a step up
+    from the original min-body-only ordering, but it tied all
+    "any gain" plans together and let min_body break ties — which
+    consistently picked 1-step greedy gathers over multi-step
+    crafting chains. After 6 Stage 78c–80 bug fixes the agent
+    was gathering wood reliably but never crafted, and the eval
+    wall stayed at ~178.
 
-    The new tuple shape:
+    New tuple shape:
 
-    ALIVE: (1, has_gain, min_body, n_ticks, final_body)
-      - has_gain = 1 if the rollout produced ANY positive inventory_delta
-        event (wood +1, stone_item +1, etc), else 0
-      - Among alive plans, gathering plans beat non-gathering plans
-      - Within "any-gain" or "no-gain" subsets, min_body is the next
-        priority (safer wins)
-      - n_ticks is the next tiebreaker (longer rollout = more room)
-      - final_body is the last tiebreaker
+    ALIVE: (1, distinct_gains, total_gains, min_body, n_ticks, final_body)
+      - distinct_gains: number of DISTINCT inventory variables that
+        the rollout grew positively. A chain (do tree × 2 + place
+        table + make wood_pickaxe + do stone) has 4 distinct vars
+        (wood, table, wood_pickaxe, stone_item) and out-scores a
+        pure stack (do tree × 5 — 1 distinct var: wood).
+      - total_gains: total count of positive inventory_delta events
+        in the rollout. Tiebreaker among plans with the same number
+        of distinct vars.
+      - min_body: safety floor. Tiebreaker.
+      - n_ticks: longer rollout = more room. Tiebreaker.
+      - final_body: last tiebreaker.
 
     DEAD: (0, n_ticks, min_body, final_body)
-      - Unchanged. Once you're dead, gathering doesn't matter.
+      - Unchanged. Dead plans are sorted by survival length, then
+        safety. Gathering doesn't help corpses.
 
     Normalization: each var divided by its reference_max (from textbook).
     If reference_max unknown, uses observed_max as fallback, else 1.
+
+    Stage 80 -> 81 migration note: tests that previously inspected
+    score[1] (Stage 80 has_gain) need to look at score[1] (now
+    distinct_gains) and score[2] (now total_gains, was min_body).
     """
     n_ticks = traj.tick_count()
     catastrophic = traj.terminated and traj.terminated_reason == "body_dead"
@@ -355,16 +364,15 @@ def score_trajectory(
         final_body = 0.0
 
     if alive:
-        # Stage 80: has_gain dominates min_body. Any rollout that
-        # produces an inventory positive (do tree, do stone with
-        # pickaxe, place table, make pickaxe) outranks any rollout
-        # that doesn't (sleep, navigate-aimlessly).
-        has_gain = 0
+        # Count distinct vars and total positive inv_gain events.
+        gain_vars: set[str] = set()
+        total_gains = 0
         for ev in traj.events:
-            if ev.kind == "inv_gain" and ev.amount > 0:
-                has_gain = 1
-                break
-        return (1, has_gain, min_body, n_ticks, final_body)
+            if ev.kind == "inv_gain" and ev.amount > 0 and ev.var:
+                gain_vars.add(ev.var)
+                total_gains += 1
+        distinct_gains = len(gain_vars)
+        return (1, distinct_gains, total_gains, min_body, n_ticks, final_body)
     return (0, n_ticks, min_body, final_body)
 
 
