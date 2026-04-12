@@ -393,6 +393,7 @@ def run_vector_mpc_episode(
     prev_inv: dict[str, int] | None = None
     prev_body: dict[str, float] | None = None
     prev_action: str | None = None
+    prev_move: str | None = None  # last move primitive — determines facing
     prev_player_pos: tuple[int, int] | None = None
     action_counts: Counter = Counter()
     steps_taken = 0
@@ -516,7 +517,7 @@ def run_vector_mpc_episode(
         if best_plan.steps:
             primitive = expand_to_primitive(
                 best_plan.steps[0], player_pos, spatial_map, model, rng,
-                last_action=prev_action,
+                last_action=prev_move,  # facing = last move, not last action
             )
         else:
             move_actions = [a for a in model.actions if a.startswith("move_")]
@@ -536,6 +537,11 @@ def run_vector_mpc_episode(
         prev_inv = dict(inv)
         prev_body = dict(body)
         prev_action = primitive
+        # Track last MOVE separately: Crafter's facing is set by moves only,
+        # do/place/make/sleep don't change facing.
+        if primitive.startswith("move_"):
+            prev_move = primitive
+        # else: prev_move keeps previous value (facing unchanged)
         prev_player_pos = player_pos
 
         pixels, _reward, done, info = env.step(primitive)
