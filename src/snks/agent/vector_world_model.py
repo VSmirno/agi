@@ -94,7 +94,7 @@ class CausalSDM:
     effect vectors instead of separate next-state and reward stores.
     """
 
-    def __init__(self, n_locations: int = 5000, dim: int = 65536,
+    def __init__(self, n_locations: int = 50000, dim: int = 16384,
                  seed: int = 42, device: torch.device | str | None = None):
         self.n_locations = n_locations
         self.dim = dim
@@ -135,21 +135,21 @@ class CausalSDM:
 
         dists_flat = torch.cat(all_dists)  # (n_probes * n_locations,)
 
-        # 5th percentile → ~5% of locations activate
-        target_pct_idx = max(1, int(dists_flat.numel() * 0.05))
+        # 0.5th percentile → ~0.5% of locations activate (SNR ~15)
+        target_pct_idx = max(1, int(dists_flat.numel() * 0.005))
         radius = int(dists_flat.kthvalue(target_pct_idx).values.item())
 
-        # Verify and nudge
+        # Verify and nudge toward 0.3-1.5% activation band
         query = self.addresses[0]
-        for _ in range(10):
+        for _ in range(20):
             n_act = self._count_activated(query, radius)
             pct = n_act / self.n_locations
-            if 0.005 <= pct <= 0.15:
+            if 0.003 <= pct <= 0.015:
                 break
-            if pct < 0.005:
-                radius = int(radius * 1.02)
+            if pct < 0.003:
+                radius = int(radius * 1.01)
             else:
-                radius = int(radius * 0.98)
+                radius = int(radius * 0.99)
 
         return radius
 
@@ -225,7 +225,7 @@ class VectorWorldModel:
     learning via SDM write. Generalization through vector similarity.
     """
 
-    def __init__(self, dim: int = 65536, n_locations: int = 5000,
+    def __init__(self, dim: int = 16384, n_locations: int = 50000,
                  seed: int = 42, device: torch.device | str | None = None):
         self.dim = dim
         self.device = torch.device(device) if device else torch.device("cpu")
