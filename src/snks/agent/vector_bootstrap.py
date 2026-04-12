@@ -85,6 +85,13 @@ def load_from_textbook(model: "VectorWorldModel", yaml_path: str | Path) -> dict
         if not effect:
             continue
 
+        # Load requirements as facts (not into SDM — category 1 lookup)
+        reqs = rule.get("requires", {})
+        if reqs:
+            model.action_requirements[(target, action)] = {
+                k: int(v) for k, v in reqs.items()
+            }
+
         # Write seed association multiple times for confidence
         model._ensure_concept(target)
         model._ensure_action(action)

@@ -136,6 +136,9 @@ def generate_candidate_plans(
 
     for concept_id in known:
         for action in target_actions:
+            # Requirement check — facts from textbook (category 1)
+            if not model.requirements_met(concept_id, action, state.inventory):
+                continue
             effect_vec, confidence = _cached_predict(cache, model, concept_id, action)
             if confidence < 0.2:
                 continue
@@ -194,6 +197,8 @@ def _generate_chains(
 
     for concept_id in known_concepts:
         for action in plan_actions:
+            # Note: chain requirements check uses hypothetical state after
+            # previous steps' predicted effects — may differ from real inv
             effect_vec, conf = _cached_predict(cache, model, concept_id, action)
             if conf < 0.2:
                 continue
