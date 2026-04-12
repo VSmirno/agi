@@ -48,7 +48,7 @@ def main():
     segmenter = load_tile_segmenter(str(checkpoint), device=device)
     print("Segmenter loaded")
 
-    model = VectorWorldModel(dim=65536, n_locations=5000, seed=42, device=device)
+    model = VectorWorldModel(dim=16384, n_locations=50000, seed=42, device=device)
     textbook_path = Path("configs/crafter_textbook.yaml")
     stats = load_from_textbook(model, textbook_path)
     print(f"Bootstrap: {stats}")
