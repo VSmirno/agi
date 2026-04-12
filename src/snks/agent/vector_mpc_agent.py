@@ -286,10 +286,17 @@ def expand_to_primitive(
 
     if action == "do":
         return "do"
-    elif action == "make":
-        return f"make_{target}"  # make + wood_sword → make_wood_sword
-    elif action == "place":
-        return f"place_{target}"  # place + table → place_table
+    elif action == "sleep":
+        return "sleep"
+    elif action in ("make", "place"):
+        compound = f"{action}_{target}"
+        # Validate against known env actions
+        from snks.agent.crafter_pixel_env import ACTION_TO_IDX
+        if compound in ACTION_TO_IDX:
+            return compound
+        # Invalid compound — explore instead
+        move_actions = [a for a in model.actions if a.startswith("move_")]
+        return str(rng.choice(move_actions)) if move_actions else "move_right"
     else:
         return action
 
