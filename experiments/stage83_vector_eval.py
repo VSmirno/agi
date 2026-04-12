@@ -48,14 +48,20 @@ def run_eval(
     from snks.agent.vector_mpc_agent import run_vector_mpc_episode
     from snks.agent.perception import HomeostaticTracker
     from snks.agent.crafter_textbook import CrafterTextbook
-    from snks.agent.tile_segmenter import load_segmenter
+    from snks.encoder.tile_segmenter import load_tile_segmenter, pick_device
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(pick_device())
     print(f"[{label}] device={device}, dim={model_dim}, locs={n_locations}")
 
     # --- Load segmenter ---
-    segmenter = load_segmenter(device=device)
-    print(f"[{label}] Segmenter loaded")
+    checkpoint_path = Path(__file__).parent.parent / "demos" / "checkpoints" / "exp135" / "segmenter_9x9.pt"
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(
+            f"Segmenter checkpoint not found at {checkpoint_path}. "
+            "Run Stage 75 training first or copy checkpoint from minipc."
+        )
+    segmenter = load_tile_segmenter(str(checkpoint_path), device=device)
+    print(f"[{label}] Segmenter loaded from {checkpoint_path}")
 
     # --- Build model ---
     model = VectorWorldModel(
