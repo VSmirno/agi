@@ -173,7 +173,7 @@ def simulate_forward(
     for step in plan.steps[:horizon]:
         effect_vec, confidence = model.predict(step.target, step.action)
 
-        if confidence < 0.01:
+        if confidence < 0.2:
             # No knowledge about this action — skip step
             state = VectorState(
                 inventory=dict(state.inventory),
