@@ -183,8 +183,9 @@ class CausalSDM:
 
         summed = self.content[mask].sum(dim=0)
         predicted = (summed > 0).float()
-        magnitude = summed.abs().mean().item()
-        confidence = min(magnitude / 5.0, 1.0)
+        # Per-location average: signal gives ±n_writes (~5), noise gives ±0.03
+        mean_content = summed / n_activated
+        confidence = min(mean_content.abs().mean().item(), 1.0)
         return predicted, confidence
 
     def state_dict(self) -> dict:
