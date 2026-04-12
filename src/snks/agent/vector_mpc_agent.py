@@ -252,28 +252,46 @@ def expand_to_primitive(
 ) -> str:
     """Expand a plan step to a single env primitive.
 
-    If target is adjacent (manhattan ≤ 1) and we're facing it, return
-    the action. Otherwise, navigate toward it.
+    Maps abstract actions to Crafter env primitives:
+    - "do" → "do"
+    - "sleep" → "sleep"
+    - "make" + target "wood_sword" → "make_wood_sword"
+    - "place" + target "table" → "place_table"
+
+    If target is not adjacent, navigate toward it first.
     """
     target_pos = spatial_map.find_nearest(plan_step.target, player_pos)
 
-    if target_pos is None:
+    if target_pos is None and plan_step.action not in ("sleep",):
         # Target not in spatial map — explore
         move_actions = [a for a in model.actions if a.startswith("move_")]
         return str(rng.choice(move_actions)) if move_actions else "move_right"
 
-    px, py = player_pos
-    tx, ty = target_pos
-    dist = abs(tx - px) + abs(ty - py)
+    # Sleep doesn't need a target position
+    if plan_step.action == "sleep":
+        return "sleep"
 
-    if dist <= 1:
-        # Adjacent — try the action
-        if plan_step.action in ("do", "place", "make", "sleep"):
-            return plan_step.action
-        return plan_step.action
+    if target_pos is not None:
+        px, py = player_pos
+        tx, ty = target_pos
+        dist = abs(tx - px) + abs(ty - py)
+
+        if dist > 1:
+            # Navigate toward target
+            return _step_toward(player_pos, target_pos, model, rng)
+
+    # Adjacent or no position needed — map to env primitive
+    action = plan_step.action
+    target = plan_step.target
+
+    if action == "do":
+        return "do"
+    elif action == "make":
+        return f"make_{target}"  # make + wood_sword → make_wood_sword
+    elif action == "place":
+        return f"place_{target}"  # place + table → place_table
     else:
-        # Navigate toward target
-        return _step_toward(player_pos, target_pos, model, rng)
+        return action
 
 
 # ---------------------------------------------------------------------------
