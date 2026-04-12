@@ -109,7 +109,7 @@ def generate_candidate_plans(
     for concept_id in known:
         for action in target_actions:
             effect_vec, confidence = model.predict(concept_id, action)
-            if confidence < 0.05:
+            if confidence < 0.2:
                 continue
             decoded = model.decode_effect(effect_vec)
             if _has_positive_effect(decoded, state):
@@ -162,7 +162,7 @@ def _generate_chains(
     for concept_id in known_concepts:
         for action in plan_actions:
             effect_vec, conf = model.predict(concept_id, action)
-            if conf < 0.05:
+            if conf < 0.2:
                 continue
             decoded = model.decode_effect(effect_vec)
             if not decoded:
@@ -191,7 +191,7 @@ def _generate_chains(
             for concept_id in known_concepts:
                 for action in plan_actions:
                     effect_vec, conf = model.predict(concept_id, action)
-                    if conf < 0.05:
+                    if conf < 0.2:
                         continue
                     decoded = model.decode_effect(effect_vec)
                     if not decoded:
