@@ -16,7 +16,7 @@ from snks.agent.vector_sim import (
 
 @pytest.fixture
 def model():
-    return VectorWorldModel(dim=4096, n_locations=2000, seed=42)
+    return VectorWorldModel(dim=8192, n_locations=5000, seed=42)
 
 
 @pytest.fixture
