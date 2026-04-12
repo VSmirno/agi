@@ -99,14 +99,15 @@ def generate_candidate_plans(
     # Gather all known concepts (visible + in spatial map)
     known = set(visible_concepts) | set(spatial_map.known_objects.keys())
 
-    # Single-step plans: try each concept × action
+    # Single-step plans: try each concept × target-action
     action_ids = list(model.actions.keys())
-    # Filter to meaningful actions (not movement primitives for plan generation)
-    plan_actions = [a for a in action_ids if not a.startswith("move_")
-                    and a not in ("tick", "proximity")]
+    # Target-directed actions: require a concept to interact with
+    target_actions = [a for a in action_ids if a in ("do", "make", "place")]
+    # Self-actions: no target needed (sleep)
+    self_actions = [a for a in action_ids if a in ("sleep",)]
 
     for concept_id in known:
-        for action in plan_actions:
+        for action in target_actions:
             effect_vec, confidence = model.predict(concept_id, action)
             if confidence < 0.05:
                 continue
@@ -117,8 +118,15 @@ def generate_candidate_plans(
                     origin=f"single:{concept_id}:{action}",
                 ))
 
-    # Multi-step chains via beam search
-    chains = _generate_chains(model, state, known, plan_actions,
+    # Self-actions as standalone plans (no target concept)
+    for action in self_actions:
+        candidates.append(VectorPlan(
+            steps=[VectorPlanStep(action=action, target="self")],
+            origin=f"self:{action}",
+        ))
+
+    # Multi-step chains via beam search (target actions only)
+    chains = _generate_chains(model, state, known, target_actions,
                               beam_width=beam_width, max_depth=max_depth)
     candidates.extend(chains)
 
