@@ -81,6 +81,32 @@ class DynamicEntityTracker:
 # Forward imagination: generate candidate plans
 # ---------------------------------------------------------------------------
 
+PredictionCache = dict[tuple[str, str], tuple[torch.Tensor, float]]
+
+
+def build_prediction_cache(
+    model: VectorWorldModel,
+    known_concepts: set[str],
+    target_actions: list[str],
+) -> PredictionCache:
+    """Precompute predictions for all (concept, action) pairs in one GPU op."""
+    pairs = [(c, a) for c in known_concepts for a in target_actions]
+    return model.batch_predict(pairs)
+
+
+def _cached_predict(
+    cache: PredictionCache,
+    model: VectorWorldModel,
+    concept_id: str,
+    action: str,
+) -> tuple[torch.Tensor, float]:
+    """Lookup in cache; fall back to individual predict on miss."""
+    key = (concept_id, action)
+    if key in cache:
+        return cache[key]
+    return model.predict(concept_id, action)
+
+
 def generate_candidate_plans(
     model: VectorWorldModel,
     state: VectorState,
@@ -88,6 +114,7 @@ def generate_candidate_plans(
     visible_concepts: set[str],
     beam_width: int = 5,
     max_depth: int = 3,
+    cache: PredictionCache | None = None,
 ) -> list[VectorPlan]:
     """Generate plans via forward imagination.
 
@@ -101,14 +128,15 @@ def generate_candidate_plans(
 
     # Single-step plans: try each concept × target-action
     action_ids = list(model.actions.keys())
-    # Target-directed actions: require a concept to interact with
     target_actions = [a for a in action_ids if a in ("do", "make", "place")]
-    # Self-actions: no target needed (sleep)
     self_actions = [a for a in action_ids if a in ("sleep",)]
+
+    if cache is None:
+        cache = build_prediction_cache(model, known, target_actions)
 
     for concept_id in known:
         for action in target_actions:
-            effect_vec, confidence = model.predict(concept_id, action)
+            effect_vec, confidence = _cached_predict(cache, model, concept_id, action)
             if confidence < 0.2:
                 continue
             decoded = model.decode_effect(effect_vec)
@@ -127,7 +155,8 @@ def generate_candidate_plans(
 
     # Multi-step chains via beam search (target actions only)
     chains = _generate_chains(model, state, known, target_actions,
-                              beam_width=beam_width, max_depth=max_depth)
+                              beam_width=beam_width, max_depth=max_depth,
+                              cache=cache)
     candidates.extend(chains)
 
     # Always include a "do nothing" plan as baseline
@@ -151,24 +180,27 @@ def _generate_chains(
     plan_actions: list[str],
     beam_width: int = 5,
     max_depth: int = 3,
+    cache: PredictionCache | None = None,
 ) -> list[VectorPlan]:
     """Recursive forward search: 'if I do X, what can I do next?'
 
     Beam search: keep top beam_width plans at each depth.
     """
+    if cache is None:
+        cache = build_prediction_cache(model, known_concepts, plan_actions)
+
     # Start with all single-step plans that have positive effect
     beam: list[tuple[float, VectorPlan, VectorState]] = []
 
     for concept_id in known_concepts:
         for action in plan_actions:
-            effect_vec, conf = model.predict(concept_id, action)
+            effect_vec, conf = _cached_predict(cache, model, concept_id, action)
             if conf < 0.2:
                 continue
             decoded = model.decode_effect(effect_vec)
             if not decoded:
                 continue
             new_state = state.apply_effect(decoded)
-            # Score = total positive inventory gain
             gain = sum(v for v in decoded.values() if v > 0
                        and v not in state.body)
             if gain > 0:
@@ -178,19 +210,16 @@ def _generate_chains(
                 )
                 beam.append((gain, plan, new_state))
 
-    # Prune to beam_width
     beam.sort(key=lambda x: -x[0])
     beam = beam[:beam_width]
-
     result: list[VectorPlan] = [b[1] for b in beam]
 
-    # Extend chains up to max_depth
     for _depth in range(1, max_depth):
         next_beam: list[tuple[float, VectorPlan, VectorState]] = []
         for prev_gain, prev_plan, prev_state in beam:
             for concept_id in known_concepts:
                 for action in plan_actions:
-                    effect_vec, conf = model.predict(concept_id, action)
+                    effect_vec, conf = _cached_predict(cache, model, concept_id, action)
                     if conf < 0.2:
                         continue
                     decoded = model.decode_effect(effect_vec)
@@ -448,15 +477,20 @@ def run_vector_mpc_episode(
             spatial_map=spatial_map,
         )
 
+        # --- Build per-step prediction cache (one batched GPU op) ---
+        known_step = set(vf.visible_concepts()) | set(spatial_map.known_objects.keys())
+        target_acts = [a for a in model.actions if a in ("do", "make", "place")]
+        step_cache = build_prediction_cache(model, known_step, target_acts)
+
         # --- Generate + simulate + score ---
         candidates = generate_candidate_plans(
             model, state, spatial_map, vf.visible_concepts(),
-            beam_width=beam_width, max_depth=max_depth,
+            beam_width=beam_width, max_depth=max_depth, cache=step_cache,
         )
 
         scored: list[tuple[tuple, VectorPlan, VectorTrajectory]] = []
         for plan in candidates:
-            traj = simulate_forward(model, plan, state, horizon, vitals)
+            traj = simulate_forward(model, plan, state, horizon, vitals, cache=step_cache)
             score = score_trajectory(traj, vitals)
             scored.append((score, plan, traj))
 

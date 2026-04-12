@@ -156,22 +156,21 @@ def simulate_forward(
     initial_state: VectorState,
     horizon: int = 20,
     vital_vars: list[str] | None = None,
+    cache: dict | None = None,
 ) -> VectorTrajectory:
     """Run forward simulation through VectorWorldModel predictions.
 
-    For each plan step:
-    1. model.predict(target, action) → effect vector
-    2. model.decode_effect(effect_vector) → dict
-    3. state.apply_effect(dict) → new state
-    4. Check death
-
-    Returns VectorTrajectory with state history.
+    If a prediction cache is provided, uses it to skip redundant SDM reads.
     """
     states = [initial_state.copy()]
     state = initial_state.copy()
 
     for step in plan.steps[:horizon]:
-        effect_vec, confidence = model.predict(step.target, step.action)
+        key = (step.target, step.action)
+        if cache is not None and key in cache:
+            effect_vec, confidence = cache[key]
+        else:
+            effect_vec, confidence = model.predict(step.target, step.action)
 
         if confidence < 0.2:
             # No knowledge about this action — skip step
