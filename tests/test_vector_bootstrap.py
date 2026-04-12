@@ -13,7 +13,7 @@ TEXTBOOK_PATH = Path(__file__).parent.parent / "configs" / "crafter_textbook.yam
 
 @pytest.fixture
 def seeded_model():
-    model = VectorWorldModel(dim=4096, n_locations=2000, seed=42)
+    model = VectorWorldModel(dim=8192, n_locations=5000, seed=42)
     stats = load_from_textbook(model, TEXTBOOK_PATH)
     return model, stats
 

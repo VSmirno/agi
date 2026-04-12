@@ -118,27 +118,47 @@ class CausalSDM:
         )
 
     def _calibrate_radius(self) -> int:
-        """Find radius so 1-5% of locations activate."""
-        sample_idx = torch.randperm(min(self.n_locations, 1000))[:200]
-        sample = self.addresses[sample_idx]
-        dists = []
-        for i in range(0, min(100, len(sample) - 1)):
-            d = (sample[i] != sample[i + 1]).sum().item()
-            dists.append(d)
-        median_dist = sorted(dists)[len(dists) // 2]
+        """Find radius so 1-10% of locations activate.
 
-        radius = int(median_dist * 0.45)
-        for _attempt in range(20):
+        For high-dim binary vectors, pairwise distances concentrate tightly
+        around dim/2. We must start near the median and use fine-grained
+        search to find the narrow band where 1-10% activate.
+        """
+        # Sample pairwise distances to find distribution
+        n_sample = min(self.n_locations, 500)
+        sample_idx = torch.randperm(n_sample)[:n_sample]
+        sample = self.addresses[sample_idx]
+
+        # Compute distances from first 50 vectors to all others
+        dists_all = []
+        n_probes = min(50, n_sample)
+        for i in range(n_probes):
+            d = (sample[i].unsqueeze(0) != sample).sum(dim=1)
+            dists_all.extend(d.tolist())
+
+        dists_sorted = sorted(dists_all)
+        # Target: find radius at ~5th percentile of distances
+        # (so ~5% of pairs are within radius)
+        target_pct_idx = max(1, int(len(dists_sorted) * 0.05))
+        radius = int(dists_sorted[target_pct_idx])
+
+        # Fine-tune with binary search
+        lo, hi = int(radius * 0.95), int(radius * 1.10)
+        best_radius = radius
+        best_pct_diff = 1.0
+
+        for r in range(lo, hi + 1, max(1, (hi - lo) // 40)):
             query = torch.randint(0, 2, (self.dim,), dtype=torch.float32)
-            n_act = self._count_activated(query, radius)
+            n_act = self._count_activated(query, r)
             pct = n_act / self.n_locations
             if 0.005 <= pct <= 0.15:
-                return radius
-            if pct < 0.005:
-                radius = int(radius * 1.1)
-            else:
-                radius = int(radius * 0.9)
-        return radius
+                return r
+            diff = abs(pct - 0.05)
+            if diff < best_pct_diff:
+                best_pct_diff = diff
+                best_radius = r
+
+        return best_radius
 
     def _count_activated(self, query: torch.Tensor, radius: int) -> int:
         dists = (self.addresses != query.unsqueeze(0)).sum(dim=1)

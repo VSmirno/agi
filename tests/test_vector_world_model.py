@@ -42,23 +42,23 @@ class TestBitVectorOps:
         assert hamming_similarity(a, recovered) == 1.0
 
     def test_bind_dissimilar(self):
-        a = random_bitvector(4096)
-        b = random_bitvector(4096)
+        a = random_bitvector(8192)
+        b = random_bitvector(8192)
         bound = bind(a, b)
         # Bound should be ~50% similar to either operand
         assert 0.45 < hamming_similarity(bound, a) < 0.55
 
     def test_bundle_majority_vote(self):
-        a = random_bitvector(4096)
-        b = random_bitvector(4096)
-        c = random_bitvector(4096)
+        a = random_bitvector(8192)
+        b = random_bitvector(8192)
+        c = random_bitvector(8192)
         bundled = bundle([a, a, a, b, c])
         # a appears 3/5 times, should dominate
         assert hamming_similarity(bundled, a) > 0.7
 
     def test_bundle_weighted(self):
-        a = random_bitvector(4096)
-        b = random_bitvector(4096)
+        a = random_bitvector(8192)
+        b = random_bitvector(8192)
         # Heavy weight on a
         bundled = bundle([a, b], weights=[0.9, 0.1])
         assert hamming_similarity(bundled, a) > 0.8
@@ -111,9 +111,9 @@ class TestScalarEncoding:
 
 class TestCausalSDM:
     def test_write_read_roundtrip(self):
-        sdm = CausalSDM(n_locations=2000, dim=4096, seed=42)
-        address = random_bitvector(4096)
-        data = random_bitvector(4096)
+        sdm = CausalSDM(n_locations=5000, dim=8192, seed=42)
+        address = random_bitvector(8192)
+        data = random_bitvector(8192)
         # Write same association 5 times to build confidence
         for _ in range(5):
             sdm.write(address, data)
@@ -122,17 +122,17 @@ class TestCausalSDM:
         assert conf > 0.0
 
     def test_read_unknown_returns_zero_confidence(self):
-        sdm = CausalSDM(n_locations=2000, dim=4096, seed=42)
-        address = random_bitvector(4096)
+        sdm = CausalSDM(n_locations=5000, dim=8192, seed=42)
+        address = random_bitvector(8192)
         result, conf = sdm.read(address)
         assert conf == 0.0
 
     def test_different_addresses_different_content(self):
-        sdm = CausalSDM(n_locations=2000, dim=4096, seed=42)
-        addr1 = random_bitvector(4096)
-        addr2 = random_bitvector(4096)
-        data1 = random_bitvector(4096)
-        data2 = random_bitvector(4096)
+        sdm = CausalSDM(n_locations=5000, dim=8192, seed=42)
+        addr1 = random_bitvector(8192)
+        addr2 = random_bitvector(8192)
+        data1 = random_bitvector(8192)
+        data2 = random_bitvector(8192)
         for _ in range(5):
             sdm.write(addr1, data1)
             sdm.write(addr2, data2)
@@ -142,14 +142,14 @@ class TestCausalSDM:
         assert hamming_similarity(r2, data2) > 0.7
 
     def test_state_dict_roundtrip(self):
-        sdm = CausalSDM(n_locations=2000, dim=4096, seed=42)
-        addr = random_bitvector(4096)
-        data = random_bitvector(4096)
+        sdm = CausalSDM(n_locations=5000, dim=8192, seed=42)
+        addr = random_bitvector(8192)
+        data = random_bitvector(8192)
         for _ in range(5):
             sdm.write(addr, data)
 
         state = sdm.state_dict()
-        sdm2 = CausalSDM(n_locations=2000, dim=4096, seed=42)
+        sdm2 = CausalSDM(n_locations=5000, dim=8192, seed=42)
         sdm2.load_state_dict(state)
 
         r1, c1 = sdm.read(addr)
@@ -164,7 +164,7 @@ class TestCausalSDM:
 class TestVectorWorldModel:
     @pytest.fixture
     def model(self):
-        return VectorWorldModel(dim=4096, n_locations=2000, seed=42)
+        return VectorWorldModel(dim=8192, n_locations=5000, seed=42)
 
     def test_predict_unknown_zero_confidence(self, model):
         _, conf = model.predict("tree", "do")
@@ -207,7 +207,7 @@ class TestVectorWorldModel:
         effect = {"wood": 1, "health": -2}
         vec = model.encode_effect(effect)
         decoded = model.decode_effect(vec)
-        # With 2 bundled bindings at dim=4096, decode may be noisy
+        # With 2 bundled bindings at dim=8192, decode may be noisy
         # At least the dominant effect should be present
         assert "wood" in decoded or "health" in decoded
 
@@ -242,7 +242,7 @@ class TestVectorWorldModel:
             path = Path(tmpdir) / "model.bin"
             model.save(path)
 
-            model2 = VectorWorldModel(dim=4096, n_locations=2000, seed=99)
+            model2 = VectorWorldModel(dim=8192, n_locations=5000, seed=99)
             loaded = model2.load(path)
             assert loaded is True
             assert "tree" in model2.concepts
@@ -265,7 +265,7 @@ class TestVectorWorldModel:
         # Make oak similar to tree manually (simulating similar context)
         model._ensure_concept("oak")
         model.concepts["oak"] = bundle(
-            [model.concepts["tree"], random_bitvector(4096)],
+            [model.concepts["tree"], random_bitvector(8192)],
             weights=[0.8, 0.2],
         )
 
