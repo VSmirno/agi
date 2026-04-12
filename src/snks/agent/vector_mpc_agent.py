@@ -282,11 +282,25 @@ def expand_to_primitive(
     if target_pos is not None:
         px, py = player_pos
         tx, ty = target_pos
-        dist = abs(tx - px) + abs(ty - py)
+        dx, dy = tx - px, ty - py
+        dist = abs(dx) + abs(dy)
 
         if dist > 1:
             # Navigate toward target
             return _step_toward(player_pos, target_pos, model, rng)
+
+        # Adjacent — check if we're facing the target.
+        # Crafter "do" acts on the FACING tile only.
+        # Facing direction from last_action: move_right→(+1,0), etc.
+        if plan_step.action == "do" and dist == 1:
+            facing_map = {
+                "move_left": (-1, 0), "move_right": (1, 0),
+                "move_up": (0, -1), "move_down": (0, 1),
+            }
+            facing = facing_map.get(last_action, (0, 1))  # default: down
+            if (dx, dy) != facing:
+                # Target not on facing tile — turn to face it by moving toward it
+                return _step_toward(player_pos, target_pos, model, rng)
 
     # Adjacent or no position needed — map to env primitive
     action = plan_step.action
