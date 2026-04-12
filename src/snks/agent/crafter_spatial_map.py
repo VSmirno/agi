@@ -33,8 +33,8 @@ class CrafterSpatialMap:
 
     def __init__(self, world_size: int = 64) -> None:
         self.world_size = world_size
-        # (y, x) → near_str
-        self._map: dict[tuple[int, int], str] = {}
+        # (y, x) → (near_str, confidence, observation_count)
+        self._map: dict[tuple[int, int], tuple[str, float, int]] = {}
         self._visited: set[tuple[int, int]] = set()
         # Tiles observed to reject movement (walls, water edges, trees).
         self._blocked: set[tuple[int, int]] = set()
@@ -46,16 +46,42 @@ class CrafterSpatialMap:
     def is_blocked(self, pos: tuple[int, int]) -> bool:
         return (int(pos[0]), int(pos[1])) in self._blocked
 
-    def update(self, player_pos: tuple[int, int], near_str: str) -> None:
-        """Record NearDetector output at current position.
+    def update(
+        self, player_pos: tuple[int, int], near_str: str, confidence: float = 1.0
+    ) -> None:
+        """Record observation at position with confidence tracking.
+
+        When the same position is observed multiple times, we keep the
+        label with the highest confidence. If the same label is observed
+        again, confidence is updated via EMA (0.7 * old + 0.3 * new)
+        and observation count increments. If a *different* label arrives
+        with higher confidence, it replaces the old one (count resets to 1).
+
+        This prevents the 82% segmenter's misclassifications from
+        permanently polluting the map — a low-confidence wrong label
+        gets overwritten by the next high-confidence correct observation.
 
         Args:
             player_pos: (y, x) from info["player_pos"].
-            near_str: output of NearDetector.detect(pixels).
+            near_str: detected concept label.
+            confidence: classifier confidence for this observation (0..1).
         """
         y, x = int(player_pos[0]), int(player_pos[1])
-        self._map[(y, x)] = near_str
-        self._visited.add((y, x))
+        key = (y, x)
+        existing = self._map.get(key)
+        if existing is not None:
+            old_label, old_conf, old_count = existing
+            if old_label == near_str:
+                # Same label — reinforce via EMA + increment count
+                new_conf = 0.7 * old_conf + 0.3 * confidence
+                self._map[key] = (near_str, new_conf, old_count + 1)
+            elif confidence > old_conf:
+                # Different label, higher confidence — replace
+                self._map[key] = (near_str, confidence, 1)
+            # else: different label, lower confidence — ignore (keep old)
+        else:
+            self._map[key] = (near_str, confidence, 1)
+        self._visited.add(key)
 
     def find_nearest(
         self, target: str, player_pos: tuple[int, int]
@@ -79,7 +105,7 @@ class CrafterSpatialMap:
         py, px = int(player_pos[0]), int(player_pos[1])
         best_pos: tuple[int, int] | None = None
         best_dist = float("inf")
-        for (y, x), near in self._map.items():
+        for (y, x), (near, _conf, _count) in self._map.items():
             if near == target:
                 if (y, x) == (py, px):
                     continue  # stale entry at player's tile — env blocks this
@@ -131,7 +157,7 @@ class CrafterSpatialMap:
         Copy the underlying dicts but share world_size (immutable).
         """
         new = CrafterSpatialMap(world_size=self.world_size)
-        new._map = dict(self._map)
+        new._map = dict(self._map)  # tuples are immutable — shallow copy is safe
         new._visited = set(self._visited)
         new._blocked = set(self._blocked)
         return new
@@ -144,7 +170,7 @@ class CrafterSpatialMap:
     def known_objects(self) -> dict[str, int]:
         """Count of known positions per near_str (excluding empty)."""
         counts: dict[str, int] = {}
-        for near in self._map.values():
+        for near, _conf, _count in self._map.values():
             if near != "empty":
                 counts[near] = counts.get(near, 0) + 1
         return counts

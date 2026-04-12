@@ -348,9 +348,13 @@ class TestSpatialMapUpdate:
         sm = CrafterSpatialMap()
         vf = VisualField()
         vf.near_concept = "empty"
+        vf.near_similarity = 0.95
         vf.detections = []
         update_spatial_map_from_viewport(sm, vf, (10, 10))
-        assert sm._map.get((10, 10)) == "empty"
+        label, conf, count = sm._map.get((10, 10))
+        assert label == "empty"
+        assert conf == 0.95
+        assert count == 1
 
     def test_writes_viewport_detections(self):
         sm = CrafterSpatialMap()
@@ -359,7 +363,10 @@ class TestSpatialMapUpdate:
         vf.near_concept = "empty"
         update_spatial_map_from_viewport(sm, vf, (10, 10))
         # tree at viewport (3, 5) → world (11, 11) per coord mapping
-        assert sm._map.get((11, 11)) == "tree"
+        label, conf, count = sm._map.get((11, 11))
+        assert label == "tree"
+        assert conf == 0.9
+        assert count == 1
 
 
 # ---------------------------------------------------------------------------

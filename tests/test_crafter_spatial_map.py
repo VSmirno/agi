@@ -88,6 +88,60 @@ class TestCrafterSpatialMap:
         assert ko["stone"] == 1
         assert "empty" not in ko
 
+    # --- Confidence tracking (F10 fix) ---
+
+    def test_update_stores_confidence(self):
+        m = CrafterSpatialMap()
+        m.update((5, 5), "tree", confidence=0.85)
+        label, conf, count = m._map[(5, 5)]
+        assert label == "tree"
+        assert conf == 0.85
+        assert count == 1
+
+    def test_same_label_reinforces_via_ema(self):
+        m = CrafterSpatialMap()
+        m.update((5, 5), "tree", confidence=0.80)
+        m.update((5, 5), "tree", confidence=0.90)
+        label, conf, count = m._map[(5, 5)]
+        assert label == "tree"
+        assert count == 2
+        # EMA: 0.7 * 0.80 + 0.3 * 0.90 = 0.83
+        assert abs(conf - 0.83) < 1e-6
+
+    def test_higher_confidence_replaces_label(self):
+        m = CrafterSpatialMap()
+        m.update((5, 5), "tree", confidence=0.60)
+        m.update((5, 5), "stone", confidence=0.85)
+        label, conf, count = m._map[(5, 5)]
+        assert label == "stone"
+        assert conf == 0.85
+        assert count == 1  # reset on replacement
+
+    def test_lower_confidence_does_not_replace(self):
+        m = CrafterSpatialMap()
+        m.update((5, 5), "tree", confidence=0.90)
+        m.update((5, 5), "stone", confidence=0.50)
+        label, conf, count = m._map[(5, 5)]
+        assert label == "tree"  # kept
+        assert conf == 0.90
+
+    def test_default_confidence_is_one(self):
+        m = CrafterSpatialMap()
+        m.update((5, 5), "tree")
+        _, conf, _ = m._map[(5, 5)]
+        assert conf == 1.0
+
+    def test_copy_preserves_confidence(self):
+        m = CrafterSpatialMap()
+        m.update((5, 5), "tree", confidence=0.75)
+        m2 = m.copy()
+        label, conf, count = m2._map[(5, 5)]
+        assert label == "tree"
+        assert conf == 0.75
+        # Mutating copy doesn't affect original
+        m2.update((5, 5), "stone", confidence=0.99)
+        assert m._map[(5, 5)][0] == "tree"
+
 
 # ---------------------------------------------------------------------------
 # _step_toward

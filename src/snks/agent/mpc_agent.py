@@ -396,13 +396,13 @@ def update_spatial_map_from_viewport(
     center_col = viewport_cols // 2
     px, py = int(player_pos[0]), int(player_pos[1])
 
-    # Player's own tile — use near_concept
-    spatial_map.update((px, py), visual_field.near_concept)
+    # Player's own tile — use near_concept (confidence from segmenter)
+    spatial_map.update((px, py), visual_field.near_concept, visual_field.near_similarity)
 
-    for cid, _conf, gy, gx in visual_field.detections:
+    for cid, conf, gy, gx in visual_field.detections:
         wx = px + (gx - center_col)
         wy = py + (gy - (center_row - 1))
-        spatial_map.update((wx, wy), cid)
+        spatial_map.update((wx, wy), cid, conf)
 
 
 def build_sim_state(

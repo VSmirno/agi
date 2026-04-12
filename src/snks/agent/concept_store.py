@@ -937,7 +937,8 @@ class ConceptStore:
         # Resource / mob tile from spatial_map
         impassable = self.impassable_concepts()
         if hasattr(sim.spatial_map, "_map"):
-            tile_concept = sim.spatial_map._map.get(pos)
+            entry = sim.spatial_map._map.get(pos)
+            tile_concept = entry[0] if isinstance(entry, tuple) else entry
             if tile_concept and tile_concept in impassable:
                 return True
         # Mobile entity at pos
@@ -1336,7 +1337,11 @@ def _nearest_concept(sim: SimState, store: "ConceptStore | None" = None) -> str 
 
     # Fall back to spatial map
     if sim.spatial_map is not None and hasattr(sim.spatial_map, "_map"):
-        return sim.spatial_map._map.get(front, "empty")
+        entry = sim.spatial_map._map.get(front)
+        if entry is None:
+            return "empty"
+        # _map stores (label, confidence, count) tuples
+        return entry[0] if isinstance(entry, tuple) else entry
     return None
 
 

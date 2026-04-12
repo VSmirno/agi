@@ -272,9 +272,9 @@ def test_apply_tick_do_water_proximity_vs_facing_divergence():
     # Note: spatial_map.update() stores (y, x); we just write directly to
     # _map to control the layout deterministically.
     spatial_map = CrafterSpatialMap()
-    spatial_map._map[(11, 10)] = "water"
-    spatial_map._map[(10, 10)] = "empty"
-    spatial_map._map[(10, 9)] = "empty"  # tile in front when facing "up" (dy=-1)
+    spatial_map._map[(11, 10)] = ("water", 1.0, 1)
+    spatial_map._map[(10, 10)] = ("empty", 1.0, 1)
+    spatial_map._map[(10, 9)] = ("empty", 1.0, 1)  # tile in front when facing "up" (dy=-1)
 
     def _mk() -> SimState:
         return SimState(
@@ -344,8 +344,8 @@ def test_apply_tick_do_water_facing_aligned_matches():
     # Place water in the tile DIRECTLY in front of the player when facing
     # default (down). _nearest_concept default uses dx,dy = 0,1.
     # So front = (10, 11). Put water there.
-    spatial_map._map[(10, 11)] = "water"
-    spatial_map._map[(10, 10)] = "empty"
+    spatial_map._map[(10, 11)] = ("water", 1.0, 1)
+    spatial_map._map[(10, 10)] = ("empty", 1.0, 1)
 
     def _mk() -> SimState:
         return SimState(
