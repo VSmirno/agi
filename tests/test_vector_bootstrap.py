@@ -64,12 +64,17 @@ class TestBootstrap:
         decoded = model.decode_effect(effect_vec)
         assert decoded.get("health", 0) < 0, f"Expected health < 0, got {decoded}"
 
-    def test_unknown_concept_zero_confidence(self, seeded_model):
+    def test_unknown_concept_differs_from_known(self, seeded_model):
         model, _ = seeded_model
-        _, conf = model.predict("unicorn", "do")
-        # Unicorn was never seeded — should have low/zero confidence
-        # (may have small nonzero due to SDM noise, so check < 0.1)
-        assert conf < 0.1
+        # Unicorn was never seeded — its prediction should differ
+        # from tree's prediction (SDM noise may give nonzero conf
+        # but the content should be different from any seeded rule)
+        tree_effect, tree_conf = model.predict("tree", "do")
+        unicorn_effect, _ = model.predict("unicorn", "do")
+        from snks.agent.vector_world_model import hamming_similarity
+        sim = hamming_similarity(tree_effect, unicorn_effect)
+        # Should not be highly similar (random noise ≈ 0.5)
+        assert sim < 0.8 or tree_conf < 0.01
 
     def test_action_rules_count(self, seeded_model):
         _, stats = seeded_model

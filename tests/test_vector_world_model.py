@@ -215,7 +215,7 @@ class TestVectorWorldModel:
         assert "tree" not in model.concepts
         model._ensure_concept("tree")
         assert "tree" in model.concepts
-        assert model.concepts["tree"].shape == (4096,)
+        assert model.concepts["tree"].shape == (8192,)
 
     def test_query_similar(self, model):
         # Make tree and oak similar by bundling

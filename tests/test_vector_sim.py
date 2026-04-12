@@ -56,7 +56,7 @@ class TestVectorState:
 
     def test_to_vector_returns_correct_dim(self, base_state, model):
         vec = base_state.to_vector(model)
-        assert vec.shape == (4096,)
+        assert vec.shape == (8192,)
 
 
 class TestSimulateForward:
