@@ -33,8 +33,8 @@ def run_eval(
     max_steps: int = 1000,
     warmup_steps: int = 500,
     warmup_no_enemies: bool = True,
-    model_dim: int = 16384,  # 16K for speed, 65K for production
-    n_locations: int = 3000,
+    model_dim: int = 4096,  # start small, scale up after validation
+    n_locations: int = 2000,
     seed: int = 42,
     experience_path: str | None = None,
     save_experience_path: str | None = None,
