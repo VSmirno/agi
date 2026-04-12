@@ -104,15 +104,17 @@ class CausalSDM:
         rng = torch.Generator(device="cpu")
         rng.manual_seed(seed)
 
-        # Addresses — random binary vectors (on CPU for calibration)
+        # Generate addresses on CPU (randint generator must be CPU),
+        # then move to device for all subsequent operations
         addresses_cpu = torch.randint(
             0, 2, (n_locations, dim), dtype=torch.float32, generator=rng,
         )
-        self.addresses = addresses_cpu
-        self.activation_radius = self._calibrate_radius()
-        self.addresses = self.addresses.to(self.device)
+        self.addresses = addresses_cpu.to(self.device)
 
-        # Content: ±1 accumulated counters (float32 for sign accumulation)
+        # Calibrate on device (GPU) — vectorized, no loops
+        self.activation_radius = self._calibrate_radius()
+
+        # Content: ±1 accumulated counters
         self.content = torch.zeros(
             n_locations, dim, dtype=torch.float32, device=self.device,
         )
@@ -120,45 +122,42 @@ class CausalSDM:
     def _calibrate_radius(self) -> int:
         """Find radius so 1-10% of locations activate.
 
-        For high-dim binary vectors, pairwise distances concentrate tightly
-        around dim/2. We must start near the median and use fine-grained
-        search to find the narrow band where 1-10% activate.
+        Fully vectorized on device (GPU). For high-dim binary vectors,
+        distances concentrate around dim/2. We find the 5th percentile
+        of pairwise distances in one batched operation.
         """
-        # Sample pairwise distances to find distribution
-        n_sample = min(self.n_locations, 500)
-        sample_idx = torch.randperm(n_sample)[:n_sample]
-        sample = self.addresses[sample_idx]
+        # Sample subset for distance computation
+        n_sample = min(self.n_locations, 300)
+        sample = self.addresses[:n_sample]  # already on device
 
-        # Compute distances from first 50 vectors to all others
-        dists_all = []
+        # Batch pairwise distances: (n_probes, n_sample)
         n_probes = min(50, n_sample)
-        for i in range(n_probes):
-            d = (sample[i].unsqueeze(0) != sample).sum(dim=1)
-            dists_all.extend(d.tolist())
+        probes = sample[:n_probes]  # (n_probes, dim)
+        # Vectorized: each probe vs all samples
+        dists = (probes.unsqueeze(1) != sample.unsqueeze(0)).sum(dim=2)  # (n_probes, n_sample)
+        dists_flat = dists.reshape(-1)
 
-        dists_sorted = sorted(dists_all)
-        # Target: find radius at ~5th percentile of distances
-        # (so ~5% of pairs are within radius)
-        target_pct_idx = max(1, int(len(dists_sorted) * 0.05))
-        radius = int(dists_sorted[target_pct_idx])
+        # 5th percentile → ~5% of locations activate
+        target_pct_idx = max(1, int(dists_flat.numel() * 0.05))
+        radius = int(dists_flat.kthvalue(target_pct_idx).values.item())
 
-        # Fine-tune with binary search
-        lo, hi = int(radius * 0.95), int(radius * 1.10)
-        best_radius = radius
-        best_pct_diff = 1.0
+        # Verify with a single probe
+        query = self.addresses[0]
+        n_act = self._count_activated(query, radius)
+        pct = n_act / self.n_locations
 
-        for r in range(lo, hi + 1, max(1, (hi - lo) // 40)):
-            query = torch.randint(0, 2, (self.dim,), dtype=torch.float32)
-            n_act = self._count_activated(query, r)
-            pct = n_act / self.n_locations
+        # If way off, nudge ±5% until in range
+        for _ in range(10):
             if 0.005 <= pct <= 0.15:
-                return r
-            diff = abs(pct - 0.05)
-            if diff < best_pct_diff:
-                best_pct_diff = diff
-                best_radius = r
+                break
+            if pct < 0.005:
+                radius = int(radius * 1.02)
+            else:
+                radius = int(radius * 0.98)
+            n_act = self._count_activated(query, radius)
+            pct = n_act / self.n_locations
 
-        return best_radius
+        return radius
 
     def _count_activated(self, query: torch.Tensor, radius: int) -> int:
         dists = (self.addresses != query.unsqueeze(0)).sum(dim=1)
