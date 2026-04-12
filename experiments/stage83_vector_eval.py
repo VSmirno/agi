@@ -27,6 +27,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
+# ROCm MIOpen segfault workaround (Stage 66 finding)
+torch.backends.cudnn.enabled = False
+
 
 def run_eval(
     n_episodes: int = 20,
