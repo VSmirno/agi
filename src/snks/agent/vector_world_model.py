@@ -122,40 +122,34 @@ class CausalSDM:
     def _calibrate_radius(self) -> int:
         """Find radius so 1-10% of locations activate.
 
-        Fully vectorized on device (GPU). For high-dim binary vectors,
-        distances concentrate around dim/2. We find the 5th percentile
-        of pairwise distances in one batched operation.
+        On-device (GPU) but memory-efficient: computes distances one
+        probe at a time to avoid OOM on large dim×n_locations tensors.
         """
-        # Sample subset for distance computation
-        n_sample = min(self.n_locations, 300)
-        sample = self.addresses[:n_sample]  # already on device
+        n_probes = min(30, self.n_locations)
+        all_dists: list[torch.Tensor] = []
 
-        # Batch pairwise distances: (n_probes, n_sample)
-        n_probes = min(50, n_sample)
-        probes = sample[:n_probes]  # (n_probes, dim)
-        # Vectorized: each probe vs all samples
-        dists = (probes.unsqueeze(1) != sample.unsqueeze(0)).sum(dim=2)  # (n_probes, n_sample)
-        dists_flat = dists.reshape(-1)
+        for i in range(n_probes):
+            # (n_locations,) — one probe vs all addresses
+            d = (self.addresses[i].unsqueeze(0) != self.addresses).sum(dim=1)
+            all_dists.append(d)
+
+        dists_flat = torch.cat(all_dists)  # (n_probes * n_locations,)
 
         # 5th percentile → ~5% of locations activate
         target_pct_idx = max(1, int(dists_flat.numel() * 0.05))
         radius = int(dists_flat.kthvalue(target_pct_idx).values.item())
 
-        # Verify with a single probe
+        # Verify and nudge
         query = self.addresses[0]
-        n_act = self._count_activated(query, radius)
-        pct = n_act / self.n_locations
-
-        # If way off, nudge ±5% until in range
         for _ in range(10):
+            n_act = self._count_activated(query, radius)
+            pct = n_act / self.n_locations
             if 0.005 <= pct <= 0.15:
                 break
             if pct < 0.005:
                 radius = int(radius * 1.02)
             else:
                 radius = int(radius * 0.98)
-            n_act = self._count_activated(query, radius)
-            pct = n_act / self.n_locations
 
         return radius
 
