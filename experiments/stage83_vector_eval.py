@@ -79,7 +79,7 @@ def run_eval(
     # --- Init tracker ---
     tb = CrafterTextbook(str(textbook_path))
     tracker = HomeostaticTracker()
-    tracker.init_from_textbook(tb)
+    tracker.init_from_textbook(tb.body_block)
 
     # --- Import Crafter env ---
     try:
@@ -98,7 +98,7 @@ def run_eval(
         env = CrafterPixelEnv(seed=ep_seed)
 
         ep_tracker = HomeostaticTracker()
-        ep_tracker.init_from_textbook(tb)
+        ep_tracker.init_from_textbook(tb.body_block)
 
         metrics = run_vector_mpc_episode(
             env=env,
