@@ -292,6 +292,12 @@ class VectorWorldModel:
         # Scalar encoding params
         self.max_scalar = 10
 
+        # Action requirements — facts from textbook (category 1).
+        # Dict: (concept_id, action) → {required_item: min_count}
+        # E.g., ("iron", "do") → {"stone_pickaxe": 1}
+        # Used by planner to filter plans whose requirements aren't met.
+        self.action_requirements: dict[tuple[str, str], dict[str, int]] = {}
+
     def _ensure_concept(self, concept_id: str) -> torch.Tensor:
         if concept_id not in self.concepts:
             self.concepts[concept_id] = random_bitvector(
@@ -383,6 +389,21 @@ class VectorWorldModel:
         v_action = self._ensure_action(action)
         address = bind(v_concept, v_action)
         return self.memory.read(address)
+
+    def requirements_met(
+        self, concept_id: str, action: str, inventory: dict[str, int],
+    ) -> bool:
+        """Check if agent's inventory satisfies action requirements.
+
+        Returns True if no requirements declared or all met.
+        """
+        reqs = self.action_requirements.get((concept_id, action))
+        if not reqs:
+            return True
+        for item, min_count in reqs.items():
+            if inventory.get(item, 0) < min_count:
+                return False
+        return True
 
     def batch_predict(
         self, pairs: list[tuple[str, str]],
