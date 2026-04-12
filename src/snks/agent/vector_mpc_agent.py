@@ -488,6 +488,21 @@ def run_vector_mpc_episode(
             beam_width=beam_width, max_depth=max_depth, cache=step_cache,
         )
 
+        # Sort candidates by proximity to first target — closer first.
+        # Stable sort below keeps proximity order within equal scores.
+        def _plan_distance(plan: VectorPlan) -> int:
+            if not plan.steps:
+                return 9999  # baseline last
+            first = plan.steps[0]
+            if first.target == "self":
+                return 0
+            pos = spatial_map.find_nearest(first.target, player_pos)
+            if pos is None:
+                return 9999
+            return abs(pos[0] - player_pos[0]) + abs(pos[1] - player_pos[1])
+
+        candidates.sort(key=_plan_distance)
+
         scored: list[tuple[tuple, VectorPlan, VectorTrajectory]] = []
         for plan in candidates:
             traj = simulate_forward(model, plan, state, horizon, vitals, cache=step_cache)
