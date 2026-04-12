@@ -172,7 +172,7 @@ class CausalSDM:
     def read(self, address: torch.Tensor) -> tuple[torch.Tensor, float]:
         """Read from address. Returns (binary vector, confidence).
 
-        Confidence = mean absolute magnitude of counters (higher = more writes).
+        Confidence = per-location mean magnitude of counters (signal ≫ noise).
         """
         mask = self._get_activated_mask(address)
         n_activated = mask.sum().item()
@@ -183,10 +183,54 @@ class CausalSDM:
 
         summed = self.content[mask].sum(dim=0)
         predicted = (summed > 0).float()
-        # Per-location average: signal gives ±n_writes (~5), noise gives ±0.03
         mean_content = summed / n_activated
         confidence = min(mean_content.abs().mean().item(), 1.0)
         return predicted, confidence
+
+    def batch_read(
+        self, addresses: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Batched read for K addresses in one GPU op.
+
+        Uses hamming-via-matmul: dist(q,a) = |q| + |a| - 2·(q·a)
+
+        Args:
+            addresses: (K, dim) binary queries
+
+        Returns:
+            predictions: (K, dim) binary predictions
+            confidences: (K,) float in [0, 1]
+        """
+        addresses = addresses.to(self.device)
+        K = addresses.shape[0]
+
+        # Hamming distances via matmul: (K, N)
+        q_norm = addresses.sum(dim=1, keepdim=True)  # (K, 1)
+        a_norm = self.addresses.sum(dim=1, keepdim=True).T  # (1, N)
+        dot = addresses @ self.addresses.T  # (K, N)
+        dists = q_norm + a_norm - 2.0 * dot  # (K, N)
+
+        # Activation masks
+        masks = (dists <= self.activation_radius).float()  # (K, N)
+
+        # Batched content sum via matmul: (K, dim)
+        summed = masks @ self.content
+
+        # Predictions and confidences
+        n_activated = masks.sum(dim=1)  # (K,)
+        safe_n = n_activated.clamp(min=1.0).unsqueeze(1)  # (K, 1)
+        mean_content = summed / safe_n  # (K, dim)
+
+        predictions = (summed > 0).float()  # (K, dim)
+        confidences = mean_content.abs().mean(dim=1).clamp(max=1.0)  # (K,)
+
+        # Zero confidence where no locations activated
+        zero_mask = n_activated == 0
+        confidences = torch.where(
+            zero_mask, torch.zeros_like(confidences), confidences,
+        )
+
+        return predictions, confidences
 
     def state_dict(self) -> dict:
         """Serialize for persistence."""
@@ -339,6 +383,32 @@ class VectorWorldModel:
         v_action = self._ensure_action(action)
         address = bind(v_concept, v_action)
         return self.memory.read(address)
+
+    def batch_predict(
+        self, pairs: list[tuple[str, str]],
+    ) -> dict[tuple[str, str], tuple[torch.Tensor, float]]:
+        """Predict effects for many (concept, action) pairs in one GPU op.
+
+        Use this at the start of each planning step to precompute all
+        needed predictions. Individual predict() calls that hit the cache
+        can then be O(1) dict lookups.
+        """
+        if not pairs:
+            return {}
+
+        addresses = []
+        for concept_id, action in pairs:
+            v_concept = self._ensure_concept(concept_id)
+            v_action = self._ensure_action(action)
+            addresses.append(bind(v_concept, v_action))
+
+        addr_tensor = torch.stack(addresses)
+        predictions, confidences = self.memory.batch_read(addr_tensor)
+
+        result: dict[tuple[str, str], tuple[torch.Tensor, float]] = {}
+        for i, pair in enumerate(pairs):
+            result[pair] = (predictions[i], confidences[i].item())
+        return result
 
     def learn(self, concept_id: str, action: str,
               observed_effect: dict[str, float],
