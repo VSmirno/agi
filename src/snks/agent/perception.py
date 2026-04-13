@@ -226,9 +226,18 @@ class VisualField:
 # ---------------------------------------------------------------------------
 
 
-def _center_positions(grid_size: int) -> set[tuple[int, int]]:
-    c0 = grid_size // 2 - 1
-    return {(c0, c0), (c0, c0 + 1), (c0 + 1, c0), (c0 + 1, c0 + 1)}
+def _center_positions(H: int, W: int | None = None) -> set[tuple[int, int]]:
+    """Central 2×2 patch of the viewport grid.
+
+    For non-square grids (Crafter 7×9) H and W differ; without W we'd
+    pick a column offset based on H and miss the real centre. Kept the
+    single-arg path for backward compat with any square callers.
+    """
+    if W is None:
+        W = H
+    r0 = H // 2 - 1
+    c0 = W // 2 - 1
+    return {(r0, c0), (r0, c0 + 1), (r0 + 1, c0), (r0 + 1, c0 + 1)}
 
 
 def perceive_tile_field(
@@ -258,7 +267,7 @@ def perceive_tile_field(
 
     class_ids, confidences = encoder.classify_tiles(pixels)
     H, W = class_ids.shape
-    center_pos = _center_positions(H)
+    center_pos = _center_positions(H, W)
 
     vf = VisualField()
 

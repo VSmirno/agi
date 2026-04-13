@@ -399,6 +399,7 @@ def run_vector_mpc_episode(
     prev_body: dict[str, float] | None = None
     prev_action: str | None = None
     prev_move: str | None = None  # last move primitive — determines facing
+    prev_plan_target: str | None = None  # target concept of last executed plan step
     prev_player_pos: tuple[int, int] | None = None
     action_counts: Counter = Counter()
     steps_taken = 0
@@ -456,9 +457,17 @@ def run_vector_mpc_episode(
 
             all_deltas = {**inv_deltas, **body_deltas}
             if all_deltas:
-                # What concept was the action directed at?
-                target_concept = vf.near_concept if prev_action in ("do", "place", "make") else None
-                if target_concept and target_concept != "empty":
+                # Target concept = what the previous plan step was aimed at.
+                # `near_concept` is the tile under the player (usually grass);
+                # Crafter's `do` acts on the FACING tile, so we must use the
+                # plan's declared target instead. Example: plan=single:tree:do
+                # → prev_plan_target='tree', delta={wood:+1} → learn(tree,do,...).
+                target_concept = (
+                    prev_plan_target
+                    if prev_action in ("do", "place", "make")
+                    else None
+                )
+                if target_concept and target_concept not in ("empty", "self"):
                     surprise = model.learn(target_concept, prev_action, all_deltas)
                     total_surprise += surprise
                     n_surprise_events += 1
@@ -547,6 +556,12 @@ def run_vector_mpc_episode(
         if primitive.startswith("move_"):
             prev_move = primitive
         # else: prev_move keeps previous value (facing unchanged)
+        # Track plan target so surprise-driven learn uses the *intended* target,
+        # not near_concept (which is the player's own tile).
+        if best_plan.steps:
+            prev_plan_target = best_plan.steps[0].target
+        else:
+            prev_plan_target = None
         prev_player_pos = player_pos
 
         pixels, _reward, done, info = env.step(primitive)
@@ -559,15 +574,17 @@ def run_vector_mpc_episode(
             old_count = inv.get(item_key, 0)
             new_count = new_inv.get(item_key, 0)
             if new_count > old_count and primitive in ("do",):
-                # Gathered something — clear facing tile
+                # Gathered something — clear facing tile.
+                # Facing direction = last MOVE primitive (not prev_action,
+                # which was just set to "do" a few lines above).
                 dx, dy = 0, 0
-                if prev_action == "move_right":
+                if prev_move == "move_right":
                     dx = 1
-                elif prev_action == "move_left":
+                elif prev_move == "move_left":
                     dx = -1
-                elif prev_action == "move_down":
+                elif prev_move == "move_down":
                     dy = 1
-                elif prev_action == "move_up":
+                elif prev_move == "move_up":
                     dy = -1
                 facing_tile = (player_pos[0] + dx, player_pos[1] + dy)
                 spatial_map.update(facing_tile, "empty")
