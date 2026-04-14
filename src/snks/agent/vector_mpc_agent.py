@@ -137,7 +137,8 @@ def generate_candidate_plans(
     # Concepts that are never valid plan targets.
     # "empty" — background tile, no resource to gather.
     # "self"  — handled separately via self_actions (sleep).
-    non_targetable = {"empty", "self"}
+    # enemies — attacking doesn't yield inventory resources.
+    non_targetable = {"empty", "self", "zombie", "skeleton"}
 
     for concept_id in known:
         if concept_id in non_targetable:
@@ -207,7 +208,7 @@ def _generate_chains(
     # Start with all single-step plans that have positive effect
     beam: list[tuple[float, VectorPlan, VectorState]] = []
 
-    non_targetable = {"empty", "self"}
+    non_targetable = {"empty", "self", "zombie", "skeleton"}
     for concept_id in known_concepts:
         if concept_id in non_targetable:
             continue
@@ -247,6 +248,9 @@ def _generate_chains(
                     continue
                 for action in plan_actions:
                     if action == "make" and (concept_id, action) not in model.action_requirements:
+                        continue
+                    # Check requirements against hypothetical state after prior steps.
+                    if not model.requirements_met(concept_id, action, prev_state.inventory):
                         continue
                     effect_vec, conf = _cached_predict(cache, model, concept_id, action)
                     if conf < 0.2:
