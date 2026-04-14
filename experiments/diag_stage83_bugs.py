@@ -341,6 +341,7 @@ def diag_bug_b():
 
         # Bug 6: clear facing tile on gather
         new_inv = dict(info.get("inventory", {}))
+        inv_changed_diag = False
         for item_key in model.roles:
             if item_key.startswith("__"):
                 continue
@@ -351,7 +352,19 @@ def diag_bug_b():
                 elif prev_move == "move_down": dy = 1
                 elif prev_move == "move_up":   dy = -1
                 spatial_map.update((player_pos[0] + dx, player_pos[1] + dy), "empty")
+                inv_changed_diag = True
                 break
+
+        # Bug 6b: frustrated do — clear stale resource entries
+        if primitive == "do" and not inv_changed_diag:
+            dx, dy = 0, 0
+            if prev_move == "move_right":  dx = 1
+            elif prev_move == "move_left": dx = -1
+            elif prev_move == "move_down": dy = 1
+            elif prev_move == "move_up":   dy = -1
+            facing_tile = (player_pos[0] + dx, player_pos[1] + dy)
+            if facing_tile != player_pos:
+                spatial_map.update(facing_tile, "empty", 1.0)
 
         if done:
             final = {v: float(info.get(v, 0)) for v in vital_vars}
