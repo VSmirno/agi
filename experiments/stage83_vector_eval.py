@@ -219,15 +219,17 @@ def main():
     all_results["multi_gen"] = r3
 
     # --- Save all results ---
-    # Strip episode details for summary; cast bool to int for JSON compat
-    summary = {}
-    for k, v in all_results.items():
-        s = {}
-        for kk, vv in v.items():
-            if kk == "episodes":
-                continue
-            s[kk] = int(vv) if isinstance(vv, bool) else vv
-        summary[k] = s
+    def _json_safe(obj):
+        """Recursively convert non-JSON-serializable types."""
+        if isinstance(obj, bool):
+            return int(obj)
+        if isinstance(obj, dict):
+            return {k: _json_safe(v) for k, v in obj.items() if k != "episodes"}
+        if isinstance(obj, list):
+            return [_json_safe(i) for i in obj]
+        return obj
+
+    summary = _json_safe(all_results)
 
     result_path = output_dir / "stage83_eval_results.json"
     with open(result_path, "w") as f:
