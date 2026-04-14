@@ -576,8 +576,8 @@ def run_vector_mpc_episode(
         scored.sort(key=lambda x: x[0], reverse=True)
         best_score, best_plan, best_traj = scored[0]
 
-        # --- DEBUG: log top-3 scores when sleep wins ---
-        if verbose and best_plan.origin.startswith("self:sleep"):
+        # --- DEBUG: log top-5 scores every 20 steps ---
+        if verbose and step % 20 == 0:
             for rank, (sc, pl, _) in enumerate(scored[:5]):
                 print(f"  [DBG] rank{rank} score={sc} plan={pl.origin[:40]}")
 
