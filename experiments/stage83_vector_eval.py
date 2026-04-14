@@ -157,9 +157,9 @@ def run_eval(
 
     # --- Gate checks ---
     gates = {
-        "survival_ge_155": avg_len >= 155,
-        "wood_ge3_10pct": wood_ge3_pct >= 0.10,
-        "entropy_not_collapsed": avg_entropy > 0.5,
+        "survival_ge_155": bool(avg_len >= 155),
+        "wood_ge3_10pct": bool(wood_ge3_pct >= 0.10),
+        "entropy_not_collapsed": bool(avg_entropy > 0.5),
     }
     summary["gates"] = gates
     print(f"\n[{label}] === SUMMARY ===")
@@ -221,8 +221,15 @@ def main():
     # --- Save all results ---
     def _json_safe(obj):
         """Recursively convert non-JSON-serializable types."""
+        import numpy as np
         if isinstance(obj, bool):
             return int(obj)
+        if isinstance(obj, np.bool_):
+            return int(obj)
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
         if isinstance(obj, dict):
             return {k: _json_safe(v) for k, v in obj.items() if k != "episodes"}
         if isinstance(obj, list):

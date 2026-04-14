@@ -570,16 +570,16 @@ def run_vector_mpc_episode(
             # Inserted after survived so any reachable plan beats a speculative one,
             # regardless of predicted gain (fixes chain:iron:do gain=3 > tree:do gain=1).
             known = 1 if dist < 9999 else 0
-            score = (sim_score[0], known) + sim_score[1:]
+            # For self-actions (sleep, etc.), zero out inventory gain — any positive
+            # total_gain is SDM noise from dense experience hitting spurious addresses,
+            # not a real predicted effect. Only homeostatic/survival score matters.
+            is_self_action = bool(plan.steps and all(s.target == "self" for s in plan.steps))
+            gain = 0 if is_self_action else sim_score[1]
+            score = (sim_score[0], known, gain) + sim_score[2:]
             scored.append((score, plan, traj))
 
         scored.sort(key=lambda x: x[0], reverse=True)
         best_score, best_plan, best_traj = scored[0]
-
-        # --- DEBUG: log top-5 scores every 20 steps ---
-        if verbose and step % 20 == 0:
-            for rank, (sc, pl, _) in enumerate(scored[:5]):
-                print(f"  [DBG] rank{rank} score={sc} plan={pl.origin[:40]}")
 
         # --- Execute first primitive ---
         if best_plan.steps:
