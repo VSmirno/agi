@@ -322,6 +322,7 @@ def expand_to_primitive(
     model: VectorWorldModel,
     rng: np.random.RandomState,
     last_action: str | None = None,
+    near_concept: str | None = None,
 ) -> str:
     """Expand a plan step to a single env primitive.
 
@@ -336,6 +337,11 @@ def expand_to_primitive(
     target_pos = spatial_map.find_nearest(plan_step.target, player_pos)
 
     if target_pos is None and plan_step.action not in ("sleep",):
+        # near_concept == target: resource is at the player's center tile —
+        # find_nearest skipped it (Bug 5 guard for stale perception entries).
+        # The player is physically adjacent; execute the action directly.
+        if near_concept is not None and near_concept == plan_step.target and plan_step.action == "do":
+            return "do"
         # Target not in spatial map — explore
         move_actions = [a for a in model.actions if a.startswith("move_")]
         return str(rng.choice(move_actions)) if move_actions else "move_right"
@@ -586,6 +592,7 @@ def run_vector_mpc_episode(
             primitive = expand_to_primitive(
                 best_plan.steps[0], player_pos, spatial_map, model, rng,
                 last_action=prev_move,  # facing = last move, not last action
+                near_concept=vf.near_concept,
             )
         else:
             move_actions = [a for a in model.actions if a.startswith("move_")]
