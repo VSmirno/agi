@@ -162,8 +162,17 @@ def generate_candidate_plans(
                     origin=f"single:{concept_id}:{action}",
                 ))
 
-    # Self-actions as standalone plans (no target concept)
+    # Self-actions as standalone plans (no target concept).
+    # Apply the same confidence + positive-effect gate as other actions:
+    # if the model hasn't learned a useful effect for sleep, it should
+    # not compete against exploration (baseline → random move).
     for action in self_actions:
+        eff_vec, conf = model.predict("self", action)
+        if conf < 0.2:
+            continue
+        decoded = model.decode_effect(eff_vec)
+        if not _has_positive_effect(decoded, state):
+            continue
         candidates.append(VectorPlan(
             steps=[VectorPlanStep(action=action, target="self")],
             origin=f"self:{action}",
