@@ -214,7 +214,7 @@ def main():
         n_episodes=20,
         label="multi_gen",
         experience_path=exp_path,
-        seed=2042,
+        seed=1042,  # same seed as seed_experience for fair map comparison
     )
     all_results["multi_gen"] = r3
 
