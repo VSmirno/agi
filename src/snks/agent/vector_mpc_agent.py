@@ -128,7 +128,7 @@ def generate_candidate_plans(
 
     # Single-step plans: try each concept × target-action
     action_ids = list(model.actions.keys())
-    target_actions = [a for a in action_ids if a in ("do", "make", "place")]
+    target_actions = [a for a in action_ids if a in ("do", "make")]
     self_actions = [a for a in action_ids if a in ("sleep",)]
 
     if cache is None:
@@ -233,6 +233,8 @@ def _generate_chains(
         next_beam: list[tuple[float, VectorPlan, VectorState]] = []
         for prev_gain, prev_plan, prev_state in beam:
             for concept_id in known_concepts:
+                if concept_id in non_targetable:
+                    continue
                 for action in plan_actions:
                     effect_vec, conf = _cached_predict(cache, model, concept_id, action)
                     if conf < 0.2:
