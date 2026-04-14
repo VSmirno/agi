@@ -143,6 +143,11 @@ def generate_candidate_plans(
         if concept_id in non_targetable:
             continue
         for action in target_actions:
+            # For "make": only allow concepts that have a textbook requirement entry.
+            # Blocks spurious SDM associations (diamond:make, coal:make, etc.)
+            # that were never declared in the textbook.
+            if action == "make" and (concept_id, action) not in model.action_requirements:
+                continue
             # Requirement check — facts from textbook (category 1)
             if not model.requirements_met(concept_id, action, state.inventory):
                 continue
@@ -207,6 +212,8 @@ def _generate_chains(
         if concept_id in non_targetable:
             continue
         for action in plan_actions:
+            if action == "make" and (concept_id, action) not in model.action_requirements:
+                continue
             # Note: chain requirements check uses hypothetical state after
             # previous steps' predicted effects — may differ from real inv
             effect_vec, conf = _cached_predict(cache, model, concept_id, action)
@@ -236,6 +243,8 @@ def _generate_chains(
                 if concept_id in non_targetable:
                     continue
                 for action in plan_actions:
+                    if action == "make" and (concept_id, action) not in model.action_requirements:
+                        continue
                     effect_vec, conf = _cached_predict(cache, model, concept_id, action)
                     if conf < 0.2:
                         continue

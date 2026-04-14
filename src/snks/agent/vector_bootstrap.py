@@ -85,12 +85,20 @@ def load_from_textbook(model: "VectorWorldModel", yaml_path: str | Path) -> dict
         if not effect:
             continue
 
-        # Load requirements as facts (not into SDM — category 1 lookup)
+        # Load requirements as facts (not into SDM — category 1 lookup).
+        # Register under both (target/result, action) AND (near, action) so that
+        # requirements_met works whether the plan uses the result or the near-concept
+        # as its target (SDM associations are keyed by near_concept, not result).
         reqs = rule.get("requires", {})
         if reqs:
-            model.action_requirements[(target, action)] = {
-                k: int(v) for k, v in reqs.items()
-            }
+            req_dict = {k: int(v) for k, v in reqs.items()}
+            model.action_requirements[(target, action)] = req_dict
+            near = rule.get("near")
+            if near:
+                # Keep minimum requirements across all make rules at the same near-concept.
+                existing = model.action_requirements.get((near, action), {})
+                merged = {k: min(existing.get(k, v), v) for k, v in req_dict.items()}
+                model.action_requirements[(near, action)] = merged
 
         # Write seed association multiple times for confidence
         model._ensure_concept(target)
