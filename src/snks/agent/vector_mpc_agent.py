@@ -134,7 +134,14 @@ def generate_candidate_plans(
     if cache is None:
         cache = build_prediction_cache(model, known, target_actions)
 
+    # Concepts that are never valid plan targets.
+    # "empty" — background tile, no resource to gather.
+    # "self"  — handled separately via self_actions (sleep).
+    non_targetable = {"empty", "self"}
+
     for concept_id in known:
+        if concept_id in non_targetable:
+            continue
         for action in target_actions:
             # Requirement check — facts from textbook (category 1)
             if not model.requirements_met(concept_id, action, state.inventory):
@@ -195,7 +202,10 @@ def _generate_chains(
     # Start with all single-step plans that have positive effect
     beam: list[tuple[float, VectorPlan, VectorState]] = []
 
+    non_targetable = {"empty", "self"}
     for concept_id in known_concepts:
+        if concept_id in non_targetable:
+            continue
         for action in plan_actions:
             # Note: chain requirements check uses hypothetical state after
             # previous steps' predicted effects — may differ from real inv
