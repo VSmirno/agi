@@ -689,12 +689,23 @@ def _update_spatial_map(
     player_pos: tuple[int, int],
 ) -> None:
     """Write viewport detections into spatial_map with confidence."""
+    # Only naturally-occurring world objects go into spatial_map.
+    # Placed/crafted items (table) are never spawned by the world and
+    # should not appear from segmenter false-positives.
+    _NATURAL_CONCEPTS = {
+        "tree", "stone", "coal", "iron", "diamond",
+        "water", "cow", "zombie", "skeleton", "empty",
+    }
+
     px, py = int(player_pos[0]), int(player_pos[1])
     center_row, center_col = 3, 4  # 7×9 viewport
 
-    spatial_map.update((px, py), vf.near_concept, vf.near_similarity)
+    if vf.near_concept in _NATURAL_CONCEPTS:
+        spatial_map.update((px, py), vf.near_concept, vf.near_similarity)
 
     for cid, conf, gy, gx in vf.detections:
+        if cid not in _NATURAL_CONCEPTS:
+            continue
         wx = px + (gx - center_col)
         wy = py + (gy - (center_row - 1))
         spatial_map.update((wx, wy), cid, conf)
