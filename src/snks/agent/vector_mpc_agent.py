@@ -544,7 +544,10 @@ def run_vector_mpc_episode(
         # Stable sort below keeps proximity order within equal scores.
         def _plan_distance(plan: VectorPlan) -> int:
             if not plan.steps:
-                return 9999  # baseline last
+                # Baseline plan = exploration (random move). Always "reachable"
+                # so known=1. -steps=0 beats sleep (-steps=-1) when both have
+                # total_gain=0 — agent explores rather than sleeps uselessly.
+                return 0
             # All steps must have known targets — if any step's target is not in
             # spatial_map, the whole plan is unreachable (known=0 in scoring).
             max_dist = 0
