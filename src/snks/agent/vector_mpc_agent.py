@@ -214,6 +214,9 @@ def _generate_chains(
         for action in plan_actions:
             if action == "make" and (concept_id, action) not in model.action_requirements:
                 continue
+            # First step: check requirements against actual inventory.
+            if not model.requirements_met(concept_id, action, state.inventory):
+                continue
             # Note: chain requirements check uses hypothetical state after
             # previous steps' predicted effects — may differ from real inv
             effect_vec, conf = _cached_predict(cache, model, concept_id, action)
