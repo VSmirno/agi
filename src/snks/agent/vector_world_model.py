@@ -500,7 +500,17 @@ class VectorWorldModel:
         }, path)
 
     def load(self, path: str | Path) -> bool:
-        """Load and merge experience from a previous generation.
+        """Load experience from a previous generation (warm-start transfer).
+
+        Replaces all vectors and SDM address space with those from the saved
+        model so that query addresses remain consistent with stored content.
+        Gen2 starts as a copy of gen1's knowledge and then continues learning
+        in the same vector space.
+
+        Bug A fix: the old approach bundle-merged concept vectors while keeping
+        the new model's action vectors unchanged, producing query addresses
+        (bind(merged_concept, new_action)) that miss all stored locations
+        → confidence=0 on everything → plan=baseline.
 
         Returns False if file doesn't exist.
         """
@@ -512,24 +522,17 @@ class VectorWorldModel:
         if data["dim"] != self.dim:
             raise ValueError(f"Dimension mismatch: {data['dim']} vs {self.dim}")
 
-        # Merge concepts: bundle existing with loaded (50/50)
-        for cid, vec in data["concepts"].items():
-            vec_dev = vec.to(self.device)
-            if cid in self.concepts:
-                self.concepts[cid] = bundle(
-                    [self.concepts[cid], vec_dev], weights=[0.5, 0.5],
-                )
-            else:
-                self.concepts[cid] = vec_dev
+        # Replace all vectors with loaded ones — address space must be consistent
+        # across concept, action, and SDM to produce matching query addresses.
+        self.concepts = {k: v.to(self.device) for k, v in data["concepts"].items()}
+        self.actions  = {k: v.to(self.device) for k, v in data["actions"].items()}
+        self.roles    = {k: v.to(self.device) for k, v in data["roles"].items()}
 
-        # Merge actions/roles: loaded takes precedence if not present
-        for aid, vec in data["actions"].items():
-            if aid not in self.actions:
-                self.actions[aid] = vec.to(self.device)
-        for rid, vec in data["roles"].items():
-            if rid not in self.roles:
-                self.roles[rid] = vec.to(self.device)
-
-        # Merge SDM additively
-        self.memory.load_state_dict(data["memory"])
+        # Load SDM: replace addresses (same address space as loaded vectors),
+        # replace content (start from gen1's knowledge, not an empty slate).
+        mem = data["memory"]
+        self.memory.addresses = mem["addresses"].to(self.device)
+        self.memory.activation_radius = mem["activation_radius"]
+        self.memory.content = mem["content"].to(self.device).clone()
+        self.memory.n_writes = mem["n_writes"]
         return True

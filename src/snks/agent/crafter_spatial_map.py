@@ -75,6 +75,14 @@ class CrafterSpatialMap:
                 # Same label — reinforce via EMA + increment count
                 new_conf = 0.7 * old_conf + 0.3 * confidence
                 self._map[key] = (near_str, new_conf, old_count + 1)
+            elif near_str == "empty" and confidence > 0.5:
+                # Bug B fix: "empty" always wins over stale resource labels.
+                # Resources (tree, stone, coal…) are consumable — once gone
+                # they don't come back within an episode. An empty observation
+                # with reasonable confidence should clear the old entry even
+                # if the initial resource observation had higher confidence
+                # (e.g. written via near_concept conf≈1.0).
+                self._map[key] = (near_str, confidence, 1)
             elif confidence > old_conf:
                 # Different label, higher confidence — replace
                 self._map[key] = (near_str, confidence, 1)
