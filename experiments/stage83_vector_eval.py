@@ -219,10 +219,14 @@ def main():
     all_results["multi_gen"] = r3
 
     # --- Save all results ---
-    # Strip episode details for summary
+    # Strip episode details for summary; cast bool to int for JSON compat
     summary = {}
     for k, v in all_results.items():
-        s = {kk: vv for kk, vv in v.items() if kk != "episodes"}
+        s = {}
+        for kk, vv in v.items():
+            if kk == "episodes":
+                continue
+            s[kk] = int(vv) if isinstance(vv, bool) else vv
         summary[k] = s
 
     result_path = output_dir / "stage83_eval_results.json"

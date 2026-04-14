@@ -542,6 +542,11 @@ def run_vector_mpc_episode(
             for step in plan.steps:
                 if step.target == "self":
                     continue
+                # near_concept == target means the resource is immediately adjacent
+                # to the player. find_nearest skips player_pos (Bug 5 guard), so
+                # it would return None for center-tile resources — treat as dist=0.
+                if step.target == vf.near_concept:
+                    continue
                 pos = spatial_map.find_nearest(step.target, player_pos)
                 if pos is None:
                     return 9999
