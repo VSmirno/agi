@@ -533,7 +533,13 @@ def run_vector_mpc_episode(
         scored: list[tuple[tuple, VectorPlan, VectorTrajectory]] = []
         for plan in candidates:
             traj = simulate_forward(model, plan, state, horizon, vitals, cache=step_cache)
-            score = score_trajectory(traj, vitals)
+            sim_score = score_trajectory(traj, vitals)
+            dist = _plan_distance(plan)
+            # known=1 if target exists in spatial_map, 0 otherwise.
+            # Inserted after survived so any reachable plan beats a speculative one,
+            # regardless of predicted gain (fixes chain:iron:do gain=3 > tree:do gain=1).
+            known = 1 if dist < 9999 else 0
+            score = (sim_score[0], known) + sim_score[1:]
             scored.append((score, plan, traj))
 
         scored.sort(key=lambda x: x[0], reverse=True)
