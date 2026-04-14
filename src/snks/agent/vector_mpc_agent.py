@@ -536,13 +536,17 @@ def run_vector_mpc_episode(
         def _plan_distance(plan: VectorPlan) -> int:
             if not plan.steps:
                 return 9999  # baseline last
-            first = plan.steps[0]
-            if first.target == "self":
-                return 0
-            pos = spatial_map.find_nearest(first.target, player_pos)
-            if pos is None:
-                return 9999
-            return abs(pos[0] - player_pos[0]) + abs(pos[1] - player_pos[1])
+            # All steps must have known targets — if any step's target is not in
+            # spatial_map, the whole plan is unreachable (known=0 in scoring).
+            max_dist = 0
+            for step in plan.steps:
+                if step.target == "self":
+                    continue
+                pos = spatial_map.find_nearest(step.target, player_pos)
+                if pos is None:
+                    return 9999
+                max_dist = max(max_dist, abs(pos[0] - player_pos[0]) + abs(pos[1] - player_pos[1]))
+            return max_dist
 
         candidates.sort(key=_plan_distance)
 
