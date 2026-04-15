@@ -174,6 +174,12 @@ class VectorTrajectory:
             and self.states[-1].inventory.get(item, 0) > 0
         )
 
+    def avg_surprise(self) -> float:
+        """Average prediction surprise (1 - avg_confidence). 0 if no confidences."""
+        if not self.confidences:
+            return 0.0
+        return 1.0 - sum(self.confidences) / len(self.confidences)
+
 
 # ---------------------------------------------------------------------------
 # simulate_forward
