@@ -17,6 +17,7 @@ import torch
 if TYPE_CHECKING:
     from snks.agent.crafter_spatial_map import CrafterSpatialMap
     from snks.agent.vector_world_model import VectorWorldModel
+    from snks.agent.stimuli import StimuliLayer
 
 
 # ---------------------------------------------------------------------------
@@ -205,23 +206,25 @@ def simulate_forward(
 
 def score_trajectory(
     trajectory: VectorTrajectory,
-    vital_vars: list[str] | None = None,
+    stimuli: "StimuliLayer | None" = None,
 ) -> tuple:
-    """Score trajectory with lex-tuple: (survived, total_gain, min_vital, -steps).
+    """Score trajectory: 3-tuple (base_score, total_gain, -steps).
 
-    total_gain replaces binary has_gain — longer chains with more
-    cumulative inventory gain score higher.
+    When stimuli is provided: base_score = StimuliLayer.evaluate(trajectory).
+    When stimuli is None: base_score = survived (0 or 1) for backward compat
+    with tests that compare alive > dead trajectories.
+
+    total_gain: cumulative positive inventory deltas — longer chains beat
+    short greedy gathers.
+
+    Stage 85 adds CuriosityStimulus to StimuliLayer — no changes here.
     """
-    vitals = vital_vars or ["health", "food", "drink", "energy"]
-    final = trajectory.final_state
-
-    survived = 0 if trajectory.terminated else 1
     total_gain = trajectory.total_inventory_gain()
-
-    if final:
-        min_vital = min(final.body.get(v, 0.0) for v in vitals)
-    else:
-        min_vital = 0.0
-
     steps = len(trajectory.states) - 1  # exclude initial state
-    return (survived, total_gain, min_vital, -steps)
+
+    if stimuli is not None:
+        base = stimuli.evaluate(trajectory)
+    else:
+        base = 0 if trajectory.terminated else 1
+
+    return (base, total_gain, -steps)

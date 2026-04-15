@@ -28,6 +28,7 @@ from snks.agent.perception import (
     perceive_tile_field,
 )
 from snks.agent.vector_world_model import VectorWorldModel, bind, hamming_similarity
+from snks.agent.stimuli import HomeostasisStimulus, StimuliLayer, SurvivalAversion
 from snks.agent.vector_sim import (
     VectorState,
     VectorPlan,
@@ -409,6 +410,7 @@ def run_vector_mpc_episode(
     beam_width: int = 5,
     max_depth: int = 3,
     vital_vars: list[str] | None = None,
+    stimuli: StimuliLayer | None = None,
     verbose: bool = False,
 ) -> dict:
     """Run one episode with vector MPC planning.
@@ -423,6 +425,8 @@ def run_vector_mpc_episode(
     if rng is None:
         rng = np.random.RandomState()
     vitals = vital_vars or ["health", "food", "drink", "energy"]
+    if stimuli is None:
+        stimuli = StimuliLayer([SurvivalAversion(), HomeostasisStimulus(vitals)])
 
     entity_tracker = DynamicEntityTracker()
     # Register known dynamic concepts
@@ -446,8 +450,10 @@ def run_vector_mpc_episode(
 
     for step in range(max_steps):
         steps_taken = step + 1
-        inv = dict(info.get("inventory", {}))
-        body = {v: float(info.get(v, 9.0)) for v in vitals}
+        raw_inv = dict(info.get("inventory", {}))
+        _vital_set = {"health", "food", "drink", "energy"}
+        body = {v: float(raw_inv.get(v, 9.0)) for v in vitals}
+        inv = {k: v for k, v in raw_inv.items() if k not in _vital_set}
         player_pos = tuple(info.get("player_pos", (32, 32)))
 
         # --- Blocked movement detection ---
@@ -570,10 +576,10 @@ def run_vector_mpc_episode(
         scored: list[tuple[tuple, VectorPlan, VectorTrajectory]] = []
         for plan in candidates:
             traj = simulate_forward(model, plan, state, horizon, vitals, cache=step_cache)
-            sim_score = score_trajectory(traj, vitals)
+            sim_score = score_trajectory(traj, stimuli=stimuli)
             dist = _plan_distance(plan)
             # known=1 if target exists in spatial_map, 0 otherwise.
-            # Inserted after survived so any reachable plan beats a speculative one,
+            # Inserted after stimuli_score so any reachable plan beats a speculative one,
             # regardless of predicted gain (fixes chain:iron:do gain=3 > tree:do gain=1).
             known = 1 if dist < 9999 else 0
             # For self-actions (sleep, etc.), zero out inventory gain — any positive
@@ -581,7 +587,8 @@ def run_vector_mpc_episode(
             # not a real predicted effect. Only homeostatic/survival score matters.
             is_self_action = bool(plan.steps and all(s.target == "self" for s in plan.steps))
             gain = 0 if is_self_action else sim_score[1]
-            score = (sim_score[0], known, gain) + sim_score[2:]
+            # sim_score = (stimuli_score, total_gain, -steps) — 3-tuple
+            score = (sim_score[0], known, gain, sim_score[2])
             scored.append((score, plan, traj))
 
         scored.sort(key=lambda x: x[0], reverse=True)
@@ -674,8 +681,9 @@ def run_vector_mpc_episode(
                 spatial_map.update(facing_tile, "empty", 1.0)
 
         if done:
-            body_at_end = {v: float(info.get(v, 0)) for v in vitals}
-            if any(body_at_end.get(v, 0) <= 0 for v in vitals):
+            raw_inv_end = dict(info.get("inventory", {}))
+            body_at_end = {v: float(raw_inv_end.get(v, 0.0)) for v in vitals}
+            if any(body_at_end.get(v, 0.0) <= 0 for v in vitals):
                 cause_of_death = "health"
             else:
                 cause_of_death = "done"

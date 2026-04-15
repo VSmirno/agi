@@ -118,15 +118,20 @@ class TestSimulateForward:
 
 class TestScoreTrajectory:
     def test_survived_beats_dead(self, model, base_state):
+        from snks.agent.stimuli import HomeostasisStimulus, StimuliLayer, SurvivalAversion
+
         alive_plan = VectorPlan(steps=[])
-        dead_state = base_state.apply_effect({"health": -10})
+        dead_state = base_state.apply_effect({"health": -10})  # health → 0.0
 
         alive_traj = simulate_forward(model, alive_plan, base_state)
         dead_traj = simulate_forward(model, alive_plan, dead_state,
                                      vital_vars=["health"])
 
-        s_alive = score_trajectory(alive_traj)
-        s_dead = score_trajectory(dead_traj)
+        # Use StimuliLayer — HomeostasisStimulus sees health=0 in dead_state.
+        # (stimuli=None path: empty plan → terminated=False for both → same survived score)
+        stimuli = StimuliLayer([SurvivalAversion(), HomeostasisStimulus(["health"])])
+        s_alive = score_trajectory(alive_traj, stimuli=stimuli)
+        s_dead = score_trajectory(dead_traj, stimuli=stimuli)
         assert s_alive > s_dead
 
     def test_higher_gain_beats_lower(self, model, base_state):
