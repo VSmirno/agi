@@ -40,6 +40,13 @@ class Goal:
         elif self.id == "explore":
             if not trajectory.confidences:
                 return 0.0
+            # Self-action-only trajectories (sleep) are not exploration.
+            # Sleeping in place when goal=explore gives false surprise from
+            # textbook prior confidence (0.5), which would beat baseline (0.0).
+            if trajectory.plan.steps and all(
+                s.target == "self" for s in trajectory.plan.steps
+            ):
+                return 0.0
             return 1.0 - sum(trajectory.confidences) / len(trajectory.confidences)
         return 0.0
 
