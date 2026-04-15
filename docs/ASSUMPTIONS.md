@@ -4,6 +4,18 @@
 
 ---
 
+## Stage 84 — Real Stimuli Infrastructure (2026-04-15)
+**Что сделано:** Vital fix (body читается из `info["inventory"]`, не из top-level `info`) + StimuliLayer (Category 4): SurvivalAversion + HomeostasisStimulus вынесены из `score_trajectory`.
+**Результаты (20 эп, minipc):** avg_survival=178.9, wood=0%, sleep%=0%. Gates: 2/3 (survival ✓, sleep_not_stuck ✓, wood ✗).
+**Допущения/ограничения:**
+- **Wood=0** — плановая стена, не регрессия. Агент не собирает дерево из-за отсутствия curiosity сигнала. `total_gain` знает про wood (Crafter-специфично), но плановщик не генерирует цепочки gather → craft. Stage 85 scope.
+- **sleep%=0%** — sleep не выбирается потому что реальные витали почти всегда полные в начале эпизода (пассивный decay не учтён в симуляции). Это ожидаемо и правильно.
+- **Passive body decay не в симуляции.** `simulate_forward` не применяет ambient decay (еда/питьё падают ~1/step). Агент не предсказывает "через 5 шагов food=2". Stage 85 может адресовать через CuriosityStimulus.
+- **HomeostaticTracker** получает `inv` без body-переменных (фикс Stage 84). Один-эпизод transient в `observed_rates` при первом запуске после апгрейда — безвреден.
+- **score_trajectory 4-tuple → 3-tuple.** Все callers обновлены. `diag_stage83` файлы архивированы.
+
+---
+
 ## Stage 44 — Foundation Audit
 **Что сделано:** Аудит DAF-ядра, выявление ограничений FHN-осцилляторов.
 **Допущения/ограничения:**

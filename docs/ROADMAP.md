@@ -12,25 +12,18 @@
 
 ## Текущая позиция
 
-**Stage 83 — VectorWorldModel (в процессе)**
+**Stage 84 — COMPLETE (2026-04-15, partial PASS)**
 
-Первый stage с полноценной векторной мировой моделью (HDC + CausalSDM).
-Агент планирует через forward simulation, учится из сюрприза.
-
-Открытые баги:
-- sleep выигрывает при полных виталах (scoring bug)
-- near=tree → move вместо do (execution bug)  
-- knowledge flow падает gen1→gen2→gen3 (вместо роста)
-- JSON numpy.bool_ serialization
-
-Gate Stage 83: `survival≥155`, `wood≥3 в 10% eps`, `gen2 avg_len > gen1`.
+avg_survival=178.9 (+16 vs Stage 82), wood=0%, sleep%=0%. Gates: 2/3.
+Vital fix + StimuliLayer реализованы. Wood стена → Stage 85.
 
 ---
 
 ## Roadmap
 
-### Stage 84 — Real Stimuli Infrastructure
+### Stage 84 — Real Stimuli Infrastructure ✓ COMPLETE
 
+**Результат:** avg_survival=178.9, gates 2/3 (survival ✓, sleep ✓, wood ✗ pre-existing).
 **Идеологический долг:** Категория 4 (Stimuli). `score_trajectory` захардкожен
 в mechanism layer. `state.body` всегда 9.0 — реальные виталы не доходят до планировщика.
 
