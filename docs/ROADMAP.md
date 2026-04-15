@@ -12,10 +12,10 @@
 
 ## Текущая позиция
 
-**Stage 84 — COMPLETE (2026-04-15, partial PASS)**
+**Stage 85 — COMPLETE (2026-04-15, PASS)**
 
-avg_survival=178.9 (+16 vs Stage 82), wood=0%, sleep%=0%. Gates: 2/3.
-Vital fix + StimuliLayer реализованы. Wood стена → Stage 85.
+avg_survival=197.0, wood_ge3_pct=10%, no_total_gain=✓. Gates: 3/3.
+GoalSelector + proactive crafting реализованы. total_gain убран. Next: Stage 86.
 
 ---
 
@@ -50,7 +50,14 @@ Vital fix + StimuliLayer реализованы. Wood стена → Stage 85.
 
 ---
 
-### Stage 85 — Curiosity as Primary Driver
+### Stage 85 — Goal Selector Design ✓ COMPLETE
+
+**Результат (2026-04-15):** avg_survival=197.0, wood_ge3_pct=10%, no_total_gain=✓. Gates: 3/3 PASS.
+**Что сделано:** GoalSelector (textbook-derived threats), Goal.progress() (vital_delta/inventory_delta/item_gained/explore), proactive crafting chain (wood chain_cost threshold), confidences в VectorTrajectory, total_gain убран из score_trajectory.
+
+---
+
+### Stage 85 — Curiosity as Primary Driver (АРХИВ — заменён Goal Selector)
 
 **Идеологический долг:** Категория 4, информационный стимул.
 `total_gain` знает про wood — это Crafter-специфично. Должен быть
