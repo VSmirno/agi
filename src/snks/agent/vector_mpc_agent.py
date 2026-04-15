@@ -411,6 +411,7 @@ def run_vector_mpc_episode(
     max_depth: int = 3,
     vital_vars: list[str] | None = None,
     stimuli: StimuliLayer | None = None,
+    textbook: "Any | None" = None,
     verbose: bool = False,
 ) -> dict:
     """Run one episode with vector MPC planning.
@@ -427,6 +428,9 @@ def run_vector_mpc_episode(
     vitals = vital_vars or ["health", "food", "drink", "energy"]
     if stimuli is None:
         stimuli = StimuliLayer([SurvivalAversion(), HomeostasisStimulus(vitals)])
+
+    from snks.agent.goal_selector import Goal, GoalSelector
+    goal_selector = GoalSelector(textbook) if textbook is not None else None
 
     entity_tracker = DynamicEntityTracker()
     # Register known dynamic concepts
@@ -573,22 +577,21 @@ def run_vector_mpc_episode(
 
         candidates.sort(key=_plan_distance)
 
+        # Current goal for this step (pure function of current state)
+        current_goal = goal_selector.select(state) if goal_selector else Goal("explore")
+
         scored: list[tuple[tuple, VectorPlan, VectorTrajectory]] = []
         for plan in candidates:
             traj = simulate_forward(model, plan, state, horizon, vitals, cache=step_cache)
-            sim_score = score_trajectory(traj, stimuli=stimuli)
+            sim_score = score_trajectory(traj, stimuli=stimuli, goal=current_goal)
             dist = _plan_distance(plan)
             # known=1 if target exists in spatial_map, 0 otherwise.
-            # Inserted after stimuli_score so any reachable plan beats a speculative one,
-            # regardless of predicted gain (fixes chain:iron:do gain=3 > tree:do gain=1).
+            # Inserted after goal_prog so any reachable plan beats a speculative one.
             known = 1 if dist < 9999 else 0
-            # For self-actions (sleep, etc.), zero out inventory gain — any positive
-            # total_gain is SDM noise from dense experience hitting spurious addresses,
-            # not a real predicted effect. Only homeostatic/survival score matters.
-            is_self_action = bool(plan.steps and all(s.target == "self" for s in plan.steps))
-            gain = 0 if is_self_action else sim_score[1]
-            # sim_score = (stimuli_score, total_gain, -steps) — 3-tuple
-            score = (sim_score[0], known, gain, sim_score[2])
+            # sim_score = (base_score, goal_prog, -steps) — 3-tuple
+            # goal_prog is self-normalizing: sleep with goal=sleep → vital_delta>0,
+            # sleep with goal=fight_zombie → vital_delta≈0. No suppression needed.
+            score = (sim_score[0], sim_score[1], known, sim_score[2])
             scored.append((score, plan, traj))
 
         scored.sort(key=lambda x: x[0], reverse=True)

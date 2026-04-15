@@ -336,6 +336,10 @@ class CrafterTextbook:
         sem = self.data.get("env_semantics", {}) or {}
         return sem if isinstance(sem, dict) else {}
 
+    @property
+    def goals_block(self) -> dict:
+        return self.data.get("goals", {})
+
     def load_into(self, store: ConceptStore) -> int:
         """Parse vocabulary and rules, register into ConceptStore.
 

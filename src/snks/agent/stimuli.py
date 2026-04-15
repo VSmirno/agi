@@ -62,6 +62,23 @@ class HomeostasisStimulus(Stimulus):
 
 
 @dataclass
+class CuriosityStimulus(Stimulus):
+    """Defined for Stage 87 (death-relevant curiosity weighting). Unused in Stage 85.
+
+    Scores trajectory by average prediction surprise — low confidence predictions
+    indicate unexplored state space, which is intrinsically rewarding.
+    Not wired into StimuliLayer default; curiosity is handled via Goal("explore").progress().
+    """
+    weight: float = 0.1
+
+    def evaluate(self, trajectory: "VectorTrajectory") -> float:
+        if not trajectory.confidences:
+            return 0.0
+        avg_surprise = 1.0 - sum(trajectory.confidences) / len(trajectory.confidences)
+        return self.weight * avg_surprise
+
+
+@dataclass
 class StimuliLayer:
     """Aggregates multiple stimuli into a single score.
 
