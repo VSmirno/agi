@@ -9,11 +9,9 @@ Design: docs/superpowers/specs/2026-04-15-stage86-post-mortem-learning-design.md
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
 
-if TYPE_CHECKING:
-    from snks.agent.stimuli import StimuliLayer
+from snks.agent.stimuli import HomeostasisStimulus, StimuliLayer, SurvivalAversion
 
 
 @dataclass
@@ -103,28 +101,26 @@ class PostMortemLearner:
             return
 
         if "starvation" in attribution:
-            self.food_threshold = self._clamp_threshold(
-                self.food_threshold + self.lr * attribution["starvation"]
+            self.food_threshold = self._clamp(
+                self.food_threshold + self.lr * attribution["starvation"],
+                _THRESHOLD_MIN, _THRESHOLD_MAX,
             )
         if "dehydration" in attribution:
-            self.drink_threshold = self._clamp_threshold(
-                self.drink_threshold + self.lr * attribution["dehydration"]
+            self.drink_threshold = self._clamp(
+                self.drink_threshold + self.lr * attribution["dehydration"],
+                _THRESHOLD_MIN, _THRESHOLD_MAX,
             )
         entity_share = sum(
             v for k, v in attribution.items() if k in ("zombie", "skeleton")
         )
         if entity_share > 0:
-            self.health_weight = self._clamp_weight(
-                self.health_weight + self.lr * entity_share
+            self.health_weight = self._clamp(
+                self.health_weight + self.lr * entity_share,
+                _WEIGHT_MIN, _WEIGHT_MAX,
             )
 
-    def build_stimuli(self, vital_vars: list[str]) -> "StimuliLayer":
+    def build_stimuli(self, vital_vars: list[str]) -> StimuliLayer:
         """Create a new StimuliLayer with current parameters."""
-        from snks.agent.stimuli import (
-            HomeostasisStimulus,
-            StimuliLayer,
-            SurvivalAversion,
-        )
         return StimuliLayer([
             SurvivalAversion(),
             HomeostasisStimulus(
@@ -137,11 +133,9 @@ class PostMortemLearner:
             ),
         ])
 
-    def _clamp_threshold(self, v: float) -> float:
-        return max(_THRESHOLD_MIN, min(_THRESHOLD_MAX, v))
-
-    def _clamp_weight(self, v: float) -> float:
-        return max(_WEIGHT_MIN, min(_WEIGHT_MAX, v))
+    @staticmethod
+    def _clamp(v: float, lo: float, hi: float) -> float:
+        return max(lo, min(hi, v))
 
 
 def dominant_cause(attribution: dict[str, float]) -> str:
