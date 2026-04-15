@@ -10,8 +10,12 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from snks.agent.stimuli import HomeostasisStimulus, StimuliLayer, SurvivalAversion
+from snks.agent.stimuli import CuriosityStimulus, HomeostasisStimulus, StimuliLayer, SurvivalAversion
+
+if TYPE_CHECKING:
+    from snks.agent.death_hypothesis import DeathHypothesis
 
 
 @dataclass
@@ -119,9 +123,17 @@ class PostMortemLearner:
                 _WEIGHT_MIN, _WEIGHT_MAX,
             )
 
-    def build_stimuli(self, vital_vars: list[str]) -> StimuliLayer:
-        """Create a new StimuliLayer with current parameters."""
-        return StimuliLayer([
+    def build_stimuli(
+        self,
+        vital_vars: list[str],
+        hypothesis: "DeathHypothesis | None" = None,
+    ) -> StimuliLayer:
+        """Create a new StimuliLayer with current parameters.
+
+        If hypothesis is provided (Stage 87+), adds CuriosityStimulus weighted
+        by death_relevance from the active DeathHypothesis.
+        """
+        stimuli = [
             SurvivalAversion(),
             HomeostasisStimulus(
                 vital_vars=vital_vars,
@@ -131,7 +143,10 @@ class PostMortemLearner:
                     "drink": self.drink_threshold,
                 },
             ),
-        ])
+        ]
+        if hypothesis is not None:
+            stimuli.append(CuriosityStimulus(hypothesis=hypothesis))
+        return StimuliLayer(stimuli)
 
     @staticmethod
     def _clamp(v: float, lo: float, hi: float) -> float:

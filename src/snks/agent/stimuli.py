@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from snks.agent.death_hypothesis import DeathHypothesis
     from snks.agent.vector_sim import VectorTrajectory
 
 
@@ -73,16 +74,27 @@ class HomeostasisStimulus(Stimulus):
 
 @dataclass
 class CuriosityStimulus(Stimulus):
-    """Defined for Stage 87 (death-relevant curiosity weighting). Unused in Stage 85.
+    """Stage 87: Death-relevant curiosity weighting.
 
-    Scores trajectory by average prediction surprise — low confidence predictions
-    indicate unexplored state space, which is intrinsically rewarding.
-    Not wired into StimuliLayer default; curiosity is handled via Goal("explore").progress().
+    Scores trajectory by prediction surprise weighted by death relevance:
+        U_curiosity(s) = weight * avg_surprise(s) * death_relevance(s)
+
+    death_relevance comes from an active DeathHypothesis — trajectories that
+    expose vital states near the death-correlated threshold score higher.
+    Without a hypothesis, relevance = 1.0 (pure surprise signal).
     """
+
     weight: float = 0.1
+    hypothesis: "DeathHypothesis | None" = None
 
     def evaluate(self, trajectory: "VectorTrajectory") -> float:
-        return self.weight * trajectory.avg_surprise()
+        surprise = trajectory.avg_surprise()
+        relevance = (
+            self.hypothesis.death_relevance(trajectory)
+            if self.hypothesis is not None
+            else 1.0
+        )
+        return self.weight * surprise * relevance
 
 
 @dataclass
