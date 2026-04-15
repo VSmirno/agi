@@ -50,15 +50,31 @@ inv  = {k: v for k, v in raw_inv.items() if k not in VITAL_VARS}  # resources on
 variables (correct — tracker observes resource rates, body is tracked separately).
 `VectorState(inventory=inv, body=body)` is now semantically honest.
 
-Two locations to update: step start (line ~450) and episode end (line ~677).
+Two locations to update:
+
+**Step start (line ~450):** shown above.
+
+**Episode end (line ~677):** same bug, different default:
+```python
+# Before (always 0 — default fires because vitals not in top-level info):
+body_at_end = {v: float(info.get(v, 0)) for v in vitals}
+
+# After:
+raw_inv_end = dict(info.get("inventory", {}))
+body_at_end = {v: float(raw_inv_end.get(v, 0.0)) for v in vitals}
+```
+Without this fix `cause_of_death` is always `"health"` (all vitals appear 0),
+corrupting episode metrics.
 
 ### 2. StimuliLayer — new file `src/snks/agent/stimuli.py`
 
 ```python
 @dataclass
 class Stimulus:
-    """Base class. evaluate() returns float score contribution."""
-    def evaluate(self, state: VectorState, trajectory: VectorTrajectory) -> float:
+    """Base class. evaluate(trajectory) returns float score contribution.
+    Each stimulus pulls what it needs from trajectory directly
+    (final_state, terminated, etc.) — no dead `state` parameter."""
+    def evaluate(self, trajectory: VectorTrajectory) -> float:
         raise NotImplementedError
 
 @dataclass
@@ -66,7 +82,7 @@ class SurvivalAversion(Stimulus):
     """Large penalty if trajectory terminated (agent died)."""
     weight: float = 1000.0
 
-    def evaluate(self, state, trajectory) -> float:
+    def evaluate(self, trajectory) -> float:
         return -self.weight if trajectory.terminated else 0.0
 
 @dataclass
@@ -75,7 +91,7 @@ class HomeostasisStimulus(Stimulus):
     vital_vars: list[str] = field(default_factory=lambda: ["health","food","drink","energy"])
     weight: float = 1.0
 
-    def evaluate(self, state, trajectory) -> float:
+    def evaluate(self, trajectory) -> float:
         final = trajectory.final_state
         if not final:
             return 0.0
@@ -86,7 +102,7 @@ class StimuliLayer:
     stimuli: list[Stimulus] = field(default_factory=list)
 
     def evaluate(self, trajectory: VectorTrajectory) -> float:
-        return sum(s.evaluate(trajectory.final_state, trajectory) for s in self.stimuli)
+        return sum(s.evaluate(trajectory) for s in self.stimuli)
 ```
 
 ### 3. score_trajectory — accepts StimuliLayer
@@ -99,14 +115,23 @@ def score_trajectory(
 ) -> tuple:
     """Score trajectory: (stimuli_score, total_gain, -steps).
 
-    stimuli_score replaces hardcoded (survived, min_vital).
-    If stimuli=None, returns (0, total_gain, -steps) — backward compat.
+    stimuli_score subsumes survived + min_vital from old 4-tuple.
+    If stimuli=None, falls back to (survived, total_gain, -steps) to
+    preserve ordering in existing tests that compare alive > dead.
     """
-    base = stimuli.evaluate(trajectory) if stimuli else 0.0
     total_gain = trajectory.total_inventory_gain()
     steps = len(trajectory.states) - 1
-    return (base, total_gain, -steps)
+    if stimuli is not None:
+        base = stimuli.evaluate(trajectory)
+        return (base, total_gain, -steps)
+    else:
+        survived = 0 if trajectory.terminated else 1
+        return (survived, total_gain, -steps)
 ```
+
+**Note:** the old 4-tuple `(survived, total_gain, min_vital, -steps)` becomes
+a 3-tuple. All callers that splice or unpack positionally must be updated (see
+File Plan).
 
 Lex ordering preserved: stimuli score dominates, then cumulative gain, then step
 economy. Stage 85 adds `CuriosityStimulus` to `StimuliLayer` — zero changes to
@@ -117,16 +142,35 @@ mechanism.
 `run_vector_mpc_episode` receives `stimuli: StimuliLayer | None = None` and
 passes it to `score_trajectory`. Default: `StimuliLayer([SurvivalAversion(), HomeostasisStimulus()])`.
 
+The tuple-splice line that builds the final sort key must also be updated:
+
+```python
+# Before (line ~584):
+sim_score = score_trajectory(traj, vitals)    # 4-tuple
+gain = 0 if is_self_action else sim_score[1]
+score = (sim_score[0], known, gain) + sim_score[2:]  # (survived, known, gain, min_vital, -steps)
+
+# After:
+sim_score = score_trajectory(traj, stimuli=stimuli)  # 3-tuple
+gain = 0 if is_self_action else sim_score[1]
+score = (sim_score[0], known, gain, sim_score[2])    # (stimuli_score, known, gain, -steps)
+```
+
 ## File Plan
 
 | File | Change |
 |------|--------|
 | `src/snks/agent/stimuli.py` | New — `Stimulus`, `SurvivalAversion`, `HomeostasisStimulus`, `StimuliLayer` |
-| `src/snks/agent/vector_sim.py` | `score_trajectory` signature: add `stimuli` param |
-| `src/snks/agent/vector_mpc_agent.py` | Fix `inv`/`body` split (2 locations); pass `stimuli` to `score_trajectory` |
+| `src/snks/agent/vector_sim.py` | `score_trajectory`: add `stimuli` param; 4-tuple → 3-tuple |
+| `src/snks/agent/vector_mpc_agent.py` | Fix `inv`/`body` split (2 locations); update tuple-splice line; pass `stimuli` |
 | `tests/test_stimuli.py` | New — unit tests for all stimulus classes |
 | `tests/test_vital_fix.py` | New — integration test: mock info → body != 9.0 |
+| `tests/test_vector_sim.py` | Update `score_trajectory` call sites: drop `vital_vars`, add `stimuli=None` |
+| `tests/test_vector_mpc.py` | Same — update tuple-unpack assertions |
 | `experiments/stage84_eval.py` | New — eval gate on minipc |
+| `experiments/diag_stage83.py` | Archive or update — calls `score_trajectory` with old signature |
+| `experiments/diag_stage83_bugs.py` | Archive or update — same |
+| `experiments/stage83_vector_eval.py` | Update — calls `run_vector_mpc_episode`, receives new 3-tuple |
 
 Untouched: `vector_world_model.py`, `vector_bootstrap.py`, `crafter_spatial_map.py`,
 `tile_segmenter.py`, `perception.py`.
@@ -165,8 +209,9 @@ Untouched: `vector_world_model.py`, `vector_bootstrap.py`, `crafter_spatial_map.
    unpack the old 4-tuple will break. Mitigation: update `stage83_vector_eval.py`
    and any other callers before running eval.
 
-2. **`HomeostaticTracker` receives inv without body vars.** Previously it received
-   the full `raw_inv` including health/food. Tracker's `observed_rates` was
-   incorrectly tracking body variable deltas as inventory. This is fixed, but
-   may change tracker behaviour. Mitigation: tracker is observational only —
-   not on critical path for Stage 84 gate.
+2. **`HomeostaticTracker` one-episode transient.** Previously `inv` included
+   health/food/drink/energy, so `observed_rates` accumulated noise from body
+   variable deltas. After the fix those keys vanish from `inv`. On the first
+   transition episode this creates a one-time spike (`0 - old_value`) in
+   `observed_rates` for those keys. Transient — no persistent state corruption.
+   Safe to ignore; tracker is not on critical path for Stage 84 gate.
