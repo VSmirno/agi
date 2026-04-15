@@ -164,6 +164,15 @@ class TestGoalProgressExplore:
         traj = make_trajectory(confidences=[])
         assert Goal("explore").progress(traj) == 0.0
 
+    def test_self_action_trajectory_returns_zero(self):
+        """Sleep plan (target=self) must not count as exploration — avoids sleeping at full vitals."""
+        from snks.agent.vector_sim import VectorPlanStep
+        s0 = VectorState(inventory={}, body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0})
+        s1 = VectorState(inventory={}, body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0})
+        plan = VectorPlan(steps=[VectorPlanStep(action="sleep", target="self")])
+        traj = VectorTrajectory(plan=plan, states=[s0, s1], confidences=[0.5])
+        assert Goal("explore").progress(traj) == 0.0
+
 
 # ---------------------------------------------------------------------------
 # GoalSelector.select — vital-based priorities

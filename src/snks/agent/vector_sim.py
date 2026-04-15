@@ -246,7 +246,7 @@ def score_trajectory(
     base_score: StimuliLayer.evaluate() if provided, else survived (0/1).
     goal_prog:  Goal.progress(trajectory) if goal provided, else 0.
 
-    total_gain (Crafter-specific cumulative inventory delta) is removed.
+    Stage 85 note: the Crafter-specific cumulative inventory delta is removed.
     Goal.progress() carries the equivalent signal but only when the goal
     is active — e.g. goal=gather_wood → inventory_delta("wood"),
     goal=fight_zombie → vital_delta("health").
