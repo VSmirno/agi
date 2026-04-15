@@ -242,15 +242,25 @@ class TestGoalSelectorTextbookDerivation:
         goal = selector.select(state)
         assert goal.id == "explore"
 
-    def test_proactive_crafting_inactive_when_has_wood(self, selector):
-        """Has wood (but no sword) → gather_wood not triggered (already have material) → explore."""
+    def test_proactive_crafting_inactive_when_has_enough_wood(self, selector):
+        """Has enough wood for full chain (≥chain_cost) AND no sword → explore."""
+        # chain_cost for wood = sum of all rules requiring wood = 5 (sword:1 + pickaxe:1+1 + table:2)
+        # With wood=5, no_wood threat is inactive → explore
+        state = make_state(
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            inventory={"wood": 5, "wood_sword": 0},
+        )
+        goal = selector.select(state)
+        assert goal.id == "explore"
+
+    def test_proactive_crafting_still_active_with_partial_wood(self, selector):
+        """Has wood=2 (< chain_cost=5) → still gathering needed."""
         state = make_state(
             body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
             inventory={"wood": 2, "wood_sword": 0},
         )
         goal = selector.select(state)
-        # Has wood already, no need to gather → explore
-        assert goal.id == "explore"
+        assert goal.id == "gather_wood"
 
     def test_goals_block_loaded(self, textbook):
         assert textbook.goals_block.get("primary") == "survive"
