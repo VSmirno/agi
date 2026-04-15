@@ -8,7 +8,7 @@ Design: docs/superpowers/specs/2026-04-15-stage85-goal-selector-design.md
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 @dataclass
 class Goal:
     id: str
-    requirements: dict = field(default_factory=dict)
 
     def progress(self, trajectory: "VectorTrajectory") -> float:
         """How much did this trajectory advance the goal? Returns float >= 0."""
@@ -38,16 +37,14 @@ class Goal:
         elif self.id == "gather_wood":
             return max(0.0, trajectory.inventory_delta("wood"))
         elif self.id == "explore":
-            if not trajectory.confidences:
-                return 0.0
-            # Self-action-only trajectories (sleep) are not exploration.
-            # Sleeping in place when goal=explore gives false surprise from
-            # textbook prior confidence (0.5), which would beat baseline (0.0).
+            # Textbook-seeded sleep has confidence=0.5 → surprise=0.5, which would
+            # beat baseline (confidences=[]) giving explore_progress=0.5. Guard: a
+            # self-action-only plan is not exploration.
             if trajectory.plan.steps and all(
                 s.target == "self" for s in trajectory.plan.steps
             ):
                 return 0.0
-            return 1.0 - sum(trajectory.confidences) / len(trajectory.confidences)
+            return trajectory.avg_surprise()
         return 0.0
 
 
@@ -127,16 +124,21 @@ class GoalSelector:
         result: list[_Threat] = []
         seen: set[tuple] = set()  # avoid duplicate (weapon, material) threats
 
-        fight_rules = [r for r in textbook.rules if r.get("action") == "do"]
-        make_rules = [r for r in textbook.rules if r.get("action") == "make"]
-        place_rules = [r for r in textbook.rules if r.get("action") == "place"]
-        crafting_rules = make_rules + place_rules
-
-        # Compute total material need across all crafting rules (chain cost)
+        fight_rules: list[dict] = []
+        make_rules: list[dict] = []
         material_chain_cost: dict[str, int] = {}
-        for craft_rule in crafting_rules:
-            for mat, qty in (craft_rule.get("requires", {}) or {}).items():
-                material_chain_cost[mat] = material_chain_cost.get(mat, 0) + int(qty)
+
+        for r in textbook.rules:
+            action = r.get("action")
+            if action == "do":
+                fight_rules.append(r)
+            elif action == "make":
+                make_rules.append(r)
+                for mat, qty in (r.get("requires", {}) or {}).items():
+                    material_chain_cost[mat] = material_chain_cost.get(mat, 0) + int(qty)
+            elif action == "place":
+                for mat, qty in (r.get("requires", {}) or {}).items():
+                    material_chain_cost[mat] = material_chain_cost.get(mat, 0) + int(qty)
 
         for fight_rule in fight_rules:
             fight_req = fight_rule.get("requires", {}) or {}
@@ -168,6 +170,14 @@ class GoalSelector:
     @staticmethod
     def _make_entity_threat(entity: str, textbook: "CrafterTextbook") -> _Threat:
         """Build a _Threat for a dangerous entity derived from textbook rules."""
+        # Precompute at init — avoid re-scanning rules on every step the entity is nearby.
+        weapon: str | None = None
+        for r in textbook.rules:
+            if r.get("action") == "do" and r.get("target") == entity:
+                req = r.get("requires", {}) or {}
+                weapon = next(iter(req), None)
+                break
+
         def active(state: "VectorState", _e: str = entity) -> bool:
             sm = state.spatial_map
             if sm is None:
@@ -178,16 +188,11 @@ class GoalSelector:
             dist = abs(pos[0] - state.player_pos[0]) + abs(pos[1] - state.player_pos[1])
             return dist <= 3
 
-        def response(state: "VectorState", _e: str = entity,
-                     _tb: "CrafterTextbook" = textbook) -> Goal:
-            for r in _tb.rules:
-                if r.get("action") == "do" and r.get("target") == _e:
-                    req = r.get("requires", {}) or {}
-                    weapon = next(iter(req), None)
-                    if weapon and state.inventory.get(weapon, 0) > 0:
-                        return Goal(f"fight_{_e}", {})
-                    elif weapon:
-                        return Goal(f"craft_{weapon}", {"item": weapon})
+        def response(state: "VectorState", _e: str = entity, _w: str | None = weapon) -> Goal:
+            if _w and state.inventory.get(_w, 0) > 0:
+                return Goal(f"fight_{_e}")
+            elif _w:
+                return Goal(f"craft_{_w}")
             return Goal("explore")
 
         return _Threat(active_fn=active, response_fn=response)

@@ -72,10 +72,7 @@ class CuriosityStimulus(Stimulus):
     weight: float = 0.1
 
     def evaluate(self, trajectory: "VectorTrajectory") -> float:
-        if not trajectory.confidences:
-            return 0.0
-        avg_surprise = 1.0 - sum(trajectory.confidences) / len(trajectory.confidences)
-        return self.weight * avg_surprise
+        return self.weight * trajectory.avg_surprise()
 
 
 @dataclass
