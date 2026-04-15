@@ -4,6 +4,17 @@
 
 ---
 
+## Stage 86 — Post-Mortem Learning (2026-04-15)
+**Что сделано:** DamageEvent log (накопление per-step при health_delta<0), PostMortemAnalyzer (temporal-decay attribution, многофакторный), PostMortemLearner (обновляет HomeostasisStimulus thresholds + health_weight между эпизодами). HomeostasisStimulus переведён на deficit-based scoring с per-vital thresholds.
+**Результаты (20+20 эп, minipc):** avg_survival(with_pm)=179.7. zombie_deaths early=6→late=3, starvation with_pm=0 < without_pm=1. Gates: **3/3 PASS**.
+**Допущения/ограничения:**
+- **Gate 2 узкий** — starvation deaths: 0 vs 1. Агент редко умирает от голода (GoalSelector хорошо справляется с food). Разница статистически мала.
+- **death_cause=alive баг** — мгновенная смерть (лава / урон в последний шаг) даёт пустой damage_log → dominant_cause="alive". Финальный damage не фиксируется т.к. break до следующего body read.
+- **food_threshold почти не рос** — food редко = 0 при смерти. Агент умирает преимущественно от зомби, health_weight вырос 1.0→2.43.
+- **Параметры не персистируются** — сбрасываются при новом запуске. Cross-run persistence — Stage 88 scope.
+
+---
+
 ## Stage 85 — Goal Selector Design (2026-04-15)
 **Что сделано:** GoalSelector — выбор цели из textbook rules. `total_gain` заменён на `Goal.progress(trajectory)`. Proactive crafting chain: нет дерева + нет меча → `gather_wood`. VectorTrajectory.confidences + vital_delta/inventory_delta/item_gained. CuriosityStimulus определён (Stage 87 debt).
 **Результаты (20 эп, minipc):** avg_survival=197.0, wood_ge3_pct=10%, no_total_gain=✓. Gates: **3/3 PASS**.
