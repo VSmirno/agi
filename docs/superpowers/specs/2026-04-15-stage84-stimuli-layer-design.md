@@ -168,8 +168,8 @@ score = (sim_score[0], known, gain, sim_score[2])    # (stimuli_score, known, ga
 | `tests/test_vector_sim.py` | Update `score_trajectory` call sites: drop `vital_vars`, add `stimuli=None` |
 | `tests/test_vector_mpc.py` | Same — update tuple-unpack assertions |
 | `experiments/stage84_eval.py` | New — eval gate on minipc |
-| `experiments/diag_stage83.py` | Archive or update — calls `score_trajectory` with old signature |
-| `experiments/diag_stage83_bugs.py` | Archive or update — same |
+| `experiments/diag_stage83.py` | **Archive before merge** — calls `score_trajectory(traj, vital_vars)` positionally; with new signature `vital_vars` would be passed as `stimuli`, causing `AttributeError` at `.evaluate()`. Rename to `_archived_diag_stage83.py` or delete. |
+| `experiments/diag_stage83_bugs.py` | **Archive before merge** — same issue. |
 | `experiments/stage83_vector_eval.py` | Update — calls `run_vector_mpc_episode`, receives new 3-tuple |
 
 Untouched: `vector_world_model.py`, `vector_bootstrap.py`, `crafter_spatial_map.py`,
@@ -209,7 +209,12 @@ Untouched: `vector_world_model.py`, `vector_bootstrap.py`, `crafter_spatial_map.
    unpack the old 4-tuple will break. Mitigation: update `stage83_vector_eval.py`
    and any other callers before running eval.
 
-2. **`HomeostaticTracker` one-episode transient.** Previously `inv` included
+2. **`vital_vars` stays in `simulate_forward`.** `simulate_forward` still accepts
+   `vital_vars` and passes it to `state.is_dead(vital_vars)`. Do not remove it —
+   death detection inside the simulation is a mechanism concern, separate from
+   the stimuli scoring layer.
+
+3. **`HomeostaticTracker` one-episode transient.** Previously `inv` included
    health/food/drink/energy, so `observed_rates` accumulated noise from body
    variable deltas. After the fix those keys vanish from `inv`. On the first
    transition episode this creates a one-time spike (`0 - old_value`) in
