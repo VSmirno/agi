@@ -451,6 +451,7 @@ def run_vector_mpc_episode(
     cause_of_death = "alive"
     total_surprise = 0.0
     n_surprise_events = 0
+    damage_log: list = []
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -522,12 +523,23 @@ def run_vector_mpc_episode(
                 # Entity-correlated surprise for unexpected damage
                 health_delta = body_deltas.get("health", 0)
                 if health_delta < 0:
+                    nearby_cids = []
                     for entity_cid, entity_pos in entity_tracker.visible_entities():
                         ex, ey = entity_pos
                         dist = abs(ex - player_pos[0]) + abs(ey - player_pos[1])
                         if dist <= 6:
                             model.learn(entity_cid, "proximity",
                                         {"health": health_delta})
+                        nearby_cids.append((entity_cid, dist))
+                    # Accumulate damage event for post-mortem analysis
+                    from snks.agent.post_mortem import DamageEvent
+                    damage_log.append(DamageEvent(
+                        step=step,
+                        health_delta=float(health_delta),
+                        vitals={k: prev_body.get(k, 9.0)
+                                for k in ("food", "drink", "energy")},
+                        nearby_cids=nearby_cids,
+                    ))
 
         # --- Build VectorState ---
         state = VectorState(
@@ -701,9 +713,17 @@ def run_vector_mpc_episode(
             if p > 0:
                 entropy -= p * np.log2(p)
 
+    from snks.agent.post_mortem import PostMortemAnalyzer, dominant_cause
+    _analyzer = PostMortemAnalyzer()
+    attribution = _analyzer.attribute(damage_log, steps_taken)
+    death_cause = dominant_cause(attribution)
+
     return {
-        "avg_len": steps_taken,
+        "avg_len": steps_taken,        # legacy name kept for backward compat
+        "episode_steps": steps_taken,
         "cause": cause_of_death,
+        "death_cause": death_cause,
+        "damage_log": damage_log,
         "final_inv": dict(info.get("inventory", {})),
         "action_counts": dict(action_counts),
         "action_entropy": round(entropy, 3),

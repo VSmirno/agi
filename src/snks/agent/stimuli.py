@@ -43,22 +43,32 @@ class SurvivalAversion(Stimulus):
 
 @dataclass
 class HomeostasisStimulus(Stimulus):
-    """Reward for maintaining vitals above zero.
+    """Penalise vital deficits below per-vital thresholds.
 
-    Returns weight * min(final_state.body[v] for v in vital_vars).
-    Higher vitals = higher score. Zero vitals = zero score.
+    Returns -weight * sum(max(0, threshold[v] - body[v]) for v in vital_vars).
+    Zero when all vitals are above their thresholds.
+
+    thresholds: per-vital floor. Defaults to {} (no thresholds active).
+    Backwards-compatible: callers that don't pass thresholds get zero penalty
+    for any vital level, which is equivalent to the old behaviour when vitals
+    are all positive.
     """
 
     vital_vars: list[str] = field(
         default_factory=lambda: ["health", "food", "drink", "energy"]
     )
     weight: float = 1.0
+    thresholds: dict = field(default_factory=dict)
 
     def evaluate(self, trajectory: "VectorTrajectory") -> float:
         final = trajectory.final_state
         if not final:
             return 0.0
-        return self.weight * min(final.body.get(v, 0.0) for v in self.vital_vars)
+        deficit = sum(
+            max(0.0, self.thresholds.get(v, 0.0) - final.body.get(v, 0.0))
+            for v in self.vital_vars
+        )
+        return -self.weight * deficit
 
 
 @dataclass
