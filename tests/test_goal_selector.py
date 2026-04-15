@@ -221,8 +221,36 @@ class TestGoalSelectorSelect:
 
 class TestGoalSelectorTextbookDerivation:
     def test_threats_list_nonempty(self, selector):
-        """At least zombie + skeleton + 3 vital threats."""
-        assert len(selector._threats) >= 5
+        """Entity threats + critical + 3 vital + proactive crafting."""
+        assert len(selector._threats) >= 6
+
+    def test_proactive_crafting_triggers_gather_wood(self, selector):
+        """No wood AND no wood_sword → gather_wood goal."""
+        state = make_state(
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            inventory={"wood": 0, "wood_sword": 0},
+        )
+        goal = selector.select(state)
+        assert goal.id == "gather_wood"
+
+    def test_proactive_crafting_inactive_when_has_sword(self, selector):
+        """Has wood_sword → gather_wood not triggered → explore."""
+        state = make_state(
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            inventory={"wood_sword": 1},
+        )
+        goal = selector.select(state)
+        assert goal.id == "explore"
+
+    def test_proactive_crafting_inactive_when_has_wood(self, selector):
+        """Has wood (but no sword) → gather_wood not triggered (already have material) → explore."""
+        state = make_state(
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            inventory={"wood": 2, "wood_sword": 0},
+        )
+        goal = selector.select(state)
+        # Has wood already, no need to gather → explore
+        assert goal.id == "explore"
 
     def test_goals_block_loaded(self, textbook):
         assert textbook.goals_block.get("primary") == "survive"

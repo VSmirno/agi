@@ -77,6 +77,9 @@ class GoalSelector:
              → response depends on inventory (has sword → fight, else → craft)
           2. Critical vitals: health < 2 → find_cow (recover health via food)
           3. Low vitals: food < 3 → find_cow, drink < 3 → find_water, energy < 3 → sleep
+          4. Proactive crafting: missing weapon material → gather_material
+             Derived from textbook crafting chain:
+               dangerous entity → fight requires weapon → make weapon requires material
         """
         threats: list[_Threat] = []
 
@@ -99,7 +102,54 @@ class GoalSelector:
         for vital, goal_id in [("food", "find_cow"), ("drink", "find_water"), ("energy", "sleep")]:
             threats.append(self._make_vital_threat(vital, goal_id))
 
+        # 4. Proactive crafting chain: derive from textbook
+        #    For each fight rule (do entity, requires weapon):
+        #      If no weapon AND make_weapon requires material:
+        #        → gather_material goal when material is missing
+        threats.extend(self._derive_proactive_crafting(textbook))
+
         return threats
+
+    @staticmethod
+    def _derive_proactive_crafting(textbook: "CrafterTextbook") -> list["_Threat"]:
+        """Derive proactive crafting threats from textbook rules.
+
+        Traverses: dangerous_entity → fight requires weapon → make weapon requires material.
+        Adds lowest-priority threat: no_weapon AND no_material → gather_material.
+
+        This is fully derived from textbook — no hardcoded item names.
+        Motivation: prepare for known threats before they appear (proactive survival).
+        """
+        result: list[_Threat] = []
+        seen: set[tuple] = set()  # avoid duplicate (weapon, material) threats
+
+        fight_rules = [r for r in textbook.rules if r.get("action") == "do"]
+        make_rules = [r for r in textbook.rules if r.get("action") == "make"]
+
+        for fight_rule in fight_rules:
+            fight_req = fight_rule.get("requires", {}) or {}
+            weapon = next(iter(fight_req), None)
+            if weapon is None:
+                continue
+            # Find make rule for this weapon
+            for make_rule in make_rules:
+                if make_rule.get("result") != weapon:
+                    continue
+                make_req = make_rule.get("requires", {}) or {}
+                for material in make_req:
+                    key = (weapon, material)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    result.append(_Threat(
+                        active_fn=lambda s, _w=weapon, _m=material: (
+                            s.inventory.get(_w, 0) < 1
+                            and s.inventory.get(_m, 0) < 1
+                        ),
+                        response_fn=lambda s, _m=material: Goal(f"gather_{_m}"),
+                    ))
+
+        return result
 
     @staticmethod
     def _make_entity_threat(entity: str, textbook: "CrafterTextbook") -> _Threat:
