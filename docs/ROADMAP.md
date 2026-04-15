@@ -12,10 +12,10 @@
 
 ## Текущая позиция
 
-**Stage 85 — COMPLETE (2026-04-15, PASS)**
+**Stage 86 — COMPLETE (2026-04-15, PASS)**
 
-avg_survival=197.0, wood_ge3_pct=10%, no_total_gain=✓. Gates: 3/3.
-GoalSelector + proactive crafting реализованы. total_gain убран. Next: Stage 86.
+avg_survival(with_pm)=179.7, zombie_deaths 6→3, starvation 0<1. Gates: 3/3.
+Post-mortem learning реализован. HomeostasisStimulus deficit-based. Next: Stage 87.
 
 ---
 
@@ -85,7 +85,12 @@ Knowledge flow улучшается: gen2 любопытен именно к т�
 
 ---
 
-### Stage 86 — Post-Mortem Learning
+### Stage 86 — Post-Mortem Learning ✓ COMPLETE
+
+**Результат (2026-04-15):** avg_survival=179.7, zombie_deaths early=6→late=3, starvation with_pm=0 < without_pm=1. Gates: 3/3 PASS.
+**Что сделано:** DamageEvent log, PostMortemAnalyzer (temporal decay + multi-source), PostMortemLearner (thresholds + health_weight), HomeostasisStimulus deficit-based scoring.
+
+### Stage 86 — Post-Mortem Learning (АРХИВ)
 
 **Идеологический долг:** Принцип 6 (Система, не агент). Смерть сейчас
 = выброшенная информация. Должна быть обучающим сигналом.
