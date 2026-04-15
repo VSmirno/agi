@@ -55,24 +55,38 @@ class TestSurvivalAversion:
 # ---------------------------------------------------------------------------
 
 class TestHomeostasisStimulus:
-    def test_returns_min_vital(self):
-        # body = health:5, food:4, drink:3, energy:9 → min = 3.0
+    def test_no_thresholds_zero_penalty(self):
+        # Default thresholds={} → no deficit → zero score regardless of vitals.
         traj = make_trajectory(body={"health": 5.0, "food": 4.0, "drink": 3.0, "energy": 9.0})
         s = HomeostasisStimulus(vital_vars=["health", "food", "drink", "energy"])
-        assert s.evaluate(traj) == pytest.approx(3.0)
+        assert s.evaluate(traj) == pytest.approx(0.0)
 
-    def test_weight_applied(self):
-        traj = make_trajectory(body={"health": 5.0, "food": 5.0, "drink": 5.0, "energy": 5.0})
-        s = HomeostasisStimulus(weight=2.0, vital_vars=["health", "food", "drink", "energy"])
-        assert s.evaluate(traj) == pytest.approx(10.0)
+    def test_deficit_below_threshold_negative(self):
+        # food=2, threshold=5 → deficit=3 → score=-3
+        traj = make_trajectory(body={"food": 2.0})
+        s = HomeostasisStimulus(weight=1.0, vital_vars=["food"],
+                                thresholds={"food": 5.0})
+        assert s.evaluate(traj) == pytest.approx(-3.0)
+
+    def test_weight_scales_deficit(self):
+        traj = make_trajectory(body={"food": 3.0})
+        s = HomeostasisStimulus(weight=2.0, vital_vars=["food"],
+                                thresholds={"food": 5.0})
+        assert s.evaluate(traj) == pytest.approx(-4.0)
 
     def test_empty_final_state_returns_zero(self):
         traj = VectorTrajectory(plan=VectorPlan(steps=[]), states=[])
         s = HomeostasisStimulus()
         assert s.evaluate(traj) == 0.0
 
-    def test_missing_vital_defaults_zero(self):
-        traj = make_trajectory(body={"health": 5.0})  # food/drink/energy missing
+    def test_vital_above_threshold_zero_penalty(self):
+        traj = make_trajectory(body={"food": 7.0})
+        s = HomeostasisStimulus(vital_vars=["food"], thresholds={"food": 3.0})
+        assert s.evaluate(traj) == pytest.approx(0.0)
+
+    def test_missing_vital_defaults_zero_body(self):
+        # vital missing from body → body.get(v, 0.0) = 0, threshold=0 → deficit=0
+        traj = make_trajectory(body={"health": 5.0})
         s = HomeostasisStimulus(vital_vars=["health", "food", "drink", "energy"])
         assert s.evaluate(traj) == pytest.approx(0.0)
 
@@ -93,17 +107,19 @@ class TestStimuliLayer:
         assert layer.evaluate(traj) == pytest.approx(-100.0)
 
     def test_two_stimuli_sum(self):
-        # terminated=False → SurvivalAversion=0, HomeostasisStimulus=min_vital
+        # terminated=False → SurvivalAversion=0
+        # HomeostasisStimulus with thresholds: food deficit=1 (threshold=5, food=4)
         traj = make_trajectory(
             terminated=False,
             body={"health": 5.0, "food": 4.0, "drink": 3.0, "energy": 9.0},
         )
         layer = StimuliLayer(stimuli=[
             SurvivalAversion(weight=1000.0),
-            HomeostasisStimulus(weight=1.0),
+            HomeostasisStimulus(weight=1.0, vital_vars=["food"],
+                                thresholds={"food": 5.0}),
         ])
-        # 0.0 + 3.0 = 3.0
-        assert layer.evaluate(traj) == pytest.approx(3.0)
+        # 0.0 + (-1.0) = -1.0
+        assert layer.evaluate(traj) == pytest.approx(-1.0)
 
     def test_death_penalty_dominates(self):
         traj = make_trajectory(
