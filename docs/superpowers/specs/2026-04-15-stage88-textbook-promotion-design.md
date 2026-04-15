@@ -93,8 +93,8 @@ hypotheses:
   - cause: dehydration
     vital: drink
     threshold: 3.0
-    n_supporting: 3
-    n_observed: 3
+    n_supporting: 5
+    n_observed: 5
 ```
 
 Required fields: `cause`, `vital`, `threshold`, `n_supporting`, `n_observed`. These are sufficient to reconstruct `support_rate` and `is_verifiable` without storing derived values.
@@ -112,11 +112,15 @@ def __init__(self, initial: list[DeathHypothesis] | None = None) -> None:
     self._records: list[dict] = []
     self._hypotheses: list[DeathHypothesis] = []
     self._promoted: list[DeathHypothesis] = list(initial or [])
+    if self._promoted:
+        self._rebuild_hypotheses()  # populate _hypotheses immediately
 ```
 
 **Why `_promoted` instead of injecting into `_hypotheses` directly:**
 
 `_rebuild_hypotheses()` derives `_hypotheses` exclusively from `_records`. If promoted hypotheses were injected into `_hypotheses` only, the first call to `record()` would overwrite them entirely — silently erasing all generation knowledge after one death. This is the critical bug avoided by using a separate `_promoted` list.
+
+**Init visibility:** `_rebuild_hypotheses()` is called at the end of `__init__` when promoted hypotheses are present. With `_records` empty, the rebuild derives an empty list from records, then merges all `_promoted` entries (all keys are unseen) into `_hypotheses`. Result: `_hypotheses = list(_promoted)` immediately after construction, before any deaths occur.
 
 **Merge in `_rebuild_hypotheses()`:**
 
@@ -128,22 +132,20 @@ def _rebuild_hypotheses(self) -> None:
 
     # Merge promoted: if (cause, vital) not yet observed in this run,
     # carry forward the promoted entry so it remains active and verifiable.
-    # If the current run has more observations, the live entry wins.
+    # Once the current gen has ANY death for a key, the live-derived entry
+    # fully replaces the promoted prior — even with fewer observations.
     live_keys = {(h.cause, h.vital) for h in hypotheses}
     for ph in self._promoted:
-        key = (ph.cause, ph.vital)
-        if key not in live_keys:
+        if (ph.cause, ph.vital) not in live_keys:
             hypotheses.append(ph)
-        # else: live run has data — it will overwrite the promoted entry
-        # once n_observed exceeds the promoted n_observed, preventing stale priors
 
     self._hypotheses = hypotheses
 ```
 
 **Effect:**
-- `active_hypothesis()` can immediately return a promoted hypothesis (from gen N-1)
-- Once the current gen accumulates enough deaths from the same cause, the live-derived entry replaces the promoted one
-- `is_verifiable` is satisfied immediately for promoted entries (they already have n_observed ≥ 5, n_supporting ≥ 3)
+- `active_hypothesis()` returns a promoted hypothesis immediately at gen start, before any deaths
+- Once the current gen has **any** death from the same `(cause, vital)`, the live-derived entry fully replaces the promoted prior
+- `is_verifiable` is satisfied immediately for promoted entries (n_observed ≥ 5 ≥ 3, support_rate ≥ 0.5 → n_supporting ≥ 3 ≥ 2)
 - Curiosity is directed toward `(cause, vital)` pairs NOT yet in `_promoted`
 
 ---
@@ -281,8 +283,8 @@ The OR clause handles the case where gen1 accidentally performs unusually well (
 - `should_promote`: rate=0.49 → False, rate=0.50 → True, n_observed=4 → False, n_observed=5 → True
 - `save` + `load` round-trip: 2 hypotheses saved → loaded identically
 - `save` merge: existing n_observed=10, new n_observed=7 → existing wins (n_observed=10 kept)
-- `from_promoted`: pass `[zombie+drink rate=0.54, dehydration+drink rate=1.0]` in that order → `drink_threshold = 5.0`, `health_weight = 1.54`
-- `HypothesisTracker(initial=promoted)`: promoted hypotheses immediately in `all_hypotheses()`, `n_verifiable() >= len(promoted)`
+- `from_promoted`: pass `[zombie+drink(rate=0.54, n_obs=13), dehydration+drink(rate=1.0, n_obs=5)]` in that order → `drink_threshold = 5.0`, `health_weight = 1.54` (synthetic test: dehydration+drink with n_obs=5 is a plausible gen2+ scenario; in early runs only zombie+drink may reach n_obs>=5)
+- `HypothesisTracker(initial=promoted)`: promoted hypotheses immediately in `all_hypotheses()` AND `n_verifiable() >= len(promoted)` (because `_rebuild_hypotheses()` is called in `__init__`)
 - `HypothesisTracker` after first `record()` call: promoted hypotheses for unseen `(cause, vital)` pairs remain in `all_hypotheses()` (merge logic preserves them)
 
 **No local integration tests** — gen-loop is validated by the experiment on minipc.
