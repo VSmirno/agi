@@ -261,3 +261,6 @@ rules:
         - { var: drink,  op: "==", value: 0 }
         - { var: energy, op: "==", value: 0 }
     effect: { body: { health: -0.067 } }
+
+goals:
+  primary: survive

@@ -134,8 +134,10 @@ class TestScoreTrajectory:
         s_dead = score_trajectory(dead_traj, stimuli=stimuli)
         assert s_alive > s_dead
 
-    def test_higher_gain_beats_lower(self, model, base_state):
-        # Teach do tree → wood +1
+    def test_goal_progress_beats_fewer_steps(self, model, base_state):
+        """With gather_wood goal, more wood progress beats a shorter plan."""
+        from snks.agent.goal_selector import Goal
+
         for _ in range(10):
             model.learn("tree", "do", {"wood": 1})
 
@@ -148,10 +150,11 @@ class TestScoreTrajectory:
             VectorPlanStep(action="do", target="tree"),
         ])
 
+        goal = Goal("gather_wood")
         short_traj = simulate_forward(model, short_plan, base_state)
         long_traj = simulate_forward(model, long_plan, base_state)
 
-        s_short = score_trajectory(short_traj)
-        s_long = score_trajectory(long_traj)
-        # Long chain has more total_gain → scores higher
+        s_short = score_trajectory(short_traj, goal=goal)
+        s_long = score_trajectory(long_traj, goal=goal)
+        # Long chain has higher inventory_delta("wood") → goal_prog higher → scores higher
         assert s_long >= s_short

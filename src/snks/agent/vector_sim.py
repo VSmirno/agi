@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from snks.agent.crafter_spatial_map import CrafterSpatialMap
     from snks.agent.vector_world_model import VectorWorldModel
     from snks.agent.stimuli import StimuliLayer
+    from snks.agent.goal_selector import Goal
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +128,9 @@ class VectorTrajectory:
     states: list[VectorState]
     terminated: bool = False
     terminated_reason: str = ""
+    confidences: list[float] = field(default_factory=list)
+    # Per-step prediction confidence from model.predict().
+    # Populated by simulate_forward. Range [0,1]: 1.0=certain, 0.0=surprised.
 
     @property
     def final_state(self) -> VectorState | None:
@@ -145,6 +149,30 @@ class VectorTrajectory:
             if delta > 0:
                 gain += delta
         return gain
+
+    def vital_delta(self, var: str) -> float:
+        """Change in body variable from first to last state."""
+        if len(self.states) < 2:
+            return 0.0
+        return self.states[-1].body.get(var, 0.0) - self.states[0].body.get(var, 0.0)
+
+    def inventory_delta(self, item: str) -> float:
+        """Change in inventory item count from first to last state."""
+        if len(self.states) < 2:
+            return 0.0
+        return float(
+            self.states[-1].inventory.get(item, 0)
+            - self.states[0].inventory.get(item, 0)
+        )
+
+    def item_gained(self, item: str) -> bool:
+        """True if item count went from 0 to >0 during trajectory."""
+        if len(self.states) < 2:
+            return False
+        return (
+            self.states[0].inventory.get(item, 0) == 0
+            and self.states[-1].inventory.get(item, 0) > 0
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +193,7 @@ def simulate_forward(
     """
     states = [initial_state.copy()]
     state = initial_state.copy()
+    confidences: list[float] = []
 
     for step in plan.steps[:horizon]:
         key = (step.target, step.action)
@@ -172,6 +201,8 @@ def simulate_forward(
             effect_vec, confidence = cache[key]
         else:
             effect_vec, confidence = model.predict(step.target, step.action)
+
+        confidences.append(confidence)  # capture before early-continue
 
         if confidence < 0.2:
             # No knowledge about this action — skip step
@@ -195,9 +226,10 @@ def simulate_forward(
             return VectorTrajectory(
                 plan=plan, states=states,
                 terminated=True, terminated_reason="dead",
+                confidences=confidences,
             )
 
-    return VectorTrajectory(plan=plan, states=states)
+    return VectorTrajectory(plan=plan, states=states, confidences=confidences)
 
 
 # ---------------------------------------------------------------------------
@@ -207,19 +239,19 @@ def simulate_forward(
 def score_trajectory(
     trajectory: VectorTrajectory,
     stimuli: "StimuliLayer | None" = None,
+    goal: "Goal | None" = None,
 ) -> tuple:
-    """Score trajectory: 3-tuple (base_score, total_gain, -steps).
+    """Score trajectory: 3-tuple (base_score, goal_prog, -steps).
 
-    When stimuli is provided: base_score = StimuliLayer.evaluate(trajectory).
-    When stimuli is None: base_score = survived (0 or 1) for backward compat
-    with tests that compare alive > dead trajectories.
+    base_score: StimuliLayer.evaluate() if provided, else survived (0/1).
+    goal_prog:  Goal.progress(trajectory) if goal provided, else 0.
 
-    total_gain: cumulative positive inventory deltas — longer chains beat
-    short greedy gathers.
-
-    Stage 85 adds CuriosityStimulus to StimuliLayer — no changes here.
+    total_gain (Crafter-specific cumulative inventory delta) is removed.
+    Goal.progress() carries the equivalent signal but only when the goal
+    is active — e.g. goal=gather_wood → inventory_delta("wood"),
+    goal=fight_zombie → vital_delta("health").
     """
-    total_gain = trajectory.total_inventory_gain()
+    goal_prog = goal.progress(trajectory) if goal is not None else 0.0
     steps = len(trajectory.states) - 1  # exclude initial state
 
     if stimuli is not None:
@@ -227,4 +259,4 @@ def score_trajectory(
     else:
         base = 0 if trajectory.terminated else 1
 
-    return (base, total_gain, -steps)
+    return (base, goal_prog, -steps)
