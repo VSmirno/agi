@@ -37,6 +37,7 @@ from snks.agent.vector_sim import (
     simulate_forward,
     score_trajectory,
 )
+from snks.agent.post_mortem import DamageEvent, PostMortemAnalyzer, dominant_cause
 
 
 # ---------------------------------------------------------------------------
@@ -532,7 +533,6 @@ def run_vector_mpc_episode(
                                         {"health": health_delta})
                         nearby_cids.append((entity_cid, dist))
                     # Accumulate damage event for post-mortem analysis
-                    from snks.agent.post_mortem import DamageEvent
                     damage_log.append(DamageEvent(
                         step=step,
                         health_delta=float(health_delta),
@@ -713,9 +713,7 @@ def run_vector_mpc_episode(
             if p > 0:
                 entropy -= p * np.log2(p)
 
-    from snks.agent.post_mortem import PostMortemAnalyzer, dominant_cause
-    _analyzer = PostMortemAnalyzer()
-    attribution = _analyzer.attribute(damage_log, steps_taken)
+    attribution = PostMortemAnalyzer().attribute(damage_log, steps_taken)
     death_cause = dominant_cause(attribution)
 
     return {
