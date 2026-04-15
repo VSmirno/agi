@@ -1,94 +1,158 @@
-"""Tests for GratingGenerator (Этап 2)."""
+"""Tests for Stage 84 StimuliLayer (Category 4 — IDEOLOGY v2)."""
 
-import torch
+from __future__ import annotations
+
 import pytest
 
-from snks.data.stimuli import GratingGenerator
+from snks.agent.stimuli import (
+    HomeostasisStimulus,
+    StimuliLayer,
+    SurvivalAversion,
+)
+from snks.agent.vector_sim import (
+    VectorPlan,
+    VectorState,
+    VectorTrajectory,
+    score_trajectory,
+)
 
 
-@pytest.fixture
-def generator() -> GratingGenerator:
-    return GratingGenerator(image_size=64, seed=42)
+def make_trajectory(terminated: bool = False, body: dict | None = None) -> VectorTrajectory:
+    state = VectorState(
+        inventory={"wood": 0},
+        body=body or {"health": 5.0, "food": 4.0, "drink": 3.0, "energy": 9.0},
+    )
+    return VectorTrajectory(
+        plan=VectorPlan(steps=[]),
+        states=[state],
+        terminated=terminated,
+    )
 
 
-class TestGratingGeneratorBasic:
-    """Basic GratingGenerator functionality."""
+# ---------------------------------------------------------------------------
+# SurvivalAversion
+# ---------------------------------------------------------------------------
 
-    def test_num_classes(self, generator: GratingGenerator) -> None:
-        """10 orientation classes."""
-        assert generator.num_classes == 10
+class TestSurvivalAversion:
+    def test_terminated_returns_penalty(self):
+        traj = make_trajectory(terminated=True)
+        s = SurvivalAversion(weight=1000.0)
+        assert s.evaluate(traj) == -1000.0
 
-    def test_class_names(self, generator: GratingGenerator) -> None:
-        """All 10 expected classes present."""
-        assert len(generator.class_names) == 10
-        assert generator.class_names[0] == "grating_0deg"
-        assert generator.class_names[5] == "grating_90deg"
+    def test_alive_returns_zero(self):
+        traj = make_trajectory(terminated=False)
+        s = SurvivalAversion()
+        assert s.evaluate(traj) == 0.0
 
-    def test_generate_single_class(self, generator: GratingGenerator) -> None:
-        """Generate images for a single orientation."""
-        images, labels = generator.generate(class_idx=0, n_variations=5)
-        assert images.shape == (5, 64, 64)
-        assert labels.shape == (5,)
-        assert (labels == 0).all()
-
-    def test_generate_all_classes(self, generator: GratingGenerator) -> None:
-        """Generate for all 10 classes × 20 variations = 200 images."""
-        images, labels = generator.generate_all(n_variations=20)
-        assert images.shape == (200, 64, 64)
-        assert labels.shape == (200,)
-        for c in range(10):
-            assert (labels == c).sum().item() == 20
+    def test_custom_weight(self):
+        traj = make_trajectory(terminated=True)
+        s = SurvivalAversion(weight=500.0)
+        assert s.evaluate(traj) == -500.0
 
 
-class TestGratingGeneratorOutput:
-    """Output properties."""
+# ---------------------------------------------------------------------------
+# HomeostasisStimulus
+# ---------------------------------------------------------------------------
 
-    def test_image_dtype(self, generator: GratingGenerator) -> None:
-        """Images are float32."""
-        images, _ = generator.generate(class_idx=0, n_variations=1)
-        assert images.dtype == torch.float32
+class TestHomeostasisStimulus:
+    def test_returns_min_vital(self):
+        # body = health:5, food:4, drink:3, energy:9 → min = 3.0
+        traj = make_trajectory(body={"health": 5.0, "food": 4.0, "drink": 3.0, "energy": 9.0})
+        s = HomeostasisStimulus(vital_vars=["health", "food", "drink", "energy"])
+        assert s.evaluate(traj) == pytest.approx(3.0)
 
-    def test_image_range(self, generator: GratingGenerator) -> None:
-        """Pixel values in [0, 1]."""
-        images, _ = generator.generate(class_idx=0, n_variations=10)
-        assert images.min() >= 0.0
-        assert images.max() <= 1.0
+    def test_weight_applied(self):
+        traj = make_trajectory(body={"health": 5.0, "food": 5.0, "drink": 5.0, "energy": 5.0})
+        s = HomeostasisStimulus(weight=2.0, vital_vars=["health", "food", "drink", "energy"])
+        assert s.evaluate(traj) == pytest.approx(10.0)
 
-    def test_labels_dtype(self, generator: GratingGenerator) -> None:
-        """Labels are int64."""
-        _, labels = generator.generate(class_idx=0, n_variations=5)
-        assert labels.dtype == torch.int64
+    def test_empty_final_state_returns_zero(self):
+        traj = VectorTrajectory(plan=VectorPlan(steps=[]), states=[])
+        s = HomeostasisStimulus()
+        assert s.evaluate(traj) == 0.0
 
-    def test_images_on_cpu(self, generator: GratingGenerator) -> None:
-        """Output tensors on CPU."""
-        images, labels = generator.generate(class_idx=0, n_variations=1)
-        assert images.device == torch.device("cpu")
-        assert labels.device == torch.device("cpu")
+    def test_missing_vital_defaults_zero(self):
+        traj = make_trajectory(body={"health": 5.0})  # food/drink/energy missing
+        s = HomeostasisStimulus(vital_vars=["health", "food", "drink", "energy"])
+        assert s.evaluate(traj) == pytest.approx(0.0)
 
 
-class TestGratingVariations:
-    """Variation generation."""
+# ---------------------------------------------------------------------------
+# StimuliLayer
+# ---------------------------------------------------------------------------
 
-    def test_variations_differ(self, generator: GratingGenerator) -> None:
-        """Different variations of same orientation should differ."""
-        images, _ = generator.generate(class_idx=0, n_variations=5)
-        assert not torch.allclose(images[0], images[1])
+class TestStimuliLayer:
+    def test_empty_layer_returns_zero(self):
+        traj = make_trajectory()
+        layer = StimuliLayer(stimuli=[])
+        assert layer.evaluate(traj) == 0.0
 
-    def test_different_classes_differ(self, generator: GratingGenerator) -> None:
-        """Different orientations produce different images."""
-        img_a, _ = generator.generate(class_idx=0, n_variations=1)
-        img_b, _ = generator.generate(class_idx=5, n_variations=1)
-        assert not torch.allclose(img_a[0], img_b[0])
+    def test_single_stimulus(self):
+        traj = make_trajectory(terminated=True)
+        layer = StimuliLayer(stimuli=[SurvivalAversion(weight=100.0)])
+        assert layer.evaluate(traj) == pytest.approx(-100.0)
 
-    def test_reproducibility_with_seed(self) -> None:
-        """Same seed → same images."""
-        gen1 = GratingGenerator(image_size=64, seed=123)
-        gen2 = GratingGenerator(image_size=64, seed=123)
-        img1, _ = gen1.generate(class_idx=0, n_variations=3)
-        img2, _ = gen2.generate(class_idx=0, n_variations=3)
-        assert torch.allclose(img1, img2)
+    def test_two_stimuli_sum(self):
+        # terminated=False → SurvivalAversion=0, HomeostasisStimulus=min_vital
+        traj = make_trajectory(
+            terminated=False,
+            body={"health": 5.0, "food": 4.0, "drink": 3.0, "energy": 9.0},
+        )
+        layer = StimuliLayer(stimuli=[
+            SurvivalAversion(weight=1000.0),
+            HomeostasisStimulus(weight=1.0),
+        ])
+        # 0.0 + 3.0 = 3.0
+        assert layer.evaluate(traj) == pytest.approx(3.0)
 
-    def test_grating_has_continuous_values(self, generator: GratingGenerator) -> None:
-        """Gratings have smooth sinusoidal values (many unique pixel values)."""
-        images, _ = generator.generate(class_idx=0, n_variations=1)
-        assert len(images[0].unique()) > 50
+    def test_death_penalty_dominates(self):
+        traj = make_trajectory(
+            terminated=True,
+            body={"health": 0.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+        )
+        layer = StimuliLayer(stimuli=[
+            SurvivalAversion(weight=1000.0),
+            HomeostasisStimulus(weight=1.0),
+        ])
+        assert layer.evaluate(traj) < 0
+
+
+# ---------------------------------------------------------------------------
+# score_trajectory integration
+# ---------------------------------------------------------------------------
+
+class TestScoreTrajectoryWithStimuli:
+    def test_with_stimuli_returns_3tuple(self):
+        traj = make_trajectory()
+        layer = StimuliLayer(stimuli=[SurvivalAversion()])
+        score = score_trajectory(traj, stimuli=layer)
+        assert len(score) == 3
+
+    def test_stimuli_score_at_position_0(self):
+        traj = make_trajectory(terminated=True)
+        layer = StimuliLayer(stimuli=[SurvivalAversion(weight=999.0)])
+        score = score_trajectory(traj, stimuli=layer)
+        assert score[0] == pytest.approx(-999.0)
+
+    def test_without_stimuli_survived_at_position_0(self):
+        alive = make_trajectory(terminated=False)
+        dead = make_trajectory(terminated=True)
+        s_alive = score_trajectory(alive)
+        s_dead = score_trajectory(dead)
+        assert s_alive > s_dead  # (1, ...) > (0, ...)
+
+    def test_without_stimuli_returns_3tuple(self):
+        traj = make_trajectory()
+        score = score_trajectory(traj, stimuli=None)
+        assert len(score) == 3
+
+    def test_alive_beats_dead_with_stimuli(self):
+        alive = make_trajectory(
+            terminated=False,
+            body={"health": 5.0, "food": 5.0, "drink": 5.0, "energy": 5.0},
+        )
+        dead = make_trajectory(terminated=True, body={"health": 0.0})
+        layer = StimuliLayer(stimuli=[SurvivalAversion(), HomeostasisStimulus()])
+        s_alive = score_trajectory(alive, stimuli=layer)
+        s_dead = score_trajectory(dead, stimuli=layer)
+        assert s_alive > s_dead
