@@ -115,9 +115,13 @@ class GoalSelector:
         """Derive proactive crafting threats from textbook rules.
 
         Traverses: dangerous_entity → fight requires weapon → make weapon requires material.
-        Adds lowest-priority threat: no_weapon AND no_material → gather_material.
+        Adds lowest-priority threat: no_weapon AND material_count < chain_need → gather_material.
 
-        This is fully derived from textbook — no hardcoded item names.
+        chain_need: sum of this material's requirements across ALL rules in the textbook
+        that use it (make + place). Ensures agent gathers enough for the full crafting chain,
+        not just the first step.
+
+        This is fully derived from textbook — no hardcoded item names or thresholds.
         Motivation: prepare for known threats before they appear (proactive survival).
         """
         result: list[_Threat] = []
@@ -125,6 +129,14 @@ class GoalSelector:
 
         fight_rules = [r for r in textbook.rules if r.get("action") == "do"]
         make_rules = [r for r in textbook.rules if r.get("action") == "make"]
+        place_rules = [r for r in textbook.rules if r.get("action") == "place"]
+        crafting_rules = make_rules + place_rules
+
+        # Compute total material need across all crafting rules (chain cost)
+        material_chain_cost: dict[str, int] = {}
+        for craft_rule in crafting_rules:
+            for mat, qty in (craft_rule.get("requires", {}) or {}).items():
+                material_chain_cost[mat] = material_chain_cost.get(mat, 0) + int(qty)
 
         for fight_rule in fight_rules:
             fight_req = fight_rule.get("requires", {}) or {}
@@ -141,10 +153,12 @@ class GoalSelector:
                     if key in seen:
                         continue
                     seen.add(key)
+                    # Gather until we have enough for the full chain
+                    need = material_chain_cost.get(material, 1)
                     result.append(_Threat(
-                        active_fn=lambda s, _w=weapon, _m=material: (
+                        active_fn=lambda s, _w=weapon, _m=material, _n=need: (
                             s.inventory.get(_w, 0) < 1
-                            and s.inventory.get(_m, 0) < 1
+                            and s.inventory.get(_m, 0) < _n
                         ),
                         response_fn=lambda s, _m=material: Goal(f"gather_{_m}"),
                     ))
