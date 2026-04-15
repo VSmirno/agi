@@ -4,6 +4,17 @@
 
 ---
 
+## Stage 85 — Goal Selector Design (2026-04-15)
+**Что сделано:** GoalSelector — выбор цели из textbook rules. `total_gain` заменён на `Goal.progress(trajectory)`. Proactive crafting chain: нет дерева + нет меча → `gather_wood`. VectorTrajectory.confidences + vital_delta/inventory_delta/item_gained. CuriosityStimulus определён (Stage 87 debt).
+**Результаты (20 эп, minipc):** avg_survival=197.0, wood_ge3_pct=10%, no_total_gain=✓. Gates: **3/3 PASS**.
+**Допущения/ограничения:**
+- **wood_ge3_pct=10% на грани** — только 2 эпизода из 20 с wood≥3 (ep3=5, ep10=4). Зависит от плотности деревьев в map seed. Стена = stale spatial_map + segmenter ghost trees.
+- **Proactive crafting threshold** — `chain_cost` = сумма всех требований по material (для wood=5). После сбора 5 дерева цель переключается на explore. Если витали упадут раньше, wood=1-2.
+- **Goal.explore() + sleep** — исправлен: self-action trajectories дают explore_progress=0, иначе агент спал при полных виталах.
+- **Spatial map ghosts** — segmenter иногда метит тайл игрока как "tree" (near=tree при H9/F9). `find_nearest` пропускает player_pos (Bug 5), но stale entries в других позициях всё ещё вводят в заблуждение.
+
+---
+
 ## Stage 84 — Real Stimuli Infrastructure (2026-04-15)
 **Что сделано:** Vital fix (body читается из `info["inventory"]`, не из top-level `info`) + StimuliLayer (Category 4): SurvivalAversion + HomeostasisStimulus вынесены из `score_trajectory`.
 **Результаты (20 эп, minipc):** avg_survival=178.9, wood=0%, sleep%=0%. Gates: 2/3 (survival ✓, sleep_not_stuck ✓, wood ✗).
