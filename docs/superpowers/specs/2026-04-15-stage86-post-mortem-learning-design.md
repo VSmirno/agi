@@ -40,7 +40,7 @@ class DamageEvent:
     step: int
     health_delta: float                           # always < 0
     vitals: dict[str, float]                      # food, drink, energy at event
-    nearby_entities: list[tuple[str, int]]        # [(entity_id, dist), ...]
+    nearby_cids: list[tuple[str, int]]            # [(concept_id, dist), ...]
 ```
 
 Accumulated in `run_vector_mpc_episode` on every step where `health_delta < 0`.
@@ -67,11 +67,13 @@ def attribute(
 **Temporal decay weight** for each event: `w = exp(-decay * (death_step - event.step))`.  
 Weights are normalised so they sum to 1.0 across all events.
 
-**Source detection per event** (one event may have multiple sources — weight split equally):
-- `vitals["food"] == 0` → `"starvation"`
-- `vitals["drink"] == 0` → `"dehydration"`
-- any entity with `dist <= 2` → that `entity_id`
+**Source detection per event** (one event may have multiple sources — weight split equally across all detected sources for that event):
+- `vitals["food"] < 0.5` → `"starvation"`
+- `vitals["drink"] < 0.5` → `"dehydration"`
+- any entity with `dist <= 2` → that concept_id (e.g. `"zombie"`, `"skeleton"`)
 - no source matched → `"unknown"`
+
+Example: `food=0` and zombie at `dist=1` → both detected → event weight split 50/50 between `"starvation"` and `"zombie"`.
 
 **Return value:** `dict[str, float]` mapping source → fraction of total damage weight. Sum = 1.0.
 
@@ -148,7 +150,7 @@ stimuli = learner.build_stimuli(vital_vars)
 for ep in range(n_episodes):
     result = run_vector_mpc_episode(..., stimuli=stimuli)
     if result["damage_log"]:
-        attribution = analyzer.attribute(result["damage_log"], result["avg_len"])
+        attribution = analyzer.attribute(result["damage_log"], result["episode_steps"])
         learner.update(attribution)
     stimuli = learner.build_stimuli(vital_vars)
 ```
@@ -165,6 +167,10 @@ Two eval runs in `stage86_eval.py`:
 |---|---|---|
 | `zombie_deaths_decrease` | `zombie_deaths(ep14-20) < zombie_deaths(ep1-7)` | within `with_pm` run |
 | `starvation_decrease` | `starvation_deaths(with_pm) < starvation_deaths(without_pm)` | across two runs |
+
+`zombie_deaths` = count of episodes where `result["death_cause"] == "zombie"`.  
+`starvation_deaths` = count of episodes where `result["death_cause"] == "starvation"`.  
+`death_cause` = key with highest value in attribution dict; `"alive"` if `damage_log` is empty.
 | `survival_holds` | `avg_survival(with_pm) >= 155` | `with_pm` run |
 
 All 3 gates must PASS.
@@ -177,7 +183,7 @@ All 3 gates must PASS.
 |---|---|
 | `src/snks/agent/post_mortem.py` | NEW — `DamageEvent`, `PostMortemAnalyzer`, `PostMortemLearner` |
 | `src/snks/agent/stimuli.py` | `HomeostasisStimulus` — add `thresholds: dict[str, float]` field + new `evaluate()` |
-| `src/snks/agent/vector_mpc_agent.py` | Accumulate `damage_log`, add `"damage_log"` + `"death_cause"` to return dict |
+| `src/snks/agent/vector_mpc_agent.py` | Accumulate `damage_log`; add `"damage_log"`, `"death_cause"`, `"episode_steps"` to return dict; rename `"avg_len"` → `"episode_steps"` |
 | `experiments/stage86_eval.py` | NEW — 20-ep eval, two runs (with_pm / without_pm), gate checks |
 | `tests/test_post_mortem.py` | NEW — unit tests for attribution + learner |
 
