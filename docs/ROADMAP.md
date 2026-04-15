@@ -12,10 +12,15 @@
 
 ## Текущая позиция
 
+**Stage 87 — COMPLETE (2026-04-15, PASS)**
+
+avg_survival=186.85, n_verifiable=4, curiosity_active=17/20. Gates: 3/3.
+DeathHypothesis + HypothesisTracker + CuriosityStimulus death-relevance weighting. Next: Stage 88.
+
 **Stage 86 — COMPLETE (2026-04-15, PASS)**
 
 avg_survival(with_pm)=179.7, zombie_deaths 6→3, starvation 0<1. Gates: 3/3.
-Post-mortem learning реализован. HomeostasisStimulus deficit-based. Next: Stage 87.
+Post-mortem learning реализован. HomeostasisStimulus deficit-based.
 
 ---
 

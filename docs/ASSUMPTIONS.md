@@ -4,6 +4,18 @@
 
 ---
 
+## Stage 87 — Curiosity About Death (2026-04-15)
+**Что сделано:** DeathHypothesis (корреляция причины смерти с уровнем витала) + HypothesisTracker (накапливает per-episode данные, порождает верифицируемые гипотезы). CuriosityStimulus обновлён: `U = weight × avg_surprise × death_relevance`, где death_relevance ∈ [1.0, 2.0] — близость витала к порогу гипотезы. PostMortemLearner.build_stimuli() добавляет CuriosityStimulus при наличии активной гипотезы.
+**Результаты (20 эп, minipc):** avg_survival=186.85. n_verifiable=4, curiosity_active_episodes=17/20. Gates: **3/3 PASS**.
+**Допущения/ограничения:**
+- **Гипотезы корреляционные, не каузальные** — `zombie + drink < 3` означает "при low drink чаще умираю от zombie", не "drink вызывает zombie". Механизм не объясняется, только коррелируется.
+- **Пороги фиксированы** — `{food: 3.0, drink: 3.0, health: 4.0, energy: 2.0}`. Адаптивные пороги (через PostMortemLearner) — Stage 88 scope.
+- **Гипотезы не персистируются** — сбрасываются при новом запуске. Persistence — Stage 88 (Knowledge Flow).
+- **cow как причина смерти** — агент иногда получает урон рядом с коровой (collision?). `_detect_sources` улавливает любой entity в `dist <= 2`. Корова как источник смерти не идеологически осмыслена.
+- **death_relevance только по виталам** — entity proximity в VectorTrajectory недоступна (нет в VectorState). Trajectory relevance вычисляется только через body dict.
+
+---
+
 ## Stage 86 — Post-Mortem Learning (2026-04-15)
 **Что сделано:** DamageEvent log (накопление per-step при health_delta<0), PostMortemAnalyzer (temporal-decay attribution, многофакторный), PostMortemLearner (обновляет HomeostasisStimulus thresholds + health_weight между эпизодами). HomeostasisStimulus переведён на deficit-based scoring с per-vital thresholds.
 **Результаты (20+20 эп, minipc):** avg_survival(with_pm)=179.7. zombie_deaths early=6→late=3, starvation with_pm=0 < without_pm=1. Gates: **3/3 PASS**.
