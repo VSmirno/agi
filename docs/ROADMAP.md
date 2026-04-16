@@ -12,15 +12,17 @@
 
 ## Текущая позиция
 
+**Stage 88 — CLOSED (2026-04-16, 1/2 gates)**
+
+gen1=189.4, gen5=179.7, ratio=0.949. Secondary PASS (n_promoted=2 ✓), Primary FAIL.
+Knowledge flow механически работает (гипотезы формируются и промоутируются).
+Structural wall: vital threshold adjustments не улучшают zombie-боевую выживаемость.
+Arrow attribution добавлен (exp136 + entity-specific ranges). Next: Stage 89.
+
 **Stage 87 — COMPLETE (2026-04-15, PASS)**
 
 avg_survival=186.85, n_verifiable=4, curiosity_active=17/20. Gates: 3/3.
-DeathHypothesis + HypothesisTracker + CuriosityStimulus death-relevance weighting. Next: Stage 88.
-
-**Stage 86 — COMPLETE (2026-04-15, PASS)**
-
-avg_survival(with_pm)=179.7, zombie_deaths 6→3, starvation 0<1. Gates: 3/3.
-Post-mortem learning реализован. HomeostasisStimulus deficit-based.
+DeathHypothesis + HypothesisTracker + CuriosityStimulus death-relevance weighting.
 
 ---
 
