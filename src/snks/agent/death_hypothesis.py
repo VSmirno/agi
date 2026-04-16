@@ -120,9 +120,19 @@ class HypothesisTracker:
                 if val < thr:
                     counts[cause][vital][0] += 1
 
+        # Index promoted priors for fast lookup.
+        promoted_by_key = {(ph.cause, ph.vital): ph for ph in self._promoted}
+
         hypotheses: list[DeathHypothesis] = []
         for cause, vital_counts in counts.items():
             for vital, (n_sup, n_obs) in vital_counts.items():
+                # Merge promoted prior counts into live observations so that the
+                # hypothesis stays verifiable from the very first death in a new
+                # generation (fixes premature-replacement bug).
+                prior = promoted_by_key.get((cause, vital))
+                if prior is not None:
+                    n_sup += prior.n_supporting
+                    n_obs += prior.n_observed
                 hypotheses.append(
                     DeathHypothesis(
                         cause=cause,
@@ -132,9 +142,8 @@ class HypothesisTracker:
                         n_observed=n_obs,
                     )
                 )
-        # Merge promoted: carry forward entries for (cause, vital) pairs not yet
-        # observed in this run. Once the current gen has ANY death for a key,
-        # the live-derived entry fully replaces the promoted prior.
+        # Carry forward promoted entries for (cause, vital) pairs not yet seen
+        # in this generation's records.
         live_keys = {(h.cause, h.vital) for h in hypotheses}
         for ph in self._promoted:
             if (ph.cause, ph.vital) not in live_keys:
