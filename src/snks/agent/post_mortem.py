@@ -72,7 +72,7 @@ class PostMortemAnalyzer:
         if ev.vitals.get("drink", 9.0) < 0.5:
             sources.append("dehydration")
         for cid, dist in ev.nearby_cids:
-            if dist <= 2:
+            if dist <= 6:
                 sources.append(cid)
 
         return sources if sources else ["unknown"]
