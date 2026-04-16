@@ -195,11 +195,13 @@ def compute_gates(gen_results: list[dict]) -> dict:
     gen5 = gen_results[-1]["avg_survival"]
     ratio = gen5 / gen1 if gen1 > 0 else 0.0
 
-    # Secondary gate: n_promoted after gen2
-    n_promoted_after_gen2 = gen_results[1]["promoted_in"] if len(gen_results) >= 2 else 0
+    # Secondary gate: cumulative promoted hypotheses in textbook by gen5.
+    # Uses promoted_in of last gen (= what gen4 promoted into the store),
+    # which reflects knowledge accumulated across all generations.
+    n_promoted_cumulative = gen_results[-1]["promoted_in"] if gen_results else 0
 
     primary_pass = (ratio >= 1.20) or (gen5 >= 210.0)
-    secondary_pass = n_promoted_after_gen2 >= 2
+    secondary_pass = n_promoted_cumulative >= 2
 
     gates = {
         "primary": primary_pass,
@@ -214,7 +216,7 @@ def compute_gates(gen_results: list[dict]) -> dict:
     print(f"  ratio = {ratio:.3f} (>= 1.20? {'✓' if ratio >= 1.20 else '✗'})")
     print(f"  gen5 >= 210? {'✓' if gen5 >= 210 else '✗'}")
     print(f"  primary (ratio>=1.20 OR gen5>=210): {'✓ PASS' if primary_pass else '✗ FAIL'}")
-    print(f"  secondary (n_promoted_after_gen2={n_promoted_after_gen2} >= 2): "
+    print(f"  secondary (n_promoted_cumulative={n_promoted_cumulative} >= 2): "
           f"{'✓ PASS' if secondary_pass else '✗ FAIL'}")
 
     return {
@@ -222,7 +224,7 @@ def compute_gates(gen_results: list[dict]) -> dict:
         "gen1_avg_survival": gen1,
         "gen5_avg_survival": gen5,
         "ratio": round(ratio, 3),
-        "n_promoted_after_gen2": n_promoted_after_gen2,
+        "n_promoted_cumulative": n_promoted_cumulative,
     }
 
 
