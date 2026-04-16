@@ -436,7 +436,7 @@ def run_vector_mpc_episode(
     entity_tracker = DynamicEntityTracker()
     # Register known dynamic concepts
     for cid in model.concepts:
-        if cid in ("zombie", "skeleton", "cow"):
+        if cid in ("zombie", "skeleton", "cow", "arrow"):
             entity_tracker.register_dynamic_concept(cid)
 
     pixels, info = env.reset()

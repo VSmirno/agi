@@ -32,7 +32,7 @@ def main():
     device = torch.device(pick_device())
     root = Path(__file__).parent.parent
 
-    checkpoint_path = root / "demos" / "checkpoints" / "exp135" / "segmenter_9x9.pt"
+    checkpoint_path = root / "demos" / "checkpoints" / "exp136" / "segmenter_9x9.pt"
     textbook_path = root / "configs" / "crafter_textbook.yaml"
 
     segmenter = load_tile_segmenter(str(checkpoint_path), device=device)
