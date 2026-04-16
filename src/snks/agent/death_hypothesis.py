@@ -82,9 +82,12 @@ class HypothesisTracker:
         hypothesis = tracker.active_hypothesis()
     """
 
-    def __init__(self) -> None:
+    def __init__(self, initial: list[DeathHypothesis] | None = None) -> None:
         self._records: list[dict] = []
         self._hypotheses: list[DeathHypothesis] = []
+        self._promoted: list[DeathHypothesis] = list(initial or [])
+        if self._promoted:
+            self._rebuild_hypotheses()  # populate _hypotheses from _promoted immediately
 
     def record(
         self,
@@ -129,6 +132,14 @@ class HypothesisTracker:
                         n_observed=n_obs,
                     )
                 )
+        # Merge promoted: carry forward entries for (cause, vital) pairs not yet
+        # observed in this run. Once the current gen has ANY death for a key,
+        # the live-derived entry fully replaces the promoted prior.
+        live_keys = {(h.cause, h.vital) for h in hypotheses}
+        for ph in self._promoted:
+            if (ph.cause, ph.vital) not in live_keys:
+                hypotheses.append(ph)
+
         self._hypotheses = hypotheses
 
     def active_hypothesis(self) -> DeathHypothesis | None:

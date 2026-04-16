@@ -10,12 +10,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
 from snks.agent.stimuli import CuriosityStimulus, HomeostasisStimulus, StimuliLayer, SurvivalAversion
-
-if TYPE_CHECKING:
-    from snks.agent.death_hypothesis import DeathHypothesis
+from snks.agent.death_hypothesis import DeathHypothesis
 
 
 @dataclass
@@ -122,6 +118,38 @@ class PostMortemLearner:
                 self.health_weight + self.lr * entity_share,
                 _WEIGHT_MIN, _WEIGHT_MAX,
             )
+
+    @classmethod
+    def from_promoted(
+        cls,
+        hypotheses: list[DeathHypothesis],
+        lr: float = 0.1,
+    ) -> PostMortemLearner:
+        """Create PostMortemLearner with thresholds pre-initialized from promoted hypotheses.
+
+        Formula: threshold = max(default, 3.0 + support_rate * 2.0), capped at _THRESHOLD_MAX.
+        This is a conservative overestimate from the default base — update() will pull it back
+        within the new generation if it overcorrects.
+        """
+        learner = cls(lr=lr)
+        for h in hypotheses:
+            bump = min(h.support_rate * 2.0, 2.0)
+            if h.vital == "drink":
+                learner.drink_threshold = cls._clamp(
+                    max(learner.drink_threshold, 3.0 + bump),
+                    _THRESHOLD_MIN, _THRESHOLD_MAX,
+                )
+            elif h.vital == "food":
+                learner.food_threshold = cls._clamp(
+                    max(learner.food_threshold, 3.0 + bump),
+                    _THRESHOLD_MIN, _THRESHOLD_MAX,
+                )
+            if h.cause in ("zombie", "skeleton"):
+                learner.health_weight = cls._clamp(
+                    max(learner.health_weight, 1.0 + h.support_rate),
+                    _WEIGHT_MIN, _WEIGHT_MAX,
+                )
+        return learner
 
     def build_stimuli(
         self,
