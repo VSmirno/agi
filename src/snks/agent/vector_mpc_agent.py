@@ -700,6 +700,21 @@ def run_vector_mpc_episode(
             body_at_end = {v: float(raw_inv_end.get(v, 0.0)) for v in vitals}
             if any(body_at_end.get(v, 0.0) <= 0 for v in vitals):
                 cause_of_death = "health"
+                # Record killing blow: last env.step() reduced health but the
+                # loop exits before the next iteration can compute the delta.
+                final_health_delta = body_at_end.get("health", 0.0) - body.get("health", 9.0)
+                if final_health_delta < 0:
+                    nearby_cids = []
+                    for entity_cid, entity_pos in entity_tracker.visible_entities():
+                        ex, ey = entity_pos
+                        dist = abs(ex - player_pos[0]) + abs(ey - player_pos[1])
+                        nearby_cids.append((entity_cid, dist))
+                    damage_log.append(DamageEvent(
+                        step=step,
+                        health_delta=float(final_health_delta),
+                        vitals={k: body.get(k, 9.0) for k in ("food", "drink", "energy")},
+                        nearby_cids=nearby_cids,
+                    ))
             else:
                 cause_of_death = "done"
             break
