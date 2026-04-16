@@ -62,8 +62,17 @@ class PostMortemAnalyzer:
         # Values already normalised (sum of shares == total_w / total_w == 1.0)
         return attribution
 
-    @staticmethod
-    def _detect_sources(ev: DamageEvent) -> list[str]:
+    # Crafter damage mechanics (from objects.py):
+    # - zombie: melee, attacks at dist<=1, moves toward player
+    # - skeleton: ranged, shoots Arrow at dist<=5; arrow travels ~1 tile/step,
+    #   so skeleton may be at dist 7-10 by the time the arrow hits
+    # - cow: does NOT deal damage (moves randomly only)
+    _MELEE_RANGE = 6    # zombie — with entity_tracker timing lag
+    _RANGED_RANGE = 10  # skeleton — accounts for arrow travel time
+    _DAMAGE_DEALERS = {"zombie": _MELEE_RANGE, "skeleton": _RANGED_RANGE}
+
+    @classmethod
+    def _detect_sources(cls, ev: DamageEvent) -> list[str]:
         """Return list of causal source labels for this damage event."""
         sources: list[str] = []
 
@@ -72,7 +81,8 @@ class PostMortemAnalyzer:
         if ev.vitals.get("drink", 9.0) < 0.5:
             sources.append("dehydration")
         for cid, dist in ev.nearby_cids:
-            if dist <= 6:
+            max_dist = cls._DAMAGE_DEALERS.get(cid)
+            if max_dist is not None and dist <= max_dist:
                 sources.append(cid)
 
         return sources if sources else ["unknown"]
