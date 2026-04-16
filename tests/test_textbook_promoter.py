@@ -233,10 +233,10 @@ class TestHypothesisTrackerInitial:
         keys = {(x.cause, x.vital) for x in tracker.all_hypotheses()}
         assert ("zombie", "drink") in keys
 
-    def test_live_entry_replaces_promoted_for_same_key(self):
-        # Promoted: zombie+drink (n_obs=13). Record 5 zombie deaths in new gen.
-        # After 5 records, the live-derived zombie+drink entry should be present
-        # and zombie+drink should NOT be the promoted version (it gets replaced).
+    def test_live_entry_merges_promoted_for_same_key(self):
+        # Promoted: zombie+drink (n_obs=13, n_sup=7). Record 5 zombie deaths in new gen
+        # with drink=2.0 < 3.0 (supporting). Live counts: n_obs=5, n_sup=5.
+        # After merge: n_obs = 5+13 = 18, n_sup = 5+7 = 12.
         h = _make_h("zombie", "drink", n_supporting=7, n_observed=13)
         tracker = HypothesisTracker(initial=[h])
 
@@ -251,5 +251,6 @@ class TestHypothesisTrackerInitial:
             if x.cause == "zombie" and x.vital == "drink"
         ]
         assert len(zombie_drink) == 1
-        # The live-derived entry has n_observed from _records (5), not the promoted 13
-        assert zombie_drink[0].n_observed == 5
+        # Merged: live (5) + promoted (13) = 18
+        assert zombie_drink[0].n_observed == 18
+        assert zombie_drink[0].n_supporting == 12
