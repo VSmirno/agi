@@ -143,13 +143,13 @@ class PostMortemLearner:
     ) -> PostMortemLearner:
         """Create PostMortemLearner with thresholds pre-initialized from promoted hypotheses.
 
-        Formula: threshold = max(default, 3.0 + support_rate * 2.0), capped at _THRESHOLD_MAX.
-        This is a conservative overestimate from the default base — update() will pull it back
-        within the new generation if it overcorrects.
+        Formula: threshold = max(default, 3.0 + support_rate * 0.3), capped at _THRESHOLD_MAX.
+        Small conservative bump — avoids overcorrection when multiple hypotheses promoted.
+        Multiplier 0.3: rate=0.86 → bump=0.26 → thr=3.26 (vs naive 4.72 with old 2.0).
         """
         learner = cls(lr=lr)
         for h in hypotheses:
-            bump = min(h.support_rate * 2.0, 2.0)
+            bump = h.support_rate * 0.3
             if h.vital == "drink":
                 learner.drink_threshold = cls._clamp(
                     max(learner.drink_threshold, 3.0 + bump),
@@ -162,7 +162,7 @@ class PostMortemLearner:
                 )
             if h.cause in ("zombie", "skeleton", "arrow"):
                 learner.health_weight = cls._clamp(
-                    max(learner.health_weight, 1.0 + h.support_rate),
+                    max(learner.health_weight, 1.0 + h.support_rate * 0.3),
                     _WEIGHT_MIN, _WEIGHT_MAX,
                 )
         return learner
