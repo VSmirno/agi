@@ -30,95 +30,104 @@ torch.backends.cudnn.enabled = False
 EXP135_CHECKPOINT = Path("demos/checkpoints/exp135/segmenter_9x9.pt")
 CHECKPOINT_DIR = Path("demos/checkpoints/exp136")
 
-# Collection parameters
-N_FRAMES_GENERAL = 4000   # general episodes (terrain + mobs)
-N_FRAMES_SKELETON = 2000  # skeleton-focused episodes (for arrow examples)
+N_FRAMES_GENERAL = 4000
+N_FRAMES_SKELETON = 2000
 EPOCHS = 200
 BATCH_SIZE = 64
 LR = 1e-3
+ARROW_OVERSAMPLE = 5
 
 
-def collect_general_frames(n_frames: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
-    """Collect frames from random-walk episodes."""
-    from snks.agent.crafter_pixel_env import CrafterPixelEnv
-    from snks.encoder.tile_head_trainer import collect_tile_training_data, VIEWPORT_ROWS, VIEWPORT_COLS
+def collect_frames(
+    n_frames: int,
+    seed_base: int = 100,
+    frames_per_ep: int = 100,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Collect raw pixel frames + per-tile labels from random-walk episodes.
 
-    all_pixels = []
-    all_labels = []
-    ep = 0
-    frames_collected = 0
-    frames_per_ep = max(1, n_frames // 30)
-
-    print(f"  Collecting {n_frames} general frames (~{frames_per_ep}/ep)...")
-    while frames_collected < n_frames:
-        env = CrafterPixelEnv(seed=100 + ep)
-        px, lab = collect_tile_training_data(env, n_frames=frames_per_ep, device=device)
-        all_pixels.append(px)
-        all_labels.append(lab)
-        frames_collected += px.shape[0]
-        ep += 1
-        if ep % 10 == 0:
-            print(f"    ep{ep}: {frames_collected}/{n_frames} frames")
-
-    pixels = torch.cat(all_pixels, dim=0)[:n_frames]
-    labels = torch.cat(all_labels, dim=0)[:n_frames]
-    print(f"  General: {pixels.shape[0]} frames")
-    return pixels, labels
-
-
-def collect_skeleton_frames(n_frames: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
-    """Collect frames from episodes known to have skeletons (for arrow examples).
-
-    Uses seeds where skeletons spawn early/frequently. Keeps ALL frames,
-    then oversamples those containing arrows.
+    Returns:
+        pixels: (N, 3, H, W) float tensor
+        labels: (N, VIEWPORT_ROWS, VIEWPORT_COLS) long tensor
     """
     from snks.agent.crafter_pixel_env import CrafterPixelEnv
-    from snks.encoder.tile_head_trainer import collect_tile_training_data
-    from snks.agent.decode_head import NEAR_TO_IDX
+    from snks.encoder.tile_head_trainer import viewport_tile_label, VIEWPORT_ROWS, VIEWPORT_COLS
 
-    arrow_idx = NEAR_TO_IDX.get("arrow", -1)
-    all_pixels = []
-    all_labels = []
-    arrow_pixels = []
-    arrow_labels = []
+    all_pixels: list[torch.Tensor] = []
+    all_labels: list[torch.Tensor] = []
     ep = 0
-    frames_collected = 0
-    frames_per_ep = max(1, n_frames // 50)
 
-    print(f"  Collecting {n_frames} skeleton-focused frames...")
-    while frames_collected < n_frames:
-        env = CrafterPixelEnv(seed=200 + ep)
-        px, lab = collect_tile_training_data(env, n_frames=frames_per_ep, device=device)
-        # Separate arrow-containing frames
-        if arrow_idx >= 0:
-            has_arrow = (lab == arrow_idx).any(dim=-1).any(dim=-1)  # (N,)
-            if has_arrow.any():
-                arrow_pixels.append(px[has_arrow])
-                arrow_labels.append(lab[has_arrow])
-        all_pixels.append(px)
-        all_labels.append(lab)
-        frames_collected += px.shape[0]
+    while sum(p.shape[0] for p in all_pixels) < n_frames if all_pixels else True:
+        if all_pixels and sum(p.shape[0] for p in all_pixels) >= n_frames:
+            break
+        env = CrafterPixelEnv(seed=seed_base + ep * 17)
+        pixels_frame, info = env.reset()
+        ep_px: list[torch.Tensor] = []
+        ep_lb: list[torch.Tensor] = []
+
+        for step in range(frames_per_ep * 3):
+            action = np.random.randint(0, env.n_actions)
+            pixels_frame, _, done, info = env.step(action)
+            if done:
+                break
+            if step % 3 != 0:
+                continue
+
+            semantic = info.get("semantic")
+            player_pos = info.get("player_pos")
+            if semantic is None or player_pos is None:
+                continue
+
+            tile_gt = torch.zeros(VIEWPORT_ROWS, VIEWPORT_COLS, dtype=torch.long)
+            for tr in range(VIEWPORT_ROWS):
+                for tc in range(VIEWPORT_COLS):
+                    tile_gt[tr, tc] = viewport_tile_label(semantic, player_pos, tr, tc)
+
+            ep_px.append(torch.from_numpy(pixels_frame.copy()).float())
+            ep_lb.append(tile_gt)
+
+        if ep_px:
+            all_pixels.append(torch.stack(ep_px))
+            all_labels.append(torch.stack(ep_lb))
+
         ep += 1
+        total = sum(p.shape[0] for p in all_pixels)
         if ep % 10 == 0:
-            n_arr = sum(p.shape[0] for p in arrow_pixels) if arrow_pixels else 0
-            print(f"    ep{ep}: {frames_collected}/{n_frames} frames, arrow_frames={n_arr}")
+            print(f"    ep{ep}: {total}/{n_frames} frames")
+        if total >= n_frames:
+            break
 
     pixels = torch.cat(all_pixels, dim=0)[:n_frames]
     labels = torch.cat(all_labels, dim=0)[:n_frames]
-
-    if arrow_pixels:
-        arr_px = torch.cat(arrow_pixels, dim=0)
-        arr_lb = torch.cat(arrow_labels, dim=0)
-        # Oversample arrow frames 5× to compensate for rarity
-        arr_px = arr_px.repeat(5, 1, 1, 1)
-        arr_lb = arr_lb.repeat(5, 1, 1)
-        pixels = torch.cat([pixels, arr_px], dim=0)
-        labels = torch.cat([labels, arr_lb], dim=0)
-        print(f"  Skeleton: {pixels.shape[0]} frames (incl {arr_px.shape[0]} arrow oversampled)")
-    else:
-        print(f"  Skeleton: {pixels.shape[0]} frames (0 arrow frames found!)")
-
     return pixels, labels
+
+
+def oversample_arrow_frames(
+    pixels: torch.Tensor,
+    labels: torch.Tensor,
+    arrow_idx: int,
+    factor: int = ARROW_OVERSAMPLE,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Add extra copies of frames containing arrow tiles."""
+    has_arrow = (labels == arrow_idx).any(dim=-1).any(dim=-1)
+    n_arrow = has_arrow.sum().item()
+    if n_arrow == 0:
+        print(f"  WARNING: 0 arrow frames found — arrow will not be learned!")
+        return pixels, labels
+
+    arr_px = pixels[has_arrow].repeat(factor, 1, 1, 1)
+    arr_lb = labels[has_arrow].repeat(factor, 1, 1)
+    print(f"  Arrow frames: {n_arrow} original → {arr_px.shape[0]} after {factor}x oversample")
+    return torch.cat([pixels, arr_px], dim=0), torch.cat([labels, arr_lb], dim=0)
+
+
+def class_report(labels: torch.Tensor, near_classes: list[str]) -> None:
+    n_classes = len(near_classes)
+    counts = torch.bincount(labels.flatten(), minlength=n_classes)
+    total = counts.sum().item()
+    print("  Class distribution:")
+    for i, name in enumerate(near_classes):
+        if counts[i] > 0:
+            print(f"    {name:12s}: {counts[i]:7d} ({100*counts[i]/total:.3f}%)")
 
 
 def train_head(
@@ -126,31 +135,34 @@ def train_head(
     pixels: torch.Tensor,
     labels: torch.Tensor,
     device: torch.device,
+    near_classes: list[str],
+    arrow_idx: int,
     epochs: int = EPOCHS,
 ) -> None:
-    """Train only the head of the segmenter (backbone frozen)."""
-    from snks.agent.decode_head import NEAR_CLASSES
-
+    """Train only the head (backbone frozen)."""
     # Freeze backbone
-    for p in segmenter.features.parameters():
-        p.requires_grad = False
-    for p in segmenter.pool.parameters():
-        p.requires_grad = False
+    for name, p in segmenter.named_parameters():
+        if not name.startswith("head"):
+            p.requires_grad = False
 
-    optimizer = torch.optim.Adam(segmenter.head.parameters(), lr=LR)
+    n_classes = len(near_classes)
+    optimizer = torch.optim.Adam(
+        [p for p in segmenter.parameters() if p.requires_grad], lr=LR
+    )
 
-    n = pixels.shape[0]
-    class_counts = torch.bincount(labels.flatten(), minlength=len(NEAR_CLASSES)).float().clamp(min=1)
+    class_counts = torch.bincount(labels.flatten(), minlength=n_classes).float().clamp(min=1)
     class_weights = (1.0 / class_counts)
-    class_weights = class_weights / class_weights.sum() * len(NEAR_CLASSES)
+    class_weights = class_weights / class_weights.sum() * n_classes
     class_weights = class_weights.to(device)
 
     from torch.utils.data import DataLoader, TensorDataset
     ds = TensorDataset(pixels, labels)
-    loader = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=True)
+    loader = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=True, drop_last=False)
 
-    print(f"  Training head only: {n} frames, {epochs} epochs")
+    n = pixels.shape[0]
+    print(f"  Training head: {n} frames, {epochs} epochs, device={device}")
     t0 = time.time()
+
     for epoch in range(epochs):
         segmenter.train()
         total_loss = 0.0
@@ -173,11 +185,9 @@ def train_head(
                 sample_tl = labels[:500].to(device)
                 preds = segmenter(sample_px).argmax(1)
                 acc = (preds == sample_tl).float().mean().item()
-                # Arrow-specific accuracy
-                from snks.agent.decode_head import NEAR_TO_IDX
-                arr_idx = NEAR_TO_IDX.get("arrow", -1)
-                if arr_idx >= 0:
-                    mask = sample_tl == arr_idx
+
+                if arrow_idx >= 0:
+                    mask = sample_tl == arrow_idx
                     if mask.any():
                         arrow_acc = (preds[mask] == sample_tl[mask]).float().mean().item()
                     else:
@@ -187,61 +197,63 @@ def train_head(
             print(f"  Epoch {epoch:3d}: loss={total_loss/n_batches:.4f} "
                   f"acc={acc:.1%} arrow_acc={arrow_acc:.1%}")
 
-    print(f"  Head training done ({time.time()-t0:.0f}s)")
-
-
-def class_report(labels: torch.Tensor) -> None:
-    from snks.agent.decode_head import NEAR_CLASSES
-    counts = torch.bincount(labels.flatten(), minlength=len(NEAR_CLASSES))
-    total = counts.sum().item()
-    print("  Class distribution:")
-    for i, name in enumerate(NEAR_CLASSES):
-        if counts[i] > 0:
-            print(f"    {name:12s}: {counts[i]:6d} ({100*counts[i]/total:.2f}%)")
+    print(f"  Done ({time.time()-t0:.0f}s)")
 
 
 def main():
     from snks.encoder.tile_segmenter import TileSegmenter, pick_device
-    from snks.agent.decode_head import NEAR_CLASSES
+    from snks.agent.decode_head import NEAR_CLASSES, NEAR_TO_IDX
 
     device = torch.device(pick_device())
     print(f"Device: {device}")
     print(f"NEAR_CLASSES ({len(NEAR_CLASSES)}): {NEAR_CLASSES}")
     assert "arrow" in NEAR_CLASSES, "arrow not in NEAR_CLASSES — check crafter_pixel_env.py!"
 
-    # Build new segmenter (n_classes includes arrow)
+    arrow_idx = NEAR_TO_IDX["arrow"]
+    print(f"arrow class index: {arrow_idx}")
+
+    # Build new segmenter with updated n_classes
     segmenter = TileSegmenter(n_classes=len(NEAR_CLASSES))
 
-    # Load backbone from exp135 (head weights incompatible — skip)
+    # Load backbone from exp135, skip head (shape mismatch)
     old_state = torch.load(str(EXP135_CHECKPOINT), map_location="cpu", weights_only=True)
     new_state = segmenter.state_dict()
-    loaded = {}
-    skipped = []
+    loaded, skipped = [], []
     for k, v in old_state.items():
         if k in new_state and new_state[k].shape == v.shape:
-            loaded[k] = v
+            new_state[k] = v
+            loaded.append(k)
         else:
             skipped.append(k)
-    new_state.update(loaded)
     segmenter.load_state_dict(new_state)
-    print(f"Loaded {len(loaded)} tensors from exp135, skipped {len(skipped)}: {skipped}")
+    print(f"Loaded {len(loaded)} tensors from exp135, skipped: {skipped}")
 
     segmenter.to(device)
 
-    # Collect training data
-    print("\n--- General frames ---")
-    px_gen, lb_gen = collect_general_frames(N_FRAMES_GENERAL, device=torch.device("cpu"))
-    print("\n--- Skeleton-focused frames ---")
-    px_skel, lb_skel = collect_skeleton_frames(N_FRAMES_SKELETON, device=torch.device("cpu"))
+    # Collect data
+    print(f"\n--- General frames (seed_base=100) ---")
+    t0 = time.time()
+    px_gen, lb_gen = collect_frames(N_FRAMES_GENERAL, seed_base=100)
+    print(f"  General: {px_gen.shape[0]} frames ({time.time()-t0:.0f}s)")
 
-    pixels = torch.cat([px_gen, px_skel], dim=0)
-    labels = torch.cat([lb_gen, lb_skel], dim=0)
-    print(f"\nTotal: {pixels.shape[0]} frames")
-    class_report(labels)
+    print(f"\n--- Skeleton-focused frames (seed_base=500) ---")
+    t0 = time.time()
+    px_sk, lb_sk = collect_frames(N_FRAMES_SKELETON, seed_base=500)
+    print(f"  Skeleton: {px_sk.shape[0]} frames ({time.time()-t0:.0f}s)")
 
-    # Train head
+    # Combine, then oversample arrows
+    pixels = torch.cat([px_gen, px_sk], dim=0)
+    labels = torch.cat([lb_gen, lb_sk], dim=0)
+    print(f"\nBefore oversample: {pixels.shape[0]} frames")
+    class_report(labels, NEAR_CLASSES)
+
+    pixels, labels = oversample_arrow_frames(pixels, labels, arrow_idx)
+    print(f"After oversample: {pixels.shape[0]} frames")
+
+    # Train
     print("\n--- Training ---")
-    train_head(segmenter, pixels, labels, device=device, epochs=EPOCHS)
+    train_head(segmenter, pixels, labels, device=device, near_classes=NEAR_CLASSES,
+               arrow_idx=arrow_idx, epochs=EPOCHS)
 
     # Save
     segmenter.eval().cpu()
