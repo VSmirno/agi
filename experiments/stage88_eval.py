@@ -33,7 +33,7 @@ def _build_model_and_segmenter(model_dim: int, n_locations: int, seed: int, devi
     from snks.encoder.tile_segmenter import load_tile_segmenter
 
     checkpoint_path = (
-        Path(__file__).parent.parent / "demos" / "checkpoints" / "exp135" / "segmenter_9x9.pt"
+        Path(__file__).parent.parent / "demos" / "checkpoints" / "exp136" / "segmenter_9x9.pt"
     )
     segmenter = load_tile_segmenter(str(checkpoint_path), device=device)
 

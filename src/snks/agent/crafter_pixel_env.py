@@ -32,12 +32,13 @@ SEMANTIC_NAMES = {
     6: "tree", 7: "lava", 8: "coal", 9: "iron", 10: "diamond",
     11: "table", 12: "furnace",
     13: "player", 14: "cow", 15: "zombie", 16: "skeleton",
+    17: "arrow",   # Arrow object — ID from SemanticView([Player,Cow,Zombie,Skeleton,Arrow,Plant])
 }
 
 # Objects relevant for "near" detection (subset of SEMANTIC_NAMES)
 NEAR_OBJECTS = [
     "water", "tree", "stone", "coal", "iron", "diamond",
-    "table", "furnace", "cow", "zombie", "skeleton",
+    "table", "furnace", "cow", "zombie", "skeleton", "arrow",
 ]
 
 # Inventory items (also used in decode_head.py)

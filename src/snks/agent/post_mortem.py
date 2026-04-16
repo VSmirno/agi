@@ -66,10 +66,16 @@ class PostMortemAnalyzer:
     # - zombie: melee, attacks at dist<=1, moves toward player
     # - skeleton: ranged, shoots Arrow at dist<=5; arrow travels ~1 tile/step,
     #   so skeleton may be at dist 7-10 by the time the arrow hits
+    # - arrow: the projectile itself; at the player's tile (dist 0-1) when it hits
     # - cow: does NOT deal damage (moves randomly only)
     _MELEE_RANGE = 6    # zombie — with entity_tracker timing lag
     _RANGED_RANGE = 10  # skeleton — accounts for arrow travel time
-    _DAMAGE_DEALERS = {"zombie": _MELEE_RANGE, "skeleton": _RANGED_RANGE}
+    _ARROW_RANGE = 2    # arrow — at player tile when it hits
+    _DAMAGE_DEALERS = {
+        "zombie": _MELEE_RANGE,
+        "skeleton": _RANGED_RANGE,
+        "arrow": _ARROW_RANGE,
+    }
 
     @classmethod
     def _detect_sources(cls, ev: DamageEvent) -> list[str]:
@@ -121,7 +127,7 @@ class PostMortemLearner:
                 _THRESHOLD_MIN, _THRESHOLD_MAX,
             )
         entity_share = sum(
-            v for k, v in attribution.items() if k in ("zombie", "skeleton")
+            v for k, v in attribution.items() if k in ("zombie", "skeleton", "arrow")
         )
         if entity_share > 0:
             self.health_weight = self._clamp(
@@ -154,7 +160,7 @@ class PostMortemLearner:
                     max(learner.food_threshold, 3.0 + bump),
                     _THRESHOLD_MIN, _THRESHOLD_MAX,
                 )
-            if h.cause in ("zombie", "skeleton"):
+            if h.cause in ("zombie", "skeleton", "arrow"):
                 learner.health_weight = cls._clamp(
                     max(learner.health_weight, 1.0 + h.support_rate),
                     _WEIGHT_MIN, _WEIGHT_MAX,
