@@ -4,6 +4,21 @@
 
 ---
 
+## Stage 88 — Knowledge Flow: Textbook Promotion (2026-04-16)
+**Что сделано:** TextbookPromoter (YAML persistence), HypothesisTracker merge fix (accumulated n_obs across generations), PostMortemLearner.from_promoted() с консервативным bump=0.3. Дополнительно: exp136 добавил класс `arrow` в TileSegmenter; `_detect_sources` исправлен (entity-specific ranges, cow исключена); killing blow DamageEvent фикс; arrow регистрирован в entity_tracker.
+**Результаты (88f, 5 gen × 20 ep, minipc):** gen1=189.4, gen5=179.7, ratio=0.949. Gates: **1/2 — secondary PASS (n_promoted=2 ✓), primary FAIL (ratio=0.949 < 1.20, gen5=179 < 210 ✗)**.
+**Ключевые открытия:**
+- **death=unknown устранены** — с entity-specific ranges (zombie≤6, skeleton≤10, arrow≤2) и killing blow фиксом: 0 unknown из 30 диагностических эпизодов.
+- **arrow attribution работает** — exp136 сегментер + arrow в entity_tracker: arrow = 27% смертей (diag), атрибутируется напрямую.
+- **Knowledge flow structural wall** — gen1 всегда лучший (189.4 > gen2-5). Гипотезы zombie+drink/food формируются корректно, но корреляция ложная: drink/food были низкими как следствие боя с zombie, не причина. Поднятие порогов виталов не влияет на zombie-боевую выживаемость.
+- **Arrow dodge insight** — стрела летит 1 тайл/шаг по прямой, dodge механически возможен. Требует моделирования trajectory в VectorWorldModel (Stage 89).
+**Допущения/ограничения:**
+- **Primary gate неверно калиброван** — gate предполагал что vital thresholds — полезное знание против zombie. Оказалось нет. Survival ceiling ~190 определяется zombie-боями.
+- **from_promoted() bump тюнинг** — bump=2.0 (88e) катастрофичен (ratio=0.85), bump=0.3 (88f) нейтрален (ratio=0.95). Знание нейтральное, не позитивное.
+- **arrow_acc=25.8%** — backbone exp135 не имеет фич для стрел. Точность ограничена при frozen backbone.
+
+---
+
 ## Stage 87 — Curiosity About Death (2026-04-15)
 **Что сделано:** DeathHypothesis (корреляция причины смерти с уровнем витала) + HypothesisTracker (накапливает per-episode данные, порождает верифицируемые гипотезы). CuriosityStimulus обновлён: `U = weight × avg_surprise × death_relevance`, где death_relevance ∈ [1.0, 2.0] — близость витала к порогу гипотезы. PostMortemLearner.build_stimuli() добавляет CuriosityStimulus при наличии активной гипотезы.
 **Результаты (20 эп, minipc):** avg_survival=186.85. n_verifiable=4, curiosity_active_episodes=17/20. Gates: **3/3 PASS**.
