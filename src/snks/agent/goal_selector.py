@@ -61,10 +61,29 @@ class GoalSelector:
 
     def select(self, state: "VectorState") -> Goal:
         """Pure function: current state → active goal. Called every step."""
+        dynamic_goal = self._dynamic_entity_goal(state)
+        if dynamic_goal is not None:
+            return dynamic_goal
         for threat in self._threats:
             if threat.active_fn(state):
                 return threat.response_fn(state)
         return Goal("explore")
+
+    @staticmethod
+    def _dynamic_entity_goal(state: "VectorState") -> Goal | None:
+        """Promote live dynamic threats into goal selection.
+
+        Stage 89b: threat geometry already lives in `dynamic_entities`, so the
+        goal layer must stop ignoring it. This does not hardcode a reflex; it
+        only suppresses unrelated gather/craft goals when an active threat is
+        present in the runtime world state.
+        """
+        present = {entity.concept_id for entity in state.dynamic_entities}
+        if "arrow" in present or "skeleton" in present:
+            return Goal("fight_skeleton")
+        if "zombie" in present:
+            return Goal("fight_zombie")
+        return None
 
     def _derive_threats(self, textbook: "CrafterTextbook") -> list[_Threat]:
         """Build priority-ordered threat list from textbook passive + action rules.

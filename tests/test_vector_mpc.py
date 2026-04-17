@@ -26,6 +26,7 @@ from snks.agent.vector_mpc_agent import (
     DynamicEntityTracker,
     build_prediction_cache,
     generate_candidate_plans,
+    _generate_motion_chains,
     _generate_chains,
     _has_positive_effect,
 )
@@ -103,6 +104,16 @@ class TestGenerateCandidatePlans:
         origins = {p.origin for p in candidates}
         assert "self:move_up" in origins
         assert "self:move_down" in origins
+
+    def test_includes_multi_step_motion_chains_when_dynamic_threat_present(self):
+        chains = _generate_motion_chains(
+            ["move_up", "move_down", "move_left", "move_right"],
+            max_depth=3,
+        )
+        origins = {plan.origin for plan in chains}
+        assert "self:motion_chain:move_up+move_up" in origins
+        assert "self:motion_chain:move_up+move_left" in origins
+        assert "self:motion_chain:move_right+move_right+move_right" in origins
 
 
 class TestGenerateChains:
@@ -232,6 +243,62 @@ class TestScorePreference:
 
         _best_score, best_plan = max(scored, key=lambda item: item[0])
         assert best_plan.origin == "self:move_up"
+
+    def test_defensive_motion_beats_resource_chain_under_two_tick_arrow_threat(self):
+        model = VectorWorldModel(dim=2048, n_locations=512, seed=9)
+        for action in ("do", "move_up", "move_down", "move_left", "move_right", "proximity"):
+            model._ensure_action(action)
+        for _ in range(10):
+            model.learn("tree", "do", {"wood": 1})
+            model.learn("arrow", "proximity", {"health": -3})
+
+        spatial_map = CrafterSpatialMap()
+        spatial_map.update((10, 11), "tree", 0.9)
+        state = VectorState(
+            inventory={"wood": 0},
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            spatial_map=spatial_map,
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="arrow",
+                    position=(8, 10),
+                    velocity=(1, 0),
+                )
+            ],
+        )
+        cache = build_prediction_cache(model, {"tree", "arrow"}, ["do", "proximity"])
+        stimuli = StimuliLayer([
+            SurvivalAversion(),
+            VitalDeltaStimulus(["health"]),
+            HomeostasisStimulus(["health"]),
+        ])
+
+        candidates = generate_candidate_plans(
+            model,
+            state,
+            spatial_map,
+            visible_concepts={"tree", "arrow"},
+            max_depth=3,
+            cache=cache,
+        )
+
+        scored: list[tuple[tuple, VectorPlan]] = []
+        for plan in candidates:
+            traj = simulate_forward(model, plan, state, vital_vars=["health"], cache=cache)
+            scored.append((score_trajectory(traj, stimuli=stimuli, goal=Goal("fight_skeleton")), plan))
+
+        _best_score, best_plan = max(scored, key=lambda item: item[0])
+        assert best_plan.origin.startswith("self:")
+        assert all(step.action.startswith("move_") for step in best_plan.steps)
+        resource_scores = [score for score, plan in scored if plan.origin.startswith("single:tree:do")]
+        assert resource_scores, "expected a resource plan in candidate set"
+        best_resource = max(resource_scores)
+        best_motion_score = max(
+            score for score, plan in scored
+            if plan.origin.startswith("self:") and all(step.action.startswith("move_") for step in plan.steps)
+        )
+        assert best_motion_score > best_resource
 
 
 class TestHasPositiveEffect:

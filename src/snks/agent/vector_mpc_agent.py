@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from itertools import product
 from pathlib import Path
 from typing import Any
 
@@ -276,6 +277,9 @@ def generate_candidate_plans(
             origin=f"self:{action}",
         ))
 
+    if state.dynamic_entities:
+        candidates.extend(_generate_motion_chains(move_actions, max_depth=max_depth))
+
     # Multi-step chains via beam search (target actions only)
     chains = _generate_chains(model, state, known, target_actions,
                               beam_width=beam_width, max_depth=max_depth,
@@ -286,6 +290,56 @@ def generate_candidate_plans(
     candidates.append(VectorPlan(steps=[], origin="baseline"))
 
     return candidates
+
+
+def _generate_motion_chains(
+    move_actions: list[str],
+    max_depth: int = 3,
+) -> list[VectorPlan]:
+    """Generate short generic motion chains for threat-driven repositioning.
+
+    Stage 89b: one-step motion plans are often too myopic for dynamic threats.
+    These chains are still generic and threat-agnostic: they simply expand the
+    planner's movement horizon without introducing enemy-specific reflex logic.
+    """
+    if max_depth < 2:
+        return []
+
+    opposite = {
+        "move_up": "move_down",
+        "move_down": "move_up",
+        "move_left": "move_right",
+        "move_right": "move_left",
+    }
+    chains: list[VectorPlan] = []
+
+    def orthogonal(first: str) -> list[str]:
+        return [
+            action for action in move_actions
+            if action != first and action != opposite.get(first)
+        ]
+
+    seen: set[tuple[str, ...]] = set()
+    patterns: list[tuple[str, ...]] = []
+    for first in move_actions:
+        patterns.append((first, first))
+        for second in orthogonal(first):
+            patterns.append((first, second))
+        if max_depth >= 3:
+            patterns.append((first, first, first))
+            for second in orthogonal(first):
+                patterns.append((first, second, second))
+
+    for pattern in patterns:
+        if pattern in seen:
+            continue
+        seen.add(pattern)
+        chains.append(VectorPlan(
+            steps=[VectorPlanStep(action=action, target="self") for action in pattern],
+            origin=f"self:motion_chain:{'+'.join(pattern)}",
+        ))
+
+    return chains
 
 
 def _has_positive_effect(decoded: dict[str, int], state: VectorState) -> bool:
