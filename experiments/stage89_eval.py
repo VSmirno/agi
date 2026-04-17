@@ -58,6 +58,13 @@ def _summarize_episode_metrics(results: list[dict]) -> dict:
     ) if results else 0.0
     arrow_threat_steps = int(sum(r.get("arrow_threat_steps", 0) for r in results))
     defensive_action_steps = int(sum(r.get("defensive_action_steps", 0) for r in results))
+    arrow_visible_steps = int(sum(r.get("arrow_visible_steps", 0) for r in results))
+    arrow_velocity_known_steps = int(
+        sum(r.get("arrow_velocity_known_steps", 0) for r in results)
+    )
+    arrow_velocity_unknown_steps = int(
+        sum(r.get("arrow_velocity_unknown_steps", 0) for r in results)
+    )
 
     return {
         "avg_survival": round(avg_survival, 2),
@@ -66,6 +73,12 @@ def _summarize_episode_metrics(results: list[dict]) -> dict:
         "defensive_action_rate": round(defensive_action_rate, 3),
         "arrow_threat_steps": arrow_threat_steps,
         "defensive_action_steps": defensive_action_steps,
+        "arrow_visible_steps": arrow_visible_steps,
+        "arrow_velocity_known_steps": arrow_velocity_known_steps,
+        "arrow_velocity_unknown_steps": arrow_velocity_unknown_steps,
+        "arrow_velocity_known_rate": round(
+            arrow_velocity_known_steps / max(arrow_visible_steps, 1), 3
+        ),
         "death_causes": dict(death_causes),
     }
 
