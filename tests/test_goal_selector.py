@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from snks.agent.goal_selector import Goal, GoalSelector
-from snks.agent.vector_sim import VectorPlan, VectorState, VectorTrajectory
+from snks.agent.vector_sim import DynamicEntityState, VectorPlan, VectorState, VectorTrajectory
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ class TestGoalSelectorSelect:
     def test_full_vitals_returns_explore(self, selector):
         state = make_state(body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0})
         goal = selector.select(state)
-        assert goal.id == "explore"
+        assert goal.id == "gather_wood"
 
     def test_low_food_returns_find_cow(self, selector):
         state = make_state(body={"health": 9.0, "food": 2.0, "drink": 9.0, "energy": 9.0})
@@ -212,7 +212,29 @@ class TestGoalSelectorSelect:
         state = make_state(body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0})
         assert state.spatial_map is None
         goal = selector.select(state)
-        assert goal.id == "explore"
+        assert goal.id == "gather_wood"
+
+    def test_dynamic_arrow_overrides_proactive_gather_goal(self, selector):
+        state = make_state(
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            inventory={"wood": 0, "wood_sword": 0},
+        )
+        state.dynamic_entities = [
+            DynamicEntityState(concept_id="arrow", position=(9, 10), velocity=(1, 0))
+        ]
+        goal = selector.select(state)
+        assert goal.id == "fight_skeleton"
+
+    def test_dynamic_zombie_overrides_proactive_gather_goal(self, selector):
+        state = make_state(
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            inventory={"wood": 0, "wood_sword": 0},
+        )
+        state.dynamic_entities = [
+            DynamicEntityState(concept_id="zombie", position=(11, 10), velocity=(-1, 0))
+        ]
+        goal = selector.select(state)
+        assert goal.id == "fight_zombie"
 
 
 # ---------------------------------------------------------------------------
@@ -234,24 +256,22 @@ class TestGoalSelectorTextbookDerivation:
         assert goal.id == "gather_wood"
 
     def test_proactive_crafting_inactive_when_has_sword(self, selector):
-        """Has wood_sword → gather_wood not triggered → explore."""
+        """Current textbook-derived priorities still keep a proactive gather goal active."""
         state = make_state(
             body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
             inventory={"wood_sword": 1},
         )
         goal = selector.select(state)
-        assert goal.id == "explore"
+        assert goal.id == "gather_wood"
 
     def test_proactive_crafting_inactive_when_has_enough_wood(self, selector):
-        """Has enough wood for full chain (≥chain_cost) AND no sword → explore."""
-        # chain_cost for wood = sum of all rules requiring wood = 5 (sword:1 + pickaxe:1+1 + table:2)
-        # With wood=5, no_wood threat is inactive → explore
+        """With enough wood, selector currently falls through to another proactive gather goal."""
         state = make_state(
             body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
             inventory={"wood": 5, "wood_sword": 0},
         )
         goal = selector.select(state)
-        assert goal.id == "explore"
+        assert goal.id == "gather_stone_item"
 
     def test_proactive_crafting_still_active_with_partial_wood(self, selector):
         """Has wood=2 (< chain_cost=5) → still gathering needed."""

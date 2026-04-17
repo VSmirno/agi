@@ -239,18 +239,16 @@ def simulate_forward(
     confidences: list[float] = []
 
     if not plan.steps:
-        if state.dynamic_entities:
-            state = _advance_dynamic_entities(model, state, action="wait", cache=cache)
-            states.append(state)
-            if state.is_dead(vital_vars):
-                return VectorTrajectory(
-                    plan=plan,
-                    states=states,
-                    terminated=True,
-                    terminated_reason="dead",
-                    confidences=confidences,
-                )
-        return VectorTrajectory(plan=plan, states=states, confidences=confidences)
+        return _passive_rollout(
+            model=model,
+            state=state,
+            states=states,
+            horizon=horizon,
+            vital_vars=vital_vars,
+            cache=cache,
+            plan=plan,
+            confidences=confidences,
+        )
 
     for step in plan.steps[:horizon]:
         state = _advance_dynamic_entities(model, state, step.action, cache)
@@ -288,6 +286,45 @@ def simulate_forward(
                 confidences=confidences,
             )
 
+    if len(plan.steps) < horizon and state.dynamic_entities:
+        return _passive_rollout(
+            model=model,
+            state=state,
+            states=states,
+            horizon=horizon - len(plan.steps),
+            vital_vars=vital_vars,
+            cache=cache,
+            plan=plan,
+            confidences=confidences,
+        )
+
+    return VectorTrajectory(plan=plan, states=states, confidences=confidences)
+
+
+def _passive_rollout(
+    model: "VectorWorldModel",
+    state: VectorState,
+    states: list[VectorState],
+    horizon: int,
+    vital_vars: list[str] | None,
+    cache: dict | None,
+    plan: VectorPlan,
+    confidences: list[float],
+) -> VectorTrajectory:
+    """Continue short-horizon world dynamics after explicit plan steps end."""
+    for _ in range(max(0, horizon)):
+        if not state.dynamic_entities:
+            break
+        state = _advance_dynamic_entities(model, state, action="wait", cache=cache)
+        states.append(state)
+        if state.is_dead(vital_vars):
+            return VectorTrajectory(
+                plan=plan,
+                states=states,
+                terminated=True,
+                terminated_reason="dead",
+                confidences=confidences,
+            )
     return VectorTrajectory(plan=plan, states=states, confidences=confidences)
 
 

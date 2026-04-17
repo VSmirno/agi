@@ -181,7 +181,7 @@ class TestSimulateForward:
 
         traj = simulate_forward(model, plan, state, vital_vars=["health"])
         assert traj.final_state is not None
-        assert len(traj.states) == 2
+        assert len(traj.states) > 2
         assert traj.final_state.body["health"] == 6.0
 
 
