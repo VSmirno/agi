@@ -563,6 +563,9 @@ def run_vector_mpc_episode(
     defensive_action_steps = 0
     danger_prediction_errors: list[float] = []
     pending_prediction_diag: dict[str, float | bool] | None = None
+    arrow_visible_steps = 0
+    arrow_velocity_known_steps = 0
+    arrow_velocity_unknown_steps = 0
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -672,6 +675,13 @@ def run_vector_mpc_episode(
             spatial_map=spatial_map,
             dynamic_entities=entity_tracker.current(),
         )
+        arrow_states = [e for e in state.dynamic_entities if e.concept_id == "arrow"]
+        if arrow_states:
+            arrow_visible_steps += 1
+            if any(e.velocity is not None for e in arrow_states):
+                arrow_velocity_known_steps += 1
+            else:
+                arrow_velocity_unknown_steps += 1
 
         # --- Build per-step prediction cache (one batched GPU op) ---
         known_step = set(vf.visible_concepts()) | set(spatial_map.known_objects.keys())
@@ -914,6 +924,12 @@ def run_vector_mpc_episode(
         "danger_prediction_error": round(
             float(np.mean(danger_prediction_errors)) if danger_prediction_errors else 0.0,
             3,
+        ),
+        "arrow_visible_steps": arrow_visible_steps,
+        "arrow_velocity_known_steps": arrow_velocity_known_steps,
+        "arrow_velocity_unknown_steps": arrow_velocity_unknown_steps,
+        "arrow_velocity_known_rate": round(
+            arrow_velocity_known_steps / max(arrow_visible_steps, 1), 3
         ),
     }
 
