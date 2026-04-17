@@ -15,6 +15,7 @@ Key differences from mpc_agent.py:
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -28,8 +29,14 @@ from snks.agent.perception import (
     perceive_tile_field,
 )
 from snks.agent.vector_world_model import VectorWorldModel, bind, hamming_similarity
-from snks.agent.stimuli import HomeostasisStimulus, StimuliLayer, SurvivalAversion
+from snks.agent.stimuli import (
+    HomeostasisStimulus,
+    StimuliLayer,
+    SurvivalAversion,
+    VitalDeltaStimulus,
+)
 from snks.agent.vector_sim import (
+    DynamicEntityState,
     VectorState,
     VectorPlan,
     VectorPlanStep,
@@ -45,17 +52,34 @@ from snks.agent.post_mortem import DamageEvent, PostMortemAnalyzer, dominant_cau
 # ---------------------------------------------------------------------------
 
 class DynamicEntityTracker:
-    """Track positions of moving entities between ticks."""
+    """Track positions of moving entities between ticks.
+
+    Stage 89 preparation:
+    - retain previous positions across updates
+    - infer simple per-entity velocity from consecutive observations
+    - keep entities alive for one missed frame to tolerate segmenter flicker
+    """
 
     def __init__(self) -> None:
         self._dynamic_concepts: set[str] = set()
         self._positions: dict[str, list[tuple[int, int]]] = {}
+        self._prev_positions: dict[str, list[tuple[int, int]]] = {}
+        self._states: dict[str, list[DynamicEntityState]] = {}
+        self._step = 0
 
     def register_dynamic_concept(self, concept_id: str) -> None:
         self._dynamic_concepts.add(concept_id)
 
     def update(self, vf: VisualField, player_pos: tuple[int, int]) -> None:
-        self._positions.clear()
+        self._step += 1
+        self._prev_positions = {
+            cid: list(positions) for cid, positions in self._positions.items()
+        }
+        prev_states = {
+            cid: list(states) for cid, states in self._states.items()
+        }
+        self._positions = {}
+        self._states = {}
         px, py = int(player_pos[0]), int(player_pos[1])
         center_row, center_col = 3, 4  # 7x9 viewport center
         for cid, _conf, gy, gx in vf.detections:
@@ -63,20 +87,87 @@ class DynamicEntityTracker:
                 wx = px + (gx - center_col)
                 wy = py + (gy - (center_row - 1))
                 self._positions.setdefault(cid, []).append((wx, wy))
+        for cid in self._dynamic_concepts:
+            current_positions = list(self._positions.get(cid, []))
+            previous = list(self._prev_positions.get(cid, []))
+            prev_state_list = list(prev_states.get(cid, []))
+
+            used_prev: set[int] = set()
+            states: list[DynamicEntityState] = []
+            for pos in current_positions:
+                match_idx = self._nearest_prev_index(pos, previous, used_prev)
+                if match_idx is None:
+                    states.append(DynamicEntityState(
+                        concept_id=cid,
+                        position=pos,
+                        velocity=None,
+                        age=0,
+                        last_seen_step=self._step,
+                    ))
+                    continue
+                used_prev.add(match_idx)
+                prev_pos = previous[match_idx]
+                old_age = 0
+                if match_idx < len(prev_state_list):
+                    old_age = prev_state_list[match_idx].age
+                states.append(DynamicEntityState(
+                    concept_id=cid,
+                    position=pos,
+                    velocity=(pos[0] - prev_pos[0], pos[1] - prev_pos[1]),
+                    age=old_age + 1,
+                    last_seen_step=self._step,
+                ))
+
+            # One-frame persistence for missed detections (especially arrow flicker).
+            for idx, prev_state in enumerate(prev_state_list):
+                if idx in used_prev:
+                    continue
+                if self._step - prev_state.last_seen_step <= 1:
+                    states.append(prev_state)
+
+            if states:
+                self._states[cid] = states
+                self._positions[cid] = [s.position for s in states]
 
     def visible_entities(self) -> list[tuple[str, tuple[int, int]]]:
         result = []
-        for cid, positions in self._positions.items():
-            for pos in positions:
-                result.append((cid, pos))
+        for cid, states in self._states.items():
+            for state in states:
+                result.append((cid, state.position))
         return result
 
+    def current(self) -> list[DynamicEntityState]:
+        result = []
+        for states in self._states.values():
+            result.extend(states)
+        return result
+
+    def current_for(self, concept_id: str) -> list[DynamicEntityState]:
+        return list(self._states.get(concept_id, []))
+
     def min_distance(self, concept_id: str, player_pos: tuple[int, int]) -> int | None:
-        positions = self._positions.get(concept_id, [])
+        positions = [state.position for state in self._states.get(concept_id, [])]
         if not positions:
             return None
         px, py = player_pos
         return min(abs(px - ex) + abs(py - ey) for ex, ey in positions)
+
+    @staticmethod
+    def _nearest_prev_index(
+        pos: tuple[int, int],
+        previous: list[tuple[int, int]],
+        used_prev: set[int],
+    ) -> int | None:
+        best_idx: int | None = None
+        best_dist: int | None = None
+        for idx, prev in enumerate(previous):
+            if idx in used_prev:
+                continue
+            dist = abs(pos[0] - prev[0]) + abs(pos[1] - prev[1])
+            if best_dist is None or dist < best_dist:
+                best_idx = idx
+                best_dist = dist
+        return best_idx
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +223,7 @@ def generate_candidate_plans(
     action_ids = list(model.actions.keys())
     target_actions = [a for a in action_ids if a in ("do", "make")]
     self_actions = [a for a in action_ids if a in ("sleep",)]
+    move_actions = [a for a in action_ids if a.startswith("move_")]
 
     if cache is None:
         cache = build_prediction_cache(model, known, target_actions)
@@ -169,6 +261,16 @@ def generate_candidate_plans(
     # sleep wins only when min_vital improves in simulation (vitals low);
     # baseline (dist=0, -steps=0) beats idle sleep when vitals full.
     for action in self_actions:
+        candidates.append(VectorPlan(
+            steps=[VectorPlanStep(action=action, target="self")],
+            origin=f"self:{action}",
+        ))
+
+    # Motion-only plans. Needed for dynamic-threat avoidance:
+    # projected danger may make a move valuable even when it has no
+    # immediate inventory/body gain. Scoring decides whether these lose
+    # to baseline or win because they avoid future damage.
+    for action in move_actions:
         candidates.append(VectorPlan(
             steps=[VectorPlanStep(action=action, target="self")],
             origin=f"self:{action}",
@@ -428,7 +530,11 @@ def run_vector_mpc_episode(
         rng = np.random.RandomState()
     vitals = vital_vars or ["health", "food", "drink", "energy"]
     if stimuli is None:
-        stimuli = StimuliLayer([SurvivalAversion(), HomeostasisStimulus(vitals)])
+        stimuli = StimuliLayer([
+            SurvivalAversion(),
+            VitalDeltaStimulus(["health"]),
+            HomeostasisStimulus(vitals),
+        ])
 
     from snks.agent.goal_selector import Goal, GoalSelector
     goal_selector = GoalSelector(textbook) if textbook is not None else None
@@ -453,6 +559,10 @@ def run_vector_mpc_episode(
     total_surprise = 0.0
     n_surprise_events = 0
     damage_log: list = []
+    arrow_threat_steps = 0
+    defensive_action_steps = 0
+    danger_prediction_errors: list[float] = []
+    pending_prediction_diag: dict[str, float | bool] | None = None
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -461,6 +571,17 @@ def run_vector_mpc_episode(
         body = {v: float(raw_inv.get(v, 9.0)) for v in vitals}
         inv = {k: v for k, v in raw_inv.items() if k not in _vital_set}
         player_pos = tuple(info.get("player_pos", (32, 32)))
+
+        if pending_prediction_diag is not None:
+            actual_loss = max(
+                0.0,
+                float(pending_prediction_diag["health_before"]) - body.get("health", 0.0),
+            )
+            if bool(pending_prediction_diag["arrow_threat"]):
+                danger_prediction_errors.append(
+                    abs(float(pending_prediction_diag["predicted_loss"]) - actual_loss)
+                )
+            pending_prediction_diag = None
 
         # --- Blocked movement detection ---
         if (
@@ -549,11 +670,14 @@ def run_vector_mpc_episode(
             step=step,
             last_action=prev_action,
             spatial_map=spatial_map,
+            dynamic_entities=entity_tracker.current(),
         )
 
         # --- Build per-step prediction cache (one batched GPU op) ---
         known_step = set(vf.visible_concepts()) | set(spatial_map.known_objects.keys())
         target_acts = [a for a in model.actions if a in ("do", "make", "place")]
+        if state.dynamic_entities and "proximity" in model.actions:
+            target_acts.append("proximity")
         step_cache = build_prediction_cache(model, known_step, target_acts)
 
         # --- Generate + simulate + score ---
@@ -607,6 +731,10 @@ def run_vector_mpc_episode(
             scored.append((score, plan, traj))
 
         scored.sort(key=lambda x: x[0], reverse=True)
+        baseline_traj = next(
+            (traj for _score, plan, traj in scored if plan.origin == "baseline"),
+            None,
+        )
         best_score, best_plan, best_traj = scored[0]
 
         # --- Execute first primitive ---
@@ -619,6 +747,30 @@ def run_vector_mpc_episode(
         else:
             move_actions = [a for a in model.actions if a.startswith("move_")]
             primitive = str(rng.choice(move_actions)) if move_actions else "move_right"
+
+        health_now = body.get("health", 0.0)
+        predicted_best_health = (
+            best_traj.final_state.body.get("health", health_now)
+            if best_traj.final_state is not None
+            else health_now
+        )
+        predicted_best_loss = max(0.0, health_now - predicted_best_health)
+        predicted_baseline_health = (
+            baseline_traj.final_state.body.get("health", health_now)
+            if baseline_traj is not None and baseline_traj.final_state is not None
+            else health_now
+        )
+        predicted_baseline_loss = max(0.0, health_now - predicted_baseline_health)
+        arrow_threat_now = any(entity.concept_id == "arrow" for entity in state.dynamic_entities)
+        if arrow_threat_now:
+            arrow_threat_steps += 1
+            if primitive.startswith("move_") and predicted_best_loss < predicted_baseline_loss:
+                defensive_action_steps += 1
+        pending_prediction_diag = {
+            "health_before": float(health_now),
+            "predicted_loss": float(predicted_best_loss),
+            "arrow_threat": arrow_threat_now,
+        }
 
         action_counts[primitive] += 1
 
@@ -698,6 +850,17 @@ def run_vector_mpc_episode(
         if done:
             raw_inv_end = dict(info.get("inventory", {}))
             body_at_end = {v: float(raw_inv_end.get(v, 0.0)) for v in vitals}
+            if pending_prediction_diag is not None:
+                actual_loss = max(
+                    0.0,
+                    float(pending_prediction_diag["health_before"])
+                    - body_at_end.get("health", 0.0),
+                )
+                if bool(pending_prediction_diag["arrow_threat"]):
+                    danger_prediction_errors.append(
+                        abs(float(pending_prediction_diag["predicted_loss"]) - actual_loss)
+                    )
+                pending_prediction_diag = None
             if any(body_at_end.get(v, 0.0) <= 0 for v in vitals):
                 cause_of_death = "health"
                 # Record killing blow: last env.step() reduced health but the
@@ -743,6 +906,15 @@ def run_vector_mpc_episode(
         "total_surprise": round(total_surprise, 3),
         "n_surprise_events": n_surprise_events,
         "mean_surprise": round(total_surprise / max(n_surprise_events, 1), 3),
+        "arrow_threat_steps": arrow_threat_steps,
+        "defensive_action_steps": defensive_action_steps,
+        "defensive_action_rate": round(
+            defensive_action_steps / max(arrow_threat_steps, 1), 3
+        ),
+        "danger_prediction_error": round(
+            float(np.mean(danger_prediction_errors)) if danger_prediction_errors else 0.0,
+            3,
+        ),
     }
 
 

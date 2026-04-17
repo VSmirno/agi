@@ -10,7 +10,13 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from snks.agent.stimuli import CuriosityStimulus, HomeostasisStimulus, StimuliLayer, SurvivalAversion
+from snks.agent.stimuli import (
+    CuriosityStimulus,
+    HomeostasisStimulus,
+    StimuliLayer,
+    SurvivalAversion,
+    VitalDeltaStimulus,
+)
 from snks.agent.death_hypothesis import DeathHypothesis
 
 
@@ -179,6 +185,10 @@ class PostMortemLearner:
         """
         stimuli = [
             SurvivalAversion(),
+            VitalDeltaStimulus(
+                vital_vars=["health"],
+                weight=self.health_weight,
+            ),
             HomeostasisStimulus(
                 vital_vars=vital_vars,
                 weight=self.health_weight,
