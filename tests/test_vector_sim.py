@@ -6,6 +6,7 @@ import pytest
 
 from snks.agent.vector_world_model import VectorWorldModel
 from snks.agent.vector_sim import (
+    DynamicEntityState,
     VectorState,
     VectorPlan,
     VectorPlanStep,
@@ -115,6 +116,74 @@ class TestSimulateForward:
         # State should be essentially unchanged (no effect applied)
         assert traj.final_state.inventory == base_state.inventory
 
+    def test_arrow_hit_applies_learned_proximity_effect(self, model, base_state):
+        for _ in range(10):
+            model.learn("arrow", "proximity", {"health": -3})
+
+        state = VectorState(
+            inventory=dict(base_state.inventory),
+            body=dict(base_state.body),
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="arrow",
+                    position=(9, 10),
+                    velocity=(1, 0),
+                )
+            ],
+        )
+        plan = VectorPlan(steps=[VectorPlanStep(action="sleep", target="self")])
+
+        traj = simulate_forward(model, plan, state, vital_vars=["health"])
+        assert traj.final_state is not None
+        assert traj.final_state.body["health"] == 6.0
+
+    def test_move_can_avoid_arrow_hit(self, model, base_state):
+        for _ in range(10):
+            model.learn("arrow", "proximity", {"health": -3})
+
+        state = VectorState(
+            inventory=dict(base_state.inventory),
+            body=dict(base_state.body),
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="arrow",
+                    position=(9, 10),
+                    velocity=(1, 0),
+                )
+            ],
+        )
+        plan = VectorPlan(steps=[VectorPlanStep(action="move_up", target="self")])
+
+        traj = simulate_forward(model, plan, state, vital_vars=["health"])
+        assert traj.final_state is not None
+        assert traj.final_state.player_pos == (10, 9)
+        assert traj.final_state.body["health"] == 9.0
+
+    def test_baseline_plan_advances_dynamic_threats(self, model, base_state):
+        for _ in range(10):
+            model.learn("arrow", "proximity", {"health": -3})
+
+        state = VectorState(
+            inventory=dict(base_state.inventory),
+            body=dict(base_state.body),
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="arrow",
+                    position=(9, 10),
+                    velocity=(1, 0),
+                )
+            ],
+        )
+        plan = VectorPlan(steps=[])
+
+        traj = simulate_forward(model, plan, state, vital_vars=["health"])
+        assert traj.final_state is not None
+        assert len(traj.states) == 2
+        assert traj.final_state.body["health"] == 6.0
+
 
 class TestScoreTrajectory:
     def test_survived_beats_dead(self, model, base_state):
@@ -124,8 +193,12 @@ class TestScoreTrajectory:
         dead_state = base_state.apply_effect({"health": -10})  # health → 0.0
 
         alive_traj = simulate_forward(model, alive_plan, base_state)
-        dead_traj = simulate_forward(model, alive_plan, dead_state,
-                                     vital_vars=["health"])
+        dead_traj = type(alive_traj)(
+            plan=alive_plan,
+            states=[dead_state],
+            terminated=True,
+            terminated_reason="dead",
+        )
 
         # Use StimuliLayer — HomeostasisStimulus sees health=0 in dead_state.
         # (stimuli=None path: empty plan → terminated=False for both → same survived score)

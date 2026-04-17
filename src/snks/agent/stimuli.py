@@ -73,6 +73,30 @@ class HomeostasisStimulus(Stimulus):
 
 
 @dataclass
+class VitalDeltaStimulus(Stimulus):
+    """Penalize negative trajectory deltas on selected vital variables.
+
+    Unlike HomeostasisStimulus, this reacts to short-horizon losses even when
+    the final value stays above any threshold. This is the right layer for
+    projected threat aversion: if a plan causes health to drop from 9 to 6, it
+    should score worse than a plan that preserves health, even if both survive.
+    """
+
+    vital_vars: list[str] = field(
+        default_factory=lambda: ["health", "food", "drink", "energy"]
+    )
+    weight: float = 1.0
+
+    def evaluate(self, trajectory: "VectorTrajectory") -> float:
+        loss = 0.0
+        for vital in self.vital_vars:
+            delta = trajectory.vital_delta(vital)
+            if delta < 0:
+                loss += -delta
+        return -self.weight * loss
+
+
+@dataclass
 class CuriosityStimulus(Stimulus):
     """Stage 87: Death-relevant curiosity weighting.
 

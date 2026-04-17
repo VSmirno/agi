@@ -25,6 +25,17 @@ if TYPE_CHECKING:
 # VectorState
 # ---------------------------------------------------------------------------
 
+
+@dataclass(frozen=True)
+class DynamicEntityState:
+    """Tracked dynamic entity in world coordinates for short-horizon sim."""
+
+    concept_id: str
+    position: tuple[int, int]
+    velocity: tuple[int, int] | None = None
+    age: int = 0
+    last_seen_step: int = 0
+
 @dataclass
 class VectorState:
     """World snapshot for vector-based simulation.
@@ -39,6 +50,7 @@ class VectorState:
     step: int = 0
     last_action: str | None = None
     spatial_map: "CrafterSpatialMap | None" = None
+    dynamic_entities: list[DynamicEntityState] = field(default_factory=list)
 
     def apply_effect(self, decoded_effect: dict[str, int]) -> "VectorState":
         """Apply decoded effect dict. Returns new VectorState (immutable)."""
@@ -58,6 +70,30 @@ class VectorState:
             step=self.step + 1,
             last_action=self.last_action,
             spatial_map=self.spatial_map,
+            dynamic_entities=list(self.dynamic_entities),
+        )
+
+    def move_player(self, action: str) -> "VectorState":
+        """Apply a move primitive to player position only, without ticking time."""
+        px, py = self.player_pos
+        dx, dy = 0, 0
+        if action == "move_right":
+            dx = 1
+        elif action == "move_left":
+            dx = -1
+        elif action == "move_down":
+            dy = 1
+        elif action == "move_up":
+            dy = -1
+
+        return VectorState(
+            inventory=dict(self.inventory),
+            body=dict(self.body),
+            player_pos=(px + dx, py + dy),
+            step=self.step,
+            last_action=action,
+            spatial_map=self.spatial_map,
+            dynamic_entities=list(self.dynamic_entities),
         )
 
     def is_dead(self, vital_vars: list[str] | None = None) -> bool:
@@ -96,6 +132,7 @@ class VectorState:
             step=self.step,
             last_action=self.last_action,
             spatial_map=self.spatial_map.copy() if self.spatial_map else None,
+            dynamic_entities=list(self.dynamic_entities),
         )
 
 
@@ -201,7 +238,22 @@ def simulate_forward(
     state = initial_state.copy()
     confidences: list[float] = []
 
+    if not plan.steps:
+        if state.dynamic_entities:
+            state = _advance_dynamic_entities(model, state, action="wait", cache=cache)
+            states.append(state)
+            if state.is_dead(vital_vars):
+                return VectorTrajectory(
+                    plan=plan,
+                    states=states,
+                    terminated=True,
+                    terminated_reason="dead",
+                    confidences=confidences,
+                )
+        return VectorTrajectory(plan=plan, states=states, confidences=confidences)
+
     for step in plan.steps[:horizon]:
+        state = _advance_dynamic_entities(model, state, step.action, cache)
         key = (step.target, step.action)
         if cache is not None and key in cache:
             effect_vec, confidence = cache[key]
@@ -216,9 +268,10 @@ def simulate_forward(
                 inventory=dict(state.inventory),
                 body=dict(state.body),
                 player_pos=state.player_pos,
-                step=state.step + 1,
+                step=state.step,
                 last_action=step.action,
                 spatial_map=state.spatial_map,
+                dynamic_entities=list(state.dynamic_entities),
             )
             states.append(state)
             continue
@@ -236,6 +289,74 @@ def simulate_forward(
             )
 
     return VectorTrajectory(plan=plan, states=states, confidences=confidences)
+
+
+def _advance_dynamic_entities(
+    model: "VectorWorldModel",
+    state: VectorState,
+    action: str,
+    cache: dict | None = None,
+) -> VectorState:
+    """Advance player and dynamic entities one short-horizon tick.
+
+    Stage 89:
+    - player movement is applied for explicit move primitives
+    - arrows continue along inferred velocity
+    - if an arrow enters the player's tile, apply the model's learned
+      `arrow -> proximity` consequence (if known)
+    """
+    next_state = state.move_player(action) if action.startswith("move_") else state.copy()
+    next_state.last_action = action
+
+    updated_entities: list[DynamicEntityState] = []
+    for entity in next_state.dynamic_entities:
+        pos = entity.position
+        if entity.velocity is not None:
+            pos = (pos[0] + entity.velocity[0], pos[1] + entity.velocity[1])
+        moved = DynamicEntityState(
+            concept_id=entity.concept_id,
+            position=pos,
+            velocity=entity.velocity,
+            age=entity.age + 1,
+            last_seen_step=next_state.step,
+        )
+        updated_entities.append(moved)
+
+        if moved.concept_id == "arrow" and moved.position == next_state.player_pos:
+            hit_key = ("arrow", "proximity")
+            if cache is not None and hit_key in cache:
+                effect_vec, confidence = cache[hit_key]
+            else:
+                effect_vec, confidence = model.predict("arrow", "proximity")
+            if confidence >= 0.2:
+                decoded = model.decode_effect(effect_vec)
+                next_state = _apply_effect_same_tick(next_state, decoded)
+                next_state.last_action = action
+
+    next_state.dynamic_entities = updated_entities
+    return next_state
+
+
+def _apply_effect_same_tick(state: VectorState, decoded_effect: dict[str, int]) -> VectorState:
+    """Apply effect without advancing simulated time."""
+    new_inv = dict(state.inventory)
+    new_body = dict(state.body)
+
+    for var, delta in decoded_effect.items():
+        if var in new_body:
+            new_body[var] = max(0.0, min(9.0, new_body[var] + delta))
+        else:
+            new_inv[var] = max(0, new_inv.get(var, 0) + delta)
+
+    return VectorState(
+        inventory=new_inv,
+        body=new_body,
+        player_pos=state.player_pos,
+        step=state.step,
+        last_action=state.last_action,
+        spatial_map=state.spatial_map,
+        dynamic_entities=list(state.dynamic_entities),
+    )
 
 
 # ---------------------------------------------------------------------------

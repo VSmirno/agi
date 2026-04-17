@@ -8,6 +8,7 @@ from snks.agent.stimuli import (
     HomeostasisStimulus,
     StimuliLayer,
     SurvivalAversion,
+    VitalDeltaStimulus,
 )
 from snks.agent.vector_sim import (
     VectorPlan,
@@ -59,6 +60,22 @@ class TestHomeostasisStimulus:
         # Default thresholds={} → no deficit → zero score regardless of vitals.
         traj = make_trajectory(body={"health": 5.0, "food": 4.0, "drink": 3.0, "energy": 9.0})
         s = HomeostasisStimulus(vital_vars=["health", "food", "drink", "energy"])
+        assert s.evaluate(traj) == pytest.approx(0.0)
+
+
+class TestVitalDeltaStimulus:
+    def test_negative_vital_delta_penalized(self):
+        start = VectorState(body={"health": 9.0})
+        end = VectorState(body={"health": 6.0})
+        traj = VectorTrajectory(plan=VectorPlan(steps=[]), states=[start, end])
+        s = VitalDeltaStimulus(vital_vars=["health"], weight=1.0)
+        assert s.evaluate(traj) == pytest.approx(-3.0)
+
+    def test_positive_vital_delta_not_rewarded(self):
+        start = VectorState(body={"energy": 3.0})
+        end = VectorState(body={"energy": 6.0})
+        traj = VectorTrajectory(plan=VectorPlan(steps=[]), states=[start, end])
+        s = VitalDeltaStimulus(vital_vars=["energy"], weight=1.0)
         assert s.evaluate(traj) == pytest.approx(0.0)
 
     def test_deficit_below_threshold_negative(self):

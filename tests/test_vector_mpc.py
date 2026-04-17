@@ -6,18 +6,30 @@ import pytest
 import numpy as np
 
 from snks.agent.vector_world_model import VectorWorldModel
+from snks.agent.stimuli import (
+    HomeostasisStimulus,
+    StimuliLayer,
+    SurvivalAversion,
+    VitalDeltaStimulus,
+)
+from snks.agent.goal_selector import Goal
 from snks.agent.vector_sim import (
+    DynamicEntityState,
     VectorState,
     VectorPlan,
     VectorPlanStep,
+    VectorTrajectory,
     simulate_forward,
     score_trajectory,
 )
 from snks.agent.vector_mpc_agent import (
+    DynamicEntityTracker,
+    build_prediction_cache,
     generate_candidate_plans,
     _generate_chains,
     _has_positive_effect,
 )
+from snks.agent.perception import VisualField
 from snks.agent.crafter_spatial_map import CrafterSpatialMap
 from snks.agent.vector_bootstrap import load_from_textbook
 from pathlib import Path
@@ -82,6 +94,16 @@ class TestGenerateCandidatePlans:
         )
         assert any(p.origin == "baseline" for p in candidates)
 
+    def test_includes_motion_plans_for_repositioning(self, seeded_model, base_state,
+                                                     spatial_map_with_tree):
+        candidates = generate_candidate_plans(
+            seeded_model, base_state, spatial_map_with_tree,
+            visible_concepts={"tree"},
+        )
+        origins = {p.origin for p in candidates}
+        assert "self:move_up" in origins
+        assert "self:move_down" in origins
+
 
 class TestGenerateChains:
     def test_chains_extend_beyond_single_step(self, seeded_model, base_state):
@@ -99,7 +121,7 @@ class TestGenerateChains:
 
 class TestScorePreference:
     def test_total_gain_prefers_long_chain(self, seeded_model, base_state):
-        """Long chain with more gain should score higher than short one."""
+        """Longer wood-gain chain should score higher when wood is the active goal."""
         # Teach model
         for _ in range(10):
             seeded_model.learn("tree", "do", {"wood": 1})
@@ -116,8 +138,9 @@ class TestScorePreference:
         short_traj = simulate_forward(seeded_model, short, base_state)
         long_traj = simulate_forward(seeded_model, long, base_state)
 
-        s_short = score_trajectory(short_traj)
-        s_long = score_trajectory(long_traj)
+        goal = Goal("gather_wood")
+        s_short = score_trajectory(short_traj, goal=goal)
+        s_long = score_trajectory(long_traj, goal=goal)
 
         assert s_long >= s_short, (
             f"Long chain should score ≥ short: {s_long} vs {s_short}"
@@ -128,10 +151,87 @@ class TestScorePreference:
         alive_traj = simulate_forward(seeded_model, alive, base_state)
 
         dead_state = base_state.apply_effect({"health": -10})
-        dead_traj = simulate_forward(seeded_model, alive, dead_state,
-                                     vital_vars=["health"])
+        dead_traj = VectorTrajectory(
+            plan=alive,
+            states=[dead_state],
+            terminated=True,
+            terminated_reason="dead",
+        )
 
         assert score_trajectory(alive_traj) > score_trajectory(dead_traj)
+
+    def test_move_up_beats_sleep_under_arrow_threat(self, seeded_model):
+        for _ in range(10):
+            seeded_model.learn("arrow", "proximity", {"health": -3})
+
+        state = VectorState(
+            inventory={"wood": 0},
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="arrow",
+                    position=(9, 10),
+                    velocity=(1, 0),
+                )
+            ],
+        )
+        stimuli = StimuliLayer([
+            SurvivalAversion(),
+            VitalDeltaStimulus(["health"]),
+            HomeostasisStimulus(["health"]),
+        ])
+
+        sleep_plan = VectorPlan(steps=[VectorPlanStep(action="sleep", target="self")])
+        move_plan = VectorPlan(steps=[VectorPlanStep(action="move_up", target="self")])
+
+        sleep_score = score_trajectory(simulate_forward(seeded_model, sleep_plan, state), stimuli=stimuli)
+        move_score = score_trajectory(simulate_forward(seeded_model, move_plan, state), stimuli=stimuli)
+
+        assert move_score > sleep_score
+
+    def test_candidate_ranking_prefers_dodge_under_arrow_threat(self, seeded_model):
+        model = VectorWorldModel(dim=2048, n_locations=512, seed=7)
+        for action in ("sleep", "move_up", "move_down", "move_left", "move_right", "proximity"):
+            model._ensure_action(action)
+        for _ in range(10):
+            model.learn("arrow", "proximity", {"health": -3})
+
+        state = VectorState(
+            inventory={"wood": 0},
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="arrow",
+                    position=(9, 10),
+                    velocity=(1, 0),
+                )
+            ],
+        )
+        spatial_map = CrafterSpatialMap()
+        cache = build_prediction_cache(model, {"arrow"}, ["proximity"])
+        stimuli = StimuliLayer([
+            SurvivalAversion(),
+            VitalDeltaStimulus(["health"]),
+            HomeostasisStimulus(["health"]),
+        ])
+
+        candidates = generate_candidate_plans(
+            model,
+            state,
+            spatial_map,
+            visible_concepts={"arrow"},
+            cache=cache,
+        )
+
+        scored: list[tuple[tuple, VectorPlan]] = []
+        for plan in candidates:
+            traj = simulate_forward(model, plan, state, vital_vars=["health"], cache=cache)
+            scored.append((score_trajectory(traj, stimuli=stimuli), plan))
+
+        _best_score, best_plan = max(scored, key=lambda item: item[0])
+        assert best_plan.origin == "self:move_up"
 
 
 class TestHasPositiveEffect:
@@ -156,3 +256,39 @@ class TestHasPositiveEffect:
             inventory={"wood": 5},
         )
         assert _has_positive_effect({"wood": -1}, state) is False
+
+
+class TestDynamicEntityTracker:
+    def test_arrow_velocity_inferred_from_consecutive_frames(self):
+        tracker = DynamicEntityTracker()
+        tracker.register_dynamic_concept("arrow")
+
+        vf1 = VisualField(detections=[("arrow", 0.9, 3, 4)])  # player tile
+        tracker.update(vf1, player_pos=(10, 10))
+        s1 = tracker.current_for("arrow")
+        assert len(s1) == 1
+        assert s1[0].position == (10, 11)
+        assert s1[0].velocity is None
+        assert s1[0].age == 0
+
+        vf2 = VisualField(detections=[("arrow", 0.9, 3, 5)])  # one tile right
+        tracker.update(vf2, player_pos=(10, 10))
+        s2 = tracker.current_for("arrow")
+        assert len(s2) == 1
+        assert s2[0].position == (11, 11)
+        assert s2[0].velocity == (1, 0)
+        assert s2[0].age == 1
+
+    def test_arrow_persists_for_one_missed_frame(self):
+        tracker = DynamicEntityTracker()
+        tracker.register_dynamic_concept("arrow")
+
+        tracker.update(VisualField(detections=[("arrow", 0.9, 3, 4)]), player_pos=(10, 10))
+        tracker.update(VisualField(detections=[]), player_pos=(10, 10))
+
+        states = tracker.current_for("arrow")
+        assert len(states) == 1
+        assert states[0].position == (10, 11)
+
+        tracker.update(VisualField(detections=[]), player_pos=(10, 10))
+        assert tracker.current_for("arrow") == []
