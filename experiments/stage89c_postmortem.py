@@ -100,6 +100,9 @@ def _run_one_episode(
     *,
     seed: int,
     max_steps: int,
+    horizon: int,
+    beam_width: int,
+    max_depth: int,
     model,
     segmenter,
     textbook,
@@ -120,6 +123,9 @@ def _run_one_episode(
         model=model,
         tracker=tracker,
         max_steps=max_steps,
+        horizon=horizon,
+        beam_width=beam_width,
+        max_depth=max_depth,
         stimuli=stimuli,
         textbook=textbook,
         verbose=False,
@@ -163,6 +169,9 @@ def main() -> None:
     parser.add_argument("--n-episodes", type=int, default=20)
     parser.add_argument("--max-steps", type=int, default=1000)
     parser.add_argument("--start-seed", type=int, default=42)
+    parser.add_argument("--horizon", type=int, default=6)
+    parser.add_argument("--beam-width", type=int, default=3)
+    parser.add_argument("--max-depth", type=int, default=2)
     args = parser.parse_args()
 
     DOCS_DIR.mkdir(exist_ok=True)
@@ -175,6 +184,9 @@ def main() -> None:
     n_episodes = args.n_episodes
     max_steps = args.max_steps
     start_seed = args.start_seed
+    horizon = args.horizon
+    beam_width = args.beam_width
+    max_depth = args.max_depth
     vitals = ["health", "food", "drink", "energy"]
 
     baseline_config = _mode_config("baseline")
@@ -202,7 +214,9 @@ def main() -> None:
     counterfactuals: list[dict] = []
 
     print(
-        f"stage89c config: episodes={n_episodes} max_steps={max_steps} start_seed={start_seed}"
+        "stage89c config: "
+        f"episodes={n_episodes} max_steps={max_steps} start_seed={start_seed} "
+        f"horizon={horizon} beam_width={beam_width} max_depth={max_depth}"
     )
 
     for ep in range(n_episodes):
@@ -211,6 +225,9 @@ def main() -> None:
         baseline = _run_one_episode(
             seed=seed,
             max_steps=max_steps,
+            horizon=horizon,
+            beam_width=beam_width,
+            max_depth=max_depth,
             model=baseline_model,
             segmenter=segmenter,
             textbook=textbook,
@@ -230,6 +247,9 @@ def main() -> None:
         current = _run_one_episode(
             seed=seed,
             max_steps=max_steps,
+            horizon=horizon,
+            beam_width=beam_width,
+            max_depth=max_depth,
             model=current_model,
             segmenter=segmenter,
             textbook=textbook,
