@@ -82,6 +82,48 @@ def _save_partial(
     return summary
 
 
+def _setup_mlflow(
+    *,
+    enabled: bool,
+    tracking_uri: str,
+    experiment_name: str,
+    run_name: str,
+    params: dict,
+):
+    if not enabled:
+        return None
+
+    import mlflow
+
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment(experiment_name)
+    run = mlflow.start_run(run_name=run_name)
+    clean_params = {
+        key: (int(value) if isinstance(value, np.integer) else value)
+        for key, value in params.items()
+    }
+    mlflow.log_params(clean_params)
+    return mlflow
+
+
+def _log_mlflow_partial(mlflow_module, summary: dict) -> None:
+    if mlflow_module is None:
+        return
+
+    step = int(summary["completed_pairs"])
+    mlflow_module.log_metric("completed_pairs", step, step=step)
+    mlflow_module.log_metric("baseline_avg_survival", summary["baseline_avg_survival"], step=step)
+    mlflow_module.log_metric("current_avg_survival", summary["current_avg_survival"], step=step)
+    mlflow_module.log_metric("avg_delta_steps", summary["avg_delta_steps"], step=step)
+    buckets = summary.get("bucket_counts", {})
+    mlflow_module.log_metric("bucket_improved", buckets.get("improved", 0), step=step)
+    mlflow_module.log_metric("bucket_neutral", buckets.get("neutral", 0), step=step)
+    mlflow_module.log_metric("bucket_regressed", buckets.get("regressed", 0), step=step)
+    mlflow_module.log_artifact(str(BUCKETS_PATH))
+    mlflow_module.log_artifact(str(REGRESSIONS_PATH))
+    mlflow_module.log_artifact(str(COUNTERFACTUALS_PATH))
+
+
 def _bucket_for_delta(delta_steps: int, threshold: int = 20) -> str:
     if delta_steps >= threshold:
         return "improved"
@@ -172,6 +214,10 @@ def main() -> None:
     parser.add_argument("--horizon", type=int, default=6)
     parser.add_argument("--beam-width", type=int, default=3)
     parser.add_argument("--max-depth", type=int, default=2)
+    parser.add_argument("--use-mlflow", action="store_true")
+    parser.add_argument("--mlflow-uri", type=str, default="http://127.0.0.1:5000")
+    parser.add_argument("--mlflow-experiment", type=str, default="agi_stage89c")
+    parser.add_argument("--mlflow-run-name", type=str, default="stage89c")
     args = parser.parse_args()
 
     DOCS_DIR.mkdir(exist_ok=True)
@@ -212,6 +258,20 @@ def main() -> None:
     pairs: list[dict] = []
     regressions: list[dict] = []
     counterfactuals: list[dict] = []
+    mlflow_module = _setup_mlflow(
+        enabled=args.use_mlflow,
+        tracking_uri=args.mlflow_uri,
+        experiment_name=args.mlflow_experiment,
+        run_name=args.mlflow_run_name,
+        params={
+            "n_episodes": n_episodes,
+            "max_steps": max_steps,
+            "start_seed": start_seed,
+            "horizon": horizon,
+            "beam_width": beam_width,
+            "max_depth": max_depth,
+        },
+    )
 
     print(
         "stage89c config: "
@@ -336,6 +396,7 @@ def main() -> None:
             regressions=regressions,
             counterfactuals=counterfactuals,
         )
+        _log_mlflow_partial(mlflow_module, summary)
         print(
             f"partial save: completed={summary['completed_pairs']}/{n_episodes} "
             f"buckets={summary['bucket_counts']}"
@@ -352,6 +413,8 @@ def main() -> None:
     print(f"Saved {BUCKETS_PATH}")
     print(f"Saved {REGRESSIONS_PATH}")
     print(f"Saved {COUNTERFACTUALS_PATH}")
+    if mlflow_module is not None:
+        mlflow_module.end_run()
 
 
 if __name__ == "__main__":
