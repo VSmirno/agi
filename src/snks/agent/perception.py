@@ -20,6 +20,13 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
+from snks.agent.crafter_pixel_env import SEMANTIC_NAMES
+from snks.agent.decode_head import NEAR_CLASSES, NEAR_TO_IDX
+from snks.encoder.tile_head_trainer import (
+    VIEWPORT_COLS,
+    VIEWPORT_ROWS,
+    viewport_tile_label,
+)
 
 if TYPE_CHECKING:
     from snks.agent.concept_store import ConceptStore
@@ -297,6 +304,50 @@ def perceive_tile_field(
                 cls_name = NEAR_CLASSES[cls_idx]
             else:
                 cls_name = f"class_{cls_idx}"
+
+            if cls_name == "empty" and (gy, gx) not in center_pos:
+                continue
+
+            vf.detections.append((cls_name, conf, gy, gx))
+
+            if (gy, gx) in center_pos and conf > vf.near_similarity:
+                vf.near_concept = cls_name
+                vf.near_similarity = conf
+
+    return vf
+
+
+def perceive_semantic_field(
+    info: dict[str, Any],
+    min_confidence: float = 1.0,
+) -> VisualField:
+    """Build a VisualField directly from Crafter semantic ground truth.
+
+    Diagnostic-only ablation path: keeps the same symbolic output interface
+    as pixel perception while bypassing the segmenter. This is useful for
+    isolating perception noise from downstream planning/world-model failures.
+    """
+    semantic = info.get("semantic")
+    player_pos = info.get("player_pos")
+    if semantic is None or player_pos is None:
+        return VisualField()
+
+    semantic = np.asarray(semantic)
+    center_pos = _center_positions(VIEWPORT_ROWS, VIEWPORT_COLS)
+    vf = VisualField()
+
+    for gy in range(VIEWPORT_ROWS):
+        for gx in range(VIEWPORT_COLS):
+            cls_idx = viewport_tile_label(semantic, player_pos, gy, gx)
+            if cls_idx < len(NEAR_CLASSES):
+                cls_name = NEAR_CLASSES[cls_idx]
+            else:
+                cls_name = SEMANTIC_NAMES.get(int(cls_idx), f"class_{cls_idx}")
+                cls_name = cls_name if cls_name in NEAR_TO_IDX else "empty"
+            conf = 1.0
+
+            if conf < min_confidence:
+                continue
 
             if cls_name == "empty" and (gy, gx) not in center_pos:
                 continue
