@@ -43,7 +43,6 @@ ssh ${REMOTE} "cat > ${REMOTE_DIR}/_docs/_run_${SESSION}.sh << 'SCRIPT'
 #!/bin/bash
 cd ${REMOTE_DIR}
 source venv/bin/activate
-export HSA_OVERRIDE_GFX_VERSION=11.0.0
 export PYTHONPATH=${REMOTE_DIR}/src:${REMOTE_DIR}/experiments
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1

@@ -64,6 +64,11 @@
   agent loop, чтобы исключить hidden distribution gap между diagnostic sampling и policy rollout.
 - Остаточный disagreement сосредоточен в `arrow`; dynamic-threat eval после perception fix
   обязателен перед любыми новыми claims про Stage 89 success.
+- В первом `stage89 + exp137` smoke telemetry ошибочно выглядела как `arrow_threat_steps=0`.
+  Root cause оказался не в `exp137`, а в missing fact: `arrow` отсутствовал в textbook vocabulary,
+  поэтому `VectorWorldModel` не создавал concept, а `DynamicEntityTracker` не регистрировал projectile
+  как dynamic entity. После добавления `arrow` в `configs/crafter_textbook.yaml` tracker сразу начал
+  трекать projectile и восстанавливать velocity на live run.
 
 ---
 
