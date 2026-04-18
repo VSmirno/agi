@@ -156,6 +156,17 @@ class TestPerceiveSemanticField:
         empties = [(cid, gy, gx) for cid, _conf, gy, gx in vf.detections if cid == "empty"]
         assert len(empties) <= 4
 
+    def test_prefers_non_empty_over_empty_in_center_patch(self):
+        semantic = np.full((64, 64), 2, dtype=np.int32)  # grass
+        # Place stone so that it lands inside one cell of the center 2x2 patch.
+        # Other center cells remain empty.
+        semantic[32, 32] = 3  # stone
+        info = {"semantic": semantic, "player_pos": (32, 32)}
+
+        vf = perceive_semantic_field(info)
+
+        assert vf.near_concept == "stone"
+
 
 class TestWorldCropPixels:
     def test_crop_world_pixels_chw(self):
