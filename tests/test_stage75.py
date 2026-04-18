@@ -15,6 +15,7 @@ import torch
 from snks.encoder.cnn_encoder import CNNEncoder
 from snks.agent.decode_head import NEAR_CLASSES
 from snks.agent.perception import perceive_semantic_field, perceive_tile_field, VisualField
+from snks.encoder.tile_segmenter import TileSegmenter, crop_world_pixels
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +155,27 @@ class TestPerceiveSemanticField:
         assert "arrow" in visible
         empties = [(cid, gy, gx) for cid, _conf, gy, gx in vf.detections if cid == "empty"]
         assert len(empties) <= 4
+
+
+class TestWorldCropPixels:
+    def test_crop_world_pixels_chw(self):
+        pixels = torch.randn(3, 64, 64)
+        cropped = crop_world_pixels(pixels)
+        assert cropped.shape == (3, 49, 63)
+
+    def test_crop_world_pixels_bchw(self):
+        pixels = torch.randn(5, 3, 64, 64)
+        cropped = crop_world_pixels(pixels)
+        assert cropped.shape == (5, 3, 49, 63)
+
+    def test_tile_segmenter_accepts_cropped_input(self):
+        segmenter = TileSegmenter()
+        segmenter.eval()
+        pixels = torch.randn(3, 64, 64)
+        cropped = crop_world_pixels(pixels)
+        class_ids, confidences = segmenter.classify_tiles(cropped)
+        assert class_ids.shape == (7, 9)
+        assert confidences.shape == (7, 9)
 
 
 # ---------------------------------------------------------------------------
