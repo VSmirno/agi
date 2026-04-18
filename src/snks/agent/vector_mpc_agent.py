@@ -27,6 +27,7 @@ from snks.agent.crafter_spatial_map import CrafterSpatialMap
 from snks.agent.perception import (
     HomeostaticTracker,
     VisualField,
+    perceive_semantic_field,
     perceive_tile_field,
 )
 from snks.agent.vector_world_model import VectorWorldModel, bind, hamming_similarity
@@ -579,6 +580,7 @@ def run_vector_mpc_episode(
     enable_motion_chains: bool = True,
     enable_post_plan_passive_rollout: bool = True,
     record_stage89c_trace: bool = False,
+    perception_mode: str = "pixel",
 ) -> dict:
     """Run one episode with vector MPC planning.
 
@@ -681,7 +683,12 @@ def run_vector_mpc_episode(
             spatial_map.mark_blocked(blocked_tile)
 
         # --- Perception ---
-        vf = perceive_tile_field(pixels, segmenter)
+        if perception_mode == "pixel":
+            vf = perceive_tile_field(pixels, segmenter)
+        elif perception_mode == "symbolic":
+            vf = perceive_semantic_field(info)
+        else:
+            raise ValueError(f"Unknown perception_mode: {perception_mode}")
         _update_spatial_map(spatial_map, vf, player_pos)
         entity_tracker.update(vf, player_pos)
 

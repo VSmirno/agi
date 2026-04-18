@@ -14,7 +14,7 @@ import torch
 
 from snks.encoder.cnn_encoder import CNNEncoder
 from snks.agent.decode_head import NEAR_CLASSES
-from snks.agent.perception import perceive_tile_field, VisualField
+from snks.agent.perception import perceive_semantic_field, perceive_tile_field, VisualField
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +130,30 @@ class TestPerceiveTileField:
         vf = perceive_tile_field(pixels, encoder, min_confidence=0.0)
         result = vf.find("empty")
         assert isinstance(result, list)
+
+
+class TestPerceiveSemanticField:
+    def test_returns_visual_field_from_semantic_info(self):
+        semantic = np.full((64, 64), 2, dtype=np.int32)  # grass
+        semantic[32, 32] = 15  # zombie near center
+        info = {"semantic": semantic, "player_pos": (32, 32)}
+
+        vf = perceive_semantic_field(info)
+
+        assert isinstance(vf, VisualField)
+        assert vf.near_similarity == 1.0
+
+    def test_detects_arrow_and_center_empty_only(self):
+        semantic = np.full((64, 64), 2, dtype=np.int32)  # grass
+        semantic[32, 31] = 17  # arrow on center-ish viewport tile
+        info = {"semantic": semantic, "player_pos": (32, 32)}
+
+        vf = perceive_semantic_field(info)
+
+        visible = vf.visible_concepts()
+        assert "arrow" in visible
+        empties = [(cid, gy, gx) for cid, _conf, gy, gx in vf.detections if cid == "empty"]
+        assert len(empties) <= 4
 
 
 # ---------------------------------------------------------------------------
