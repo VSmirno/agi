@@ -24,6 +24,7 @@ set -euo pipefail
 
 SESSION="${1:?Usage: $0 <session_name> <python_command>}"
 PYCMD="${2:?Usage: $0 <session_name> <python_command>}"
+PYCMD_B64="$(printf '%s' "${PYCMD}" | base64 -w0)"
 
 REMOTE="minipc"
 REMOTE_DIR="/opt/agi"
@@ -49,13 +50,14 @@ export TRANSFORMERS_OFFLINE=1
 
 python3 -u -c '
 import sys
+import base64
 try:
     import torchvision
 except ImportError:
     sys.modules[\"torchvision\"] = type(sys)(\"torchvision\")
     sys.modules[\"torchvision.datasets\"] = type(sys)(\"torchvision.datasets\")
 
-${PYCMD}
+exec(base64.b64decode(\"${PYCMD_B64}\").decode(\"utf-8\"), globals(), globals())
 ' 2>&1 | tee ${RESULTS}
 
 echo ''
