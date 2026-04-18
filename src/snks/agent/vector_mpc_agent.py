@@ -878,7 +878,16 @@ def run_vector_mpc_episode(
         )
         predicted_baseline_loss = max(0.0, health_now - predicted_baseline_health)
         arrow_threat_now = any(entity.concept_id == "arrow" for entity in observed_dynamic_entities)
-        if arrow_threat_now:
+        # Stage 89 telemetry fix:
+        # visible projectile != imminent threat. Many steps contain an arrow in
+        # view, but the passive baseline still predicts zero health loss within
+        # the planning horizon. Counting every visible arrow as a "threat step"
+        # made defensive_action_rate look artificially close to zero even when
+        # the planner correctly dodged every actually imminent hit. Treat threat
+        # as "baseline would take damage within horizon", and keep visibility as
+        # a separate metric.
+        imminent_arrow_threat_now = arrow_threat_now and predicted_baseline_loss > 0.0
+        if imminent_arrow_threat_now:
             arrow_threat_steps += 1
             if first_arrow_threat_step is None:
                 first_arrow_threat_step = step
@@ -945,7 +954,7 @@ def run_vector_mpc_episode(
         pending_prediction_diag = {
             "health_before": float(health_now),
             "predicted_loss": float(predicted_best_loss),
-            "arrow_threat": arrow_threat_now,
+            "arrow_threat": imminent_arrow_threat_now,
         }
 
         action_counts[primitive] += 1

@@ -69,6 +69,13 @@
   поэтому `VectorWorldModel` не создавал concept, а `DynamicEntityTracker` не регистрировал projectile
   как dynamic entity. После добавления `arrow` в `configs/crafter_textbook.yaml` tracker сразу начал
   трекать projectile и восстанавливать velocity на live run.
+- Следующий diagnostic bias оказался уже в самой telemetry Stage 89: `arrow_threat_steps`
+  считались как "любая видимая стрела", хотя для большинства таких шагов `predicted_baseline_loss=0`
+  и defensive action не требуется. Targeted seed44 diagnostic после фикса `arrow:proximity` дал:
+  `arrow_visible_steps=66`, но из них только `imminent_steps=13`, и planner выбрал защитное движение
+  на всех `13/13` imminent cases. Значит низкий `defensive_action_rate` на visibility-denominator
+  переоценивал planner failure; threat telemetry должна быть привязана к imminent damage within horizon,
+  а не к простой projectile visibility.
 
 ---
 
