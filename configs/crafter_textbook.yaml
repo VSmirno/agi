@@ -55,6 +55,7 @@ vocabulary:
   - { id: empty,    category: terrain,  blocking: false }
   - { id: zombie,   category: enemy, dangerous: true, blocking: true }
   - { id: skeleton, category: enemy, dangerous: true, blocking: true }
+  - { id: arrow,    category: projectile, dangerous: true, blocking: false }
   # Survival resources
   - { id: water, category: resource, blocking: true }
   - { id: cow,   category: resource, blocking: true }

@@ -30,6 +30,7 @@ class TestBootstrap:
         assert "stone" in model.concepts
         assert "zombie" in model.concepts
         assert "cow" in model.concepts
+        assert "arrow" in model.concepts
 
     def test_actions_created(self, seeded_model):
         model, _ = seeded_model
