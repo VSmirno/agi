@@ -27,6 +27,61 @@ REGRESSIONS_PATH = DOCS_DIR / "stage89c_regression_cases.json"
 COUNTERFACTUALS_PATH = DOCS_DIR / "stage89c_counterfactuals.json"
 
 
+def _json_default(value):
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return float(value)
+    if isinstance(value, np.bool_):
+        return bool(value)
+    raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
+
+
+def _build_summary(n_episodes: int, pairs: list[dict]) -> dict:
+    if not pairs:
+        return {
+            "n_episodes": n_episodes,
+            "completed_pairs": 0,
+            "baseline_avg_survival": 0.0,
+            "current_avg_survival": 0.0,
+            "avg_delta_steps": 0.0,
+            "bucket_counts": {"improved": 0, "neutral": 0, "regressed": 0},
+        }
+
+    return {
+        "n_episodes": n_episodes,
+        "completed_pairs": len(pairs),
+        "baseline_avg_survival": round(float(np.mean([p["baseline_steps"] for p in pairs])), 2),
+        "current_avg_survival": round(float(np.mean([p["current_steps"] for p in pairs])), 2),
+        "avg_delta_steps": round(float(np.mean([p["delta_steps"] for p in pairs])), 2),
+        "bucket_counts": {
+            "improved": sum(1 for p in pairs if p["episode_bucket"] == "improved"),
+            "neutral": sum(1 for p in pairs if p["episode_bucket"] == "neutral"),
+            "regressed": sum(1 for p in pairs if p["episode_bucket"] == "regressed"),
+        },
+    }
+
+
+def _save_partial(
+    *,
+    n_episodes: int,
+    pairs: list[dict],
+    regressions: list[dict],
+    counterfactuals: list[dict],
+) -> dict:
+    summary = _build_summary(n_episodes, pairs)
+    BUCKETS_PATH.write_text(
+        json.dumps({"summary": summary, "episodes": pairs}, indent=2, default=_json_default)
+    )
+    REGRESSIONS_PATH.write_text(
+        json.dumps({"summary": summary, "cases": regressions}, indent=2, default=_json_default)
+    )
+    COUNTERFACTUALS_PATH.write_text(
+        json.dumps({"summary": summary, "pairs": counterfactuals}, indent=2, default=_json_default)
+    )
+    return summary
+
+
 def _bucket_for_delta(delta_steps: int, threshold: int = 20) -> str:
     if delta_steps >= threshold:
         return "improved"
@@ -255,23 +310,22 @@ def main() -> None:
             f"bucket={bucket:9s} "
             f"def={current.get('defensive_action_rate', 0.0):.2f}"
         )
+        summary = _save_partial(
+            n_episodes=n_episodes,
+            pairs=pairs,
+            regressions=regressions,
+            counterfactuals=counterfactuals,
+        )
+        print(
+            f"partial save: completed={summary['completed_pairs']}/{n_episodes} "
+            f"buckets={summary['bucket_counts']}"
+        )
 
-    summary = {
-        "n_episodes": n_episodes,
-        "baseline_avg_survival": round(float(np.mean([p["baseline_steps"] for p in pairs])), 2),
-        "current_avg_survival": round(float(np.mean([p["current_steps"] for p in pairs])), 2),
-        "avg_delta_steps": round(float(np.mean([p["delta_steps"] for p in pairs])), 2),
-        "bucket_counts": {
-            "improved": sum(1 for p in pairs if p["episode_bucket"] == "improved"),
-            "neutral": sum(1 for p in pairs if p["episode_bucket"] == "neutral"),
-            "regressed": sum(1 for p in pairs if p["episode_bucket"] == "regressed"),
-        },
-    }
-
-    BUCKETS_PATH.write_text(json.dumps({"summary": summary, "episodes": pairs}, indent=2))
-    REGRESSIONS_PATH.write_text(json.dumps({"summary": summary, "cases": regressions}, indent=2))
-    COUNTERFACTUALS_PATH.write_text(
-        json.dumps({"summary": summary, "pairs": counterfactuals}, indent=2)
+    summary = _save_partial(
+        n_episodes=n_episodes,
+        pairs=pairs,
+        regressions=regressions,
+        counterfactuals=counterfactuals,
     )
 
     print(summary)
