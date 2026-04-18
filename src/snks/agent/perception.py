@@ -247,6 +247,17 @@ def _center_positions(H: int, W: int | None = None) -> set[tuple[int, int]]:
     return {(r0, c0), (r0, c0 + 1), (r0 + 1, c0), (r0 + 1, c0 + 1)}
 
 
+def _near_priority(cls_name: str, confidence: float) -> tuple[int, float]:
+    """Rank candidates for near_concept selection inside the center 2x2 patch.
+
+    Empty should lose to any non-empty concept when both are present in the
+    center patch. Otherwise, pick by confidence. This makes semantic and pixel
+    perception agree on the meaningful object rather than whichever tile is
+    visited first in scan order.
+    """
+    return (0 if cls_name == "empty" else 1, confidence)
+
+
 def perceive_tile_field(
     pixels: torch.Tensor | np.ndarray,
     encoder: Any,
@@ -310,9 +321,13 @@ def perceive_tile_field(
 
             vf.detections.append((cls_name, conf, gy, gx))
 
-            if (gy, gx) in center_pos and conf > vf.near_similarity:
-                vf.near_concept = cls_name
-                vf.near_similarity = conf
+            if (gy, gx) in center_pos:
+                if _near_priority(cls_name, conf) > _near_priority(
+                    vf.near_concept,
+                    vf.near_similarity,
+                ):
+                    vf.near_concept = cls_name
+                    vf.near_similarity = conf
 
     return vf
 
@@ -354,9 +369,13 @@ def perceive_semantic_field(
 
             vf.detections.append((cls_name, conf, gy, gx))
 
-            if (gy, gx) in center_pos and conf > vf.near_similarity:
-                vf.near_concept = cls_name
-                vf.near_similarity = conf
+            if (gy, gx) in center_pos:
+                if _near_priority(cls_name, conf) > _near_priority(
+                    vf.near_concept,
+                    vf.near_similarity,
+                ):
+                    vf.near_concept = cls_name
+                    vf.near_similarity = conf
 
     return vf
 
