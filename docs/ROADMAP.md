@@ -1,253 +1,267 @@
 # Roadmap SNKS AGI
 
-**Версия:** 1
-**Дата:** 2026-04-14
-**Статус:** Living document. Обновлять при закрытии stage-а.
+**Версия:** 2  
+**Дата:** 2026-04-17  
+**Статус:** Living document. Пересматривать после закрытия каждой крупной фазы.
 
-> Этот roadmap выводится из `IDEOLOGY.md`, не из wishlist-а.
-> Каждый stage решает конкретный идеологический долг.
-> Если stage не решает ничего из идеологии — он неправильный.
+> Этот roadmap выводится из `docs/IDEOLOGY.md` и проверяется против
+> `docs/CONCEPT_SUCCESS_CRITERIA.md`.
+> Любой claim про “архитектурный прогресс”, сделанный по ходу roadmap-а,
+> дополнительно должен проходить `docs/ANTI_TUNING_CHECKLIST.md`, чтобы
+> Crafter не стал скрытой конечной целью вместо proving ground.
+>
+> Вопрос теперь не "какой следующий stage?", а
+> **"какое доказательство работоспособности концепции ещё отсутствует?"**
 
 ---
 
 ## Текущая позиция
 
+Проект вышел из фазы локальных исправлений и дошёл до более честной архитектурной картины:
+
+- `facts / mechanisms / experience / stimuli` разделены заметно лучше, чем на Stage 74-81
+- post-mortem, death hypotheses и textbook promotion механически работают
+- ideologically-clean baseline сильнее прежних гибридных вариантов
+- главный bottleneck теперь понятен: **мир моделируется недостаточно динамически, а promotion пока переносит корреляции лучше, чем причинно полезное знание**
+
+### Последний подтверждённый статус
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**
 
-gen1=189.4, gen5=179.7, ratio=0.949. Secondary PASS (n_promoted=2 ✓), Primary FAIL.
-Knowledge flow механически работает (гипотезы формируются и промоутируются).
-Structural wall: vital threshold adjustments не улучшают zombie-боевую выживаемость.
-Arrow attribution добавлен (exp136 + entity-specific ranges). Next: Stage 89.
+- `gen1=189.4`, `gen5=179.7`, `ratio=0.949`
+- secondary PASS (`n_promoted=2`)
+- primary FAIL
 
-**Stage 87 — COMPLETE (2026-04-15, PASS)**
+Вывод:
+- knowledge flow **механически** работает,
+- но **концептуально** ещё не доказан, потому что следующее поколение не стало лучше предыдущего.
 
-avg_survival=186.85, n_verifiable=4, curiosity_active=17/20. Gates: 3/3.
-DeathHypothesis + HypothesisTracker + CuriosityStimulus death-relevance weighting.
-
----
-
-## Roadmap
-
-### Stage 84 — Real Stimuli Infrastructure ✓ COMPLETE
-
-**Результат:** avg_survival=178.9, gates 2/3 (survival ✓, sleep ✓, wood ✗ pre-existing).
-**Идеологический долг:** Категория 4 (Stimuli). `score_trajectory` захардкожен
-в mechanism layer. `state.body` всегда 9.0 — реальные виталы не доходят до планировщика.
-
-**Что делаем:**
-
-1. Подключить `HomeostaticTracker` к `VectorState.body` — реальные
-   значения food/drink/health/energy на каждом шаге вместо дефолтных 9.0.
-
-2. Выделить `StimuliLayer` из `score_trajectory`:
-   ```python
-   # Было (в механизме):
-   score = (survived, known, total_gain, min_vital, -steps)
-
-   # Стало (в отдельном слое):
-   score = stimuli.evaluate(simulated_state)
-   # где stimuli = [HomeostasisStimulus, SurvivalAversion]
-   ```
-
-3. Sleep работает правильно без хаков: выигрывает только когда
-   реальные виталы низкие, проигрывает когда полные.
-
-**Gate:** sleep выбирается агентом при `energy < 3`, не выбирается при
-`energy = 9`. Homeostatic recovery статистически выше baseline.
+Это означает: проект пока не проходит `docs/CONCEPT_SUCCESS_CRITERIA.md#1`.
 
 ---
 
-### Stage 85 — Goal Selector Design ✓ COMPLETE
+## Новый принцип roadmap-а
 
-**Результат (2026-04-15):** avg_survival=197.0, wood_ge3_pct=10%, no_total_gain=✓. Gates: 3/3 PASS.
-**Что сделано:** GoalSelector (textbook-derived threats), Goal.progress() (vital_delta/inventory_delta/item_gained/explore), proactive crafting chain (wood chain_cost threshold), confidences в VectorTrajectory, total_gain убран из score_trajectory.
+Roadmap строится вокруг **5 proof obligations**:
+
+1. Система должна правильно моделировать опасную динамику мира.
+2. Система должна извлекать из опыта каузально полезное знание, а не корреляции.
+3. Это знание должно давать межпоколенческий выигрыш.
+4. Та же архитектура должна выдержать хотя бы один соседний домен.
+5. Только после этого можно говорить, что концепция работает.
+
+Crafter остаётся **главным proving ground**, но roadmap сознательно
+не заканчивается Crafter-успехом. Финал roadmap-а — transfer + concept validation.
 
 ---
 
-### Stage 85 — Curiosity as Primary Driver (АРХИВ — заменён Goal Selector)
+## Phase I — Dynamic World Model
 
-**Идеологический долг:** Категория 4, информационный стимул.
-`total_gain` знает про wood — это Crafter-специфично. Должен быть
-универсальный движок исследования.
+**Цель:** закрыть текущую structural wall, где агент плохо моделирует
+короткую опасную динамику: стрелы, бой, приближение угроз, локальную геометрию траекторий.
 
-**Что делаем:**
+**Почему это первая фаза:**
+- Stage 88 показал, что ceiling теперь определяется не только виталами,
+  а боевой динамикой.
+- Без точной динамической модели любая causal learning-фаза будет учить шум.
 
-Заменить `total_gain` на `expected_surprise`:
-```python
-# Было (Crafter-специфично):
-U_wood(s) = s.inventory["wood"] - initial.inventory["wood"]
+### Предлагаемые stages
 
-# Стало (универсально):
-U_curiosity(s) = world_model.expected_surprise(concept, action)
-               = 1 - cosine_similarity(predicted, actual)
+**Stage 89 — Arrow Trajectory Modeling**
+- добавить стрелу как динамическую сущность с направлением и коротким horizon forecast
+- цель: чтобы dodge возникал из планирования, а не из рефлекса
+
+**Stage 90 — Threat Interaction Model**
+- расширить short-horizon model для skeleton/zombie contact windows, line-of-fire, threat arrival
+- убрать blind spots между "вижу врага" и "умираю через 2-5 тиков"
+
+**Stage 91 — Dynamic Planning Validation**
+- доказать, что planner выбирает лучшие действия именно из-за новой динамической модели
+- не тюнинг score, а сравнение prediction quality и decision quality
+
+### Exit gates
+
+- prediction error on dangerous short-horizon dynamics statistically below current baseline
+- deaths from arrows reduced by at least 50% versus pre-Phase-I baseline
+- at least one new defensive behavior emerges from planning alone
+- improvement explained as world-model improvement, not threshold/scoring tweaks
+
+---
+
+## Phase II — Causal Learning
+
+**Цель:** научить систему извлекать и удерживать **каузально полезное** знание.
+
+**Почему это вторая фаза:**
+- Stage 88 показал, что promotion сейчас может правильно сохранять структуру,
+  но не различает cause vs consequence достаточно надёжно.
+- Без этой фазы knowledge flow будет переносить корреляции.
+
+### Предлагаемые stages
+
+**Stage 92 — Causal Hypothesis Filter**
+- ввести явную проверку `operational usefulness before promotion`
+- hypothesis должна не просто коррелировать с гибелью, а менять prediction/planning
+
+**Stage 93 — Verification Before Promotion**
+- promotion only after repeated out-of-sample confirmation
+- disconfirmation must lower confidence or block promotion
+
+**Stage 94 — Causal Rule Demonstration**
+- показать хотя бы 1-2 clean кейса:
+  `observation -> hypothesis -> verification -> retained rule -> better later behavior`
+
+### Exit gates
+
+- at least one new promoted rule is shown to be causally useful
+- false-correlation patterns of the `zombie + low drink/food` type are explicitly rejected
+- promoted rule changes planner choice in the intended direction
+- phase passes `docs/CONCEPT_SUCCESS_CRITERIA.md#3` locally inside Crafter
+
+---
+
+## Phase III — Inter-Generation Knowledge Flow
+
+**Цель:** доказать, что следующее поколение реально стартует умнее.
+
+**Почему это отдельная фаза:**
+- Stage 88 already proved persistence mechanics
+- but persistence mechanics != knowledge flow success
+
+### Предлагаемые stages
+
+**Stage 95 — Stable Promotion Pipeline**
+- harden persistence, merge, loading and inheritance policy
+- separate clearly:
+  what remains runtime experience vs what becomes promoted fact
+
+**Stage 96 — Multi-Run Generation Proof**
+- run repeated generation experiments with identical protocol
+- require inspectable inherited knowledge and repeatable generational gain
+
+### Exit gates
+
+- `genN+1 > genN` repeats across multiple independent runs
+- inherited knowledge responsible for the gain is identified and inspectable
+- later generations improve because they start with a better world model
+- phase passes `docs/CONCEPT_SUCCESS_CRITERIA.md#1`
+
+---
+
+## Phase IV — Neighbor-Domain Transfer
+
+**Цель:** доказать, что архитектура не заперта в Crafter.
+
+**Принцип:**
+- не parallel multi-domain from day one
+- а **Crafter-first with forced transfer checkpoint**
+
+### Требования к соседнему домену
+
+Домен должен быть достаточно близким, чтобы проверять архитектуру, а не запускать отдельный research project:
+
+- partial observability
+- resources / affordances
+- dynamic threats or moving hazards
+- need for short-horizon planning
+- возможность textbook-style facts + runtime experience
+
+### Предлагаемые stages
+
+**Stage 97 — Neighbor Domain Port**
+- перенести ту же архитектурную схему в соседний домен
+- разрешены новые `facts`, environment semantics, labels/textbook entries
+- запрещено переписывать planner под case-specific policy logic
+
+**Stage 98 — Transfer Validation**
+- показать, что новый домен проходит на той же логике:
+  facts + mechanisms + experience + stimuli + promotion
+
+### Exit gates
+
+- second domain works without bespoke control architecture
+- new environment support is mostly local to facts / parser / env adapter
+- no new Crafter-like reactive special-case layer appears
+- phase passes `docs/CONCEPT_SUCCESS_CRITERIA.md#4`
+
+---
+
+## Phase V — Concept Validation
+
+**Цель:** дать честный ответ на вопрос: работает ли концепция?
+
+Эта фаза не про "ещё один механизм". Она про финальную проверку claim’ов.
+
+### Предлагаемый stage
+
+**Stage 99 — Concept Validation Report**
+- собрать итоговый architecture report
+- проверить проект против `docs/CONCEPT_SUCCESS_CRITERIA.md`
+- разделить:
+  - what is proven
+  - what is promising but unproven
+  - what is explicitly disproven or still blocked
+
+### Exit gates
+
+Все 5 пунктов из `docs/CONCEPT_SUCCESS_CRITERIA.md` должны быть закрыты:
+
+1. cross-generation benefit demonstrated
+2. benefit comes from the correct architectural layer
+3. causally useful retained knowledge demonstrated
+4. neighboring-domain transfer demonstrated
+5. better planning follows from better world understanding
+
+Только после этого допустимо утверждение:
+**"концепция работает"**
+
+---
+
+## Dependency Graph
+
+```text
+Phase I  Dynamic World Model
+   │
+   ▼
+Phase II Causal Learning
+   │
+   ▼
+Phase III Inter-Generation Knowledge Flow
+   │
+   ▼
+Phase IV Neighbor-Domain Transfer
+   │
+   ▼
+Phase V Concept Validation
 ```
 
-Агент собирает дерево не потому что `wood` захардкожен в scoring,
-а потому что `do` рядом с деревом — предсказуемо сюрпризный исход
-(до тех пор пока модель не выучила правило).
+Почему порядок именно такой:
 
-**Gate:** агент собирает ресурсы без явного `total_gain` в scoring.
-Knowledge flow улучшается: gen2 любопытен именно к тому что gen1
-не выучил.
-
----
-
-### Stage 86 — Post-Mortem Learning ✓ COMPLETE
-
-**Результат (2026-04-15):** avg_survival=179.7, zombie_deaths early=6→late=3, starvation with_pm=0 < without_pm=1. Gates: 3/3 PASS.
-**Что сделано:** DamageEvent log, PostMortemAnalyzer (temporal decay + multi-source), PostMortemLearner (thresholds + health_weight), HomeostasisStimulus deficit-based scoring.
-
-### Stage 86 — Post-Mortem Learning (АРХИВ)
-
-**Идеологический долг:** Принцип 6 (Система, не агент). Смерть сейчас
-= выброшенная информация. Должна быть обучающим сигналом.
-
-**Что делаем:**
-
-После каждого эпизода:
-```python
-death_context = {
-    "cause": "health",
-    "steps": 173,
-    "last_vitals": {"health": 0, "food": 2, "drink": 7},
-    "nearby_entities": ["zombie"],
-    "last_plan": "single:tree:do",
-}
-post_mortem_learn(death_context, world_model, stimuli)
-```
-
-Конкретные обновления:
-- Умер рядом с zombie → усилить `aversion(zombie)` stimulus
-- Умер при `food=0` → понизить threshold в `HomeostasisStimulus(food)`
-- Умер в шаге 35 (сразу) → что изменилось в первые 20 шагов?
-
-**Gate:** `cause=zombie deaths` снижается от gen1 к gen3. `cause=starvation
-deaths` снижается при включённом post-mortem vs выключенном.
+- без dynamic world model causal learning будет захватывать шум
+- без causal learning inter-generation transfer будет переносить корреляции
+- без inter-generation gain нельзя утверждать knowledge flow success
+- без neighbor-domain transfer нельзя говорить о масштабируемости концепции
 
 ---
 
-### Stage 87 — Curiosity About Death
+## What Is Explicitly Not The Center Of The Roadmap
 
-**Идеологический долг:** Принцип 6, переформулировка curiosity.
-После Stage 85 любопытство = "исследуй новое".
-После Stage 87 любопытство = "уменьши неопределённость о причинах смерти".
-
-**Что делаем:**
-
-Система формирует явные гипотезы между эпизодами:
-```
-"Я умираю от zombies при food < 3 чаще чем при food > 6.
-Гипотеза: low food → distracted navigation → zombie exposure.
-Следующий эпизод: тест этой гипотезы."
-```
-
-Curiosity stimulus теперь взвешен по death-relevance:
-```python
-U_curiosity(s) = expected_surprise(s) * death_relevance(s)
-# death_relevance: насколько этот исход мог повлиять на причины смерти
-```
-
-**Gate:** система формулирует минимум 1 проверяемую гипотезу о смерти
-за 20 эпизодов. Гипотеза верифицируется в следующих эпизодах.
+- Crafter-specific optimization presented as architecture progress
+- threshold tuning ради одного gate
+- новые learning modules без явного ideological debt
+- расширение списка entity types как самоцель
+- claims of concept success before transfer and generation gain
 
 ---
 
-### Stage 88 — Knowledge Flow: Textbook Promotion
+## How To Read Progress
 
-**Идеологический долг:** Принцип 5 (Knowledge flow). Learned rules
-умирают с runtime — не передаются следующему поколению явно.
+Крупная фаза считается закрытой только если:
 
-**Что делаем:**
-
-Реализовать стрелку `learned_rules → teacher YAML` из диаграммы в IDEOLOGY.md:
-
-```python
-# После N стабильных наблюдений:
-if rule.confidence > threshold and rule.n_observations > 50:
-    textbook.promote(rule)  # записать в crafter_textbook.yaml
-    # Следующее поколение стартует с этим правилом как фактом
-```
-
-Тогда:
-- Gen 1 discover'ит "zombie + proximity → health -0.5"
-- Gen 2 стартует с этим как textbook fact — не тратит эпизоды на discovery
-- Gen 10: textbook стабилизирован, каждое новое поколение начинает
-  с накопленной мудростью всех предыдущих
-
-**Gate:** gen5 `avg_len` > gen1 `avg_len` на ≥20%. Разница объясняется
-promoted rules, не случайностью карт.
-
----
-
-## Зависимости
-
-```
-Stage 83 (fix bugs)
-    │
-    ▼
-Stage 84 (real stimuli)
-    │
-    ├──▶ Stage 85 (curiosity)
-    │         │
-    │         ▼
-    │    Stage 87 (death curiosity)
-    │
-    └──▶ Stage 86 (post-mortem)
-              │
-              ▼
-         Stage 88 (textbook promotion)
-```
-
-84 разблокирует 85 и 86 параллельно.
-85 + 86 вместе разблокируют 87 и 88.
-
----
-
-### Stage 89 — Arrow Trajectory Modeling
-
-**Идеологический долг:** Принцип 3 (World Model completeness). Стрела —
-движущийся объект с предсказуемой траекторией, но VectorWorldModel не
-моделирует её как динамическую сущность. ~25% смертей агента — от стрел
-(диагностика diag_unknown_deaths, 2026-04-16).
-
-**Ключевой инсайт:** Стрела летит по прямой 1 тайл/шаг, Player тоже
-движется 1 тайл/шаг → dodge механически возможен. Это _уклоняемая угроза_
-в отличие от zombie (гонится) и skeleton (стреляет издали).
-
-**Что делаем:**
-
-1. Расширить entity tracker: фиксировать позицию + направление arrow между
-   шагами → добавить arrow как динамическую сущность с вектором движения.
-
-2. Расширить VectorWorldModel / симулятор MPC: предсказывать позицию стрелы
-   через N шагов по линейной экстраполяции.
-
-3. MPC тогда сам обнаружит: "уйти перпендикулярно = стрела не попадёт" —
-   dodge _эмерджирует_ из планирования, без hardcoded рефлексов.
-
-**Gate:** доля смертей от arrow снижается ≥50% относительно baseline
-(без arrow modeling). Avg survival растёт.
-
----
-
-## Что НЕ в roadmap-е (сознательно)
-
-- **Crafter-специфичные улучшения** (лучший pathfinding, больше entity types):
-  это tactics, не ideology. Не расширяем textbook чтобы покрыть eval gap.
-
-- **Смена env на более сложный** (Minecraft, NetHack): только после
-  Stage 88 — когда knowledge flow доказан в Crafter.
-
-- **Нейронные компоненты вместо SDM**: SDM не замена нейросети,
-  это другая парадигма. Менять только если SDM доказуемо не справляется.
-
----
-
-## Как читать прогресс
-
-Каждый stage закрывается когда:
-1. Eval gate пройден на minipc
+1. phase exit gates выполнены
 2. `docs/ASSUMPTIONS.md` обновлён
-3. Memory запись обновлена
+3. stage/phase reports объясняют, **почему** improvement architectural
+4. `docs/ANTI_TUNING_CHECKLIST.md` не даёт оснований считать результат просто environment tuning
+4. при необходимости пройден соответствующий пункт из `docs/CONCEPT_SUCCESS_CRITERIA.md`
 
-Roadmap пересматривается после каждых 2-3 закрытых stage-ов.
+Stage numbers сохраняются как execution-level units, но roadmap теперь управляется фазами, а не наоборот.
