@@ -578,6 +578,7 @@ def run_vector_mpc_episode(
     enable_motion_plans: bool = True,
     enable_motion_chains: bool = True,
     enable_post_plan_passive_rollout: bool = True,
+    record_stage89c_trace: bool = False,
 ) -> dict:
     """Run one episode with vector MPC planning.
 
@@ -635,6 +636,11 @@ def run_vector_mpc_episode(
     arrow_visible_steps = 0
     arrow_velocity_known_steps = 0
     arrow_velocity_unknown_steps = 0
+    first_arrow_threat_step: int | None = None
+    first_defensive_action_step: int | None = None
+    defensive_events: list[dict[str, Any]] = []
+    defensive_sequences = 0
+    defensive_window_targets = (10, 20)
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -755,6 +761,15 @@ def run_vector_mpc_episode(
             else:
                 arrow_velocity_unknown_steps += 1
 
+        if record_stage89c_trace:
+            _update_defensive_event_windows(
+                defensive_events=defensive_events,
+                current_step=step,
+                body=body,
+                alive=True,
+                window_targets=defensive_window_targets,
+            )
+
         # --- Build per-step prediction cache (one batched GPU op) ---
         known_step = set(vf.visible_concepts()) | set(spatial_map.known_objects.keys())
         target_acts = [a for a in model.actions if a in ("do", "make", "place")]
@@ -858,8 +873,68 @@ def run_vector_mpc_episode(
         arrow_threat_now = any(entity.concept_id == "arrow" for entity in observed_dynamic_entities)
         if arrow_threat_now:
             arrow_threat_steps += 1
+            if first_arrow_threat_step is None:
+                first_arrow_threat_step = step
             if primitive.startswith("move_") and predicted_best_loss < predicted_baseline_loss:
                 defensive_action_steps += 1
+                if first_defensive_action_step is None:
+                    first_defensive_action_step = step
+                if not defensive_events or defensive_events[-1]["step"] != step:
+                    defensive_sequences += 1
+                if record_stage89c_trace:
+                    defensive_events.append({
+                        "step": step,
+                        "primitive": primitive,
+                        "plan_origin": best_plan.origin,
+                        "predicted_best_loss": round(float(predicted_best_loss), 3),
+                        "predicted_baseline_loss": round(float(predicted_baseline_loss), 3),
+                        "health": round(float(body.get("health", 0.0)), 3),
+                        "food": round(float(body.get("food", 0.0)), 3),
+                        "drink": round(float(body.get("drink", 0.0)), 3),
+                        "energy": round(float(body.get("energy", 0.0)), 3),
+                        "nearest_zombie_dist": _nearest_hostile_distance(
+                            "zombie", player_pos, spatial_map, observed_dynamic_entities
+                        ),
+                        "nearest_skeleton_dist": _nearest_hostile_distance(
+                            "skeleton", player_pos, spatial_map, observed_dynamic_entities
+                        ),
+                        "nearest_arrow_dist": _nearest_dynamic_distance(
+                            "arrow", player_pos, observed_dynamic_entities
+                        ),
+                        "nearest_tree_dist": _nearest_spatial_distance(
+                            "tree", player_pos, spatial_map
+                        ),
+                        "nearest_water_dist": _nearest_spatial_distance(
+                            "water", player_pos, spatial_map
+                        ),
+                        "nearest_cow_dist": _nearest_spatial_distance(
+                            "cow", player_pos, spatial_map
+                        ),
+                        "post_defense_vitals": {
+                            "health": round(float(body.get("health", 0.0)), 3),
+                            "food": round(float(body.get("food", 0.0)), 3),
+                            "drink": round(float(body.get("drink", 0.0)), 3),
+                            "energy": round(float(body.get("energy", 0.0)), 3),
+                        },
+                        "resource_access_loss": {
+                            "tree": _nearest_spatial_distance("tree", player_pos, spatial_map),
+                            "water": _nearest_spatial_distance("water", player_pos, spatial_map),
+                            "cow": _nearest_spatial_distance("cow", player_pos, spatial_map),
+                        },
+                        "threat_distance_after_defense": {
+                            "zombie": _nearest_hostile_distance(
+                                "zombie", player_pos, spatial_map, observed_dynamic_entities
+                            ),
+                            "skeleton": _nearest_hostile_distance(
+                                "skeleton", player_pos, spatial_map, observed_dynamic_entities
+                            ),
+                            "arrow": _nearest_dynamic_distance(
+                                "arrow", player_pos, observed_dynamic_entities
+                            ),
+                        },
+                        "survived_10": None,
+                        "survived_20": None,
+                    })
         pending_prediction_diag = {
             "health_before": float(health_now),
             "predicted_loss": float(predicted_best_loss),
@@ -944,6 +1019,14 @@ def run_vector_mpc_episode(
         if done:
             raw_inv_end = dict(info.get("inventory", {}))
             body_at_end = {v: float(raw_inv_end.get(v, 0.0)) for v in vitals}
+            if record_stage89c_trace:
+                _update_defensive_event_windows(
+                    defensive_events=defensive_events,
+                    current_step=step + 1,
+                    body=body_at_end,
+                    alive=False,
+                    window_targets=defensive_window_targets,
+                )
             if pending_prediction_diag is not None:
                 actual_loss = max(
                     0.0,
@@ -1015,6 +1098,10 @@ def run_vector_mpc_episode(
         "arrow_velocity_known_rate": round(
             arrow_velocity_known_steps / max(arrow_visible_steps, 1), 3
         ),
+        "first_arrow_threat_step": first_arrow_threat_step,
+        "first_defensive_action_step": first_defensive_action_step,
+        "n_defensive_sequences": defensive_sequences,
+        "defensive_events": defensive_events if record_stage89c_trace else [],
     }
 
 
@@ -1048,3 +1135,69 @@ def _update_spatial_map(
         wx = px + (gx - center_col)
         wy = py + (gy - (center_row - 1))
         spatial_map.update((wx, wy), cid, conf)
+
+
+def _nearest_spatial_distance(
+    concept_id: str,
+    player_pos: tuple[int, int],
+    spatial_map: CrafterSpatialMap,
+) -> int | None:
+    pos = spatial_map.find_nearest(concept_id, player_pos)
+    if pos is None:
+        return None
+    return abs(pos[0] - player_pos[0]) + abs(pos[1] - player_pos[1])
+
+
+def _nearest_dynamic_distance(
+    concept_id: str,
+    player_pos: tuple[int, int],
+    dynamic_entities: list[DynamicEntityState],
+) -> int | None:
+    distances = [
+        abs(entity.position[0] - player_pos[0]) + abs(entity.position[1] - player_pos[1])
+        for entity in dynamic_entities
+        if entity.concept_id == concept_id
+    ]
+    return min(distances) if distances else None
+
+
+def _nearest_hostile_distance(
+    concept_id: str,
+    player_pos: tuple[int, int],
+    spatial_map: CrafterSpatialMap,
+    dynamic_entities: list[DynamicEntityState],
+) -> int | None:
+    distances = []
+    spatial_dist = _nearest_spatial_distance(concept_id, player_pos, spatial_map)
+    dynamic_dist = _nearest_dynamic_distance(concept_id, player_pos, dynamic_entities)
+    if spatial_dist is not None:
+        distances.append(spatial_dist)
+    if dynamic_dist is not None:
+        distances.append(dynamic_dist)
+    return min(distances) if distances else None
+
+
+def _update_defensive_event_windows(
+    defensive_events: list[dict[str, Any]],
+    current_step: int,
+    body: dict[str, float],
+    alive: bool,
+    window_targets: tuple[int, ...],
+) -> None:
+    for event in defensive_events:
+        elapsed = current_step - int(event["step"])
+        for window in window_targets:
+            health_key = f"health_delta_{window}"
+            food_key = f"food_delta_{window}"
+            drink_key = f"drink_delta_{window}"
+            survive_key = f"survived_{window}"
+            threat_delta_key = f"threat_distance_delta_{window}"
+            if health_key in event:
+                continue
+            if elapsed < window and alive:
+                continue
+            event[health_key] = round(float(body.get("health", 0.0)) - float(event["health"]), 3)
+            event[food_key] = round(float(body.get("food", 0.0)) - float(event["food"]), 3)
+            event[drink_key] = round(float(body.get("drink", 0.0)) - float(event["drink"]), 3)
+            event[survive_key] = bool(alive and elapsed >= window)
+            event[threat_delta_key] = None
