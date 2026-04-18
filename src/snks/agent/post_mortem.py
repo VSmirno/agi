@@ -177,18 +177,22 @@ class PostMortemLearner:
         self,
         vital_vars: list[str],
         hypothesis: "DeathHypothesis | None" = None,
+        include_vital_delta: bool = True,
     ) -> StimuliLayer:
         """Create a new StimuliLayer with current parameters.
 
         If hypothesis is provided (Stage 87+), adds CuriosityStimulus weighted
         by death_relevance from the active DeathHypothesis.
         """
-        stimuli = [
-            SurvivalAversion(),
-            VitalDeltaStimulus(
-                vital_vars=["health"],
-                weight=self.health_weight,
-            ),
+        stimuli = [SurvivalAversion()]
+        if include_vital_delta:
+            stimuli.append(
+                VitalDeltaStimulus(
+                    vital_vars=["health"],
+                    weight=self.health_weight,
+                )
+            )
+        stimuli.append(
             HomeostasisStimulus(
                 vital_vars=vital_vars,
                 weight=self.health_weight,
@@ -196,8 +200,8 @@ class PostMortemLearner:
                     "food": self.food_threshold,
                     "drink": self.drink_threshold,
                 },
-            ),
-        ]
+            )
+        )
         if hypothesis is not None:
             stimuli.append(CuriosityStimulus(hypothesis=hypothesis))
         return StimuliLayer(stimuli)

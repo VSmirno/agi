@@ -222,6 +222,11 @@ class TestLearnerBuildStimuli:
         s2 = learner.build_stimuli(["food"])
         assert s1 is not s2
 
+    def test_can_disable_vital_delta_stimulus(self):
+        learner = PostMortemLearner()
+        stimuli = learner.build_stimuli(["health", "food"], include_vital_delta=False)
+        assert not any(type(s).__name__ == "VitalDeltaStimulus" for s in stimuli.stimuli)
+
 
 # ---------------------------------------------------------------------------
 # HomeostasisStimulus — threshold-based deficit scoring

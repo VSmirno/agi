@@ -56,14 +56,20 @@ class _Threat:
 
 
 class GoalSelector:
-    def __init__(self, textbook: "CrafterTextbook"):
+    def __init__(
+        self,
+        textbook: "CrafterTextbook",
+        allow_dynamic_entity_goals: bool = True,
+    ):
         self._threats = self._derive_threats(textbook)
+        self._allow_dynamic_entity_goals = allow_dynamic_entity_goals
 
     def select(self, state: "VectorState") -> Goal:
         """Pure function: current state → active goal. Called every step."""
-        dynamic_goal = self._dynamic_entity_goal(state)
-        if dynamic_goal is not None:
-            return dynamic_goal
+        if self._allow_dynamic_entity_goals:
+            dynamic_goal = self._dynamic_entity_goal(state)
+            if dynamic_goal is not None:
+                return dynamic_goal
         for threat in self._threats:
             if threat.active_fn(state):
                 return threat.response_fn(state)

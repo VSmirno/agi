@@ -236,6 +236,18 @@ class TestGoalSelectorSelect:
         goal = selector.select(state)
         assert goal.id == "fight_zombie"
 
+    def test_dynamic_goals_can_be_disabled(self, textbook):
+        selector = GoalSelector(textbook, allow_dynamic_entity_goals=False)
+        state = make_state(
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            inventory={"wood": 0, "wood_sword": 0},
+        )
+        state.dynamic_entities = [
+            DynamicEntityState(concept_id="arrow", position=(9, 10), velocity=(1, 0))
+        ]
+        goal = selector.select(state)
+        assert goal.id == "gather_wood"
+
 
 # ---------------------------------------------------------------------------
 # GoalSelector — textbook derivation sanity check
