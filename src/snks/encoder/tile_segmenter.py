@@ -16,11 +16,49 @@ still sees the full image; downsampling happens only at the pool step.
 
 from __future__ import annotations
 
+from typing import Any
+
+import numpy as np
 import torch
 import torch.nn as nn
 
 from snks.agent.decode_head import NEAR_CLASSES
 from snks.encoder.tile_head_trainer import VIEWPORT_ROWS, VIEWPORT_COLS
+
+WORLD_VIEW_ROWS_PX = 49
+WORLD_VIEW_COLS_PX = 63
+
+
+def crop_world_pixels(pixels: torch.Tensor | np.ndarray) -> torch.Tensor | np.ndarray:
+    """Crop Crafter pixels down to the actual world viewport.
+
+    The live 64x64 observation includes:
+    - 49px of world view (7 tile rows)
+    - ~6px HUD / transition band
+    - black band under the HUD
+
+    For segmenter training this lower non-world area acts as structured noise.
+    This helper keeps only the top-left 49x63 world region while preserving the
+    input layout:
+    - CHW -> CHW
+    - BCHW -> BCHW
+    - HWC -> HWC
+    - BHWC -> BHWC
+    """
+    if pixels.ndim == 3:
+        if pixels.shape[0] in (1, 3, 4):  # CHW
+            return pixels[:, :WORLD_VIEW_ROWS_PX, :WORLD_VIEW_COLS_PX]
+        if pixels.shape[-1] in (1, 3, 4):  # HWC
+            return pixels[:WORLD_VIEW_ROWS_PX, :WORLD_VIEW_COLS_PX, :]
+    elif pixels.ndim == 4:
+        if pixels.shape[1] in (1, 3, 4):  # BCHW
+            return pixels[:, :, :WORLD_VIEW_ROWS_PX, :WORLD_VIEW_COLS_PX]
+        if pixels.shape[-1] in (1, 3, 4):  # BHWC
+            return pixels[:, :WORLD_VIEW_ROWS_PX, :WORLD_VIEW_COLS_PX, :]
+
+    raise ValueError(
+        f"Unsupported pixel layout for crop_world_pixels: shape={tuple(pixels.shape)}"
+    )
 
 
 class TileSegmenter(nn.Module):
