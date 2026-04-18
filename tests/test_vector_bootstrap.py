@@ -65,6 +65,13 @@ class TestBootstrap:
         decoded = model.decode_effect(effect_vec)
         assert decoded.get("health", 0) < 0, f"Expected health < 0, got {decoded}"
 
+    def test_predict_arrow_proximity_damages_health(self, seeded_model):
+        model, _ = seeded_model
+        effect_vec, conf = model.predict("arrow", "proximity")
+        assert conf > 0.0
+        decoded = model.decode_effect(effect_vec)
+        assert decoded.get("health", 0) < 0, f"Expected health < 0, got {decoded}"
+
     def test_unknown_concept_differs_from_known(self, seeded_model):
         model, _ = seeded_model
         # Unicorn was never seeded — its prediction should differ

@@ -214,6 +214,11 @@ rules:
     range: 5
     effect: { body: { health: -0.5 } }
 
+  - passive: spatial
+    entity: arrow
+    range: 1
+    effect: { body: { health: -0.5 } }
+
   # ===== PASSIVE: stateful body dynamics =====
   # Rough directional facts:
   #   "when food > 0, health recovers slowly" — positive, small
