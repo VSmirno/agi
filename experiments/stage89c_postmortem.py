@@ -42,28 +42,17 @@ def _mode_config(mode: str) -> dict:
 
 def _run_one_episode(
     *,
-    mode: str,
     seed: int,
     max_steps: int,
-    device,
+    model,
     segmenter,
     textbook,
+    stimuli,
+    mode_config: dict,
 ) -> dict:
     from snks.agent.crafter_pixel_env import CrafterPixelEnv
     from snks.agent.perception import HomeostaticTracker
-    from snks.agent.post_mortem import PostMortemLearner
-    from snks.agent.vector_bootstrap import load_from_textbook
     from snks.agent.vector_mpc_agent import run_vector_mpc_episode
-    from snks.agent.vector_world_model import VectorWorldModel
-
-    config = _mode_config(mode)
-    model = VectorWorldModel(dim=16384, n_locations=50000, seed=seed, device=device)
-    textbook_path = ROOT / "configs" / "crafter_textbook.yaml"
-    load_from_textbook(model, textbook_path)
-    stimuli = PostMortemLearner().build_stimuli(
-        ["health", "food", "drink", "energy"],
-        include_vital_delta=config["include_vital_delta"],
-    )
 
     env = CrafterPixelEnv(seed=seed)
     tracker = HomeostaticTracker()
@@ -78,16 +67,15 @@ def _run_one_episode(
         stimuli=stimuli,
         textbook=textbook,
         verbose=False,
-        enable_dynamic_threat_model=config["enable_dynamic_threat_model"],
-        enable_dynamic_threat_goals=config["enable_dynamic_threat_goals"],
-        enable_motion_plans=config["enable_motion_plans"],
-        enable_motion_chains=config["enable_motion_chains"],
-        enable_post_plan_passive_rollout=config["enable_post_plan_passive_rollout"],
+        enable_dynamic_threat_model=mode_config["enable_dynamic_threat_model"],
+        enable_dynamic_threat_goals=mode_config["enable_dynamic_threat_goals"],
+        enable_motion_plans=mode_config["enable_motion_plans"],
+        enable_motion_chains=mode_config["enable_motion_chains"],
+        enable_post_plan_passive_rollout=mode_config["enable_post_plan_passive_rollout"],
         record_stage89c_trace=True,
     )
-    metrics["mode"] = mode
     metrics["seed"] = seed
-    metrics["mode_config"] = config
+    metrics["mode_config"] = mode_config
     return metrics
 
 
@@ -110,6 +98,9 @@ def _counterfactual_from_pair(seed: int, baseline: dict, current: dict) -> dict:
 
 def main() -> None:
     from snks.agent.crafter_textbook import CrafterTextbook
+    from snks.agent.post_mortem import PostMortemAnalyzer, PostMortemLearner
+    from snks.agent.vector_bootstrap import load_from_textbook
+    from snks.agent.vector_world_model import VectorWorldModel
     from snks.encoder.tile_segmenter import load_tile_segmenter, pick_device
 
     DOCS_DIR.mkdir(exist_ok=True)
@@ -122,6 +113,27 @@ def main() -> None:
     n_episodes = 20
     max_steps = 1000
     start_seed = 42
+    vitals = ["health", "food", "drink", "energy"]
+
+    baseline_config = _mode_config("baseline")
+    current_config = _mode_config("current")
+
+    baseline_model = VectorWorldModel(dim=16384, n_locations=50000, seed=42, device=device)
+    current_model = VectorWorldModel(dim=16384, n_locations=50000, seed=42, device=device)
+    load_from_textbook(baseline_model, textbook_path)
+    load_from_textbook(current_model, textbook_path)
+
+    baseline_learner = PostMortemLearner()
+    current_learner = PostMortemLearner()
+    analyzer = PostMortemAnalyzer()
+    baseline_stimuli = baseline_learner.build_stimuli(
+        vitals,
+        include_vital_delta=baseline_config["include_vital_delta"],
+    )
+    current_stimuli = current_learner.build_stimuli(
+        vitals,
+        include_vital_delta=current_config["include_vital_delta"],
+    )
 
     pairs: list[dict] = []
     regressions: list[dict] = []
@@ -129,21 +141,43 @@ def main() -> None:
 
     for ep in range(n_episodes):
         seed = start_seed + ep
+        print(f"starting pair ep={ep} seed={seed}")
         baseline = _run_one_episode(
-            mode="baseline",
             seed=seed,
             max_steps=max_steps,
-            device=device,
+            model=baseline_model,
             segmenter=segmenter,
             textbook=textbook,
+            stimuli=baseline_stimuli,
+            mode_config=baseline_config,
         )
+        baseline["mode"] = "baseline"
+        baseline_attribution = analyzer.attribute(
+            baseline.get("damage_log", []), baseline.get("episode_steps", 0)
+        )
+        baseline_learner.update(baseline_attribution)
+        baseline_stimuli = baseline_learner.build_stimuli(
+            vitals,
+            include_vital_delta=baseline_config["include_vital_delta"],
+        )
+
         current = _run_one_episode(
-            mode="current",
             seed=seed,
             max_steps=max_steps,
-            device=device,
+            model=current_model,
             segmenter=segmenter,
             textbook=textbook,
+            stimuli=current_stimuli,
+            mode_config=current_config,
+        )
+        current["mode"] = "current"
+        current_attribution = analyzer.attribute(
+            current.get("damage_log", []), current.get("episode_steps", 0)
+        )
+        current_learner.update(current_attribution)
+        current_stimuli = current_learner.build_stimuli(
+            vitals,
+            include_vital_delta=current_config["include_vital_delta"],
         )
         delta_steps = int(current.get("episode_steps", 0) - baseline.get("episode_steps", 0))
         bucket = _bucket_for_delta(delta_steps)
