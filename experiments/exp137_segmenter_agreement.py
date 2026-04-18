@@ -289,7 +289,7 @@ def main() -> None:
     print("class_distribution=", _class_report(train_labels, NEAR_CLASSES))
 
     segmenter = TileSegmenter(n_classes=len(NEAR_CLASSES))
-    old_state = torch.load(str(EXP136_CHECKPOINT), map_location="cpu", weights_only=True)
+    old_state = torch.load(str(args.source_checkpoint), map_location="cpu", weights_only=True)
     segmenter.load_state_dict(old_state, strict=True)
     segmenter.to(device)
 

@@ -102,6 +102,7 @@ def main() -> None:
     parser.add_argument("--n-seeds", type=int, default=4)
     parser.add_argument("--max-steps", type=int, default=80)
     parser.add_argument("--sample-every", type=int, default=5)
+    parser.add_argument("--device", type=str, default=None)
     parser.add_argument(
         "--out",
         type=Path,
@@ -109,7 +110,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    segmenter = load_tile_segmenter(str(args.checkpoint), device=torch.device(pick_device()))
+    device = torch.device(args.device) if args.device is not None else torch.device(pick_device())
+    segmenter = load_tile_segmenter(str(args.checkpoint), device=device)
     encoder = CroppedSegmenter(segmenter) if args.crop_world else segmenter
 
     rows: list[dict] = []
