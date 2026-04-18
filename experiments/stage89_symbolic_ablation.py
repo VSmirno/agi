@@ -11,6 +11,7 @@ Outputs:
 from __future__ import annotations
 
 import json
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -139,6 +140,8 @@ def _run_mode(
 
     model, segmenter, textbook, stimuli = _build_runtime(start_seed, device)
     results: list[dict] = []
+    t0 = time.time()
+    print(f"=== mode={mode} start episodes={n_episodes} max_steps={max_steps} seed={start_seed} ===")
     for ep in range(n_episodes):
         seed = start_seed + ep
         env = CrafterPixelEnv(seed=seed)
@@ -156,11 +159,13 @@ def _run_mode(
             perception_mode=mode,
         )
         results.append(metrics)
+        elapsed = time.time() - t0
         print(
             f"{mode:8s} ep{ep:02d} seed={seed} "
             f"len={metrics.get('episode_steps', 0):4.0f} "
             f"death={metrics.get('death_cause', '?'):10s} "
-            f"def={metrics.get('defensive_action_rate', 0.0):.2f}"
+            f"def={metrics.get('defensive_action_rate', 0.0):.2f} "
+            f"[{elapsed:.0f}s]"
         )
     out = {
         "perception_mode": mode,
@@ -191,6 +196,7 @@ def main() -> None:
     parser.add_argument("--n-episodes", type=int, default=8)
     parser.add_argument("--max-steps", type=int, default=600)
     parser.add_argument("--start-seed", type=int, default=42)
+    parser.add_argument("--modes", type=str, default="pixel,symbolic")
     parser.add_argument("--use-mlflow", action="store_true")
     parser.add_argument("--mlflow-uri", type=str, default="http://127.0.0.1:5000")
     parser.add_argument("--mlflow-experiment", type=str, default="agi_stage89_symbolic")
@@ -213,19 +219,26 @@ def main() -> None:
     )
     print(
         f"stage89_symbolic_ablation: device={device} episodes={args.n_episodes} "
-        f"max_steps={args.max_steps} start_seed={args.start_seed}"
+        f"max_steps={args.max_steps} start_seed={args.start_seed} modes={args.modes}"
     )
 
-    pixel = _run_mode(
-        "pixel", args.n_episodes, args.max_steps, args.start_seed, device, mlflow_module
-    )
-    symbolic = _run_mode(
-        "symbolic", args.n_episodes, args.max_steps, args.start_seed, device, mlflow_module
-    )
-    out = {
-        "pixel": pixel,
-        "symbolic": symbolic,
-        "comparison": {
+    requested_modes = [m.strip() for m in args.modes.split(",") if m.strip()]
+    valid_modes = {"pixel", "symbolic"}
+    invalid = [m for m in requested_modes if m not in valid_modes]
+    if invalid:
+        raise ValueError(f"Unsupported modes: {invalid}. Expected subset of {sorted(valid_modes)}")
+
+    mode_results: dict[str, dict] = {}
+    for mode in requested_modes:
+        mode_results[mode] = _run_mode(
+            mode, args.n_episodes, args.max_steps, args.start_seed, device, mlflow_module
+        )
+
+    pixel = mode_results.get("pixel")
+    symbolic = mode_results.get("symbolic")
+    comparison = {}
+    if pixel is not None and symbolic is not None:
+        comparison = {
             "survival_delta_symbolic_minus_pixel": round(
                 symbolic["summary"]["avg_survival"] - pixel["summary"]["avg_survival"], 2
             ),
@@ -238,13 +251,18 @@ def main() -> None:
             "danger_prediction_error_delta_symbolic_minus_pixel": round(
                 symbolic["summary"]["danger_prediction_error"] - pixel["summary"]["danger_prediction_error"], 3
             ),
-        },
+        }
+
+    out = {
+        **mode_results,
+        "comparison": comparison,
         "oracle_symbolic": True,
         "diagnostic_only": True,
         "valid_for_concept_success_claims": False,
         "n_episodes": args.n_episodes,
         "max_steps": args.max_steps,
         "start_seed": args.start_seed,
+        "modes": requested_modes,
     }
     OUT_PATH.write_text(json.dumps(out, indent=2, default=_json_default))
     _log_parent_run(mlflow_module, out)
