@@ -19,6 +19,54 @@
 
 ---
 
+## 2026-04-18 — exp137 Perception Agreement Retrain
+**Что сделано:** новый retrain `exp137_segmenter_agreement.py` для `TileSegmenter` с другой objective:
+не survival proxy, а agreement с semantic backend. Изменения:
+- full fine-tune всего segmenter, а не только `head`
+- input crop до реального world viewport `49x63` без HUD / black band
+- hard-negative mining на кадрах, где `exp136` расходился с `semantic`
+- отдельный eval `diag_perception_agreement.py`
+- fix в `perception.py`: `near_concept` теперь выбирает non-empty concept в central `2x2`
+  patch при tie, а не первый `empty` по scan order
+
+**Результаты:**
+- baseline `exp136` agreement (seed 42..45, 64 samples):
+  - `near_match_rate = 0.859`
+  - `mean_jaccard = 0.462`
+  - `pixel_only_by_concept`: `cow=191`, `arrow=111`, `tree=46`, `skeleton=27`
+  - `pixel_only row 5 = 290`
+- holdout `exp136` agreement (seed 200..207, 185 samples):
+  - `near_match_rate = 0.800`
+  - `mean_jaccard = 0.487`
+  - `pixel_only_by_concept`: `cow=546`, `arrow=320`, `tree=169`, `skeleton=69`
+  - `pixel_only row 5 = 841`
+- `exp137` train:
+  - `8000` cropped frames (`4000 general + 2000 skeleton + 2000 hard negatives`)
+  - `epoch119 val_tile_acc = 0.992`
+- holdout `exp137` after near-fix (seed 200..207, 179 samples):
+  - `near_match_rate = 1.000`
+  - `mean_jaccard = 0.999`
+  - only residual disagreement:
+    - `pixel_only_by_concept = {"arrow": 3}`
+    - `symbolic_only_by_concept = {"arrow": 1}`
+
+**Ключевые открытия:**
+- Основной bottleneck действительно был в CNN perception path, а не в Crafter render.
+- Нижняя часть `64x64` frame (HUD + black band) загрязняла признаки; world-crop дал большой эффект.
+- После retrain almost-all remaining mismatches оказались не ошибкой segmenter, а багом
+  в `near_concept` tie-break.
+- Визуальный audit на real GUI render подтвердил, что `exp136` дорисовывал `arrow/cow/skeleton`
+  на траве и раздувал footprint’ы.
+
+**Допущения/ограничения:**
+- `exp137` пока валидирован только на agreement с semantic backend, а не на agent-level outcome.
+- `mean_jaccard = 0.999` на holdout очень сильный результат; его ещё нужно проверять в живом
+  agent loop, чтобы исключить hidden distribution gap между diagnostic sampling и policy rollout.
+- Остаточный disagreement сосредоточен в `arrow`; dynamic-threat eval после perception fix
+  обязателен перед любыми новыми claims про Stage 89 success.
+
+---
+
 ## Stage 87 — Curiosity About Death (2026-04-15)
 **Что сделано:** DeathHypothesis (корреляция причины смерти с уровнем витала) + HypothesisTracker (накапливает per-episode данные, порождает верифицируемые гипотезы). CuriosityStimulus обновлён: `U = weight × avg_surprise × death_relevance`, где death_relevance ∈ [1.0, 2.0] — близость витала к порогу гипотезы. PostMortemLearner.build_stimuli() добавляет CuriosityStimulus при наличии активной гипотезы.
 **Результаты (20 эп, minipc):** avg_survival=186.85. n_verifiable=4, curiosity_active_episodes=17/20. Gates: **3/3 PASS**.
