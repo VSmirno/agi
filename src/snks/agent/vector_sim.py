@@ -229,6 +229,7 @@ def simulate_forward(
     horizon: int = 20,
     vital_vars: list[str] | None = None,
     cache: dict | None = None,
+    enable_post_plan_passive_rollout: bool = True,
 ) -> VectorTrajectory:
     """Run forward simulation through VectorWorldModel predictions.
 
@@ -248,6 +249,7 @@ def simulate_forward(
             cache=cache,
             plan=plan,
             confidences=confidences,
+            enabled=enable_post_plan_passive_rollout,
         )
 
     for step in plan.steps[:horizon]:
@@ -286,7 +288,7 @@ def simulate_forward(
                 confidences=confidences,
             )
 
-    if len(plan.steps) < horizon and state.dynamic_entities:
+    if enable_post_plan_passive_rollout and len(plan.steps) < horizon and state.dynamic_entities:
         return _passive_rollout(
             model=model,
             state=state,
@@ -296,6 +298,7 @@ def simulate_forward(
             cache=cache,
             plan=plan,
             confidences=confidences,
+            enabled=enable_post_plan_passive_rollout,
         )
 
     return VectorTrajectory(plan=plan, states=states, confidences=confidences)
@@ -310,8 +313,11 @@ def _passive_rollout(
     cache: dict | None,
     plan: VectorPlan,
     confidences: list[float],
+    enabled: bool,
 ) -> VectorTrajectory:
     """Continue short-horizon world dynamics after explicit plan steps end."""
+    if not enabled:
+        return VectorTrajectory(plan=plan, states=states, confidences=confidences)
     for _ in range(max(0, horizon)):
         if not state.dynamic_entities:
             break

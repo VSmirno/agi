@@ -2,10 +2,8 @@
 
 Run on minipc ONLY:
   ./scripts/minipc-run.sh stage89 "from stage89_eval import main; main()"
-
-Optional baseline freeze:
   ./scripts/minipc-run.sh stage89_baseline \
-    "from stage89_eval import freeze_baseline_from_stage87; freeze_baseline_from_stage87()"
+    "from stage89_eval import main; import sys; sys.argv=['stage89_eval.py','--mode','baseline']; main()"
 
 Outputs:
   - _docs/stage89_baseline.json
@@ -28,6 +26,28 @@ ROOT = Path(__file__).parent.parent
 DOCS_DIR = ROOT / "_docs"
 BASELINE_PATH = DOCS_DIR / "stage89_baseline.json"
 EVAL_PATH = DOCS_DIR / "stage89_eval.json"
+
+
+def _stage89_mode_config(mode: str) -> dict:
+    if mode == "current":
+        return {
+            "include_vital_delta": True,
+            "enable_dynamic_threat_model": True,
+            "enable_dynamic_threat_goals": True,
+            "enable_motion_plans": True,
+            "enable_motion_chains": True,
+            "enable_post_plan_passive_rollout": True,
+        }
+    if mode == "baseline":
+        return {
+            "include_vital_delta": False,
+            "enable_dynamic_threat_model": False,
+            "enable_dynamic_threat_goals": False,
+            "enable_motion_plans": False,
+            "enable_motion_chains": False,
+            "enable_post_plan_passive_rollout": False,
+        }
+    raise ValueError(f"Unknown stage89 mode: {mode}")
 
 
 def _build_model_and_segmenter(model_dim: int, n_locations: int, seed: int, device):
@@ -83,31 +103,6 @@ def _summarize_episode_metrics(results: list[dict]) -> dict:
     }
 
 
-def freeze_baseline_from_stage87() -> dict:
-    """Bootstrap the Phase I baseline reference from the latest stage87 artifact."""
-    source_path = DOCS_DIR / "stage87_eval.json"
-    if not source_path.exists():
-        raise FileNotFoundError(
-            f"Baseline source not found: {source_path}. "
-            "Run a pre-Phase-I eval on minipc first."
-        )
-
-    data = json.loads(source_path.read_text())
-    episodes = data.get("episodes", [])
-    baseline = _summarize_episode_metrics(episodes)
-    baseline["source"] = str(source_path)
-    baseline["note"] = (
-        "Bootstrapped from stage87_eval.json. Replace with a stricter pre-Phase-I "
-        "baseline if a dedicated stage88/diagnostic bundle is available."
-    )
-
-    DOCS_DIR.mkdir(exist_ok=True)
-    BASELINE_PATH.write_text(json.dumps(baseline, indent=2))
-    print(f"Saved baseline reference to {BASELINE_PATH}")
-    print(json.dumps(baseline, indent=2))
-    return baseline
-
-
 def run_eval(
     n_episodes: int,
     max_steps: int,
@@ -115,6 +110,7 @@ def run_eval(
     n_locations: int,
     seed: int,
     device,
+    mode: str = "current",
 ) -> dict:
     from snks.agent.crafter_pixel_env import CrafterPixelEnv
     from snks.agent.crafter_textbook import CrafterTextbook
@@ -122,6 +118,7 @@ def run_eval(
     from snks.agent.post_mortem import PostMortemAnalyzer, PostMortemLearner
     from snks.agent.vector_mpc_agent import run_vector_mpc_episode
 
+    config = _stage89_mode_config(mode)
     model, segmenter, textbook_path = _build_model_and_segmenter(
         model_dim, n_locations, seed, device
     )
@@ -129,7 +126,10 @@ def run_eval(
     vitals = ["health", "food", "drink", "energy"]
     learner = PostMortemLearner()
     analyzer = PostMortemAnalyzer()
-    stimuli = learner.build_stimuli(vitals)
+    stimuli = learner.build_stimuli(
+        vitals,
+        include_vital_delta=config["include_vital_delta"],
+    )
 
     results: list[dict] = []
     t0 = time.time()
@@ -148,13 +148,21 @@ def run_eval(
             stimuli=stimuli,
             textbook=tb,
             verbose=True,
+            enable_dynamic_threat_model=config["enable_dynamic_threat_model"],
+            enable_dynamic_threat_goals=config["enable_dynamic_threat_goals"],
+            enable_motion_plans=config["enable_motion_plans"],
+            enable_motion_chains=config["enable_motion_chains"],
+            enable_post_plan_passive_rollout=config["enable_post_plan_passive_rollout"],
         )
         results.append(metrics)
 
         damage_log = metrics.get("damage_log", [])
         attribution = analyzer.attribute(damage_log, metrics.get("episode_steps", 0))
         learner.update(attribution)
-        stimuli = learner.build_stimuli(vitals)
+        stimuli = learner.build_stimuli(
+            vitals,
+            include_vital_delta=config["include_vital_delta"],
+        )
 
         elapsed = time.time() - t0
         eta = elapsed / (ep + 1) * (n_episodes - ep - 1)
@@ -169,6 +177,8 @@ def run_eval(
 
     summary = _summarize_episode_metrics(results)
     return {
+        "mode": mode,
+        "mode_config": config,
         "summary": summary,
         "episodes": [{k: v for k, v in r.items() if k != "damage_log"} for r in results],
     }
@@ -179,13 +189,14 @@ def _compare_to_baseline(current: dict, baseline: dict | None) -> dict:
         return {"baseline_available": False}
 
     current_summary = current["summary"]
-    arrow_reduction = baseline["arrow_death_pct"] - current_summary["arrow_death_pct"]
+    baseline_summary = baseline.get("summary", baseline)
+    arrow_reduction = baseline_summary["arrow_death_pct"] - current_summary["arrow_death_pct"]
     relative_reduction = (
-        arrow_reduction / baseline["arrow_death_pct"]
-        if baseline["arrow_death_pct"] > 0
+        arrow_reduction / baseline_summary["arrow_death_pct"]
+        if baseline_summary["arrow_death_pct"] > 0
         else 0.0
     )
-    survival_delta = current_summary["avg_survival"] - baseline["avg_survival"]
+    survival_delta = current_summary["avg_survival"] - baseline_summary["avg_survival"]
 
     return {
         "baseline_available": True,
@@ -202,15 +213,11 @@ def main() -> None:
     from snks.encoder.tile_segmenter import pick_device
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--freeze-baseline", action="store_true")
+    parser.add_argument("--mode", choices=("current", "baseline"), default="current")
     parser.add_argument("--n-episodes", type=int, default=20)
     parser.add_argument("--max-steps", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
-
-    if args.freeze_baseline:
-        freeze_baseline_from_stage87()
-        return
 
     baseline = json.loads(BASELINE_PATH.read_text()) if BASELINE_PATH.exists() else None
     device = torch.device(pick_device())
@@ -219,9 +226,9 @@ def main() -> None:
 
     print(
         f"device={device}, dim={model_dim}, locs={n_locations}, "
-        f"episodes={args.n_episodes}, max_steps={args.max_steps}"
+        f"episodes={args.n_episodes}, max_steps={args.max_steps}, mode={args.mode}"
     )
-    if baseline is None:
+    if args.mode == "current" and baseline is None:
         print("Baseline reference missing. Eval will still run, but comparison will be omitted.")
 
     run_data = run_eval(
@@ -231,9 +238,22 @@ def main() -> None:
         n_locations=n_locations,
         seed=args.seed,
         device=device,
+        mode=args.mode,
     )
-    comparison = _compare_to_baseline(run_data, baseline)
+    if args.mode == "baseline":
+        out = {
+            **run_data,
+            "comparison": {"baseline_available": False},
+            "n_episodes": args.n_episodes,
+            "max_steps": args.max_steps,
+        }
+        DOCS_DIR.mkdir(exist_ok=True)
+        BASELINE_PATH.write_text(json.dumps(out, indent=2, default=str))
+        print(f"Saved baseline reference to {BASELINE_PATH}")
+        print(json.dumps(out["summary"], indent=2))
+        return
 
+    comparison = _compare_to_baseline(run_data, baseline)
     out = {
         **run_data,
         "comparison": comparison,

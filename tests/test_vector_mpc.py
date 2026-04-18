@@ -115,6 +115,19 @@ class TestGenerateCandidatePlans:
         assert "self:motion_chain:move_up+move_left" in origins
         assert "self:motion_chain:move_right+move_right+move_right" in origins
 
+    def test_motion_plans_can_be_disabled(self, seeded_model, base_state, spatial_map_with_tree):
+        candidates = generate_candidate_plans(
+            seeded_model,
+            base_state,
+            spatial_map_with_tree,
+            visible_concepts={"tree"},
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+        )
+        origins = {p.origin for p in candidates}
+        assert "self:move_up" not in origins
+        assert not any(origin.startswith("self:motion_chain:") for origin in origins)
+
 
 class TestGenerateChains:
     def test_chains_extend_beyond_single_step(self, seeded_model, base_state):

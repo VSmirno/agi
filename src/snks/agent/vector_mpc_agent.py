@@ -209,6 +209,8 @@ def generate_candidate_plans(
     beam_width: int = 5,
     max_depth: int = 3,
     cache: PredictionCache | None = None,
+    enable_motion_plans: bool = True,
+    enable_motion_chains: bool = True,
 ) -> list[VectorPlan]:
     """Generate plans via forward imagination.
 
@@ -271,13 +273,14 @@ def generate_candidate_plans(
     # projected danger may make a move valuable even when it has no
     # immediate inventory/body gain. Scoring decides whether these lose
     # to baseline or win because they avoid future damage.
-    for action in move_actions:
-        candidates.append(VectorPlan(
-            steps=[VectorPlanStep(action=action, target="self")],
-            origin=f"self:{action}",
-        ))
+    if enable_motion_plans:
+        for action in move_actions:
+            candidates.append(VectorPlan(
+                steps=[VectorPlanStep(action=action, target="self")],
+                origin=f"self:{action}",
+            ))
 
-    if state.dynamic_entities:
+    if enable_motion_chains and state.dynamic_entities:
         candidates.extend(_generate_motion_chains(move_actions, max_depth=max_depth))
 
     # Multi-step chains via beam search (target actions only)
@@ -570,6 +573,11 @@ def run_vector_mpc_episode(
     stimuli: StimuliLayer | None = None,
     textbook: "Any | None" = None,
     verbose: bool = False,
+    enable_dynamic_threat_model: bool = True,
+    enable_dynamic_threat_goals: bool = True,
+    enable_motion_plans: bool = True,
+    enable_motion_chains: bool = True,
+    enable_post_plan_passive_rollout: bool = True,
 ) -> dict:
     """Run one episode with vector MPC planning.
 
@@ -591,7 +599,14 @@ def run_vector_mpc_episode(
         ])
 
     from snks.agent.goal_selector import Goal, GoalSelector
-    goal_selector = GoalSelector(textbook) if textbook is not None else None
+    goal_selector = (
+        GoalSelector(
+            textbook,
+            allow_dynamic_entity_goals=enable_dynamic_threat_goals,
+        )
+        if textbook is not None
+        else None
+    )
 
     entity_tracker = DynamicEntityTracker()
     # Register known dynamic concepts
@@ -720,6 +735,7 @@ def run_vector_mpc_episode(
                     ))
 
         # --- Build VectorState ---
+        observed_dynamic_entities = entity_tracker.current()
         state = VectorState(
             inventory=inv,
             body=body,
@@ -727,9 +743,11 @@ def run_vector_mpc_episode(
             step=step,
             last_action=prev_action,
             spatial_map=spatial_map,
-            dynamic_entities=entity_tracker.current(),
+            dynamic_entities=(
+                observed_dynamic_entities if enable_dynamic_threat_model else []
+            ),
         )
-        arrow_states = [e for e in state.dynamic_entities if e.concept_id == "arrow"]
+        arrow_states = [e for e in observed_dynamic_entities if e.concept_id == "arrow"]
         if arrow_states:
             arrow_visible_steps += 1
             if any(e.velocity is not None for e in arrow_states):
@@ -740,14 +758,18 @@ def run_vector_mpc_episode(
         # --- Build per-step prediction cache (one batched GPU op) ---
         known_step = set(vf.visible_concepts()) | set(spatial_map.known_objects.keys())
         target_acts = [a for a in model.actions if a in ("do", "make", "place")]
-        if state.dynamic_entities and "proximity" in model.actions:
+        if enable_dynamic_threat_model and observed_dynamic_entities and "proximity" in model.actions:
             target_acts.append("proximity")
         step_cache = build_prediction_cache(model, known_step, target_acts)
 
         # --- Generate + simulate + score ---
         candidates = generate_candidate_plans(
             model, state, spatial_map, vf.visible_concepts(),
-            beam_width=beam_width, max_depth=max_depth, cache=step_cache,
+            beam_width=beam_width,
+            max_depth=max_depth,
+            cache=step_cache,
+            enable_motion_plans=enable_motion_plans,
+            enable_motion_chains=enable_motion_chains,
         )
 
         # Sort candidates by proximity to first target — closer first.
@@ -782,7 +804,15 @@ def run_vector_mpc_episode(
 
         scored: list[tuple[tuple, VectorPlan, VectorTrajectory]] = []
         for plan in candidates:
-            traj = simulate_forward(model, plan, state, horizon, vitals, cache=step_cache)
+            traj = simulate_forward(
+                model,
+                plan,
+                state,
+                horizon,
+                vitals,
+                cache=step_cache,
+                enable_post_plan_passive_rollout=enable_post_plan_passive_rollout,
+            )
             sim_score = score_trajectory(traj, stimuli=stimuli, goal=current_goal)
             dist = _plan_distance(plan)
             # known=1 if target exists in spatial_map, 0 otherwise.
@@ -825,7 +855,7 @@ def run_vector_mpc_episode(
             else health_now
         )
         predicted_baseline_loss = max(0.0, health_now - predicted_baseline_health)
-        arrow_threat_now = any(entity.concept_id == "arrow" for entity in state.dynamic_entities)
+        arrow_threat_now = any(entity.concept_id == "arrow" for entity in observed_dynamic_entities)
         if arrow_threat_now:
             arrow_threat_steps += 1
             if primitive.startswith("move_") and predicted_best_loss < predicted_baseline_loss:
