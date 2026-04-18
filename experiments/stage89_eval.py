@@ -28,6 +28,16 @@ BASELINE_PATH = DOCS_DIR / "stage89_baseline.json"
 EVAL_PATH = DOCS_DIR / "stage89_eval.json"
 
 
+class CroppedSegmenter:
+    def __init__(self, segmenter):
+        self.segmenter = segmenter
+
+    def classify_tiles(self, pixels):
+        from snks.encoder.tile_segmenter import crop_world_pixels
+
+        return self.segmenter.classify_tiles(crop_world_pixels(pixels))
+
+
 def _stage89_mode_config(mode: str) -> dict:
     if mode == "current":
         return {
@@ -50,15 +60,23 @@ def _stage89_mode_config(mode: str) -> dict:
     raise ValueError(f"Unknown stage89 mode: {mode}")
 
 
-def _build_model_and_segmenter(model_dim: int, n_locations: int, seed: int, device):
+def _build_model_and_segmenter(
+    model_dim: int,
+    n_locations: int,
+    seed: int,
+    device,
+    checkpoint_path: Path,
+    crop_world: bool,
+):
     from snks.agent.vector_bootstrap import load_from_textbook
     from snks.agent.vector_world_model import VectorWorldModel
     from snks.encoder.tile_segmenter import load_tile_segmenter
 
-    checkpoint_path = ROOT / "demos" / "checkpoints" / "exp136" / "segmenter_9x9.pt"
     textbook_path = ROOT / "configs" / "crafter_textbook.yaml"
 
     segmenter = load_tile_segmenter(str(checkpoint_path), device=device)
+    if crop_world:
+        segmenter = CroppedSegmenter(segmenter)
     model = VectorWorldModel(dim=model_dim, n_locations=n_locations, seed=seed, device=device)
     stats = load_from_textbook(model, textbook_path)
     print(f"Segmenter: {checkpoint_path.name}  Textbook seeded: {stats}")
@@ -111,6 +129,8 @@ def run_eval(
     seed: int,
     device,
     mode: str = "current",
+    checkpoint_path: Path | None = None,
+    crop_world: bool = False,
 ) -> dict:
     from snks.agent.crafter_pixel_env import CrafterPixelEnv
     from snks.agent.crafter_textbook import CrafterTextbook
@@ -120,7 +140,12 @@ def run_eval(
 
     config = _stage89_mode_config(mode)
     model, segmenter, textbook_path = _build_model_and_segmenter(
-        model_dim, n_locations, seed, device
+        model_dim,
+        n_locations,
+        seed,
+        device,
+        checkpoint_path=checkpoint_path or (ROOT / "demos" / "checkpoints" / "exp136" / "segmenter_9x9.pt"),
+        crop_world=crop_world,
     )
     tb = CrafterTextbook(str(textbook_path))
     vitals = ["health", "food", "drink", "energy"]
@@ -217,6 +242,12 @@ def main() -> None:
     parser.add_argument("--n-episodes", type=int, default=20)
     parser.add_argument("--max-steps", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=ROOT / "demos" / "checkpoints" / "exp136" / "segmenter_9x9.pt",
+    )
+    parser.add_argument("--crop-world", action="store_true")
     args = parser.parse_args()
 
     baseline = json.loads(BASELINE_PATH.read_text()) if BASELINE_PATH.exists() else None
@@ -226,7 +257,8 @@ def main() -> None:
 
     print(
         f"device={device}, dim={model_dim}, locs={n_locations}, "
-        f"episodes={args.n_episodes}, max_steps={args.max_steps}, mode={args.mode}"
+        f"episodes={args.n_episodes}, max_steps={args.max_steps}, mode={args.mode}, "
+        f"checkpoint={args.checkpoint.name}, crop_world={args.crop_world}"
     )
     if args.mode == "current" and baseline is None:
         print("Baseline reference missing. Eval will still run, but comparison will be omitted.")
@@ -239,6 +271,8 @@ def main() -> None:
         seed=args.seed,
         device=device,
         mode=args.mode,
+        checkpoint_path=args.checkpoint,
+        crop_world=args.crop_world,
     )
     if args.mode == "baseline":
         out = {
