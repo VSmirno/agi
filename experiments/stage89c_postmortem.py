@@ -11,6 +11,7 @@ Writes:
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -103,6 +104,12 @@ def main() -> None:
     from snks.agent.vector_world_model import VectorWorldModel
     from snks.encoder.tile_segmenter import load_tile_segmenter, pick_device
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--n-episodes", type=int, default=20)
+    parser.add_argument("--max-steps", type=int, default=1000)
+    parser.add_argument("--start-seed", type=int, default=42)
+    args = parser.parse_args()
+
     DOCS_DIR.mkdir(exist_ok=True)
     device = torch.device(pick_device())
     checkpoint_path = ROOT / "demos" / "checkpoints" / "exp136" / "segmenter_9x9.pt"
@@ -110,9 +117,9 @@ def main() -> None:
     segmenter = load_tile_segmenter(str(checkpoint_path), device=device)
     textbook = CrafterTextbook(str(textbook_path))
 
-    n_episodes = 20
-    max_steps = 1000
-    start_seed = 42
+    n_episodes = args.n_episodes
+    max_steps = args.max_steps
+    start_seed = args.start_seed
     vitals = ["health", "food", "drink", "energy"]
 
     baseline_config = _mode_config("baseline")
@@ -138,6 +145,10 @@ def main() -> None:
     pairs: list[dict] = []
     regressions: list[dict] = []
     counterfactuals: list[dict] = []
+
+    print(
+        f"stage89c config: episodes={n_episodes} max_steps={max_steps} start_seed={start_seed}"
+    )
 
     for ep in range(n_episodes):
         seed = start_seed + ep
