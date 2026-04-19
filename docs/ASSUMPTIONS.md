@@ -93,6 +93,14 @@
     `inventory_delta = {"wood": 1}`
   Значит странный `tree/do` loop был не planner-магией и не "неоднородной семантикой дерева",
   а рассинхроном карты мира с реальным Crafter tile truth.
+- Replay-audit на соседних seed после тех же фиксов показал, что это был не узкий single-seed кейс:
+  - `seed=43` short trace: `n_frustrated_tree_do = 0`, `n_successful_tree_do = 5`
+  - `seed=48` short trace: `n_frustrated_tree_do = 0`, `n_successful_tree_do = 5`
+  - на успешных шагах в обоих seed'ах `facing_label_before = tree`, `env_material_before = tree`,
+    `inventory_delta = {"wood": 1}`
+  Значит adjacent resource interaction на fresh stack больше не выглядит главным bottleneck.
+  Следующий structural wall теперь выше: broad survival policy и hostile-contact management
+  против `zombie/skeleton`, а не perception/resource execution.
 
 ---
 
