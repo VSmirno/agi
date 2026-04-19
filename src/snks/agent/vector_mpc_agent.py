@@ -580,6 +580,7 @@ def run_vector_mpc_episode(
     enable_motion_chains: bool = True,
     enable_post_plan_passive_rollout: bool = True,
     record_stage89c_trace: bool = False,
+    record_step_trace: bool = False,
     perception_mode: str = "pixel",
 ) -> dict:
     """Run one episode with vector MPC planning.
@@ -643,6 +644,7 @@ def run_vector_mpc_episode(
     defensive_events: list[dict[str, Any]] = []
     defensive_sequences = 0
     defensive_window_targets = (10, 20)
+    step_trace: list[dict[str, Any]] = []
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -852,6 +854,29 @@ def run_vector_mpc_episode(
             None,
         )
         best_score, best_plan, best_traj = scored[0]
+        selected_target = best_plan.steps[0].target if best_plan.steps else None
+        selected_action = best_plan.steps[0].action if best_plan.steps else None
+        target_pos_before = (
+            spatial_map.find_nearest(selected_target, player_pos)
+            if selected_target not in (None, "self")
+            else None
+        )
+        target_dist_before = (
+            abs(target_pos_before[0] - player_pos[0]) + abs(target_pos_before[1] - player_pos[1])
+            if target_pos_before is not None
+            else None
+        )
+        facing_vec_before = _facing_delta(prev_move)
+        facing_tile_before = (
+            (player_pos[0] + facing_vec_before[0], player_pos[1] + facing_vec_before[1])
+            if facing_vec_before != (0, 0)
+            else None
+        )
+        facing_label_before = (
+            _spatial_label_at(spatial_map, facing_tile_before)
+            if facing_tile_before is not None
+            else None
+        )
 
         # --- Execute first primitive ---
         if best_plan.steps:
@@ -985,6 +1010,36 @@ def run_vector_mpc_episode(
         prev_player_pos = player_pos
 
         pixels, _reward, done, info = env.step(primitive)
+        player_pos_after = tuple(info.get("player_pos", player_pos))
+        raw_inv_after = dict(info.get("inventory", {}))
+        item_delta_after = {
+            key: raw_inv_after.get(key, 0) - raw_inv.get(key, 0)
+            for key in set(raw_inv_after.keys()) | set(raw_inv.keys())
+            if key not in _vital_set and raw_inv_after.get(key, 0) - raw_inv.get(key, 0) != 0
+        }
+        if record_step_trace:
+            step_trace.append({
+                "step": step,
+                "player_pos_before": list(player_pos),
+                "player_pos_after": list(player_pos_after),
+                "facing_before": prev_move,
+                "facing_tile_before": list(facing_tile_before) if facing_tile_before is not None else None,
+                "facing_label_before": facing_label_before,
+                "near_concept": vf.near_concept,
+                "primitive": primitive,
+                "plan_origin": best_plan.origin,
+                "plan_target": selected_target,
+                "plan_action": selected_action,
+                "target_pos_before": list(target_pos_before) if target_pos_before is not None else None,
+                "target_dist_before": target_dist_before,
+                "target_matches_near": selected_target is not None and selected_target == vf.near_concept,
+                "predicted_best_loss": round(float(predicted_best_loss), 3),
+                "predicted_baseline_loss": round(float(predicted_baseline_loss), 3),
+                "inventory_delta": item_delta_after,
+                "wood_gain": int(item_delta_after.get("wood", 0)),
+                "did_gain": bool(item_delta_after),
+                "done_after_step": bool(done),
+            })
 
         # --- Bug 6: clear chopped tile ---
         new_inv = dict(info.get("inventory", {}))
@@ -998,15 +1053,7 @@ def run_vector_mpc_episode(
                 # Gathered something — clear facing tile.
                 # Facing direction = last MOVE primitive (not prev_action,
                 # which was just set to "do" a few lines above).
-                dx, dy = 0, 0
-                if prev_move == "move_right":
-                    dx = 1
-                elif prev_move == "move_left":
-                    dx = -1
-                elif prev_move == "move_down":
-                    dy = 1
-                elif prev_move == "move_up":
-                    dy = -1
+                dx, dy = _facing_delta(prev_move)
                 facing_tile = (player_pos[0] + dx, player_pos[1] + dy)
                 spatial_map.update(facing_tile, "empty")
                 inv_changed = True
@@ -1019,15 +1066,7 @@ def run_vector_mpc_episode(
         # subsequent segmenter re-observations at lower conf can't restore
         # the stale label, breaking the "do on empty tile forever" loop.
         if primitive == "do" and not inv_changed:
-            dx, dy = 0, 0
-            if prev_move == "move_right":
-                dx = 1
-            elif prev_move == "move_left":
-                dx = -1
-            elif prev_move == "move_down":
-                dy = 1
-            elif prev_move == "move_up":
-                dy = -1
+            dx, dy = _facing_delta(prev_move)
             facing_tile = (player_pos[0] + dx, player_pos[1] + dy)
             if facing_tile != player_pos:
                 spatial_map.update(facing_tile, "empty", 1.0)
@@ -1118,12 +1157,36 @@ def run_vector_mpc_episode(
         "first_defensive_action_step": first_defensive_action_step,
         "n_defensive_sequences": defensive_sequences,
         "defensive_events": defensive_events if record_stage89c_trace else [],
+        "step_trace": step_trace if record_step_trace else [],
     }
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _facing_delta(last_move: str | None) -> tuple[int, int]:
+    if last_move == "move_right":
+        return (1, 0)
+    if last_move == "move_left":
+        return (-1, 0)
+    if last_move == "move_down":
+        return (0, 1)
+    if last_move == "move_up":
+        return (0, -1)
+    return (0, 0)
+
+
+def _spatial_label_at(
+    spatial_map: CrafterSpatialMap,
+    pos: tuple[int, int] | None,
+) -> str | None:
+    if pos is None:
+        return None
+    entry = spatial_map._map.get((int(pos[0]), int(pos[1])))
+    if entry is None:
+        return None
+    return str(entry[0])
 
 def _update_spatial_map(
     spatial_map: CrafterSpatialMap,
