@@ -877,6 +877,7 @@ def run_vector_mpc_episode(
             if facing_tile_before is not None
             else None
         )
+        env_facing_before = _env_tile_truth(env, facing_tile_before)
 
         # --- Execute first primitive ---
         if best_plan.steps:
@@ -1012,6 +1013,13 @@ def run_vector_mpc_episode(
         pixels, _reward, done, info = env.step(primitive)
         player_pos_after = tuple(info.get("player_pos", player_pos))
         raw_inv_after = dict(info.get("inventory", {}))
+        facing_vec_after = _facing_delta(prev_move if not primitive.startswith("move_") else primitive)
+        facing_tile_after = (
+            (player_pos_after[0] + facing_vec_after[0], player_pos_after[1] + facing_vec_after[1])
+            if facing_vec_after != (0, 0)
+            else None
+        )
+        env_facing_after = _env_tile_truth(env, facing_tile_after)
         item_delta_after = {
             key: raw_inv_after.get(key, 0) - raw_inv.get(key, 0)
             for key in set(raw_inv_after.keys()) | set(raw_inv.keys())
@@ -1025,6 +1033,8 @@ def run_vector_mpc_episode(
                 "facing_before": prev_move,
                 "facing_tile_before": list(facing_tile_before) if facing_tile_before is not None else None,
                 "facing_label_before": facing_label_before,
+                "env_material_before": env_facing_before.get("material"),
+                "env_object_before": env_facing_before.get("object"),
                 "near_concept": vf.near_concept,
                 "primitive": primitive,
                 "plan_origin": best_plan.origin,
@@ -1038,6 +1048,9 @@ def run_vector_mpc_episode(
                 "inventory_delta": item_delta_after,
                 "wood_gain": int(item_delta_after.get("wood", 0)),
                 "did_gain": bool(item_delta_after),
+                "facing_tile_after": list(facing_tile_after) if facing_tile_after is not None else None,
+                "env_material_after": env_facing_after.get("material"),
+                "env_object_after": env_facing_after.get("object"),
                 "done_after_step": bool(done),
             })
 
@@ -1187,6 +1200,26 @@ def _spatial_label_at(
     if entry is None:
         return None
     return str(entry[0])
+
+
+def _env_tile_truth(env: Any, pos: tuple[int, int] | None) -> dict[str, str | None]:
+    if pos is None:
+        return {"material": None, "object": None}
+    inner = getattr(env, "_env", None)
+    world = getattr(inner, "_world", None)
+    if world is None:
+        return {"material": None, "object": None}
+    try:
+        material, obj = world[pos]
+    except Exception:
+        return {"material": None, "object": None}
+    object_name = None
+    if obj is not None:
+        object_name = getattr(obj, "texture", None) or obj.__class__.__name__.lower()
+    return {
+        "material": str(material) if material is not None else None,
+        "object": str(object_name) if object_name is not None else None,
+    }
 
 def _update_spatial_map(
     spatial_map: CrafterSpatialMap,
