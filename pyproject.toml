@@ -24,6 +24,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "imageio>=2.37",
+    "imageio-ffmpeg>=0.6",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
 ]
