@@ -29,6 +29,7 @@ from snks.agent.vector_mpc_agent import (
     _generate_motion_chains,
     _generate_chains,
     _has_positive_effect,
+    _update_spatial_map,
 )
 from snks.agent.perception import VisualField
 from snks.agent.crafter_spatial_map import CrafterSpatialMap
@@ -214,6 +215,39 @@ class TestScorePreference:
 
         assert move_score > sleep_score
 
+
+class TestViewportMapping:
+    def test_update_spatial_map_uses_true_viewport_center(self):
+        sm = CrafterSpatialMap()
+        vf = VisualField(
+            detections=[
+                ("water", 1.0, 2, 4),  # one tile up
+                ("stone", 1.0, 3, 3),  # one tile left
+                ("tree", 1.0, 3, 5),   # one tile right
+                ("coal", 1.0, 4, 4),   # one tile down
+            ],
+            near_concept="water",
+            near_similarity=1.0,
+        )
+
+        _update_spatial_map(sm, vf, (32, 32))
+
+        assert sm._map[(32, 31)][0] == "water"
+        assert sm._map[(31, 32)][0] == "stone"
+        assert sm._map[(33, 32)][0] == "tree"
+        assert sm._map[(32, 33)][0] == "coal"
+
+    def test_dynamic_entity_tracker_uses_true_viewport_center(self):
+        tracker = DynamicEntityTracker()
+        tracker.register_dynamic_concept("arrow")
+
+        vf = VisualField(detections=[("arrow", 0.9, 3, 5)])  # one tile right
+        tracker.update(vf, player_pos=(32, 32))
+
+        current = tracker.current_for("arrow")
+        assert len(current) == 1
+        assert current[0].position == (33, 32)
+
     def test_candidate_ranking_prefers_dodge_under_arrow_threat(self, seeded_model):
         model = VectorWorldModel(dim=2048, n_locations=512, seed=7)
         for action in ("sleep", "move_up", "move_down", "move_left", "move_right", "proximity"):
@@ -347,7 +381,7 @@ class TestDynamicEntityTracker:
         tracker.update(vf1, player_pos=(10, 10))
         s1 = tracker.current_for("arrow")
         assert len(s1) == 1
-        assert s1[0].position == (10, 11)
+        assert s1[0].position == (10, 10)
         assert s1[0].velocity is None
         assert s1[0].age == 0
 
@@ -355,7 +389,7 @@ class TestDynamicEntityTracker:
         tracker.update(vf2, player_pos=(10, 10))
         s2 = tracker.current_for("arrow")
         assert len(s2) == 1
-        assert s2[0].position == (11, 11)
+        assert s2[0].position == (11, 10)
         assert s2[0].velocity == (1, 0)
         assert s2[0].age == 1
 
@@ -368,7 +402,7 @@ class TestDynamicEntityTracker:
 
         states = tracker.current_for("arrow")
         assert len(states) == 1
-        assert states[0].position == (10, 11)
+        assert states[0].position == (10, 10)
 
         tracker.update(VisualField(detections=[]), player_pos=(10, 10))
         assert tracker.current_for("arrow") == []

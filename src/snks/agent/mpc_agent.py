@@ -103,10 +103,10 @@ class DynamicEntityTracker:
         for cid, _conf, gy, gx in visual_field.detections:
             if self.dynamic_concepts and cid not in self.dynamic_concepts:
                 continue
-            # Convert viewport (gy, gx) → world (wx, wy)
-            # Follows Stage 75 coordinate mapping: sprite offset +1 row
+            # Convert viewport (gy, gx) → world (wx, wy).
+            # Crafter's local view is centered on viewport row 3 / col 4.
             wx = px + (gx - center_col)
-            wy = py + (gy - (center_row - 1))
+            wy = py + (gy - center_row)
             new_entities.append(DynamicEntity(concept_id=cid, pos=(wx, wy)))
 
         self.entities = new_entities
@@ -390,7 +390,7 @@ def update_spatial_map_from_viewport(
 ) -> None:
     """Write all viewport detections into the spatial_map at world coordinates.
 
-    Follows the Stage 75 coordinate mapping: sprite offset +1 row.
+    Crafter's local view is centered on viewport row 3 / col 4.
     """
     center_row = viewport_rows // 2
     center_col = viewport_cols // 2
@@ -401,7 +401,7 @@ def update_spatial_map_from_viewport(
 
     for cid, conf, gy, gx in visual_field.detections:
         wx = px + (gx - center_col)
-        wy = py + (gy - (center_row - 1))
+        wy = py + (gy - center_row)
         spatial_map.update((wx, wy), cid, conf)
 
 

@@ -87,7 +87,7 @@ class DynamicEntityTracker:
         for cid, _conf, gy, gx in vf.detections:
             if cid in self._dynamic_concepts:
                 wx = px + (gx - center_col)
-                wy = py + (gy - (center_row - 1))
+                wy = py + (gy - center_row)
                 self._positions.setdefault(cid, []).append((wx, wy))
         for cid in self._dynamic_concepts:
             current_positions = list(self._positions.get(cid, []))
@@ -1245,7 +1245,7 @@ def _update_spatial_map(
         if cid not in _NATURAL_CONCEPTS:
             continue
         wx = px + (gx - center_col)
-        wy = py + (gy - (center_row - 1))
+        wy = py + (gy - center_row)
         spatial_map.update((wx, wy), cid, conf)
 
 
