@@ -63,6 +63,11 @@ Planner / dynamic-threat evidence:
   - old trace showed `facing_label_before = tree`, but `env_material_before = grass`
   - after mapping + stale-map fixes, the same short trace produced `n_frustrated_tree_do = 0`
     and `n_successful_tree_do = 3`
+- replay-audit on neighboring seeds showed the same fix generalized beyond `seed=44`:
+  - `seed=43`: `n_frustrated_tree_do = 0`, `n_successful_tree_do = 5`
+  - `seed=48`: `n_frustrated_tree_do = 0`, `n_successful_tree_do = 5`
+  - successful `tree:do` steps now consistently satisfy
+    `facing_label_before = tree`, `env_material_before = tree`, `inventory_delta = {"wood": 1}`
 
 Targeted diagnostic:
 - on seed `44`, after the above fixes, baseline predicted non-zero projectile damage on only a subset of visible-arrow steps
@@ -84,7 +89,7 @@ Targeted diagnostic:
 
 **Knowledge flow outcome:** stable projectile knowledge now lives in textbook facts (`arrow` concept and `arrow:proximity` damage). Runtime projectile trajectories live in episode-local dynamic entity state. This knowledge now survives process start correctly because bootstrap creates the concept from textbook.
 
-**Remaining assumptions / walls:** Stage 89 still does not raise overall survival; the remaining bottleneck is broad survival policy and multi-threat integration against `zombie/skeleton`. Dynamic-threat telemetry is now trustworthy, and adjacent resource interaction is no longer corrupted by stale ghost trees, but Phase I is not complete.
+**Remaining assumptions / walls:** Stage 89 still does not raise overall survival; the remaining bottleneck is broad survival policy and multi-threat integration against `zombie/skeleton`. Dynamic-threat telemetry is now trustworthy, and adjacent resource interaction is no longer corrupted by stale ghost trees on `43/44/48`; the next debugging target should be hostile-contact timing and long-horizon survival policy, not resource execution. Phase I is not complete.
 
 **Decision:** `PARTIAL`
 
