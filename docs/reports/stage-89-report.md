@@ -44,6 +44,8 @@ Critical fixes discovered during debugging:
 - `arrow` added to textbook vocabulary, so bootstrap creates the concept and tracker can register it
 - `arrow -> proximity` added as textbook passive fact, so the world model predicts projectile damage
 - Stage 89 telemetry changed to count **imminent** arrow threat, not just projectile visibility
+- viewport→world mapping fixed for `spatial_map` / `DynamicEntityTracker` (off-by-one on Y)
+- perception now emits off-center `empty`, so stale resource labels are cleared instead of lingering as ghost trees
 
 ## Evidence
 
@@ -56,10 +58,17 @@ Planner / dynamic-threat evidence:
 - root cause 1: `arrow` missing from textbook vocabulary
 - root cause 2: `arrow -> proximity` missing from textbook passive rules
 - root cause 3: `arrow_threat_steps` counted visibility rather than imminent simulated damage
+- separate resource trace on `seed=44` disproved the earlier "tree semantics are noisy" hypothesis:
+  - Crafter source says `tree -> wood`, while `grass -> sapling`
+  - old trace showed `facing_label_before = tree`, but `env_material_before = grass`
+  - after mapping + stale-map fixes, the same short trace produced `n_frustrated_tree_do = 0`
+    and `n_successful_tree_do = 3`
 
 Targeted diagnostic:
 - on seed `44`, after the above fixes, baseline predicted non-zero projectile damage on only a subset of visible-arrow steps
 - on those imminent states, movement plans beat baseline and were selected consistently
+- on the same seed, resource interaction no longer hit `grass` while believing it was `tree`;
+  `tree:do` yielded real `wood` again
 
 ## Stage Review
 
@@ -67,15 +76,15 @@ Targeted diagnostic:
 
 **Layer changed:** `facts`, `mechanisms`, `experience`, `stimuli`
 
-**What changed:** arrow knowledge was restored to textbook facts, runtime experience now tracks projectile motion, simulator models short-horizon projectile collision, and threat telemetry now measures imminent danger instead of raw visibility.
+**What changed:** arrow knowledge was restored to textbook facts, runtime experience now tracks projectile motion, simulator models short-horizon projectile collision, threat telemetry now measures imminent danger instead of raw visibility, and the perception→map layer now writes/clears world tiles with correct geometry.
 
-**Evidence of improvement:** `exp137` agreement fix; live arrow tracking with velocity; seed-44 diagnostic showing imminent-threat dodge selection; fresh smoke with `arrow_death_pct = 0.0` and `defensive_action_steps = arrow_threat_steps = 3`.
+**Evidence of improvement:** `exp137` agreement fix; live arrow tracking with velocity; seed-44 diagnostic showing imminent-threat dodge selection; fresh smoke with `arrow_death_pct = 0.0` and `defensive_action_steps = arrow_threat_steps = 3`; fixed seed-44 resource trace with `3/3` successful `tree:do` interactions and no more `tree -> grass` mismatch.
 
-**Why this is architectural, not tactical:** fixes corrected missing world facts, generic runtime tracking, generic short-horizon simulation, and measurement semantics. No Crafter-specific reflex like `if arrow then sidestep` was introduced.
+**Why this is architectural, not tactical:** fixes corrected missing world facts, generic runtime tracking, generic short-horizon simulation, measurement semantics, and a lower-layer world-coordinate bug in the perception→map path. No Crafter-specific reflex like `if arrow then sidestep` was introduced.
 
 **Knowledge flow outcome:** stable projectile knowledge now lives in textbook facts (`arrow` concept and `arrow:proximity` damage). Runtime projectile trajectories live in episode-local dynamic entity state. This knowledge now survives process start correctly because bootstrap creates the concept from textbook.
 
-**Remaining assumptions / walls:** Stage 89 still does not raise overall survival; the remaining bottleneck is broad survival policy and multi-threat integration against `zombie/skeleton`. Dynamic-threat telemetry is now trustworthy, but Phase I is not complete.
+**Remaining assumptions / walls:** Stage 89 still does not raise overall survival; the remaining bottleneck is broad survival policy and multi-threat integration against `zombie/skeleton`. Dynamic-threat telemetry is now trustworthy, and adjacent resource interaction is no longer corrupted by stale ghost trees, but Phase I is not complete.
 
 **Decision:** `PARTIAL`
 
