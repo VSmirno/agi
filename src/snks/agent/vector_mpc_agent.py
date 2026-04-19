@@ -47,6 +47,13 @@ from snks.agent.vector_sim import (
     score_trajectory,
 )
 from snks.agent.post_mortem import DamageEvent, PostMortemAnalyzer, dominant_cause
+from snks.agent.stage90_diagnostics import (
+    DEFAULT_DEATH_TRACE_HORIZON,
+    build_death_trace_bundle,
+    infer_error_label,
+    summarize_dynamic_entities,
+    summarize_scored_candidates,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -581,6 +588,8 @@ def run_vector_mpc_episode(
     enable_post_plan_passive_rollout: bool = True,
     record_stage89c_trace: bool = False,
     record_step_trace: bool = False,
+    record_death_bundle: bool = False,
+    death_capture_steps: int = DEFAULT_DEATH_TRACE_HORIZON,
     perception_mode: str = "pixel",
 ) -> dict:
     """Run one episode with vector MPC planning.
@@ -645,6 +654,7 @@ def run_vector_mpc_episode(
     defensive_sequences = 0
     defensive_window_targets = (10, 20)
     step_trace: list[dict[str, Any]] = []
+    death_trace_steps: list[dict[str, Any]] = []
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -849,6 +859,11 @@ def run_vector_mpc_episode(
             scored.append((score, plan, traj))
 
         scored.sort(key=lambda x: x[0], reverse=True)
+        candidate_summaries = (
+            summarize_scored_candidates(scored, body)
+            if record_death_bundle
+            else []
+        )
         baseline_traj = next(
             (traj for _score, plan, traj in scored if plan.origin == "baseline"),
             None,
@@ -1013,6 +1028,7 @@ def run_vector_mpc_episode(
         pixels, _reward, done, info = env.step(primitive)
         player_pos_after = tuple(info.get("player_pos", player_pos))
         raw_inv_after = dict(info.get("inventory", {}))
+        body_after = {v: float(raw_inv_after.get(v, body.get(v, 0.0))) for v in vitals}
         facing_vec_after = _facing_delta(prev_move if not primitive.startswith("move_") else primitive)
         facing_tile_after = (
             (player_pos_after[0] + facing_vec_after[0], player_pos_after[1] + facing_vec_after[1])
@@ -1025,6 +1041,84 @@ def run_vector_mpc_episode(
             for key in set(raw_inv_after.keys()) | set(raw_inv.keys())
             if key not in _vital_set and raw_inv_after.get(key, 0) - raw_inv.get(key, 0) != 0
         }
+        if record_death_bundle:
+            chosen_predicted_loss = (
+                float(candidate_summaries[0].get("predicted_loss", predicted_best_loss))
+                if candidate_summaries
+                else float(predicted_best_loss)
+            )
+            other_candidates = candidate_summaries[1:] if candidate_summaries else []
+            better_safe_candidate_exists = any(
+                float(candidate.get("predicted_loss", chosen_predicted_loss)) + 0.01
+                < chosen_predicted_loss
+                for candidate in other_candidates
+            )
+            better_move_candidate_exists = any(
+                str(candidate.get("plan", {}).get("first_action") or "").startswith("move_")
+                and float(candidate.get("predicted_loss", chosen_predicted_loss)) + 0.01
+                < chosen_predicted_loss
+                for candidate in other_candidates
+            )
+            move_candidates_present = any(
+                str(candidate.get("plan", {}).get("first_action") or "").startswith("move_")
+                for candidate in candidate_summaries
+            )
+            hostile_entities = [
+                entity
+                for entity in observed_dynamic_entities
+                if entity.concept_id in ("zombie", "skeleton", "arrow")
+            ]
+            snapshot = {
+                "step": step,
+                "goal": current_goal.id if current_goal is not None else None,
+                "player_pos_before": list(player_pos),
+                "player_pos_after": list(player_pos_after),
+                "body_before": {
+                    key: round(float(value), 3)
+                    for key, value in body.items()
+                },
+                "body_after": {
+                    key: round(float(value), 3)
+                    for key, value in body_after.items()
+                },
+                "primitive": primitive,
+                "blocked_move": bool(
+                    primitive.startswith("move_") and player_pos_after == player_pos
+                ),
+                "plan_origin": best_plan.origin,
+                "plan_target": selected_target,
+                "plan_action": selected_action,
+                "chosen_predicted_loss": round(float(chosen_predicted_loss), 3),
+                "baseline_predicted_loss": round(float(predicted_baseline_loss), 3),
+                "actual_health_delta": round(
+                    float(body_after.get("health", 0.0) - body.get("health", 0.0)),
+                    3,
+                ),
+                "actual_damage": round(
+                    max(0.0, float(body.get("health", 0.0) - body_after.get("health", 0.0))),
+                    3,
+                ),
+                "hostile_present": bool(hostile_entities),
+                "nearest_zombie_dist": _nearest_hostile_distance(
+                    "zombie", player_pos, spatial_map, observed_dynamic_entities
+                ),
+                "nearest_skeleton_dist": _nearest_hostile_distance(
+                    "skeleton", player_pos, spatial_map, observed_dynamic_entities
+                ),
+                "nearest_arrow_dist": _nearest_dynamic_distance(
+                    "arrow", player_pos, observed_dynamic_entities
+                ),
+                "dynamic_entities": summarize_dynamic_entities(hostile_entities),
+                "move_candidates_present": move_candidates_present,
+                "better_safe_candidate_exists": better_safe_candidate_exists,
+                "better_move_candidate_exists": better_move_candidate_exists,
+                "top_candidates": candidate_summaries,
+                "done_after_step": bool(done),
+            }
+            snapshot["error_label"] = infer_error_label(snapshot)
+            death_trace_steps.append(snapshot)
+            if len(death_trace_steps) > death_capture_steps:
+                death_trace_steps = death_trace_steps[-death_capture_steps:]
         if record_step_trace:
             step_trace.append({
                 "step": step,
@@ -1138,6 +1232,19 @@ def run_vector_mpc_episode(
 
     attribution = PostMortemAnalyzer().attribute(damage_log, steps_taken)
     death_cause = dominant_cause(attribution)
+    final_raw_inv = dict(info.get("inventory", {}))
+    final_body = {v: float(final_raw_inv.get(v, 0.0)) for v in vitals}
+    death_trace_bundle = None
+    if record_death_bundle and death_cause != "alive":
+        death_trace_bundle = build_death_trace_bundle(
+            episode_steps=steps_taken,
+            death_cause=death_cause,
+            env_cause=cause_of_death,
+            final_body=final_body,
+            final_inventory=final_raw_inv,
+            capture_horizon=death_capture_steps,
+            recent_steps=death_trace_steps,
+        )
 
     return {
         "avg_len": steps_taken,        # legacy name kept for backward compat
@@ -1145,7 +1252,8 @@ def run_vector_mpc_episode(
         "cause": cause_of_death,
         "death_cause": death_cause,
         "damage_log": damage_log,
-        "final_inv": dict(info.get("inventory", {})),
+        "final_inv": final_raw_inv,
+        "final_body": final_body,
         "action_counts": dict(action_counts),
         "action_entropy": round(entropy, 3),
         "total_surprise": round(total_surprise, 3),
@@ -1171,6 +1279,7 @@ def run_vector_mpc_episode(
         "n_defensive_sequences": defensive_sequences,
         "defensive_events": defensive_events if record_stage89c_trace else [],
         "step_trace": step_trace if record_step_trace else [],
+        "death_trace_bundle": death_trace_bundle,
     }
 
 
