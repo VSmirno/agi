@@ -288,7 +288,11 @@ def simulate_forward(
                 confidences=confidences,
             )
 
-    if enable_post_plan_passive_rollout and len(plan.steps) < horizon and state.dynamic_entities:
+    if (
+        enable_post_plan_passive_rollout
+        and len(plan.steps) < horizon
+        and _has_relevant_dynamic_threat(state)
+    ):
         return _passive_rollout(
             model=model,
             state=state,
@@ -318,6 +322,8 @@ def _passive_rollout(
     """Continue short-horizon world dynamics after explicit plan steps end."""
     if not enabled:
         return VectorTrajectory(plan=plan, states=states, confidences=confidences)
+    if not _has_relevant_dynamic_threat(state):
+        return VectorTrajectory(plan=plan, states=states, confidences=confidences)
     for _ in range(max(0, horizon)):
         if not state.dynamic_entities:
             break
@@ -332,6 +338,21 @@ def _passive_rollout(
                 confidences=confidences,
             )
     return VectorTrajectory(plan=plan, states=states, confidences=confidences)
+
+
+def _has_relevant_dynamic_threat(state: VectorState) -> bool:
+    """Return True only for dynamic entities that can change short-horizon safety.
+
+    Stage 89 debugging showed that benign dynamic entities such as `cow`
+    were enough to trigger a full passive rollout. That made baseline,
+    sleep, and movement plans tie at episode start, after which stable
+    candidate ordering let `sleep` win repeatedly. Restrict passive threat
+    rollout to hostile/projectile concepts only.
+    """
+    return any(
+        entity.concept_id in {"arrow", "zombie", "skeleton"}
+        for entity in state.dynamic_entities
+    )
 
 
 def _advance_dynamic_entities(
@@ -422,7 +443,14 @@ def score_trajectory(
     goal=fight_zombie → vital_delta("health").
     """
     goal_prog = goal.progress(trajectory) if goal is not None else 0.0
-    steps = len(trajectory.states) - 1  # exclude initial state
+    # Tie-break on explicit planner commitment, not on passive rollout length.
+    # Stage 89 debugging found that baseline, sleep, and movement plans could
+    # all inherit the same `-steps` once a passive rollout extended them to the
+    # full horizon. That turned many clearly different choices into exact ties
+    # and let stable candidate ordering select `sleep` at episode start. The
+    # rollout is part of safety estimation, not of action complexity; use the
+    # number of planned steps as the tie-break instead.
+    steps = len(trajectory.plan.steps)
 
     if stimuli is not None:
         base = stimuli.evaluate(trajectory)

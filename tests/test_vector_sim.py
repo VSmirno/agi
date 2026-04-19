@@ -184,6 +184,30 @@ class TestSimulateForward:
         assert len(traj.states) > 2
         assert traj.final_state.body["health"] == 6.0
 
+    def test_benign_dynamic_entity_does_not_trigger_passive_rollout(self, model, base_state):
+        state = VectorState(
+            inventory=dict(base_state.inventory),
+            body=dict(base_state.body),
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="cow",
+                    position=(11, 10),
+                    velocity=(1, 0),
+                )
+            ],
+        )
+        baseline = simulate_forward(model, VectorPlan(steps=[]), state, vital_vars=["health"])
+        sleep = simulate_forward(
+            model,
+            VectorPlan(steps=[VectorPlanStep(action="sleep", target="self")]),
+            state,
+            vital_vars=["health"],
+        )
+
+        assert len(baseline.states) == 1
+        assert len(sleep.states) == 2
+
 
 class TestScoreTrajectory:
     def test_survived_beats_dead(self, model, base_state):
@@ -231,3 +255,27 @@ class TestScoreTrajectory:
         s_long = score_trajectory(long_traj, goal=goal)
         # Long chain has higher inventory_delta("wood") → goal_prog higher → scores higher
         assert s_long >= s_short
+
+    def test_baseline_beats_sleep_when_only_rollout_length_differs(self, model, base_state):
+        state = VectorState(
+            inventory=dict(base_state.inventory),
+            body=dict(base_state.body),
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="zombie",
+                    position=(30, 30),
+                    velocity=None,
+                )
+            ],
+        )
+        baseline = score_trajectory(simulate_forward(model, VectorPlan(steps=[]), state))
+        sleep = score_trajectory(
+            simulate_forward(
+                model,
+                VectorPlan(steps=[VectorPlanStep(action="sleep", target="self")]),
+                state,
+            )
+        )
+
+        assert baseline > sleep
