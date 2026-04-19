@@ -154,7 +154,7 @@ class TestPerceiveSemanticField:
         visible = vf.visible_concepts()
         assert "arrow" in visible
         empties = [(cid, gy, gx) for cid, _conf, gy, gx in vf.detections if cid == "empty"]
-        assert len(empties) <= 4
+        assert len(empties) > 4
 
     def test_prefers_non_empty_over_empty_in_center_patch(self):
         semantic = np.full((64, 64), 2, dtype=np.int32)  # grass
@@ -166,6 +166,14 @@ class TestPerceiveSemanticField:
         vf = perceive_semantic_field(info)
 
         assert vf.near_concept == "stone"
+
+    def test_emits_offcenter_empty_tiles_for_map_clearing(self):
+        semantic = np.full((64, 64), 2, dtype=np.int32)  # grass
+        info = {"semantic": semantic, "player_pos": (32, 32)}
+
+        vf = perceive_semantic_field(info)
+
+        assert ("empty", 1.0, 3, 5) in vf.detections
 
 
 class TestWorldCropPixels:
