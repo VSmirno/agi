@@ -248,6 +248,20 @@ class TestViewportMapping:
         assert len(current) == 1
         assert current[0].position == (33, 32)
 
+    def test_update_spatial_map_clears_stale_offcenter_tile_with_empty_detection(self):
+        sm = CrafterSpatialMap()
+        sm.update((33, 32), "tree", 1.0)
+
+        vf = VisualField(
+            detections=[("empty", 1.0, 3, 5)],  # one tile right
+            near_concept="empty",
+            near_similarity=1.0,
+        )
+
+        _update_spatial_map(sm, vf, (32, 32))
+
+        assert sm._map[(33, 32)][0] == "empty"
+
     def test_candidate_ranking_prefers_dodge_under_arrow_threat(self, seeded_model):
         model = VectorWorldModel(dim=2048, n_locations=512, seed=7)
         for action in ("sleep", "move_up", "move_down", "move_left", "move_right", "proximity"):

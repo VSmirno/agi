@@ -316,9 +316,6 @@ def perceive_tile_field(
             else:
                 cls_name = f"class_{cls_idx}"
 
-            if cls_name == "empty" and (gy, gx) not in center_pos:
-                continue
-
             vf.detections.append((cls_name, conf, gy, gx))
 
             if (gy, gx) in center_pos:
@@ -362,9 +359,6 @@ def perceive_semantic_field(
             conf = 1.0
 
             if conf < min_confidence:
-                continue
-
-            if cls_name == "empty" and (gy, gx) not in center_pos:
                 continue
 
             vf.detections.append((cls_name, conf, gy, gx))
