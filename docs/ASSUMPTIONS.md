@@ -76,6 +76,23 @@
   на всех `13/13` imminent cases. Значит низкий `defensive_action_rate` на visibility-denominator
   переоценивал planner failure; threat telemetry должна быть привязана к imminent damage within horizon,
   а не к простой projectile visibility.
+- Следующий structural bug оказался не в механике Crafter, а в нашем perception→map layer.
+  Trace по `seed=44` и чтение исходника Crafter показали:
+  - `tree` в Crafter всегда даёт `wood`
+  - `sapling` приходит только из `grass`
+  - когда агент получал `sapling` на supposedly `tree:do`, реальный `env_material_before`
+    на facing tile был `grass`
+  Root cause состоял из двух lower-layer ошибок:
+  1. **viewport→world off-by-one по Y** — detections в `spatial_map` и `DynamicEntityTracker`
+     писались со сдвигом на `+1` по второй координате;
+  2. **stale off-center labels** — perception не эмитил `empty` вне центрального patch,
+     поэтому старые `tree`-метки не затирались, когда тайл уже стал `grass`.
+  После фиксов:
+  - `seed=44` short trace: `n_frustrated_tree_do = 0`, `n_successful_tree_do = 3`
+  - на успешных шагах `facing_label_before = tree`, `env_material_before = tree`,
+    `inventory_delta = {"wood": 1}`
+  Значит странный `tree/do` loop был не planner-магией и не "неоднородной семантикой дерева",
+  а рассинхроном карты мира с реальным Crafter tile truth.
 
 ---
 
