@@ -253,7 +253,12 @@ def simulate_forward(
         )
 
     for step in plan.steps[:horizon]:
-        state = _advance_dynamic_entities(model, state, step.action, cache)
+        primitive_action, allow_effect = _materialize_plan_step(step, state)
+        state = _advance_dynamic_entities(model, state, primitive_action, cache)
+        if not allow_effect:
+            state = _tick_without_effect(state, primitive_action)
+            states.append(state)
+            continue
         key = (step.target, step.action)
         if cache is not None and key in cache:
             effect_vec, confidence = cache[key]
@@ -306,6 +311,68 @@ def simulate_forward(
         )
 
     return VectorTrajectory(plan=plan, states=states, confidences=confidences)
+
+
+def _materialize_plan_step(
+    step: VectorPlanStep,
+    state: VectorState,
+) -> tuple[str, bool]:
+    """Convert a high-level plan step into the immediate simulated primitive.
+
+    Vector MPC plans are abstract (`do water`, `do tree`). Execution expands
+    those steps into one primitive at a time and navigates toward the target
+    before the `do` fires. The simulator must mirror that geometry, otherwise
+    distant resource plans look immediately rewarding in imagination while the
+    real agent only takes a movement step.
+    """
+    if step.action != "do" or step.target == "self" or state.spatial_map is None:
+        return step.action, True
+
+    target_pos = state.spatial_map.find_nearest(step.target, state.player_pos)
+    if target_pos is None:
+        return "wait", False
+
+    px, py = state.player_pos
+    tx, ty = target_pos
+    dx, dy = tx - px, ty - py
+    dist = abs(dx) + abs(dy)
+
+    if dist > 1:
+        return _step_toward_sim(player_pos=state.player_pos, target_pos=target_pos), False
+
+    if dist == 1 and not _is_facing_target(state.last_action, (dx, dy)):
+        return _step_toward_sim(player_pos=state.player_pos, target_pos=target_pos), False
+
+    return step.action, True
+
+
+def _step_toward_sim(
+    player_pos: tuple[int, int],
+    target_pos: tuple[int, int],
+) -> str:
+    """Deterministic one-step movement toward a target for imagination."""
+    px, py = player_pos
+    tx, ty = target_pos
+    dx, dy = tx - px, ty - py
+
+    if abs(dx) >= abs(dy) and dx != 0:
+        return "move_right" if dx > 0 else "move_left"
+    if dy != 0:
+        return "move_down" if dy > 0 else "move_up"
+    if dx != 0:
+        return "move_right" if dx > 0 else "move_left"
+    return "wait"
+
+
+def _is_facing_target(last_action: str | None, delta: tuple[int, int]) -> bool:
+    facing_map = {
+        "move_left": (-1, 0),
+        "move_right": (1, 0),
+        "move_up": (0, -1),
+        "move_down": (0, 1),
+    }
+    facing = facing_map.get(last_action, (0, 1))
+    return facing == delta
 
 
 def _passive_rollout(
@@ -429,6 +496,19 @@ def _apply_effect_same_tick(state: VectorState, decoded_effect: dict[str, int]) 
         player_pos=state.player_pos,
         step=state.step,
         last_action=state.last_action,
+        spatial_map=state.spatial_map,
+        dynamic_entities=list(state.dynamic_entities),
+    )
+
+
+def _tick_without_effect(state: VectorState, action: str) -> VectorState:
+    """Advance simulated time by one step without inventory/body changes."""
+    return VectorState(
+        inventory=dict(state.inventory),
+        body=dict(state.body),
+        player_pos=state.player_pos,
+        step=state.step + 1,
+        last_action=action,
         spatial_map=state.spatial_map,
         dynamic_entities=list(state.dynamic_entities),
     )
