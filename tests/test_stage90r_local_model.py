@@ -6,6 +6,7 @@ from snks.agent.stage90r_local_model import (
     LocalActionEvaluator,
     LocalEvaluatorConfig,
     collate_local_samples,
+    stage90r_action_utility,
     split_samples_by_episode,
 )
 
@@ -70,3 +71,19 @@ def test_local_action_evaluator_forward_shapes():
     assert out["pred_resource_gain"].shape == (2,)
     assert out["pred_survival_logit"].shape == (2,)
     assert out["pred_escape_delta"].shape == (2,)
+
+
+def test_stage90r_action_utility_prefers_safer_action():
+    utility_safe = stage90r_action_utility(
+        pred_damage=torch.tensor([0.1]),
+        pred_resource_gain=torch.tensor([0.0]),
+        pred_survival_logit=torch.tensor([3.0]),
+        pred_escape_delta=torch.tensor([1.0]),
+    )
+    utility_risky = stage90r_action_utility(
+        pred_damage=torch.tensor([2.0]),
+        pred_resource_gain=torch.tensor([1.0]),
+        pred_survival_logit=torch.tensor([-1.0]),
+        pred_escape_delta=torch.tensor([-1.0]),
+    )
+    assert utility_safe.item() > utility_risky.item()
