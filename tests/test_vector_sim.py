@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import pytest
+from pathlib import Path
 
+from snks.agent.vector_bootstrap import load_from_textbook
 from snks.agent.vector_world_model import VectorWorldModel
 from snks.agent.vector_sim import (
     DynamicEntityState,
@@ -13,6 +15,8 @@ from snks.agent.vector_sim import (
     simulate_forward,
     score_trajectory,
 )
+
+TEXTBOOK_PATH = Path(__file__).parent.parent / "configs" / "crafter_textbook.yaml"
 
 
 @pytest.fixture
@@ -207,6 +211,82 @@ class TestSimulateForward:
 
         assert len(baseline.states) == 1
         assert len(sleep.states) == 2
+
+    def test_adjacent_zombie_applies_proximity_damage(self, model, base_state):
+        model.proximity_ranges["zombie"] = 1
+        for _ in range(10):
+            model.learn("zombie", "proximity", {"health": -3})
+
+        state = VectorState(
+            inventory=dict(base_state.inventory),
+            body=dict(base_state.body),
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="zombie",
+                    position=(11, 10),
+                    velocity=None,
+                )
+            ],
+        )
+
+        traj = simulate_forward(model, VectorPlan(steps=[]), state, vital_vars=["health"], horizon=1)
+        assert traj.final_state is not None
+        assert traj.final_state.body["health"] == 6.0
+
+    def test_move_can_avoid_adjacent_zombie_damage(self, model, base_state):
+        model.proximity_ranges["zombie"] = 1
+        for _ in range(10):
+            model.learn("zombie", "proximity", {"health": -3})
+
+        state = VectorState(
+            inventory=dict(base_state.inventory),
+            body=dict(base_state.body),
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="zombie",
+                    position=(11, 10),
+                    velocity=None,
+                )
+            ],
+        )
+        plan = VectorPlan(steps=[VectorPlanStep(action="move_up", target="self")])
+
+        traj = simulate_forward(model, plan, state, vital_vars=["health"], horizon=1)
+        assert traj.final_state is not None
+        assert traj.final_state.player_pos == (10, 9)
+        assert traj.final_state.body["health"] == 9.0
+
+    def test_skeleton_range_damage_applies_within_proximity_range(self, model, base_state):
+        model.proximity_ranges["skeleton"] = 5
+        for _ in range(10):
+            model.learn("skeleton", "proximity", {"health": -3})
+
+        state = VectorState(
+            inventory=dict(base_state.inventory),
+            body=dict(base_state.body),
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="skeleton",
+                    position=(12, 10),
+                    velocity=None,
+                )
+            ],
+        )
+
+        traj = simulate_forward(model, VectorPlan(steps=[]), state, vital_vars=["health"], horizon=1)
+        assert traj.final_state is not None
+        assert traj.final_state.body["health"] == 6.0
+
+    def test_bootstrap_loads_proximity_range_facts(self):
+        model = VectorWorldModel(dim=8192, n_locations=5000, seed=42)
+        load_from_textbook(model, TEXTBOOK_PATH)
+
+        assert model.proximity_ranges["zombie"] == 1
+        assert model.proximity_ranges["skeleton"] == 5
+        assert model.proximity_ranges["arrow"] == 1
 
 
 class TestScoreTrajectory:

@@ -117,6 +117,7 @@ def load_from_textbook(model: "VectorWorldModel", yaml_path: str | Path) -> dict
             continue
 
         entity = rule.get("entity", "")
+        range_ = int(rule.get("range", 1))
         rule_effect = rule.get("effect", {})
         body_deltas = rule_effect.get("body", {})
 
@@ -128,6 +129,7 @@ def load_from_textbook(model: "VectorWorldModel", yaml_path: str | Path) -> dict
 
         if effect and entity:
             model._ensure_concept(entity)
+            model.proximity_ranges[entity] = range_
             for _ in range(5):
                 model.learn(entity, "proximity", effect)
             stats["passive_rules"] += 1

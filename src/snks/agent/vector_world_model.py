@@ -297,6 +297,9 @@ class VectorWorldModel:
         # E.g., ("iron", "do") → {"stone_pickaxe": 1}
         # Used by planner to filter plans whose requirements aren't met.
         self.action_requirements: dict[tuple[str, str], dict[str, int]] = {}
+        # Passive spatial reach facts from textbook.
+        # Dict: concept_id -> manhattan range for applying `concept -> proximity`.
+        self.proximity_ranges: dict[str, int] = {}
 
     def _ensure_concept(self, concept_id: str) -> torch.Tensor:
         if concept_id not in self.concepts:
@@ -497,6 +500,8 @@ class VectorWorldModel:
             "actions": {k: v.cpu() for k, v in self.actions.items()},
             "roles": {k: v.cpu() for k, v in self.roles.items()},
             "memory": self.memory.state_dict(),
+            "action_requirements": self.action_requirements,
+            "proximity_ranges": self.proximity_ranges,
         }, path)
 
     def load(self, path: str | Path) -> bool:
@@ -527,6 +532,8 @@ class VectorWorldModel:
         self.concepts = {k: v.to(self.device) for k, v in data["concepts"].items()}
         self.actions  = {k: v.to(self.device) for k, v in data["actions"].items()}
         self.roles    = {k: v.to(self.device) for k, v in data["roles"].items()}
+        self.action_requirements = data.get("action_requirements", {})
+        self.proximity_ranges = data.get("proximity_ranges", {})
 
         # Load SDM: replace addresses (same address space as loaded vectors),
         # replace content (start from gen1's knowledge, not an empty slate).
