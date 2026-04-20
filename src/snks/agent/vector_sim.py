@@ -366,8 +366,8 @@ def _advance_dynamic_entities(
     Stage 89:
     - player movement is applied for explicit move primitives
     - arrows continue along inferred velocity
-    - if an arrow enters the player's tile, apply the model's learned
-      `arrow -> proximity` consequence (if known)
+    - passive spatial damage is applied generically from textbook-seeded
+      `concept -> proximity` facts using the concept's configured range
     """
     next_state = state.move_player(action) if action.startswith("move_") else state.copy()
     next_state.last_action = action
@@ -386,12 +386,23 @@ def _advance_dynamic_entities(
         )
         updated_entities.append(moved)
 
-        if moved.concept_id == "arrow" and moved.position == next_state.player_pos:
-            hit_key = ("arrow", "proximity")
+        hit_key = (moved.concept_id, "proximity")
+        proximity_range = int(model.proximity_ranges.get(moved.concept_id, 0))
+        distance = (
+            abs(moved.position[0] - next_state.player_pos[0])
+            + abs(moved.position[1] - next_state.player_pos[1])
+        )
+        should_apply = False
+        if moved.concept_id == "arrow":
+            should_apply = moved.position == next_state.player_pos
+        elif proximity_range > 0 and distance <= proximity_range:
+            should_apply = True
+
+        if should_apply:
             if cache is not None and hit_key in cache:
                 effect_vec, confidence = cache[hit_key]
             else:
-                effect_vec, confidence = model.predict("arrow", "proximity")
+                effect_vec, confidence = model.predict(*hit_key)
             if confidence >= 0.2:
                 decoded = model.decode_effect(effect_vec)
                 next_state = _apply_effect_same_tick(next_state, decoded)
