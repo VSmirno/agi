@@ -193,3 +193,38 @@ def masked_mse(
     if not torch.any(active):
         return torch.zeros((), device=prediction.device)
     return torch.mean((prediction[active] - target[active]) ** 2)
+
+
+def stage90r_action_utility(
+    *,
+    pred_damage: torch.Tensor,
+    pred_resource_gain: torch.Tensor,
+    pred_survival_logit: torch.Tensor,
+    pred_escape_delta: torch.Tensor,
+) -> torch.Tensor:
+    """Scalar action utility for local-only canary evaluation.
+
+    Higher survival probability and larger escape distance are better.
+    Higher predicted damage is worse.
+    """
+    survival_prob = torch.sigmoid(pred_survival_logit)
+    return (
+        2.0 * survival_prob
+        - pred_damage
+        + 0.25 * pred_resource_gain
+        + 0.10 * pred_escape_delta
+    )
+
+
+def load_local_evaluator_checkpoint(
+    path: str | Path,
+    device: torch.device | str | None = None,
+) -> LocalActionEvaluator:
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    config = LocalEvaluatorConfig(**ckpt["config"])
+    model = LocalActionEvaluator(config)
+    model.load_state_dict(ckpt["state_dict"])
+    if device is not None:
+        model.to(torch.device(device))
+    model.eval()
+    return model
