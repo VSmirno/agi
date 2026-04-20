@@ -6,6 +6,7 @@ import pytest
 from pathlib import Path
 
 from snks.agent.vector_bootstrap import load_from_textbook
+from snks.agent.crafter_spatial_map import CrafterSpatialMap
 from snks.agent.vector_world_model import VectorWorldModel
 from snks.agent.vector_sim import (
     DynamicEntityState,
@@ -257,6 +258,32 @@ class TestSimulateForward:
         assert traj.final_state is not None
         assert traj.final_state.player_pos == (10, 9)
         assert traj.final_state.body["health"] == 9.0
+
+    def test_do_water_does_not_fire_from_distance(self, model, base_state):
+        load_from_textbook(model, TEXTBOOK_PATH)
+        spatial_map = CrafterSpatialMap()
+        spatial_map._map[(13, 10)] = ("water", 1.0, 1)
+
+        state = VectorState(
+            inventory=dict(base_state.inventory),
+            body={"health": 9.0, "food": 9.0, "drink": 2.0, "energy": 9.0},
+            player_pos=(10, 10),
+            spatial_map=spatial_map,
+            last_action="move_down",
+        )
+        plan = VectorPlan(steps=[VectorPlanStep(action="do", target="water")])
+
+        traj = simulate_forward(
+            model,
+            plan,
+            state,
+            vital_vars=["health", "food", "drink", "energy"],
+            enable_post_plan_passive_rollout=False,
+        )
+
+        assert traj.final_state is not None
+        assert traj.final_state.player_pos == (11, 10)
+        assert traj.final_state.body["drink"] == 2.0
 
     def test_skeleton_range_damage_applies_within_proximity_range(self, model, base_state):
         model.proximity_ranges["skeleton"] = 5
