@@ -4,6 +4,33 @@
 
 ---
 
+## 2026-04-20 — Stage 90 Reset: Viewport-First Local Survival
+**Что установлено:** Stage 90 cause-finding и последующие diagnostics нашли реальные mechanism-баги
+в short-horizon симуляции (`zombie/skeleton proximity damage`, сохранение `predicted_health=0`,
+ложные remote `do target` gains), но даже после их фиксов главный survival wall не снят.
+Видео и trace review показали более глубокую проблему: агент часто действует слабо связно
+с текущей локальной сценой, пропускает ближайшие полезные affordance и плохо реагирует на
+немедленную угрозу даже при видимом viewport evidence.
+
+**Новые ограничения на следующий stage:**
+- **`viewport-first`** — primary truth для выбора действия должен быть текущий viewport.
+- **`near_concept` не является policy primitive** — допустим только для debug/compatibility.
+- **Знания вне viewport вторичны** — `spatial_map` и дальняя память не должны вести policy path.
+- **Локальная геометрия не должна схлопываться в один label** — нужен spatial local scene/tensor,
+  а не ручной агрегат.
+- **Local behavior должен учиться** — threat response, local opportunity и affordance не задаются
+  новыми ручными эвристиками.
+
+**Допущения/ограничения:**
+- Возможно, текущий `planner + spatial_map` стек уже слишком перегружен для честного локального
+  survival behavior; следующий stage должен проверить это напрямую.
+- Улучшение выживания без улучшения локальной coherence считается подозрительным и должно
+  трактоваться как потенциально тактическое.
+- Следующий stage должен сначала доказать полезность viewport-first local behavior, и только
+  потом возвращаться к усилению памяти, planner depth или Stage 91 validation.
+
+---
+
 ## Stage 88 — Knowledge Flow: Textbook Promotion (2026-04-16)
 **Что сделано:** TextbookPromoter (YAML persistence), HypothesisTracker merge fix (accumulated n_obs across generations), PostMortemLearner.from_promoted() с консервативным bump=0.3. Дополнительно: exp136 добавил класс `arrow` в TileSegmenter; `_detect_sources` исправлен (entity-specific ranges, cow исключена); killing blow DamageEvent фикс; arrow регистрирован в entity_tracker.
 **Результаты (88f, 5 gen × 20 ep, minipc):** gen1=189.4, gen5=179.7, ratio=0.949. Gates: **1/2 — secondary PASS (n_promoted=2 ✓), primary FAIL (ratio=0.949 < 1.20, gen5=179 < 210 ✗)**.
