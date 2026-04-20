@@ -4,7 +4,14 @@ from snks.agent.stage90_diagnostics import (
     build_death_trace_bundle,
     classify_failure_bucket,
     infer_error_label,
+    summarize_scored_candidates,
     summarize_failure_buckets,
+)
+from snks.agent.vector_sim import (
+    VectorPlan,
+    VectorPlanStep,
+    VectorState,
+    VectorTrajectory,
 )
 
 
@@ -104,3 +111,27 @@ def test_summarize_failure_buckets_reports_dominant_bucket():
     summary = summarize_failure_buckets(bundles)
     assert summary["dominant_bucket"] == "missed_imminent_threat"
     assert summary["bucket_counts"]["missed_imminent_threat"] == 2
+
+
+def test_summarize_scored_candidates_keeps_zero_predicted_health():
+    plan = VectorPlan(
+        steps=[VectorPlanStep(action="move_left", target="self")],
+        origin="self:move_left",
+    )
+    traj = VectorTrajectory(
+        plan=plan,
+        states=[
+            VectorState(body={"health": 2.0}),
+            VectorState(body={"health": 0.0}),
+        ],
+        terminated=True,
+        terminated_reason="dead",
+    )
+
+    summary = summarize_scored_candidates(
+        [((0.0, 0.0, -1), plan, traj)],
+        body_before={"health": 2.0},
+    )
+
+    assert summary[0]["trajectory"]["predicted_health"] == 0.0
+    assert summary[0]["predicted_loss"] == 2.0

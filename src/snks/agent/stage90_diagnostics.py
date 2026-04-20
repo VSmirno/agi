@@ -92,7 +92,12 @@ def summarize_scored_candidates(
     result: list[dict[str, Any]] = []
     for rank, (score, plan, traj) in enumerate(scored[:limit], start=1):
         traj_summary = summarize_trajectory(traj)
-        predicted_health = float(traj_summary.get("predicted_health") or health_before)
+        predicted_health_raw = traj_summary.get("predicted_health")
+        predicted_health = (
+            health_before
+            if predicted_health_raw is None
+            else float(predicted_health_raw)
+        )
         result.append(
             {
                 "rank": rank,
