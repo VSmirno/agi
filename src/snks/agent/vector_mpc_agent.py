@@ -54,6 +54,7 @@ from snks.agent.stage90_diagnostics import (
     summarize_dynamic_entities,
     summarize_scored_candidates,
 )
+from snks.agent.stage90r_local_policy import build_local_trace_entry
 
 
 # ---------------------------------------------------------------------------
@@ -589,6 +590,7 @@ def run_vector_mpc_episode(
     record_stage89c_trace: bool = False,
     record_step_trace: bool = False,
     record_death_bundle: bool = False,
+    record_local_trace: bool = False,
     death_capture_steps: int = DEFAULT_DEATH_TRACE_HORIZON,
     perception_mode: str = "pixel",
 ) -> dict:
@@ -655,6 +657,7 @@ def run_vector_mpc_episode(
     defensive_window_targets = (10, 20)
     step_trace: list[dict[str, Any]] = []
     death_trace_steps: list[dict[str, Any]] = []
+    local_trace: list[dict[str, Any]] = []
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -1147,6 +1150,29 @@ def run_vector_mpc_episode(
                 "env_object_after": env_facing_after.get("object"),
                 "done_after_step": bool(done),
             })
+        if record_local_trace:
+            local_trace.append(
+                build_local_trace_entry(
+                    step=step,
+                    vf=vf,
+                    body=body,
+                    inventory=inv,
+                    primitive=primitive,
+                    plan_origin=best_plan.origin,
+                    nearest_threat_distances={
+                        "zombie": _nearest_hostile_distance(
+                            "zombie", player_pos, spatial_map, observed_dynamic_entities
+                        ),
+                        "skeleton": _nearest_hostile_distance(
+                            "skeleton", player_pos, spatial_map, observed_dynamic_entities
+                        ),
+                        "arrow": _nearest_dynamic_distance(
+                            "arrow", player_pos, observed_dynamic_entities
+                        ),
+                    },
+                    done_after_step=bool(done),
+                )
+            )
 
         # --- Bug 6: clear chopped tile ---
         new_inv = dict(info.get("inventory", {}))
@@ -1280,6 +1306,7 @@ def run_vector_mpc_episode(
         "defensive_events": defensive_events if record_stage89c_trace else [],
         "step_trace": step_trace if record_step_trace else [],
         "death_trace_bundle": death_trace_bundle,
+        "local_trace": local_trace if record_local_trace else [],
     }
 
 
