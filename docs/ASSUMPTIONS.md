@@ -29,6 +29,24 @@
 - Следующий stage должен сначала доказать полезность viewport-first local behavior, и только
   потом возвращаться к усилению памяти, planner depth или Stage 91 validation.
 
+**Промежуточные execution-выводы (smoke):**
+- **Viewport-first dataset path работает end-to-end.** На `minipc` собран smoke-срез:
+  `4` эпизода, `683` local samples, `avg_episode_steps=170.75`, death breakdown = `zombie: 4`.
+- **Offline local evaluator trainable, но bias уже виден.** Smoke training на `683` samples дал
+  `best_valid_loss=1.2884`, `valid_survival_acc=0.90`; значит short-horizon heads чему-то учатся,
+  но это ещё не значит, что learned policy уже адекватна online.
+- **Smoke local-only canary схлопнулся в константный action.** Первый online eval с smoke-checkpoint
+  выбрал `move_right` на всех `690/690` шагах (`avg_survival=172.5`, deaths: `zombie=1`,
+  `arrow=1`, `skeleton=1`, `alive=1`). Это важный warning:
+  текущий малый dataset слишком policy-biased и пока учит directional prior, а не честное
+  локальное поведение.
+
+**Новые ограничения из smoke-run:**
+- Перед claim про `viewport-first gain` нужен более широкий dataset, чем `4` smoke episodes.
+- Offline метрики без online diversity-проверки недостаточны: модель может хорошо fit'ить survival head
+  и всё равно выдавать дегenerate single-action policy.
+- Следующий шаг должен проверять и устранять action-collapse, а не трактовать smoke-checkpoint как успех.
+
 ---
 
 ## Stage 88 — Knowledge Flow: Textbook Promotion (2026-04-16)
