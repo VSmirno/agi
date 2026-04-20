@@ -3,6 +3,8 @@ from __future__ import annotations
 from snks.agent.perception import VisualField
 from snks.agent.stage90r_local_policy import (
     build_local_observation_package,
+    build_state_signature,
+    build_state_centered_training_examples,
     build_local_training_examples,
     dense_viewport_scene,
 )
@@ -97,3 +99,125 @@ def test_build_local_training_examples_computes_horizon_labels():
     assert first["label"]["resource_gain_h"] == 1
     assert first["label"]["escape_delta_h"] == 2
     assert first["label"]["survived_h"] is False
+    assert first["primary_regime"] == "hostile_contact"
+    assert "state_signature_key" in first
+
+
+def test_build_state_centered_training_examples_groups_actions_for_same_signature():
+    observation = {
+        "viewport_class_ids": [[0] * 9 for _ in range(7)],
+        "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+        "body_vector": [5.0, 7.0, 7.0, 7.0],
+        "inventory_vector": [0] * 12,
+        "body": {"health": 5.0, "food": 7.0, "drink": 7.0, "energy": 7.0},
+        "inventory": {"wood": 0},
+    }
+    samples = [
+        {
+            "seed": 1,
+            "episode_id": 0,
+            "step": 0,
+            "action": "move_left",
+            "action_index": 1,
+            "plan_origin": "baseline",
+            "observation": observation,
+            "nearest_threat_distances": {"zombie": 2, "skeleton": None, "arrow": None},
+            "regime_labels": ["hostile_near"],
+            "primary_regime": "hostile_near",
+            "state_signature": {
+                "center_patch_ids": [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                "adjacent_tiles": {"left": 0, "right": 0, "up": 0, "down": 0},
+                "body_buckets": [5, 7, 7, 7],
+                "inventory_presence": [],
+                "nearest_hostile_bucket": "near",
+                "visible_hostiles": [],
+                "resource_tiles": [],
+                "regime_labels": ["hostile_near"],
+                "primary_regime": "hostile_near",
+            },
+            "state_signature_key": "shared",
+            "label": {
+                "health_delta_h": -1.0,
+                "damage_h": 1.0,
+                "resource_gain_h": 0,
+                "inventory_delta_h": {},
+                "survived_h": 1.0,
+                "escape_delta_h": 1,
+                "nearest_hostile_now": 2,
+                "nearest_hostile_h": 3,
+            },
+        },
+        {
+            "seed": 2,
+            "episode_id": 1,
+            "step": 4,
+            "action": "move_right",
+            "action_index": 2,
+            "plan_origin": "baseline",
+            "observation": observation,
+            "nearest_threat_distances": {"zombie": 2, "skeleton": None, "arrow": None},
+            "regime_labels": ["hostile_near"],
+            "primary_regime": "hostile_near",
+            "state_signature": {
+                "center_patch_ids": [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                "adjacent_tiles": {"left": 0, "right": 0, "up": 0, "down": 0},
+                "body_buckets": [5, 7, 7, 7],
+                "inventory_presence": [],
+                "nearest_hostile_bucket": "near",
+                "visible_hostiles": [],
+                "resource_tiles": [],
+                "regime_labels": ["hostile_near"],
+                "primary_regime": "hostile_near",
+            },
+            "state_signature_key": "shared",
+            "label": {
+                "health_delta_h": -2.0,
+                "damage_h": 2.0,
+                "resource_gain_h": 0,
+                "inventory_delta_h": {},
+                "survived_h": 0.0,
+                "escape_delta_h": -1,
+                "nearest_hostile_now": 2,
+                "nearest_hostile_h": 1,
+            },
+        },
+    ]
+
+    grouped = build_state_centered_training_examples(samples)
+
+    assert len(grouped) == 1
+    state_sample = grouped[0]
+    assert state_sample["comparison_coverage"]["n_candidate_actions"] == 2
+    assert {candidate["action"] for candidate in state_sample["candidate_actions"]} == {
+        "move_left",
+        "move_right",
+    }
+
+
+def test_build_state_signature_distinguishes_relative_geometry():
+    left_hostile_obs = {
+        "viewport_class_ids": [[0] * 9 for _ in range(7)],
+        "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+        "body_vector": [6.0, 7.0, 7.0, 7.0],
+        "inventory_vector": [0] * 12,
+    }
+    right_hostile_obs = {
+        "viewport_class_ids": [[0] * 9 for _ in range(7)],
+        "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+        "body_vector": [6.0, 7.0, 7.0, 7.0],
+        "inventory_vector": [0] * 12,
+    }
+    left_hostile_obs["viewport_class_ids"][3][1] = 10
+    right_hostile_obs["viewport_class_ids"][3][7] = 10
+
+    left_signature = build_state_signature(
+        left_hostile_obs,
+        {"zombie": 2, "skeleton": None, "arrow": None},
+    )
+    right_signature = build_state_signature(
+        right_hostile_obs,
+        {"zombie": 2, "skeleton": None, "arrow": None},
+    )
+
+    assert left_signature["visible_hostiles"] == right_signature["visible_hostiles"]
+    assert left_signature["hostile_geometry"] != right_signature["hostile_geometry"]

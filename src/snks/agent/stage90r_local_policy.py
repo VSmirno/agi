@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from snks.agent.crafter_pixel_env import ACTION_NAMES, ACTION_TO_IDX, INVENTORY_ITEMS
@@ -11,6 +12,12 @@ from snks.encoder.tile_head_trainer import VIEWPORT_COLS, VIEWPORT_ROWS
 
 LOCAL_BODY_KEYS = ("health", "food", "drink", "energy")
 LOCAL_HOSTILE_KEYS = ("zombie", "skeleton", "arrow")
+LOCAL_CORE_ACTIONS = ("move_left", "move_right", "move_up", "move_down", "do", "sleep")
+LOCAL_RESOURCE_KEYS = ("water", "tree", "stone", "coal", "iron", "diamond", "cow")
+RESOURCE_CLASS_SET = set(LOCAL_RESOURCE_KEYS)
+HOSTILE_CLASS_SET = set(LOCAL_HOSTILE_KEYS)
+_PLAYER_CENTER_Y = VIEWPORT_ROWS // 2
+_PLAYER_CENTER_X = VIEWPORT_COLS // 2
 
 
 def dense_viewport_scene(vf: VisualField) -> tuple[list[list[int]], list[list[float]]]:
@@ -64,6 +71,197 @@ def build_local_observation_package(
     }
 
 
+def _class_name(class_id: int) -> str:
+    if 0 <= class_id < len(NEAR_CLASSES):
+        return str(NEAR_CLASSES[class_id])
+    return "empty"
+
+
+def _iter_named_tiles(class_ids: list[list[int]]) -> list[tuple[str, int, int]]:
+    tiles: list[tuple[str, int, int]] = []
+    for gy, row in enumerate(class_ids):
+        for gx, class_id in enumerate(row):
+            name = _class_name(int(class_id))
+            if name == "empty":
+                continue
+            tiles.append((name, gy, gx))
+    return tiles
+
+
+def _tile_names_within_radius(
+    class_ids: list[list[int]],
+    *,
+    max_distance: int,
+    allowed: set[str] | None = None,
+) -> list[str]:
+    names: set[str] = set()
+    for name, gy, gx in _iter_named_tiles(class_ids):
+        if allowed is not None and name not in allowed:
+            continue
+        if abs(gy - _PLAYER_CENTER_Y) + abs(gx - _PLAYER_CENTER_X) <= max_distance:
+            names.add(name)
+    return sorted(names)
+
+
+def _relative_tile_descriptors(
+    class_ids: list[list[int]],
+    *,
+    allowed: set[str],
+    max_distance: int,
+    limit: int,
+) -> list[dict[str, int | str]]:
+    descriptors: list[dict[str, int | str]] = []
+    for name, gy, gx in _iter_named_tiles(class_ids):
+        if name not in allowed:
+            continue
+        rel_y = gy - _PLAYER_CENTER_Y
+        rel_x = gx - _PLAYER_CENTER_X
+        manhattan = abs(rel_y) + abs(rel_x)
+        if manhattan > max_distance:
+            continue
+        descriptors.append(
+            {
+                "name": name,
+                "rel_y": int(rel_y),
+                "rel_x": int(rel_x),
+                "manhattan": int(manhattan),
+            }
+        )
+    descriptors.sort(
+        key=lambda item: (
+            int(item["manhattan"]),
+            abs(int(item["rel_y"])),
+            abs(int(item["rel_x"])),
+            str(item["name"]),
+            int(item["rel_y"]),
+            int(item["rel_x"]),
+        )
+    )
+    return descriptors[: max(1, limit)]
+
+
+def _body_buckets(observation: dict[str, Any]) -> list[int]:
+    return [
+        int(round(float(value)))
+        for value in observation.get("body_vector", [])
+    ]
+
+
+def _inventory_presence(observation: dict[str, Any]) -> list[str]:
+    inventory_vector = observation.get("inventory_vector", [])
+    present: list[str] = []
+    for key, value in zip(INVENTORY_ITEMS, inventory_vector, strict=False):
+        if float(value) > 0:
+            present.append(key)
+    return present
+
+
+def _nearest_hostile_bucket(nearest_threat_distances: dict[str, int | None]) -> str:
+    distance = nearest_hostile_distance(nearest_threat_distances)
+    if distance is None:
+        return "none"
+    if distance <= 1:
+        return "contact"
+    if distance <= 3:
+        return "near"
+    return "far"
+
+
+def infer_local_regime(
+    observation: dict[str, Any],
+    nearest_threat_distances: dict[str, int | None],
+) -> tuple[list[str], str]:
+    class_ids = observation["viewport_class_ids"]
+    labels: list[str] = []
+    nearest_bucket = _nearest_hostile_bucket(nearest_threat_distances)
+    if nearest_bucket == "contact":
+        labels.append("hostile_contact")
+    elif nearest_bucket == "near":
+        labels.append("hostile_near")
+
+    body_vector = observation.get("body_vector", [])
+    if body_vector and min(float(value) for value in body_vector) <= 4.0:
+        labels.append("low_vitals")
+
+    nearby_resources = _tile_names_within_radius(
+        class_ids,
+        max_distance=2,
+        allowed=RESOURCE_CLASS_SET,
+    )
+    if nearby_resources:
+        labels.append("local_resource_facing")
+
+    if not labels:
+        labels.append("neutral")
+
+    priority = (
+        "hostile_contact",
+        "hostile_near",
+        "low_vitals",
+        "local_resource_facing",
+        "neutral",
+    )
+    primary = next((label for label in priority if label in labels), "neutral")
+    return labels, primary
+
+
+def build_state_signature(
+    observation: dict[str, Any],
+    nearest_threat_distances: dict[str, int | None],
+) -> dict[str, Any]:
+    class_ids = observation["viewport_class_ids"]
+    center_patch = [
+        row[max(0, _PLAYER_CENTER_X - 1):_PLAYER_CENTER_X + 2]
+        for row in class_ids[max(0, _PLAYER_CENTER_Y - 1):_PLAYER_CENTER_Y + 2]
+    ]
+    adjacent_tiles = {
+        "left": int(class_ids[_PLAYER_CENTER_Y][_PLAYER_CENTER_X - 1]),
+        "right": int(class_ids[_PLAYER_CENTER_Y][_PLAYER_CENTER_X + 1]),
+        "up": int(class_ids[_PLAYER_CENTER_Y - 1][_PLAYER_CENTER_X]),
+        "down": int(class_ids[_PLAYER_CENTER_Y + 1][_PLAYER_CENTER_X]),
+    }
+    resource_tiles = _tile_names_within_radius(
+        class_ids,
+        max_distance=2,
+        allowed=RESOURCE_CLASS_SET,
+    )
+    visible_hostiles = _tile_names_within_radius(
+        class_ids,
+        max_distance=VIEWPORT_ROWS + VIEWPORT_COLS,
+        allowed=HOSTILE_CLASS_SET,
+    )
+    hostile_geometry = _relative_tile_descriptors(
+        class_ids,
+        allowed=HOSTILE_CLASS_SET,
+        max_distance=VIEWPORT_ROWS + VIEWPORT_COLS,
+        limit=3,
+    )
+    resource_geometry = _relative_tile_descriptors(
+        class_ids,
+        allowed=RESOURCE_CLASS_SET,
+        max_distance=4,
+        limit=3,
+    )
+    regime_labels, primary_regime = infer_local_regime(observation, nearest_threat_distances)
+    return {
+        "center_patch_ids": center_patch,
+        "adjacent_tiles": adjacent_tiles,
+        "body_buckets": _body_buckets(observation),
+        "inventory_presence": _inventory_presence(observation),
+        "nearest_hostile_bucket": _nearest_hostile_bucket(nearest_threat_distances),
+        "visible_hostiles": visible_hostiles,
+        "resource_tiles": resource_tiles,
+        "hostile_geometry": hostile_geometry,
+        "resource_geometry": resource_geometry,
+        "regime_labels": regime_labels,
+        "primary_regime": primary_regime,
+    }
+
+
+def _state_signature_key(signature: dict[str, Any]) -> str:
+    return json.dumps(signature, sort_keys=True, separators=(",", ":"))
+
+
 def nearest_hostile_distance(threat_distances: dict[str, int | None]) -> int | None:
     values = [
         int(value)
@@ -71,6 +269,62 @@ def nearest_hostile_distance(threat_distances: dict[str, int | None]) -> int | N
         if value is not None
     ]
     return min(values) if values else None
+
+
+def _horizon_label(
+    *,
+    step: dict[str, Any],
+    end_step: dict[str, Any],
+    final_body_clean: dict[str, float],
+    final_inv_clean: dict[str, int],
+    horizon_slice: list[dict[str, Any]],
+    used_terminal_fallback: bool,
+) -> tuple[dict[str, Any], dict[str, int | None]]:
+    died_within_horizon = any(bool(candidate.get("done_after_step", False)) for candidate in horizon_slice)
+    end_body = final_body_clean if used_terminal_fallback else end_step["observation"]["body"]
+    end_inventory = final_inv_clean if used_terminal_fallback else end_step["observation"]["inventory"]
+    end_threats = (
+        end_step.get("nearest_threat_distances", {})
+        if not used_terminal_fallback
+        else step.get("nearest_threat_distances", {})
+    )
+
+    start_body = step["observation"]["body"]
+    start_inventory = step["observation"]["inventory"]
+    start_threats = step.get("nearest_threat_distances", {})
+    start_hostile = nearest_hostile_distance(start_threats)
+    end_hostile = nearest_hostile_distance(end_threats)
+    horizon_damage = round(
+        max(0.0, float(start_body.get("health", 0.0)) - float(end_body.get("health", 0.0))),
+        3,
+    )
+    resource_gain = 0
+    inventory_delta: dict[str, int] = {}
+    for key in INVENTORY_ITEMS:
+        delta = int(end_inventory.get(key, 0)) - int(start_inventory.get(key, 0))
+        if delta != 0:
+            inventory_delta[key] = delta
+        if delta > 0:
+            resource_gain += delta
+    health_delta = round(
+        float(end_body.get("health", 0.0)) - float(start_body.get("health", 0.0)),
+        3,
+    )
+    if start_hostile is None or end_hostile is None:
+        escape_delta = None
+    else:
+        escape_delta = int(end_hostile - start_hostile)
+    label = {
+        "health_delta_h": health_delta,
+        "damage_h": horizon_damage,
+        "resource_gain_h": int(resource_gain),
+        "inventory_delta_h": inventory_delta,
+        "survived_h": not died_within_horizon,
+        "escape_delta_h": escape_delta,
+        "nearest_hostile_now": start_hostile,
+        "nearest_hostile_h": end_hostile,
+    }
+    return label, dict(start_threats)
 
 
 def build_local_training_examples(
@@ -94,43 +348,16 @@ def build_local_training_examples(
         end_idx = min(idx + horizon, len(local_trace) - 1)
         end_step = local_trace[end_idx]
         used_terminal_fallback = idx + horizon >= len(local_trace)
-        died_within_horizon = any(
-            bool(candidate.get("done_after_step", False))
-            for candidate in local_trace[idx:end_idx + 1]
+        label, start_threats = _horizon_label(
+            step=step,
+            end_step=end_step,
+            final_body_clean=final_body_clean,
+            final_inv_clean=final_inv_clean,
+            horizon_slice=local_trace[idx:end_idx + 1],
+            used_terminal_fallback=used_terminal_fallback,
         )
-        end_body = final_body_clean if used_terminal_fallback else end_step["observation"]["body"]
-        end_inventory = final_inv_clean if used_terminal_fallback else end_step["observation"]["inventory"]
-        end_threats = (
-            end_step.get("nearest_threat_distances", {})
-            if not used_terminal_fallback
-            else step.get("nearest_threat_distances", {})
-        )
-
-        start_body = step["observation"]["body"]
-        start_inventory = step["observation"]["inventory"]
-        start_threats = step.get("nearest_threat_distances", {})
-        start_hostile = nearest_hostile_distance(start_threats)
-        end_hostile = nearest_hostile_distance(end_threats)
-        horizon_damage = round(
-            max(0.0, float(start_body.get("health", 0.0)) - float(end_body.get("health", 0.0))),
-            3,
-        )
-        resource_gain = 0
-        inventory_delta: dict[str, int] = {}
-        for key in INVENTORY_ITEMS:
-            delta = int(end_inventory.get(key, 0)) - int(start_inventory.get(key, 0))
-            if delta != 0:
-                inventory_delta[key] = delta
-            if delta > 0:
-                resource_gain += delta
-        health_delta = round(
-            float(end_body.get("health", 0.0)) - float(start_body.get("health", 0.0)),
-            3,
-        )
-        if start_hostile is None or end_hostile is None:
-            escape_delta = None
-        else:
-            escape_delta = int(end_hostile - start_hostile)
+        state_signature = build_state_signature(step["observation"], start_threats)
+        regime_labels, primary_regime = infer_local_regime(step["observation"], start_threats)
 
         examples.append(
             {
@@ -143,20 +370,181 @@ def build_local_training_examples(
                 "plan_origin": step.get("plan_origin"),
                 "observation": step["observation"],
                 "nearest_threat_distances": dict(start_threats),
-                "label": {
-                    "health_delta_h": health_delta,
-                    "damage_h": horizon_damage,
-                    "resource_gain_h": int(resource_gain),
-                    "inventory_delta_h": inventory_delta,
-                    "survived_h": not died_within_horizon,
-                    "escape_delta_h": escape_delta,
-                    "nearest_hostile_now": start_hostile,
-                    "nearest_hostile_h": end_hostile,
-                },
+                "regime_labels": regime_labels,
+                "primary_regime": primary_regime,
+                "state_signature": state_signature,
+                "state_signature_key": _state_signature_key(state_signature),
+                "label_source": "observed_chosen_action",
+                "label": label,
             }
         )
 
     return examples
+
+
+def _aggregate_candidate_labels(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    if not samples:
+        raise ValueError("candidate aggregation requires at least one sample")
+
+    escape_values = [
+        float(sample["label"]["escape_delta_h"])
+        for sample in samples
+        if sample["label"]["escape_delta_h"] is not None
+    ]
+    inventory_delta: dict[str, float] = {}
+    for key in INVENTORY_ITEMS:
+        deltas = [
+            int(sample["label"]["inventory_delta_h"].get(key, 0))
+            for sample in samples
+        ]
+        mean_delta = sum(deltas) / len(deltas)
+        if abs(mean_delta) > 1e-6:
+            inventory_delta[key] = round(mean_delta, 3)
+
+    return {
+        "health_delta_h": round(
+            sum(float(sample["label"]["health_delta_h"]) for sample in samples) / len(samples),
+            3,
+        ),
+        "damage_h": round(
+            sum(float(sample["label"]["damage_h"]) for sample in samples) / len(samples),
+            3,
+        ),
+        "resource_gain_h": round(
+            sum(float(sample["label"]["resource_gain_h"]) for sample in samples) / len(samples),
+            3,
+        ),
+        "inventory_delta_h": inventory_delta,
+        "survived_h": round(
+            sum(float(sample["label"]["survived_h"]) for sample in samples) / len(samples),
+            3,
+        ),
+        "escape_delta_h": (
+            round(sum(escape_values) / len(escape_values), 3)
+            if escape_values
+            else None
+        ),
+        "escape_valid_fraction": round(len(escape_values) / len(samples), 3),
+        "nearest_hostile_now": samples[0]["label"].get("nearest_hostile_now"),
+        "nearest_hostile_h": round(
+            sum(
+                float(sample["label"]["nearest_hostile_h"])
+                for sample in samples
+                if sample["label"].get("nearest_hostile_h") is not None
+            )
+            / max(
+                1,
+                sum(1 for sample in samples if sample["label"].get("nearest_hostile_h") is not None),
+            ),
+            3,
+        )
+        if any(sample["label"].get("nearest_hostile_h") is not None for sample in samples)
+        else None,
+    }
+
+
+def build_state_centered_training_examples(
+    samples: list[dict[str, Any]],
+    *,
+    candidate_actions: tuple[str, ...] = LOCAL_CORE_ACTIONS,
+) -> list[dict[str, Any]]:
+    """Group flat chosen-action samples into state-centered action-comparison buckets."""
+    grouped: dict[str, dict[str, Any]] = {}
+
+    for sample in samples:
+        key = str(sample["state_signature_key"])
+        group = grouped.setdefault(
+            key,
+            {
+                "state_signature_key": key,
+                "state_signature": sample["state_signature"],
+                "observation": sample["observation"],
+                "nearest_threat_distances": sample["nearest_threat_distances"],
+                "regime_labels": list(sample["regime_labels"]),
+                "primary_regime": sample["primary_regime"],
+                "members": [],
+                "actions": {action: [] for action in candidate_actions},
+            },
+        )
+        group["members"].append(sample)
+        if sample["action"] in group["actions"]:
+            group["actions"][sample["action"]].append(sample)
+
+    state_samples: list[dict[str, Any]] = []
+    for state_id, group in enumerate(grouped.values()):
+        representative = min(
+            group["members"],
+            key=lambda item: (int(item["seed"]), int(item["episode_id"]), int(item["step"])),
+        )
+        candidate_rows: list[dict[str, Any]] = []
+        for action in candidate_actions:
+            action_samples = group["actions"][action]
+            if not action_samples:
+                continue
+            candidate_rows.append(
+                {
+                    "action": action,
+                    "action_index": int(ACTION_TO_IDX[action]),
+                    "label": _aggregate_candidate_labels(action_samples),
+                    "support": len(action_samples),
+                    "source": (
+                        "matched_state_bucket"
+                        if len(action_samples) > 1 or len(group["members"]) > 1
+                        else "observed_singleton"
+                    ),
+                    "support_refs": [
+                        {
+                            "seed": int(sample["seed"]),
+                            "episode_id": int(sample["episode_id"]),
+                            "step": int(sample["step"]),
+                        }
+                        for sample in action_samples[:5]
+                    ],
+                }
+            )
+        candidate_rows.sort(key=lambda item: item["action_index"])
+        state_samples.append(
+            {
+                "state_id": int(state_id),
+                "state_signature_key": group["state_signature_key"],
+                "state_signature": group["state_signature"],
+                "observation": group["observation"],
+                "nearest_threat_distances": group["nearest_threat_distances"],
+                "regime_labels": group["regime_labels"],
+                "primary_regime": group["primary_regime"],
+                "support": len(group["members"]),
+                "chosen_action_support": {
+                    action: len(group["actions"][action])
+                    for action in candidate_actions
+                    if group["actions"][action]
+                },
+                "candidate_actions": candidate_rows,
+                "comparison_coverage": {
+                    "n_candidate_actions": len(candidate_rows),
+                    "missing_actions": [
+                        action
+                        for action in candidate_actions
+                        if not group["actions"][action]
+                    ],
+                },
+                "representative_ref": {
+                    "seed": int(representative["seed"]),
+                    "episode_id": int(representative["episode_id"]),
+                    "step": int(representative["step"]),
+                    "chosen_action": representative["action"],
+                    "plan_origin": representative.get("plan_origin"),
+                },
+            }
+        )
+
+    state_samples.sort(
+        key=lambda item: (
+            item["representative_ref"]["seed"],
+            item["representative_ref"]["episode_id"],
+            item["representative_ref"]["step"],
+        )
+    )
+    return state_samples
 
 
 def build_local_trace_entry(
@@ -196,5 +584,13 @@ def local_dataset_metadata(horizon: int) -> dict[str, Any]:
         "body_keys": list(LOCAL_BODY_KEYS),
         "inventory_keys": list(INVENTORY_ITEMS),
         "action_names": list(ACTION_NAMES),
+        "core_action_names": list(LOCAL_CORE_ACTIONS),
+        "regime_labels": [
+            "hostile_contact",
+            "hostile_near",
+            "low_vitals",
+            "local_resource_facing",
+            "neutral",
+        ],
         "horizon": int(horizon),
     }

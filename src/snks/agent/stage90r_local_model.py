@@ -40,9 +40,48 @@ class Stage90RLocalDataset(Dataset):
 
 def load_local_dataset(path: str | Path) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text())
-    if "samples" not in payload:
-        raise ValueError(f"Dataset missing 'samples': {path}")
+    if "samples" not in payload and "state_samples" not in payload:
+        raise ValueError(f"Dataset missing 'samples' or 'state_samples': {path}")
     return payload
+
+
+def flatten_state_samples(state_samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert state-centered comparison buckets back into action-conditioned rows."""
+    rows: list[dict[str, Any]] = []
+    for state in state_samples:
+        observation = state["observation"]
+        for candidate in state.get("candidate_actions", []):
+            support_refs = list(candidate.get("support_refs", []))
+            representative = support_refs[0] if support_refs else state.get("representative_ref", {})
+            rows.append(
+                {
+                    "seed": int(representative.get("seed", 0)),
+                    "episode_id": int(representative.get("episode_id", 0)),
+                    "step": int(representative.get("step", 0)),
+                    "state_id": int(state.get("state_id", 0)),
+                    "primary_regime": state.get("primary_regime", "neutral"),
+                    "regime_labels": list(state.get("regime_labels", [])),
+                    "observation": observation,
+                    "action": candidate["action"],
+                    "action_index": int(candidate["action_index"]),
+                    "label": candidate["label"],
+                    "label_source": candidate.get("source", "state_centered"),
+                    "support_episode_keys": sorted(
+                        {
+                            (int(ref.get("seed", 0)), int(ref.get("episode_id", 0)))
+                            for ref in support_refs
+                        }
+                    ),
+                }
+            )
+    return rows
+
+
+def training_rows_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    state_samples = list(payload.get("state_samples", []))
+    if state_samples:
+        return flatten_state_samples(state_samples)
+    return list(payload.get("samples", []))
 
 
 def split_samples_by_episode(
@@ -97,7 +136,7 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
         dtype=torch.float32,
     )
     survived = torch.tensor(
-        [1.0 if sample["label"]["survived_h"] else 0.0 for sample in batch],
+        [float(sample["label"]["survived_h"]) for sample in batch],
         dtype=torch.float32,
     )
     escape_mask = torch.tensor(
@@ -216,10 +255,145 @@ def stage90r_action_utility(
     )
 
 
-def load_local_evaluator_checkpoint(
+def stage90r_target_utility(label: dict[str, Any]) -> float:
+    """Legacy helper kept for tests and compact reporting.
+
+    Offline ranking should prefer the explicit tuple/comparator helpers below.
+    """
+    order_key = stage90r_target_order_key(label)
+    return round(
+        (1000.0 * float(order_key[0]))
+        + (100.0 * float(order_key[1]))
+        + (10.0 * float(order_key[2]))
+        + float(order_key[3])
+        + (0.1 * float(order_key[4]))
+        + (0.01 * float(order_key[5])),
+        4,
+    )
+
+
+def stage90r_target_order_key(label: dict[str, Any]) -> tuple[float, float, float, float, float, float]:
+    """Explicit offline target preference order.
+
+    Ranking priority:
+    1. survive the horizon
+    2. take less damage
+    3. increase hostile separation when escape signal exists
+    4. gain resources
+    5. preserve health delta
+    """
+    survived = 1.0 if float(label.get("survived_h", 0.0)) >= 0.5 else 0.0
+    damage = -round(float(label.get("damage_h", 0.0)), 4)
+    escape_delta_raw = label.get("escape_delta_h")
+    escape_valid = 1.0 if escape_delta_raw is not None else 0.0
+    escape_delta = round(float(escape_delta_raw), 4) if escape_delta_raw is not None else 0.0
+    resource_gain = round(float(label.get("resource_gain_h", 0.0)), 4)
+    health_delta = round(float(label.get("health_delta_h", 0.0)), 4)
+    return (
+        survived,
+        damage,
+        escape_valid,
+        escape_delta,
+        resource_gain,
+        health_delta,
+    )
+
+
+def compare_stage90r_target_labels(left: dict[str, Any], right: dict[str, Any]) -> int:
+    left_key = stage90r_target_order_key(left)
+    right_key = stage90r_target_order_key(right)
+    if left_key > right_key:
+        return 1
+    if left_key < right_key:
+        return -1
+    return 0
+
+
+def rank_local_action_candidates(
+    *,
+    evaluator: LocalActionEvaluator,
+    observation: dict[str, Any],
+    allowed_actions: list[str],
+    action_to_idx: dict[str, int],
+    device: torch.device | str,
+) -> list[dict[str, Any]]:
+    class_ids = torch.tensor([observation["viewport_class_ids"]], dtype=torch.long, device=device)
+    confidences = torch.tensor([observation["viewport_confidences"]], dtype=torch.float32, device=device)
+    body_vec = torch.tensor([observation["body_vector"]], dtype=torch.float32, device=device)
+    inv_vec = torch.tensor([observation["inventory_vector"]], dtype=torch.float32, device=device)
+
+    ranked: list[dict[str, Any]] = []
+    for primitive in allowed_actions:
+        action_idx = torch.tensor([action_to_idx[primitive]], dtype=torch.long, device=device)
+        preds = evaluator(class_ids, confidences, body_vec, inv_vec, action_idx)
+        utility = float(stage90r_action_utility(**preds).item())
+        ranked.append(
+            {
+                "action": primitive,
+                "score": round(utility, 4),
+                "pred_damage": round(float(preds["pred_damage"].item()), 4),
+                "pred_resource_gain": round(float(preds["pred_resource_gain"].item()), 4),
+                "pred_survival_prob": round(float(torch.sigmoid(preds["pred_survival_logit"]).item()), 4),
+                "pred_escape_delta": round(float(preds["pred_escape_delta"].item()), 4),
+            }
+        )
+    ranked.sort(key=lambda item: item["score"], reverse=True)
+    return ranked
+
+
+def build_local_advisory_entry(
+    *,
+    planner_action: str,
+    planner_plan_origin: str | None,
+    ranked_candidates: list[dict[str, Any]],
+    top_k: int = 3,
+) -> dict[str, Any]:
+    planner_candidate = next(
+        (candidate for candidate in ranked_candidates if candidate["action"] == planner_action),
+        None,
+    )
+    planner_rank = next(
+        (
+            index + 1
+            for index, candidate in enumerate(ranked_candidates)
+            if candidate["action"] == planner_action
+        ),
+        None,
+    )
+    advisory_best = ranked_candidates[0] if ranked_candidates else None
+    planner_score = (
+        round(float(planner_candidate["score"]), 4)
+        if planner_candidate is not None
+        else None
+    )
+    advisory_best_score = (
+        round(float(advisory_best["score"]), 4)
+        if advisory_best is not None
+        else None
+    )
+    return {
+        "planner_action": planner_action,
+        "planner_plan_origin": planner_plan_origin,
+        "planner_rank_by_local_predictor": planner_rank,
+        "planner_predicted_score": planner_score,
+        "advisory_best_action": advisory_best["action"] if advisory_best is not None else None,
+        "advisory_best_score": advisory_best_score,
+        "advisory_agrees_with_planner": bool(
+            advisory_best is not None and advisory_best["action"] == planner_action
+        ),
+        "score_gap_to_advisory_best": (
+            round(float(advisory_best_score) - float(planner_score), 4)
+            if advisory_best is not None and planner_score is not None
+            else None
+        ),
+        "top_candidates": ranked_candidates[: max(1, top_k)],
+    }
+
+
+def load_local_evaluator_artifact(
     path: str | Path,
     device: torch.device | str | None = None,
-) -> LocalActionEvaluator:
+) -> tuple[LocalActionEvaluator, dict[str, Any]]:
     ckpt = torch.load(path, map_location="cpu", weights_only=False)
     config = LocalEvaluatorConfig(**ckpt["config"])
     model = LocalActionEvaluator(config)
@@ -227,4 +401,12 @@ def load_local_evaluator_checkpoint(
     if device is not None:
         model.to(torch.device(device))
     model.eval()
+    return model, ckpt
+
+
+def load_local_evaluator_checkpoint(
+    path: str | Path,
+    device: torch.device | str | None = None,
+) -> LocalActionEvaluator:
+    model, _artifact = load_local_evaluator_artifact(path, device=device)
     return model

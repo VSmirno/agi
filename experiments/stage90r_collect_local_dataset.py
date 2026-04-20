@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -32,12 +32,59 @@ def _summarize_action_distribution(samples: list[dict[str, Any]]) -> dict[str, i
     return dict(counts)
 
 
+def _summarize_action_distribution_by_regime(samples: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    by_regime: dict[str, Counter[str]] = defaultdict(Counter)
+    for sample in samples:
+        regime = str(sample.get("primary_regime", "unknown"))
+        by_regime[regime][str(sample.get("action", "unknown"))] += 1
+    return {
+        regime: dict(sorted(counter.items()))
+        for regime, counter in sorted(by_regime.items())
+    }
+
+
+def _escape_label_coverage(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    valid = sum(1 for sample in samples if sample["label"].get("escape_delta_h") is not None)
+    total = len(samples)
+    return {
+        "valid_count": valid,
+        "masked_count": total - valid,
+        "valid_fraction": round(valid / max(total, 1), 3),
+    }
+
+
+def _state_centered_summary(state_samples: list[dict[str, Any]]) -> dict[str, Any]:
+    candidate_histogram: Counter[int] = Counter()
+    action_support: Counter[str] = Counter()
+    regime_counts: Counter[str] = Counter()
+    comparison_ready = 0
+    for state in state_samples:
+        n_candidates = int(state["comparison_coverage"]["n_candidate_actions"])
+        candidate_histogram[n_candidates] += 1
+        if n_candidates >= 2:
+            comparison_ready += 1
+        regime_counts[str(state.get("primary_regime", "unknown"))] += 1
+        for action, support in state.get("chosen_action_support", {}).items():
+            action_support[str(action)] += int(support)
+    return {
+        "n_state_samples": len(state_samples),
+        "n_comparison_ready_states": comparison_ready,
+        "candidate_action_histogram": {
+            str(count): value
+            for count, value in sorted(candidate_histogram.items())
+        },
+        "candidate_support_by_action": dict(sorted(action_support.items())),
+        "state_regime_counts": dict(sorted(regime_counts.items())),
+    }
+
+
 def main() -> None:
     from snks.agent.crafter_pixel_env import CrafterPixelEnv
     from snks.agent.perception import HomeostaticTracker
     from snks.agent.post_mortem import PostMortemAnalyzer
     from snks.agent.stage90r_local_policy import (
         build_local_training_examples,
+        build_state_centered_training_examples,
         local_dataset_metadata,
     )
     from snks.agent.vector_mpc_agent import run_vector_mpc_episode
@@ -137,6 +184,7 @@ def main() -> None:
             f"total={len(all_samples):5d} [{elapsed:.0f}s]"
         )
 
+    state_samples = build_state_centered_training_examples(all_samples)
     payload = {
         "stage": "stage90r_local_dataset",
         "mode": "current_stage89_stack",
@@ -153,6 +201,7 @@ def main() -> None:
         },
         "episodes": episode_artifacts,
         "samples": all_samples,
+        "state_samples": state_samples,
     }
     DATASET_PATH.write_text(json.dumps(payload, indent=2, default=_json_default))
 
@@ -171,6 +220,9 @@ def main() -> None:
             ),
             "death_cause_breakdown": dict(death_causes),
             "action_distribution": _summarize_action_distribution(all_samples),
+            "action_distribution_by_regime": _summarize_action_distribution_by_regime(all_samples),
+            "escape_label_coverage": _escape_label_coverage(all_samples),
+            "state_centered": _state_centered_summary(state_samples),
         },
     }
     SUMMARY_PATH.write_text(json.dumps(summary, indent=2, default=_json_default))

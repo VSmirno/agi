@@ -54,7 +54,14 @@ from snks.agent.stage90_diagnostics import (
     summarize_dynamic_entities,
     summarize_scored_candidates,
 )
-from snks.agent.stage90r_local_policy import build_local_trace_entry
+from snks.agent.stage90r_local_model import (
+    build_local_advisory_entry,
+    rank_local_action_candidates,
+)
+from snks.agent.stage90r_local_policy import (
+    build_local_observation_package,
+    build_local_trace_entry,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -591,6 +598,11 @@ def run_vector_mpc_episode(
     record_step_trace: bool = False,
     record_death_bundle: bool = False,
     record_local_trace: bool = False,
+    local_action_advisor: Any | None = None,
+    local_advisory_allowed_actions: list[str] | None = None,
+    record_local_advisory_trace: bool = False,
+    local_advisory_top_k: int = 3,
+    local_advisory_device: torch.device | str = "cpu",
     death_capture_steps: int = DEFAULT_DEATH_TRACE_HORIZON,
     perception_mode: str = "pixel",
 ) -> dict:
@@ -658,6 +670,12 @@ def run_vector_mpc_episode(
     step_trace: list[dict[str, Any]] = []
     death_trace_steps: list[dict[str, Any]] = []
     local_trace: list[dict[str, Any]] = []
+    local_advisory_trace: list[dict[str, Any]] = []
+    local_advisory_allowed_actions = (
+        list(local_advisory_allowed_actions)
+        if local_advisory_allowed_actions is not None
+        else ["move_left", "move_right", "move_up", "move_down", "do", "sleep"]
+    )
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -1173,6 +1191,34 @@ def run_vector_mpc_episode(
                     done_after_step=bool(done),
                 )
             )
+        if record_local_advisory_trace and local_action_advisor is not None:
+            from snks.agent.crafter_pixel_env import ACTION_TO_IDX
+
+            advisory_observation = build_local_observation_package(vf, body, inv)
+            ranked_candidates = rank_local_action_candidates(
+                evaluator=local_action_advisor,
+                observation=advisory_observation,
+                allowed_actions=local_advisory_allowed_actions,
+                action_to_idx=ACTION_TO_IDX,
+                device=local_advisory_device,
+            )
+            advisory_entry = build_local_advisory_entry(
+                planner_action=primitive,
+                planner_plan_origin=best_plan.origin,
+                ranked_candidates=ranked_candidates,
+                top_k=local_advisory_top_k,
+            )
+            advisory_entry.update(
+                {
+                    "step": int(step),
+                    "near_concept": str(vf.near_concept),
+                    "body": {
+                        key: round(float(value), 3)
+                        for key, value in body.items()
+                    },
+                }
+            )
+            local_advisory_trace.append(advisory_entry)
 
         # --- Bug 6: clear chopped tile ---
         new_inv = dict(info.get("inventory", {}))
@@ -1307,6 +1353,7 @@ def run_vector_mpc_episode(
         "step_trace": step_trace if record_step_trace else [],
         "death_trace_bundle": death_trace_bundle,
         "local_trace": local_trace if record_local_trace else [],
+        "local_advisory_trace": local_advisory_trace if record_local_advisory_trace else [],
     }
 
 
