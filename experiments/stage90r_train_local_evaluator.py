@@ -246,11 +246,14 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
         "neutral": {"top1_hits": 0, "pairwise_correct": 0, "pairwise_total": 0, "top1": Counter(), "states": 0},
     }
     explanatory_examples: list[dict[str, Any]] = []
+    counterfactual_states = 0
 
     for state in state_samples:
         candidates = list(state.get("candidate_actions", []))
         if len(candidates) < 2:
             continue
+        if int(state.get("comparison_coverage", {}).get("n_counterfactual_actions", 0)) >= 2:
+            counterfactual_states += 1
 
         observation = state["observation"]
         class_ids = torch.tensor([observation["viewport_class_ids"]] * len(candidates), dtype=torch.long, device=device)
@@ -347,6 +350,10 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
             )
             for regime, bucket in regime_buckets.items()
         },
+        "counterfactual_support": {
+            "n_states_with_counterfactual_comparison": counterfactual_states,
+            "fraction": round(counterfactual_states / max(overall_states, 1), 3),
+        },
         "explanatory_examples": explanatory_examples,
     }
     report["anti_collapse_gate"] = _anti_collapse_gate(report)
@@ -360,6 +367,14 @@ def _selection_score(ranking: dict[str, Any]) -> float:
         + (0.5 * float(overall["pairwise_preference_accuracy"]))
         - (0.25 * float(overall["dominant_action_share"])),
         4,
+    )
+
+
+def _count_counterfactual_states(state_samples: list[dict[str, Any]]) -> int:
+    return sum(
+        1
+        for state in state_samples
+        if int(state.get("comparison_coverage", {}).get("n_counterfactual_actions", 0)) >= 2
     )
 
 
@@ -505,6 +520,8 @@ def main() -> None:
             "n_valid_episodes": len({(s["seed"], s["episode_id"]) for s in valid_base_samples}),
             "n_train_state_samples": len(train_state_samples),
             "n_valid_state_samples": len(valid_state_samples),
+            "n_train_counterfactual_ready_states": _count_counterfactual_states(train_state_samples),
+            "n_valid_counterfactual_ready_states": _count_counterfactual_states(valid_state_samples),
         },
         "metadata": payload["metadata"],
         "history": history,

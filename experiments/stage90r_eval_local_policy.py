@@ -41,6 +41,53 @@ def _action_summary(action_counts: Counter[str]) -> dict[str, Any]:
 
 
 def _summarize_planner_advisory_trace(trace: list[dict[str, Any]]) -> dict[str, Any]:
+    base = _summarize_planner_advisory_trace_base(trace)
+    threat_slice = [
+        entry
+        for entry in trace
+        if "hostile_contact" in entry.get("regime_labels", [])
+        or "hostile_near" in entry.get("regime_labels", [])
+    ]
+    resource_slice = [
+        entry
+        for entry in trace
+        if "local_resource_facing" in entry.get("regime_labels", [])
+    ]
+    return {
+        "n_advisory_steps": base["n_steps"],
+        "agreement_rate": base["agreement_rate"],
+        "disagreement_rate": base["disagreement_rate"],
+        "mean_planner_rank_by_local_predictor": base["mean_planner_rank_by_local_predictor"],
+        "mean_score_gap_to_advisory_best": base["mean_score_gap_to_advisory_best"],
+        "planner_action_distribution": base["planner_action_distribution"],
+        "advisory_best_action_distribution": base["advisory_best_action_distribution"],
+        "threat_slice": _summarize_planner_advisory_slice(threat_slice),
+        "resource_slice": _summarize_planner_advisory_slice(resource_slice),
+    }
+
+
+def _summarize_planner_advisory_slice(trace: list[dict[str, Any]]) -> dict[str, Any]:
+    if not trace:
+        return {
+            "n_steps": 0,
+            "agreement_rate": 0.0,
+            "mean_planner_rank_by_local_predictor": 0.0,
+            "mean_score_gap_to_advisory_best": 0.0,
+            "planner_action_distribution": {},
+            "advisory_best_action_distribution": {},
+        }
+    base = _summarize_planner_advisory_trace_base(trace)
+    return {
+        "n_steps": base["n_steps"],
+        "agreement_rate": base["agreement_rate"],
+        "mean_planner_rank_by_local_predictor": base["mean_planner_rank_by_local_predictor"],
+        "mean_score_gap_to_advisory_best": base["mean_score_gap_to_advisory_best"],
+        "planner_action_distribution": base["planner_action_distribution"],
+        "advisory_best_action_distribution": base["advisory_best_action_distribution"],
+    }
+
+
+def _summarize_planner_advisory_trace_base(trace: list[dict[str, Any]]) -> dict[str, Any]:
     planner_actions: Counter[str] = Counter()
     advisory_actions: Counter[str] = Counter()
     agreement = 0
@@ -68,9 +115,9 @@ def _summarize_planner_advisory_trace(trace: list[dict[str, Any]]) -> dict[str, 
 
     total = len(trace)
     return {
-        "n_advisory_steps": total,
-        "agreement_rate": round(agreement / max(total, 1), 3),
+        "n_steps": total,
         "disagreement_rate": round((total - agreement) / max(total, 1), 3),
+        "agreement_rate": round(agreement / max(total, 1), 3),
         "mean_planner_rank_by_local_predictor": round(
             planner_rank_total / max(planner_rank_count, 1),
             3,

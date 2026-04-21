@@ -53,22 +53,40 @@ def _escape_label_coverage(samples: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _counterfactual_coverage(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(samples)
+    supported_samples = sum(1 for sample in samples if sample.get("counterfactual_outcomes"))
+    action_counts: Counter[str] = Counter()
+    for sample in samples:
+        for outcome in sample.get("counterfactual_outcomes", []):
+            action_counts[str(outcome.get("action", "unknown"))] += 1
+    return {
+        "state_samples_with_counterfactuals": supported_samples,
+        "state_sample_fraction": round(supported_samples / max(total, 1), 3),
+        "counterfactual_action_support": dict(sorted(action_counts.items())),
+    }
+
+
 def _state_centered_summary(state_samples: list[dict[str, Any]]) -> dict[str, Any]:
     candidate_histogram: Counter[int] = Counter()
     action_support: Counter[str] = Counter()
     regime_counts: Counter[str] = Counter()
     comparison_ready = 0
+    counterfactual_ready = 0
     for state in state_samples:
         n_candidates = int(state["comparison_coverage"]["n_candidate_actions"])
         candidate_histogram[n_candidates] += 1
         if n_candidates >= 2:
             comparison_ready += 1
+        if int(state["comparison_coverage"].get("n_counterfactual_actions", 0)) >= 2:
+            counterfactual_ready += 1
         regime_counts[str(state.get("primary_regime", "unknown"))] += 1
         for action, support in state.get("chosen_action_support", {}).items():
             action_support[str(action)] += int(support)
     return {
         "n_state_samples": len(state_samples),
         "n_comparison_ready_states": comparison_ready,
+        "n_counterfactual_ready_states": counterfactual_ready,
         "candidate_action_histogram": {
             str(count): value
             for count, value in sorted(candidate_histogram.items())
@@ -222,6 +240,7 @@ def main() -> None:
             "action_distribution": _summarize_action_distribution(all_samples),
             "action_distribution_by_regime": _summarize_action_distribution_by_regime(all_samples),
             "escape_label_coverage": _escape_label_coverage(all_samples),
+            "counterfactual_coverage": _counterfactual_coverage(all_samples),
             "state_centered": _state_centered_summary(state_samples),
         },
     }

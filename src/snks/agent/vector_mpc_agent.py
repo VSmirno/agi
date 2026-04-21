@@ -61,6 +61,7 @@ from snks.agent.stage90r_local_model import (
 from snks.agent.stage90r_local_policy import (
     build_local_observation_package,
     build_local_trace_entry,
+    infer_local_regime,
 )
 
 
@@ -598,6 +599,8 @@ def run_vector_mpc_episode(
     record_step_trace: bool = False,
     record_death_bundle: bool = False,
     record_local_trace: bool = False,
+    record_local_counterfactuals: bool = True,
+    local_counterfactual_horizon: int = 3,
     local_action_advisor: Any | None = None,
     local_advisory_allowed_actions: list[str] | None = None,
     record_local_advisory_trace: bool = False,
@@ -1169,6 +1172,19 @@ def run_vector_mpc_episode(
                 "done_after_step": bool(done),
             })
         if record_local_trace:
+            counterfactual_outcomes = (
+                _build_local_counterfactual_outcomes(
+                    model=model,
+                    state=state,
+                    vf=vf,
+                    cache=step_cache,
+                    vitals=vitals,
+                    horizon=min(local_counterfactual_horizon, horizon),
+                    enable_post_plan_passive_rollout=enable_post_plan_passive_rollout,
+                )
+                if record_local_counterfactuals
+                else []
+            )
             local_trace.append(
                 build_local_trace_entry(
                     step=step,
@@ -1188,6 +1204,7 @@ def run_vector_mpc_episode(
                             "arrow", player_pos, observed_dynamic_entities
                         ),
                     },
+                    counterfactual_outcomes=counterfactual_outcomes,
                     done_after_step=bool(done),
                 )
             )
@@ -1195,6 +1212,18 @@ def run_vector_mpc_episode(
             from snks.agent.crafter_pixel_env import ACTION_TO_IDX
 
             advisory_observation = build_local_observation_package(vf, body, inv)
+            advisory_threats = {
+                "zombie": _nearest_hostile_distance(
+                    "zombie", player_pos, spatial_map, observed_dynamic_entities
+                ),
+                "skeleton": _nearest_hostile_distance(
+                    "skeleton", player_pos, spatial_map, observed_dynamic_entities
+                ),
+                "arrow": _nearest_dynamic_distance(
+                    "arrow", player_pos, observed_dynamic_entities
+                ),
+            }
+            regime_labels, primary_regime = infer_local_regime(advisory_observation, advisory_threats)
             ranked_candidates = rank_local_action_candidates(
                 evaluator=local_action_advisor,
                 observation=advisory_observation,
@@ -1216,6 +1245,8 @@ def run_vector_mpc_episode(
                         key: round(float(value), 3)
                         for key, value in body.items()
                     },
+                    "regime_labels": regime_labels,
+                    "primary_regime": primary_regime,
                 }
             )
             local_advisory_trace.append(advisory_entry)
@@ -1360,6 +1391,103 @@ def run_vector_mpc_episode(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _build_local_counterfactual_outcomes(
+    *,
+    model: VectorWorldModel,
+    state: VectorState,
+    vf: VisualField,
+    cache: dict | None,
+    vitals: list[str],
+    horizon: int,
+    enable_post_plan_passive_rollout: bool,
+) -> list[dict[str, Any]]:
+    from snks.agent.crafter_pixel_env import ACTION_TO_IDX
+
+    allowed_actions = ["move_left", "move_right", "move_up", "move_down", "do", "sleep"]
+    start_threats = {
+        "zombie": _nearest_hostile_distance("zombie", state.player_pos, state.spatial_map, state.dynamic_entities),
+        "skeleton": _nearest_hostile_distance("skeleton", state.player_pos, state.spatial_map, state.dynamic_entities),
+        "arrow": _nearest_dynamic_distance("arrow", state.player_pos, state.dynamic_entities),
+    }
+    start_hostile = min(
+        [distance for distance in start_threats.values() if distance is not None],
+        default=None,
+    )
+    outcomes: list[dict[str, Any]] = []
+    for primitive in allowed_actions:
+        target = "self"
+        if primitive == "do":
+            near_concept = str(vf.near_concept)
+            if near_concept in {"None", "empty", "unknown"}:
+                continue
+            target = near_concept
+        plan = VectorPlan(
+            steps=[VectorPlanStep(action=primitive, target=target)],
+            origin=f"stage90r_counterfactual:{primitive}",
+        )
+        trajectory = simulate_forward(
+            model=model,
+            plan=plan,
+            initial_state=state,
+            horizon=max(1, horizon),
+            vital_vars=vitals,
+            cache=cache,
+            enable_post_plan_passive_rollout=enable_post_plan_passive_rollout,
+        )
+        final_state = trajectory.final_state or state
+        end_threats = {
+            "zombie": _nearest_hostile_distance("zombie", final_state.player_pos, final_state.spatial_map, final_state.dynamic_entities),
+            "skeleton": _nearest_hostile_distance("skeleton", final_state.player_pos, final_state.spatial_map, final_state.dynamic_entities),
+            "arrow": _nearest_dynamic_distance("arrow", final_state.player_pos, final_state.dynamic_entities),
+        }
+        end_hostile = min(
+            [distance for distance in end_threats.values() if distance is not None],
+            default=None,
+        )
+        inventory_delta: dict[str, int] = {}
+        resource_gain = 0
+        for key in set(state.inventory.keys()) | set(final_state.inventory.keys()):
+            delta = int(final_state.inventory.get(key, 0)) - int(state.inventory.get(key, 0))
+            if delta != 0:
+                inventory_delta[key] = delta
+            if delta > 0:
+                resource_gain += delta
+        if start_hostile is None or end_hostile is None:
+            escape_delta = None
+        else:
+            escape_delta = int(end_hostile - start_hostile)
+        outcomes.append(
+            {
+                "action": primitive,
+                "action_index": int(ACTION_TO_IDX.get(primitive, 0)),
+                "source": "explicit_vector_rollout",
+                "target": target,
+                "mean_confidence": round(
+                    sum(trajectory.confidences) / max(len(trajectory.confidences), 1),
+                    4,
+                ),
+                "terminated": bool(trajectory.terminated),
+                "terminated_reason": trajectory.terminated_reason,
+                "label": {
+                    "health_delta_h": round(
+                        float(final_state.body.get("health", 0.0)) - float(state.body.get("health", 0.0)),
+                        3,
+                    ),
+                    "damage_h": round(
+                        max(0.0, float(state.body.get("health", 0.0)) - float(final_state.body.get("health", 0.0))),
+                        3,
+                    ),
+                    "resource_gain_h": int(resource_gain),
+                    "inventory_delta_h": inventory_delta,
+                    "survived_h": not final_state.is_dead(vitals),
+                    "escape_delta_h": escape_delta,
+                    "nearest_hostile_now": start_hostile,
+                    "nearest_hostile_h": end_hostile,
+                },
+            }
+        )
+    return outcomes
 
 def _facing_delta(last_move: str | None) -> tuple[int, int]:
     if last_move == "move_right":

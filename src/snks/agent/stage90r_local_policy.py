@@ -376,6 +376,7 @@ def build_local_training_examples(
                 "state_signature_key": _state_signature_key(state_signature),
                 "label_source": "observed_chosen_action",
                 "label": label,
+                "counterfactual_outcomes": list(step.get("counterfactual_outcomes", [])),
             }
         )
 
@@ -443,6 +444,23 @@ def _aggregate_candidate_labels(samples: list[dict[str, Any]]) -> dict[str, Any]
     }
 
 
+def _aggregate_counterfactual_outcomes(outcomes: list[dict[str, Any]]) -> dict[str, Any]:
+    if not outcomes:
+        raise ValueError("counterfactual aggregation requires at least one outcome")
+    label_wrapped = [{"label": outcome["label"]} for outcome in outcomes]
+    aggregated = _aggregate_candidate_labels(label_wrapped)
+    confidences = [float(outcome.get("mean_confidence", 0.0)) for outcome in outcomes]
+    aggregated["counterfactual_mean_confidence"] = round(
+        sum(confidences) / max(len(confidences), 1),
+        4,
+    )
+    aggregated["counterfactual_supported_fraction"] = round(
+        sum(1.0 for confidence in confidences if confidence >= 0.2) / max(len(confidences), 1),
+        3,
+    )
+    return aggregated
+
+
 def build_state_centered_training_examples(
     samples: list[dict[str, Any]],
     *,
@@ -464,11 +482,24 @@ def build_state_centered_training_examples(
                 "primary_regime": sample["primary_regime"],
                 "members": [],
                 "actions": {action: [] for action in candidate_actions},
+                "counterfactuals": {action: [] for action in candidate_actions},
             },
         )
         group["members"].append(sample)
         if sample["action"] in group["actions"]:
             group["actions"][sample["action"]].append(sample)
+        for outcome in sample.get("counterfactual_outcomes", []):
+            action = str(outcome.get("action"))
+            if action not in group["counterfactuals"]:
+                continue
+            group["counterfactuals"][action].append(
+                {
+                    **outcome,
+                    "seed": int(sample["seed"]),
+                    "episode_id": int(sample["episode_id"]),
+                    "step": int(sample["step"]),
+                }
+            )
 
     state_samples: list[dict[str, Any]] = []
     for state_id, group in enumerate(grouped.values()):
@@ -479,6 +510,35 @@ def build_state_centered_training_examples(
         candidate_rows: list[dict[str, Any]] = []
         for action in candidate_actions:
             action_samples = group["actions"][action]
+            counterfactual_outcomes = group["counterfactuals"][action]
+            if counterfactual_outcomes:
+                observed_fallback = (
+                    _aggregate_candidate_labels(action_samples)
+                    if action_samples
+                    else None
+                )
+                candidate_rows.append(
+                    {
+                        "action": action,
+                        "action_index": int(ACTION_TO_IDX[action]),
+                        "label": _aggregate_counterfactual_outcomes(counterfactual_outcomes),
+                        "support": len(counterfactual_outcomes),
+                        "source": "counterfactual_local_rollout",
+                        "comparison_priority": "counterfactual",
+                        "counterfactual_support": len(counterfactual_outcomes),
+                        "observed_support": len(action_samples),
+                        "observed_label_fallback": observed_fallback,
+                        "support_refs": [
+                            {
+                                "seed": int(outcome["seed"]),
+                                "episode_id": int(outcome["episode_id"]),
+                                "step": int(outcome["step"]),
+                            }
+                            for outcome in counterfactual_outcomes[:5]
+                        ],
+                    }
+                )
+                continue
             if not action_samples:
                 continue
             candidate_rows.append(
@@ -487,11 +547,14 @@ def build_state_centered_training_examples(
                     "action_index": int(ACTION_TO_IDX[action]),
                     "label": _aggregate_candidate_labels(action_samples),
                     "support": len(action_samples),
+                    "counterfactual_support": 0,
+                    "observed_support": len(action_samples),
                     "source": (
                         "matched_state_bucket"
                         if len(action_samples) > 1 or len(group["members"]) > 1
                         else "observed_singleton"
                     ),
+                    "comparison_priority": "observed",
                     "support_refs": [
                         {
                             "seed": int(sample["seed"]),
@@ -521,10 +584,15 @@ def build_state_centered_training_examples(
                 "candidate_actions": candidate_rows,
                 "comparison_coverage": {
                     "n_candidate_actions": len(candidate_rows),
+                    "n_counterfactual_actions": sum(
+                        1
+                        for candidate in candidate_rows
+                        if candidate.get("comparison_priority") == "counterfactual"
+                    ),
                     "missing_actions": [
                         action
                         for action in candidate_actions
-                        if not group["actions"][action]
+                        if not group["actions"][action] and not group["counterfactuals"][action]
                     ],
                 },
                 "representative_ref": {
@@ -556,6 +624,7 @@ def build_local_trace_entry(
     primitive: str,
     plan_origin: str,
     nearest_threat_distances: dict[str, int | None],
+    counterfactual_outcomes: list[dict[str, Any]] | None = None,
     done_after_step: bool,
 ) -> dict[str, Any]:
     return {
@@ -572,6 +641,7 @@ def build_local_trace_entry(
             )
             for key in LOCAL_HOSTILE_KEYS
         },
+        "counterfactual_outcomes": list(counterfactual_outcomes or []),
         "done_after_step": bool(done_after_step),
     }
 
