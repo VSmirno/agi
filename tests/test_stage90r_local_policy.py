@@ -255,6 +255,132 @@ def test_build_state_centered_training_examples_prefers_counterfactual_candidate
     assert grouped[0]["comparison_coverage"]["n_counterfactual_actions"] == 1
 
 
+def test_build_state_centered_training_examples_ignores_zero_support_counterfactual_without_observed_fallback():
+    observation = {
+        "viewport_class_ids": [[0] * 9 for _ in range(7)],
+        "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+        "body_vector": [5.0, 7.0, 7.0, 7.0],
+        "inventory_vector": [0] * 12,
+        "body": {"health": 5.0, "food": 7.0, "drink": 7.0, "energy": 7.0},
+        "inventory": {"wood": 0},
+    }
+
+    grouped = build_state_centered_training_examples(
+        [
+            {
+                "seed": 1,
+                "episode_id": 0,
+                "step": 0,
+                "action": "move_left",
+                "action_index": 1,
+                "plan_origin": "baseline",
+                "observation": observation,
+                "nearest_threat_distances": {"zombie": None, "skeleton": None, "arrow": None},
+                "regime_labels": ["neutral"],
+                "primary_regime": "neutral",
+                "state_signature": {"shape": "shared"},
+                "state_signature_key": "shared",
+                "label": {
+                    "health_delta_h": 0.0,
+                    "damage_h": 0.0,
+                    "resource_gain_h": 0,
+                    "inventory_delta_h": {},
+                    "survived_h": 1.0,
+                    "escape_delta_h": None,
+                    "nearest_hostile_now": None,
+                    "nearest_hostile_h": None,
+                },
+                "counterfactual_outcomes": [
+                    {
+                        "action": "do",
+                        "mean_confidence": 0.0,
+                        "label": {
+                            "health_delta_h": 0.0,
+                            "damage_h": 0.0,
+                            "resource_gain_h": 1,
+                            "inventory_delta_h": {"wood": 1},
+                            "survived_h": 1.0,
+                            "escape_delta_h": None,
+                            "nearest_hostile_now": None,
+                            "nearest_hostile_h": None,
+                        },
+                    }
+                ],
+            }
+        ]
+    )
+
+    actions = {candidate["action"] for candidate in grouped[0]["candidate_actions"]}
+    assert "do" not in actions
+    assert grouped[0]["comparison_coverage"]["n_counterfactual_actions"] == 0
+
+
+def test_build_state_centered_training_examples_falls_back_to_observed_when_counterfactual_is_unsupported():
+    observation = {
+        "viewport_class_ids": [[0] * 9 for _ in range(7)],
+        "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+        "body_vector": [5.0, 7.0, 7.0, 7.0],
+        "inventory_vector": [0] * 12,
+        "body": {"health": 5.0, "food": 7.0, "drink": 7.0, "energy": 7.0},
+        "inventory": {"wood": 0},
+    }
+
+    grouped = build_state_centered_training_examples(
+        [
+            {
+                "seed": 1,
+                "episode_id": 0,
+                "step": 0,
+                "action": "do",
+                "action_index": 5,
+                "plan_origin": "single:tree:do",
+                "observation": observation,
+                "nearest_threat_distances": {"zombie": None, "skeleton": None, "arrow": None},
+                "regime_labels": ["local_resource_facing"],
+                "primary_regime": "local_resource_facing",
+                "state_signature": {"shape": "shared"},
+                "state_signature_key": "shared",
+                "label": {
+                    "health_delta_h": 0.0,
+                    "damage_h": 0.0,
+                    "resource_gain_h": 0,
+                    "inventory_delta_h": {},
+                    "survived_h": 1.0,
+                    "escape_delta_h": None,
+                    "nearest_hostile_now": None,
+                    "nearest_hostile_h": None,
+                },
+                "counterfactual_outcomes": [
+                    {
+                        "action": "do",
+                        "mean_confidence": 0.0,
+                        "label": {
+                            "health_delta_h": 0.0,
+                            "damage_h": 0.0,
+                            "resource_gain_h": 1,
+                            "inventory_delta_h": {"wood": 1},
+                            "survived_h": 1.0,
+                            "escape_delta_h": None,
+                            "nearest_hostile_now": None,
+                            "nearest_hostile_h": None,
+                        },
+                    }
+                ],
+            }
+        ]
+    )
+
+    do_candidate = next(
+        candidate
+        for candidate in grouped[0]["candidate_actions"]
+        if candidate["action"] == "do"
+    )
+    assert do_candidate["comparison_priority"] == "observed"
+    assert do_candidate["source"] == "observed_singleton"
+    assert do_candidate["label"]["resource_gain_h"] == 0
+    assert grouped[0]["comparison_coverage"]["n_counterfactual_actions"] == 0
+
+
 def test_build_state_signature_distinguishes_relative_geometry():
     left_hostile_obs = {
         "viewport_class_ids": [[0] * 9 for _ in range(7)],

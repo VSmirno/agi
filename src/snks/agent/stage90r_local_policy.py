@@ -461,6 +461,14 @@ def _aggregate_counterfactual_outcomes(outcomes: list[dict[str, Any]]) -> dict[s
     return aggregated
 
 
+def _counterfactual_label_is_supported(
+    label: dict[str, Any],
+    *,
+    min_supported_fraction: float = 0.001,
+) -> bool:
+    return float(label.get("counterfactual_supported_fraction", 0.0)) >= min_supported_fraction
+
+
 def build_state_centered_training_examples(
     samples: list[dict[str, Any]],
     *,
@@ -517,28 +525,32 @@ def build_state_centered_training_examples(
                     if action_samples
                     else None
                 )
-                candidate_rows.append(
-                    {
-                        "action": action,
-                        "action_index": int(ACTION_TO_IDX[action]),
-                        "label": _aggregate_counterfactual_outcomes(counterfactual_outcomes),
-                        "support": len(counterfactual_outcomes),
-                        "source": "counterfactual_local_rollout",
-                        "comparison_priority": "counterfactual",
-                        "counterfactual_support": len(counterfactual_outcomes),
-                        "observed_support": len(action_samples),
-                        "observed_label_fallback": observed_fallback,
-                        "support_refs": [
-                            {
-                                "seed": int(outcome["seed"]),
-                                "episode_id": int(outcome["episode_id"]),
-                                "step": int(outcome["step"]),
-                            }
-                            for outcome in counterfactual_outcomes[:5]
-                        ],
-                    }
-                )
-                continue
+                aggregated_counterfactual = _aggregate_counterfactual_outcomes(counterfactual_outcomes)
+                if _counterfactual_label_is_supported(aggregated_counterfactual):
+                    candidate_rows.append(
+                        {
+                            "action": action,
+                            "action_index": int(ACTION_TO_IDX[action]),
+                            "label": aggregated_counterfactual,
+                            "support": len(counterfactual_outcomes),
+                            "source": "counterfactual_local_rollout",
+                            "comparison_priority": "counterfactual",
+                            "counterfactual_support": len(counterfactual_outcomes),
+                            "observed_support": len(action_samples),
+                            "observed_label_fallback": observed_fallback,
+                            "support_refs": [
+                                {
+                                    "seed": int(outcome["seed"]),
+                                    "episode_id": int(outcome["episode_id"]),
+                                    "step": int(outcome["step"]),
+                                }
+                                for outcome in counterfactual_outcomes[:5]
+                            ],
+                        }
+                    )
+                    continue
+                if observed_fallback is None:
+                    continue
             if not action_samples:
                 continue
             candidate_rows.append(
