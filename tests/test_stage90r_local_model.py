@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import torch
 
+sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
+
+from experiments.stage90r_train_local_evaluator import _evaluate_ranking
 from snks.agent.stage90r_local_model import (
     LocalActionEvaluator,
     LocalEvaluatorConfig,
@@ -270,3 +276,101 @@ def test_rank_local_action_candidates_keeps_do_with_adjacent_object():
 
     assert ranked[0]["action"] == "do"
     assert "do" in [candidate["action"] for candidate in ranked]
+
+
+def test_rank_local_action_candidates_blocks_do_for_non_actionable_adjacent_tile():
+    ranked = rank_local_action_candidates(
+        evaluator=_FixedActionEvaluator(),
+        observation=_test_observation(adjacent_right=1),
+        allowed_actions=["move_left", "move_right", "do", "sleep"],
+        action_to_idx={"move_left": 1, "move_right": 2, "do": 5, "sleep": 6},
+        device="cpu",
+    )
+
+    assert [candidate["action"] for candidate in ranked] == [
+        "move_right",
+        "move_left",
+        "sleep",
+    ]
+
+
+class _TieAwareRankingEvaluator:
+    def __call__(self, class_ids, confidences, body, inventory, action):
+        batch_size = int(action.shape[0])
+        pred_damage = torch.tensor(
+            [
+                {
+                    1: 1.8,
+                    2: 1.7,
+                    3: 1.3,
+                    4: 0.9,
+                    6: 1.4,
+                }.get(int(action[idx].item()), 1.0)
+                for idx in range(batch_size)
+            ],
+            dtype=torch.float32,
+        )
+        return {
+            "pred_damage": pred_damage,
+            "pred_resource_gain": torch.zeros(batch_size, dtype=torch.float32),
+            "pred_survival_logit": torch.full((batch_size,), 6.0, dtype=torch.float32),
+            "pred_escape_delta": torch.zeros(batch_size, dtype=torch.float32),
+        }
+
+
+def test_evaluate_ranking_counts_tied_targets_as_top1_hits():
+    state_samples = [
+        {
+            "state_id": 1,
+            "primary_regime": "neutral",
+            "regime_labels": ["neutral"],
+            "observation": {
+                "viewport_class_ids": [[0] * 9 for _ in range(7)],
+                "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+                "body_vector": [9.0, 9.0, 9.0, 9.0],
+                "inventory_vector": [0] * 12,
+            },
+            "comparison_coverage": {"n_counterfactual_actions": 2},
+            "candidate_actions": [
+                {
+                    "action": "move_left",
+                    "action_index": 1,
+                    "label": {"damage_h": 2.0, "resource_gain_h": 0.0, "survived_h": 1.0, "escape_delta_h": None, "health_delta_h": -2.0},
+                },
+                {
+                    "action": "move_right",
+                    "action_index": 2,
+                    "label": {"damage_h": 2.0, "resource_gain_h": 0.0, "survived_h": 1.0, "escape_delta_h": None, "health_delta_h": -2.0},
+                },
+                {
+                    "action": "move_up",
+                    "action_index": 3,
+                    "label": {"damage_h": 2.0, "resource_gain_h": 0.0, "survived_h": 1.0, "escape_delta_h": None, "health_delta_h": -2.0},
+                },
+                {
+                    "action": "move_down",
+                    "action_index": 4,
+                    "label": {"damage_h": 2.0, "resource_gain_h": 0.0, "survived_h": 1.0, "escape_delta_h": None, "health_delta_h": -2.0},
+                },
+                {
+                    "action": "sleep",
+                    "action_index": 6,
+                    "label": {"damage_h": 2.0, "resource_gain_h": 0.0, "survived_h": 1.0, "escape_delta_h": None, "health_delta_h": -2.0},
+                },
+            ],
+        }
+    ]
+
+    report = _evaluate_ranking(_TieAwareRankingEvaluator(), state_samples, device=torch.device("cpu"))
+
+    assert report["overall"]["top1_agreement"] == 1.0
+    assert report["overall"]["exact_top1_agreement"] == 0.0
+    assert report["overall"]["target_top1_tie_fraction"] == 1.0
+    assert report["explanatory_examples"][0]["predicted_best_action"] == "move_down"
+    assert report["explanatory_examples"][0]["tied_target_best_actions"] == [
+        "move_left",
+        "move_right",
+        "move_up",
+        "move_down",
+        "sleep",
+    ]

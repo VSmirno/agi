@@ -116,6 +116,8 @@ def _empty_slice_report() -> dict[str, Any]:
     return {
         "n_states": 0,
         "top1_agreement": 0.0,
+        "exact_top1_agreement": 0.0,
+        "target_top1_tie_fraction": 0.0,
         "pairwise_preference_accuracy": 0.0,
         "predicted_top1_distribution": {},
         "predicted_top1_entropy": 0.0,
@@ -130,6 +132,8 @@ def _slice_report(
     *,
     n_states: int,
     top1_hits: int,
+    exact_top1_hits: int,
+    tie_states: int,
     pairwise_correct: int,
     pairwise_total: int,
     top1_counter: Counter[str],
@@ -143,6 +147,8 @@ def _slice_report(
     return {
         "n_states": n_states,
         "top1_agreement": round(top1_hits / n_states, 4),
+        "exact_top1_agreement": round(exact_top1_hits / n_states, 4),
+        "target_top1_tie_fraction": round(tie_states / n_states, 4),
         "pairwise_preference_accuracy": round(pairwise_correct / max(pairwise_total, 1), 4),
         "predicted_top1_distribution": dict(sorted(top1_counter.items())),
         "predicted_top1_entropy": round(entropy, 4),
@@ -234,16 +240,18 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
     )
 
     overall_top1_hits = 0
+    overall_exact_top1_hits = 0
+    overall_tie_states = 0
     overall_pairwise_correct = 0
     overall_pairwise_total = 0
     overall_top1_counter: Counter[str] = Counter()
     overall_states = 0
 
     regime_buckets = {
-        "hostile_contact_or_near": {"top1_hits": 0, "pairwise_correct": 0, "pairwise_total": 0, "top1": Counter(), "states": 0},
-        "local_resource_facing": {"top1_hits": 0, "pairwise_correct": 0, "pairwise_total": 0, "top1": Counter(), "states": 0},
-        "low_vitals": {"top1_hits": 0, "pairwise_correct": 0, "pairwise_total": 0, "top1": Counter(), "states": 0},
-        "neutral": {"top1_hits": 0, "pairwise_correct": 0, "pairwise_total": 0, "top1": Counter(), "states": 0},
+        "hostile_contact_or_near": {"top1_hits": 0, "exact_top1_hits": 0, "tie_states": 0, "pairwise_correct": 0, "pairwise_total": 0, "top1": Counter(), "states": 0},
+        "local_resource_facing": {"top1_hits": 0, "exact_top1_hits": 0, "tie_states": 0, "pairwise_correct": 0, "pairwise_total": 0, "top1": Counter(), "states": 0},
+        "low_vitals": {"top1_hits": 0, "exact_top1_hits": 0, "tie_states": 0, "pairwise_correct": 0, "pairwise_total": 0, "top1": Counter(), "states": 0},
+        "neutral": {"top1_hits": 0, "exact_top1_hits": 0, "tie_states": 0, "pairwise_correct": 0, "pairwise_total": 0, "top1": Counter(), "states": 0},
     }
     explanatory_examples: list[dict[str, Any]] = []
     counterfactual_states = 0
@@ -267,10 +275,18 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
         target_keys = [stage90r_target_order_key(candidate["label"]) for candidate in candidates]
 
         pred_best_idx = max(range(len(candidates)), key=lambda idx: float(pred_scores[idx]))
-        target_best_idx = max(range(len(candidates)), key=lambda idx: target_keys[idx])
         pred_best_action = str(candidates[pred_best_idx]["action"])
+        best_target_key = max(target_keys)
+        tied_target_best_indices = [
+            idx
+            for idx, key in enumerate(target_keys)
+            if key == best_target_key
+        ]
+        target_best_idx = tied_target_best_indices[0]
         target_best_action = str(candidates[target_best_idx]["action"])
-        top1_hit = pred_best_idx == target_best_idx
+        exact_top1_hit = pred_best_idx == target_best_idx
+        top1_hit = pred_best_idx in tied_target_best_indices
+        tie_state = len(tied_target_best_indices) > 1
 
         pairwise_correct = 0
         pairwise_total = 0
@@ -289,6 +305,8 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
 
         overall_states += 1
         overall_top1_hits += int(top1_hit)
+        overall_exact_top1_hits += int(exact_top1_hit)
+        overall_tie_states += int(tie_state)
         overall_pairwise_correct += pairwise_correct
         overall_pairwise_total += pairwise_total
         overall_top1_counter[pred_best_action] += 1
@@ -303,6 +321,8 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
             bucket = regime_buckets[regime]
             bucket["states"] += 1
             bucket["top1_hits"] += int(top1_hit)
+            bucket["exact_top1_hits"] += int(exact_top1_hit)
+            bucket["tie_states"] += int(tie_state)
             bucket["pairwise_correct"] += pairwise_correct
             bucket["pairwise_total"] += pairwise_total
             bucket["top1"][pred_best_action] += 1
@@ -314,6 +334,10 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
                     "primary_regime": state.get("primary_regime", "neutral"),
                     "predicted_best_action": pred_best_action,
                     "target_best_action": target_best_action,
+                    "tied_target_best_actions": [
+                        str(candidates[idx]["action"])
+                        for idx in tied_target_best_indices
+                    ],
                     "candidates": [
                         {
                             "action": candidate["action"],
@@ -334,6 +358,8 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
         "overall": _slice_report(
             n_states=overall_states,
             top1_hits=overall_top1_hits,
+            exact_top1_hits=overall_exact_top1_hits,
+            tie_states=overall_tie_states,
             pairwise_correct=overall_pairwise_correct,
             pairwise_total=overall_pairwise_total,
             top1_counter=overall_top1_counter,
@@ -343,6 +369,8 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
             regime: _slice_report(
                 n_states=bucket["states"],
                 top1_hits=bucket["top1_hits"],
+                exact_top1_hits=bucket["exact_top1_hits"],
+                tie_states=bucket["tie_states"],
                 pairwise_correct=bucket["pairwise_correct"],
                 pairwise_total=bucket["pairwise_total"],
                 top1_counter=bucket["top1"],

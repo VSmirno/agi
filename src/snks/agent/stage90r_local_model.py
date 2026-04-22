@@ -11,6 +11,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 
+from snks.agent.decode_head import NEAR_CLASSES
+
 
 @dataclass(frozen=True)
 class LocalEvaluatorConfig:
@@ -326,7 +328,10 @@ def _observation_supports_do(observation: dict[str, Any]) -> bool:
             continue
         if gy >= len(class_ids) or gx >= len(class_ids[gy]):
             continue
-        if int(class_ids[gy][gx]) != 0:
+        class_id = int(class_ids[gy][gx])
+        if class_id <= 0 or class_id >= len(NEAR_CLASSES):
+            continue
+        if str(NEAR_CLASSES[class_id]) in _DO_ACTIONABLE_CONCEPTS:
             return True
     return False
 
@@ -434,3 +439,4 @@ def load_local_evaluator_checkpoint(
 ) -> LocalActionEvaluator:
     model, _artifact = load_local_evaluator_artifact(path, device=device)
     return model
+_DO_ACTIONABLE_CONCEPTS = {"tree", "cow"}
