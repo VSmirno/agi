@@ -7,6 +7,7 @@ import torch
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
 
+from experiments.stage90r_eval_local_policy import _choose_local_only_canary_action
 from experiments.stage90r_train_local_evaluator import _evaluate_ranking
 from snks.agent.stage90r_local_model import (
     LocalActionEvaluator,
@@ -374,3 +375,33 @@ def test_evaluate_ranking_counts_tied_targets_as_top1_hits():
         "move_down",
         "sleep",
     ]
+
+
+def test_choose_local_only_canary_action_keeps_argmax_before_do_streak_limit():
+    action, selection_mode = _choose_local_only_canary_action(
+        ranked_candidates=[
+            {"action": "do", "score": 2.0},
+            {"action": "move_up", "score": 0.3},
+            {"action": "sleep", "score": 0.1},
+        ],
+        previous_action="do",
+        consecutive_count=2,
+    )
+
+    assert action == "do"
+    assert selection_mode == "local_argmax"
+
+
+def test_choose_local_only_canary_action_breaks_long_do_streak_with_best_non_do():
+    action, selection_mode = _choose_local_only_canary_action(
+        ranked_candidates=[
+            {"action": "do", "score": 2.0},
+            {"action": "move_up", "score": 0.3},
+            {"action": "sleep", "score": 0.1},
+        ],
+        previous_action="do",
+        consecutive_count=3,
+    )
+
+    assert action == "move_up"
+    assert selection_mode == "anti_stall_after_do_streak"

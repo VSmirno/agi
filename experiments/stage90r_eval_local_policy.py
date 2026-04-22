@@ -23,6 +23,9 @@ def _allowed_primitives() -> list[str]:
     return ["move_left", "move_right", "move_up", "move_down", "do", "sleep"]
 
 
+_LOCAL_ONLY_DO_STREAK_LIMIT = 3
+
+
 def _device() -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -177,6 +180,27 @@ def _enforce_offline_gate(
     return gate
 
 
+def _choose_local_only_canary_action(
+    *,
+    ranked_candidates: list[dict[str, Any]],
+    previous_action: str | None,
+    consecutive_count: int,
+) -> tuple[str, str]:
+    if not ranked_candidates:
+        return "move_right", "fallback_no_candidates"
+    top_action = str(ranked_candidates[0]["action"])
+    if (
+        top_action == "do"
+        and previous_action == "do"
+        and consecutive_count >= _LOCAL_ONLY_DO_STREAK_LIMIT
+    ):
+        for candidate in ranked_candidates[1:]:
+            action = str(candidate["action"])
+            if action != "do":
+                return action, "anti_stall_after_do_streak"
+    return top_action, "local_argmax"
+
+
 def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Path]:
     from snks.agent.crafter_pixel_env import ACTION_TO_IDX, CrafterPixelEnv
     from snks.agent.perception import perceive_semantic_field, perceive_tile_field
@@ -206,6 +230,7 @@ def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Pa
     results: list[dict[str, Any]] = []
     death_causes: Counter[str] = Counter()
     overall_action_counts: Counter[str] = Counter()
+    overall_selection_mode_counts: Counter[str] = Counter()
     t0 = time.time()
 
     for ep in range(args.n_episodes):
@@ -219,6 +244,9 @@ def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Pa
         prev_body = None
         steps_taken = 0
         explanation_log: list[dict[str, Any]] = []
+        previous_action: str | None = None
+        consecutive_action_count = 0
+        canary_override_counts: Counter[str] = Counter()
 
         for step in range(args.max_steps):
             steps_taken = step + 1
@@ -267,15 +295,23 @@ def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Pa
                 action_to_idx=ACTION_TO_IDX,
                 device=device,
             )
-            primitive = ranked_candidates[0]["action"] if ranked_candidates else "move_right"
+            primitive, selection_mode = _choose_local_only_canary_action(
+                ranked_candidates=ranked_candidates,
+                previous_action=previous_action,
+                consecutive_count=consecutive_action_count,
+            )
             action_counts[primitive] += 1
             overall_action_counts[primitive] += 1
+            canary_override_counts[selection_mode] += 1
+            overall_selection_mode_counts[selection_mode] += 1
             if len(explanation_log) < args.max_explanations_per_episode:
                 explanation_log.append(
                     {
                         "step": int(step),
                         "body": {key: round(float(value), 3) for key, value in body.items()},
                         "near_concept": str(vf.near_concept),
+                        "selected_action": primitive,
+                        "selection_mode": selection_mode,
                         "top_candidates": ranked_candidates[: max(1, args.top_k)],
                     }
                 )
@@ -288,10 +324,16 @@ def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Pa
                 print(
                     f"s{step:3d} H{body.get('health', 0):.0f} "
                     f"F{body.get('food', 0):.0f} D{body.get('drink', 0):.0f} "
-                    f"near={near_concept:9s} → {primitive:12s} canary[{summary}]"
+                    f"near={near_concept:9s} → {primitive:12s} "
+                    f"{selection_mode}[{summary}]"
                 )
 
             prev_body = dict(body)
+            if primitive == previous_action:
+                consecutive_action_count += 1
+            else:
+                previous_action = primitive
+                consecutive_action_count = 1
             pixels, _reward, done, info = env.step(primitive)
             if done:
                 final_raw_inv = dict(info.get("inventory", {}))
@@ -327,6 +369,7 @@ def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Pa
                 "episode_steps": steps_taken,
                 "death_cause": death_cause,
                 **episode_summary,
+                "selection_mode_counts": dict(canary_override_counts),
                 "explanation_log": explanation_log,
             }
         )
@@ -360,6 +403,7 @@ def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Pa
             "avg_survival": avg_survival,
             "death_cause_breakdown": dict(death_causes),
             **overall_summary,
+            "selection_mode_counts": dict(sorted(overall_selection_mode_counts.items())),
         },
         "offline_gate": offline_gate,
         "episodes": results,
