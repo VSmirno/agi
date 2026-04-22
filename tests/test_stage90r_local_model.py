@@ -13,6 +13,7 @@ from snks.agent.stage90r_local_model import (
     stage90r_target_utility,
     stage90r_action_utility,
     split_samples_by_episode,
+    rank_local_action_candidates,
 )
 
 
@@ -199,3 +200,73 @@ def test_build_local_advisory_entry_reports_planner_rank_and_gap():
     assert entry["advisory_agrees_with_planner"] is False
     assert entry["score_gap_to_advisory_best"] == 0.5
     assert len(entry["top_candidates"]) == 2
+
+
+class _FixedActionEvaluator:
+    def __call__(self, class_ids, confidences, body, inventory, action):
+        action_id = int(action.item())
+        damage = {
+            1: 1.2,
+            2: 1.1,
+            5: 0.1,
+            6: 1.3,
+        }.get(action_id, 1.0)
+        resource = {
+            1: 0.0,
+            2: 0.0,
+            5: 1.0,
+            6: 0.0,
+        }.get(action_id, 0.0)
+        survival_logit = 6.0
+        escape = {
+            1: 0.2,
+            2: 0.1,
+            5: 0.0,
+            6: 0.1,
+        }.get(action_id, 0.0)
+        return {
+            "pred_damage": torch.tensor([damage], dtype=torch.float32),
+            "pred_resource_gain": torch.tensor([resource], dtype=torch.float32),
+            "pred_survival_logit": torch.tensor([survival_logit], dtype=torch.float32),
+            "pred_escape_delta": torch.tensor([escape], dtype=torch.float32),
+        }
+
+
+def _test_observation(*, adjacent_right: int) -> dict:
+    class_ids = [[0] * 9 for _ in range(7)]
+    class_ids[3][5] = adjacent_right
+    return {
+        "viewport_class_ids": class_ids,
+        "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+        "body_vector": [9.0, 9.0, 9.0, 9.0],
+        "inventory_vector": [0] * 12,
+    }
+
+
+def test_rank_local_action_candidates_blocks_do_without_adjacent_object():
+    ranked = rank_local_action_candidates(
+        evaluator=_FixedActionEvaluator(),
+        observation=_test_observation(adjacent_right=0),
+        allowed_actions=["move_left", "move_right", "do", "sleep"],
+        action_to_idx={"move_left": 1, "move_right": 2, "do": 5, "sleep": 6},
+        device="cpu",
+    )
+
+    assert [candidate["action"] for candidate in ranked] == [
+        "move_right",
+        "move_left",
+        "sleep",
+    ]
+
+
+def test_rank_local_action_candidates_keeps_do_with_adjacent_object():
+    ranked = rank_local_action_candidates(
+        evaluator=_FixedActionEvaluator(),
+        observation=_test_observation(adjacent_right=2),
+        allowed_actions=["move_left", "move_right", "do", "sleep"],
+        action_to_idx={"move_left": 1, "move_right": 2, "do": 5, "sleep": 6},
+        device="cpu",
+    )
+
+    assert ranked[0]["action"] == "do"
+    assert "do" in [candidate["action"] for candidate in ranked]

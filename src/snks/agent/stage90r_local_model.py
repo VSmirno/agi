@@ -309,6 +309,28 @@ def compare_stage90r_target_labels(left: dict[str, Any], right: dict[str, Any]) 
     return 0
 
 
+def _observation_supports_do(observation: dict[str, Any]) -> bool:
+    class_ids = observation.get("viewport_class_ids") or []
+    if not class_ids or not class_ids[0]:
+        return False
+    center_y = len(class_ids) // 2
+    center_x = len(class_ids[0]) // 2
+    adjacent = (
+        (center_y, center_x - 1),
+        (center_y, center_x + 1),
+        (center_y - 1, center_x),
+        (center_y + 1, center_x),
+    )
+    for gy, gx in adjacent:
+        if gy < 0 or gx < 0:
+            continue
+        if gy >= len(class_ids) or gx >= len(class_ids[gy]):
+            continue
+        if int(class_ids[gy][gx]) != 0:
+            return True
+    return False
+
+
 def rank_local_action_candidates(
     *,
     evaluator: LocalActionEvaluator,
@@ -324,6 +346,8 @@ def rank_local_action_candidates(
 
     ranked: list[dict[str, Any]] = []
     for primitive in allowed_actions:
+        if primitive == "do" and not _observation_supports_do(observation):
+            continue
         action_idx = torch.tensor([action_to_idx[primitive]], dtype=torch.long, device=device)
         preds = evaluator(class_ids, confidences, body_vec, inv_vec, action_idx)
         utility = float(stage90r_action_utility(**preds).item())
