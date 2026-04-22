@@ -37,6 +37,7 @@ def _build_config(metadata: dict[str, Any]):
         n_body=len(metadata["body_keys"]),
         n_inventory=len(metadata["inventory_keys"]),
         n_actions=len(metadata["action_names"]),
+        temporal_dim=len(metadata.get("temporal_feature_names", [])),
     )
 
 
@@ -64,6 +65,7 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
             batch["body"],
             batch["inventory"],
             batch["action"],
+            batch["temporal"],
         )
         damage_mse = masked_mse(preds["pred_damage"], batch["damage"])
         resource_mse = masked_mse(preds["pred_resource_gain"], batch["resource_gain"])
@@ -268,9 +270,13 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
         confidences = torch.tensor([observation["viewport_confidences"]] * len(candidates), dtype=torch.float32, device=device)
         body = torch.tensor([observation["body_vector"]] * len(candidates), dtype=torch.float32, device=device)
         inventory = torch.tensor([observation["inventory_vector"]] * len(candidates), dtype=torch.float32, device=device)
+        temporal = torch.tensor([observation.get("temporal_vector", [])] * len(candidates), dtype=torch.float32, device=device)
         action = torch.tensor([candidate["action_index"] for candidate in candidates], dtype=torch.long, device=device)
 
-        preds = model(class_ids, confidences, body, inventory, action)
+        try:
+            preds = model(class_ids, confidences, body, inventory, action, temporal)
+        except TypeError:
+            preds = model(class_ids, confidences, body, inventory, action)
         pred_scores = stage90r_action_utility(**preds).detach().cpu().tolist()
         target_keys = [stage90r_target_order_key(candidate["label"]) for candidate in candidates]
 
