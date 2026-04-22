@@ -1055,6 +1055,11 @@ def run_vector_mpc_episode(
         player_pos_after = tuple(info.get("player_pos", player_pos))
         raw_inv_after = dict(info.get("inventory", {}))
         body_after = {v: float(raw_inv_after.get(v, body.get(v, 0.0))) for v in vitals}
+        inv_after = {
+            key: value
+            for key, value in raw_inv_after.items()
+            if key not in _vital_set
+        }
         facing_vec_after = _facing_delta(prev_move if not primitive.startswith("move_") else primitive)
         facing_tile_after = (
             (player_pos_after[0] + facing_vec_after[0], player_pos_after[1] + facing_vec_after[1])
