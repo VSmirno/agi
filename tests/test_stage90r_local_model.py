@@ -7,7 +7,7 @@ import torch
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
 
-from experiments.stage90r_train_local_evaluator import _evaluate_ranking
+from experiments.stage90r_train_local_evaluator import _checkpoint_priority, _evaluate_ranking
 from snks.agent.stage90r_local_policy import (
     TemporalBeliefTracker,
     build_local_observation_package,
@@ -447,3 +447,10 @@ def test_evaluate_ranking_counts_tied_targets_as_top1_hits():
         "move_down",
         "sleep",
     ]
+
+
+def test_checkpoint_priority_prefers_lower_valid_loss_before_ranking_score():
+    assert _checkpoint_priority(valid_loss=3.2, selection_score=0.70) > _checkpoint_priority(
+        valid_loss=4.0,
+        selection_score=0.80,
+    )
