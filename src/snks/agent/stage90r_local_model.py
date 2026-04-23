@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,7 +93,14 @@ def split_samples_by_episode(
     samples: list[dict[str, Any]],
     train_ratio: float = 0.8,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    episode_keys = sorted({(int(sample["seed"]), int(sample["episode_id"])) for sample in samples})
+    def split_order(key: tuple[int, int]) -> tuple[str, tuple[int, int]]:
+        digest = hashlib.sha256(f"{key[0]}:{key[1]}".encode("utf-8")).hexdigest()
+        return digest, key
+
+    episode_keys = sorted(
+        {(int(sample["seed"]), int(sample["episode_id"])) for sample in samples},
+        key=split_order,
+    )
     if not episode_keys:
         return [], []
     cut = max(1, int(round(len(episode_keys) * train_ratio)))

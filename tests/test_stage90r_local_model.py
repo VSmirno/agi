@@ -44,6 +44,22 @@ def test_split_samples_by_episode_keeps_episode_boundaries():
     assert train_keys.isdisjoint(valid_keys)
 
 
+def test_split_samples_by_episode_uses_stable_non_tail_partition():
+    samples = [
+        {"seed": seed, "episode_id": seed - 1}
+        for seed in range(1, 11)
+    ]
+
+    train, valid = split_samples_by_episode(samples, train_ratio=0.8)
+
+    train_keys = {(sample["seed"], sample["episode_id"]) for sample in train}
+    valid_keys = {(sample["seed"], sample["episode_id"]) for sample in valid}
+
+    assert valid_keys == {(7, 6), (10, 9)}
+    assert train_keys.isdisjoint(valid_keys)
+    assert valid_keys != {(9, 8), (10, 9)}
+
+
 def test_collate_local_samples_builds_expected_tensors():
     batch = [
         {
