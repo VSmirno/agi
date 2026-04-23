@@ -7,11 +7,7 @@ import torch
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
 
-from experiments.stage90r_train_local_evaluator import _checkpoint_priority, _evaluate_ranking
-from snks.agent.stage90r_local_policy import (
-    TemporalBeliefTracker,
-    build_local_observation_package,
-)
+from experiments.stage90r_train_local_evaluator import _evaluate_ranking
 from snks.agent.stage90r_local_model import (
     LocalActionEvaluator,
     LocalEvaluatorConfig,
@@ -44,22 +40,6 @@ def test_split_samples_by_episode_keeps_episode_boundaries():
     assert train_keys.isdisjoint(valid_keys)
 
 
-def test_split_samples_by_episode_uses_stable_non_tail_partition():
-    samples = [
-        {"seed": seed, "episode_id": seed - 1}
-        for seed in range(1, 11)
-    ]
-
-    train, valid = split_samples_by_episode(samples, train_ratio=0.8)
-
-    train_keys = {(sample["seed"], sample["episode_id"]) for sample in train}
-    valid_keys = {(sample["seed"], sample["episode_id"]) for sample in valid}
-
-    assert valid_keys == {(7, 6), (10, 9)}
-    assert train_keys.isdisjoint(valid_keys)
-    assert valid_keys != {(9, 8), (10, 9)}
-
-
 def test_collate_local_samples_builds_expected_tensors():
     batch = [
         {
@@ -68,7 +48,6 @@ def test_collate_local_samples_builds_expected_tensors():
                 "viewport_confidences": [[0.0] * 9 for _ in range(7)],
                 "body_vector": [1.0, 2.0, 3.0, 4.0],
                 "inventory_vector": [0] * 12,
-                "temporal_vector": [0.5, 0.0],
             },
             "action_index": 3,
             "label": {
@@ -86,21 +65,19 @@ def test_collate_local_samples_builds_expected_tensors():
     assert out["confidences"].shape == (1, 7, 9)
     assert out["body"].shape == (1, 4)
     assert out["inventory"].shape == (1, 12)
-    assert out["temporal"].shape == (1, 2)
     assert out["action"].tolist() == [3]
     assert out["escape_mask"].tolist() == [0.0]
 
 
 def test_local_action_evaluator_forward_shapes():
-    model = LocalActionEvaluator(LocalEvaluatorConfig(temporal_dim=3))
+    model = LocalActionEvaluator(LocalEvaluatorConfig())
     class_ids = torch.zeros((2, 7, 9), dtype=torch.long)
     confidences = torch.zeros((2, 7, 9), dtype=torch.float32)
     body = torch.zeros((2, 4), dtype=torch.float32)
     inventory = torch.zeros((2, 12), dtype=torch.float32)
     action = torch.tensor([1, 4], dtype=torch.long)
-    temporal = torch.zeros((2, 3), dtype=torch.float32)
 
-    out = model(class_ids, confidences, body, inventory, action, temporal)
+    out = model(class_ids, confidences, body, inventory, action)
 
     assert out["pred_damage"].shape == (2,)
     assert out["pred_resource_gain"].shape == (2,)
@@ -317,56 +294,6 @@ def test_rank_local_action_candidates_blocks_do_for_non_actionable_adjacent_tile
     ]
 
 
-def test_temporal_belief_tracker_emits_nonzero_context_after_repeated_stall():
-    tracker = TemporalBeliefTracker()
-    tracker.observe_transition(
-        action="do",
-        near_concept="tree",
-        player_pos_before=(10, 10),
-        player_pos_after=(10, 10),
-        body_before={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
-        body_after={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
-        inventory_before={"wood": 0},
-        inventory_after={"wood": 1},
-    )
-    tracker.observe_transition(
-        action="do",
-        near_concept="tree",
-        player_pos_before=(10, 10),
-        player_pos_after=(10, 10),
-        body_before={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
-        body_after={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
-        inventory_before={"wood": 1},
-        inventory_after={"wood": 2},
-    )
-
-    context = tracker.build_context(near_concept="tree")
-
-    assert len(context["vector"]) == 5
-    assert context["signature"]["near_concept"] == "tree"
-    assert context["signature"]["near_concept_streak_bucket"] in {"short", "medium", "long"}
-    assert context["signature"]["recent_resource_bucket"] in {"low", "medium", "high"}
-
-
-def test_build_local_observation_package_attaches_temporal_context():
-    class _VF:
-        detections = []
-
-    obs = build_local_observation_package(
-        _VF(),
-        {"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
-        {},
-        temporal_context={
-            "vector": [0.1, 0.2, 0.3],
-            "feature_names": ["a", "b", "c"],
-            "signature": {"prev_action": "move_up"},
-        },
-    )
-
-    assert obs["temporal_vector"] == [0.1, 0.2, 0.3]
-    assert obs["temporal_signature"] == {"prev_action": "move_up"}
-
-
 class _TieAwareRankingEvaluator:
     def __call__(self, class_ids, confidences, body, inventory, action):
         batch_size = int(action.shape[0])
@@ -447,10 +374,3 @@ def test_evaluate_ranking_counts_tied_targets_as_top1_hits():
         "move_down",
         "sleep",
     ]
-
-
-def test_checkpoint_priority_prefers_lower_valid_loss_before_ranking_score():
-    assert _checkpoint_priority(valid_loss=3.2, selection_score=0.70) > _checkpoint_priority(
-        valid_loss=4.0,
-        selection_score=0.80,
-    )

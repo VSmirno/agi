@@ -185,10 +185,7 @@ def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Pa
         load_local_evaluator_artifact,
         rank_local_action_candidates,
     )
-    from snks.agent.stage90r_local_policy import (
-        TemporalBeliefTracker,
-        build_local_observation_package,
-    )
+    from snks.agent.stage90r_local_policy import build_local_observation_package
     from snks.agent.vector_mpc_agent import DynamicEntityTracker
 
     device = _device()
@@ -222,7 +219,6 @@ def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Pa
         prev_body = None
         steps_taken = 0
         explanation_log: list[dict[str, Any]] = []
-        belief_tracker = TemporalBeliefTracker()
 
         for step in range(args.max_steps):
             steps_taken = step + 1
@@ -263,14 +259,7 @@ def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Pa
             player_pos = tuple(info.get("player_pos", (32, 32)))
             entity_tracker.update(vf, player_pos)
 
-            obs = build_local_observation_package(
-                vf,
-                body,
-                inv,
-                temporal_context=belief_tracker.build_context(
-                    near_concept=str(vf.near_concept)
-                ),
-            )
+            obs = build_local_observation_package(vf, body, inv)
             ranked_candidates = rank_local_action_candidates(
                 evaluator=evaluator,
                 observation=obs,
@@ -278,7 +267,7 @@ def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Pa
                 action_to_idx=ACTION_TO_IDX,
                 device=device,
             )
-            primitive = str(ranked_candidates[0]["action"]) if ranked_candidates else "move_right"
+            primitive = ranked_candidates[0]["action"] if ranked_candidates else "move_right"
             action_counts[primitive] += 1
             overall_action_counts[primitive] += 1
             if len(explanation_log) < args.max_explanations_per_episode:
@@ -287,8 +276,6 @@ def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Pa
                         "step": int(step),
                         "body": {key: round(float(value), 3) for key, value in body.items()},
                         "near_concept": str(vf.near_concept),
-                        "selected_action": primitive,
-                        "temporal_signature": dict(obs.get("temporal_signature", {})),
                         "top_candidates": ranked_candidates[: max(1, args.top_k)],
                     }
                 )
@@ -301,32 +288,11 @@ def _run_local_only_canary(args: argparse.Namespace) -> tuple[dict[str, Any], Pa
                 print(
                     f"s{step:3d} H{body.get('health', 0):.0f} "
                     f"F{body.get('food', 0):.0f} D{body.get('drink', 0):.0f} "
-                    f"near={near_concept:9s} → {primitive:12s} "
-                    f"[{summary}]"
+                    f"near={near_concept:9s} → {primitive:12s} canary[{summary}]"
                 )
 
             prev_body = dict(body)
             pixels, _reward, done, info = env.step(primitive)
-            raw_inv_after = dict(info.get("inventory", {}))
-            body_after = {
-                key: float(raw_inv_after.get(key, 0.0))
-                for key in ("health", "food", "drink", "energy")
-            }
-            inv_after = {
-                key: value
-                for key, value in raw_inv_after.items()
-                if key not in ("health", "food", "drink", "energy")
-            }
-            belief_tracker.observe_transition(
-                action=primitive,
-                near_concept=str(vf.near_concept),
-                player_pos_before=player_pos,
-                player_pos_after=tuple(info.get("player_pos", player_pos)),
-                body_before=body,
-                body_after=body_after,
-                inventory_before=inv,
-                inventory_after=inv_after,
-            )
             if done:
                 final_raw_inv = dict(info.get("inventory", {}))
                 final_body = {

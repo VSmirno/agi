@@ -59,7 +59,6 @@ from snks.agent.stage90r_local_model import (
     rank_local_action_candidates,
 )
 from snks.agent.stage90r_local_policy import (
-    TemporalBeliefTracker,
     build_local_observation_package,
     build_local_trace_entry,
     infer_local_regime,
@@ -680,7 +679,6 @@ def run_vector_mpc_episode(
         if local_advisory_allowed_actions is not None
         else ["move_left", "move_right", "move_up", "move_down", "do", "sleep"]
     )
-    local_belief_tracker = TemporalBeliefTracker()
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -1055,11 +1053,6 @@ def run_vector_mpc_episode(
         player_pos_after = tuple(info.get("player_pos", player_pos))
         raw_inv_after = dict(info.get("inventory", {}))
         body_after = {v: float(raw_inv_after.get(v, body.get(v, 0.0))) for v in vitals}
-        inv_after = {
-            key: value
-            for key, value in raw_inv_after.items()
-            if key not in _vital_set
-        }
         facing_vec_after = _facing_delta(prev_move if not primitive.startswith("move_") else primitive)
         facing_tile_after = (
             (player_pos_after[0] + facing_vec_after[0], player_pos_after[1] + facing_vec_after[1])
@@ -1211,11 +1204,6 @@ def run_vector_mpc_episode(
                             "arrow", player_pos, observed_dynamic_entities
                         ),
                     },
-                    near_concept=str(vf.near_concept),
-                    player_pos_before=player_pos,
-                    player_pos_after=player_pos_after,
-                    body_after=body_after,
-                    inventory_after=inv_after,
                     counterfactual_outcomes=counterfactual_outcomes,
                     done_after_step=bool(done),
                 )
@@ -1223,14 +1211,7 @@ def run_vector_mpc_episode(
         if record_local_advisory_trace and local_action_advisor is not None:
             from snks.agent.crafter_pixel_env import ACTION_TO_IDX
 
-            advisory_observation = build_local_observation_package(
-                vf,
-                body,
-                inv,
-                temporal_context=local_belief_tracker.build_context(
-                    near_concept=str(vf.near_concept)
-                ),
-            )
+            advisory_observation = build_local_observation_package(vf, body, inv)
             advisory_threats = {
                 "zombie": _nearest_hostile_distance(
                     "zombie", player_pos, spatial_map, observed_dynamic_entities
@@ -1266,20 +1247,9 @@ def run_vector_mpc_episode(
                     },
                     "regime_labels": regime_labels,
                     "primary_regime": primary_regime,
-                    "temporal_signature": dict(advisory_observation.get("temporal_signature", {})),
                 }
             )
             local_advisory_trace.append(advisory_entry)
-        local_belief_tracker.observe_transition(
-            action=primitive,
-            near_concept=str(vf.near_concept),
-            player_pos_before=player_pos,
-            player_pos_after=player_pos_after,
-            body_before=body,
-            body_after=body_after,
-            inventory_before=inv,
-            inventory_after=inv_after,
-        )
 
         # --- Bug 6: clear chopped tile ---
         new_inv = dict(info.get("inventory", {}))

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,8 +24,6 @@ class LocalEvaluatorConfig:
     n_actions: int = 17
     tile_embed_dim: int = 12
     action_embed_dim: int = 8
-    temporal_dim: int = 0
-    temporal_hidden_dim: int = 32
     hidden_dim: int = 256
 
 
@@ -93,14 +90,7 @@ def split_samples_by_episode(
     samples: list[dict[str, Any]],
     train_ratio: float = 0.8,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    def split_order(key: tuple[int, int]) -> tuple[str, tuple[int, int]]:
-        digest = hashlib.sha256(f"{key[0]}:{key[1]}".encode("utf-8")).hexdigest()
-        return digest, key
-
-    episode_keys = sorted(
-        {(int(sample["seed"]), int(sample["episode_id"])) for sample in samples},
-        key=split_order,
-    )
+    episode_keys = sorted({(int(sample["seed"]), int(sample["episode_id"])) for sample in samples})
     if not episode_keys:
         return [], []
     cut = max(1, int(round(len(episode_keys) * train_ratio)))
@@ -139,10 +129,6 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
         [sample["action_index"] for sample in batch],
         dtype=torch.long,
     )
-    temporal = torch.tensor(
-        [sample["observation"].get("temporal_vector", []) for sample in batch],
-        dtype=torch.float32,
-    )
     damage = torch.tensor(
         [sample["label"]["damage_h"] for sample in batch],
         dtype=torch.float32,
@@ -173,7 +159,6 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
         "body": body,
         "inventory": inventory,
         "action": action,
-        "temporal": temporal,
         "damage": damage,
         "resource_gain": resource_gain,
         "survived": survived,
@@ -191,19 +176,10 @@ class LocalActionEvaluator(nn.Module):
         flattened_tiles = self.config.viewport_rows * self.config.viewport_cols
         tile_width = flattened_tiles * (self.config.tile_embed_dim + 1)
         action_width = self.config.action_embed_dim
-        temporal_width = self.config.temporal_hidden_dim if self.config.temporal_dim > 0 else 0
-        input_dim = tile_width + self.config.n_body + self.config.n_inventory + action_width + temporal_width
+        input_dim = tile_width + self.config.n_body + self.config.n_inventory + action_width
 
         self.tile_embedding = nn.Embedding(self.config.n_classes, self.config.tile_embed_dim)
         self.action_embedding = nn.Embedding(self.config.n_actions, self.config.action_embed_dim)
-        self.temporal_encoder = (
-            nn.Sequential(
-                nn.Linear(self.config.temporal_dim, self.config.temporal_hidden_dim),
-                nn.ReLU(),
-            )
-            if self.config.temporal_dim > 0
-            else None
-        )
         self.backbone = nn.Sequential(
             nn.Linear(input_dim, self.config.hidden_dim),
             nn.ReLU(),
@@ -222,22 +198,12 @@ class LocalActionEvaluator(nn.Module):
         body: torch.Tensor,
         inventory: torch.Tensor,
         action: torch.Tensor,
-        temporal: torch.Tensor | None = None,
     ) -> torch.Tensor:
         tile_embed = self.tile_embedding(class_ids)  # (B, 7, 9, E)
         tile_features = torch.cat([tile_embed, confidences.unsqueeze(-1)], dim=-1)
         tile_features = tile_features.reshape(tile_features.shape[0], -1)
         action_features = self.action_embedding(action)
-        features = [tile_features, body, inventory, action_features]
-        if self.temporal_encoder is not None:
-            if temporal is None:
-                temporal = torch.zeros(
-                    (class_ids.shape[0], self.config.temporal_dim),
-                    dtype=body.dtype,
-                    device=body.device,
-                )
-            features.append(self.temporal_encoder(temporal))
-        return torch.cat(features, dim=1)
+        return torch.cat([tile_features, body, inventory, action_features], dim=1)
 
     def forward(
         self,
@@ -246,9 +212,8 @@ class LocalActionEvaluator(nn.Module):
         body: torch.Tensor,
         inventory: torch.Tensor,
         action: torch.Tensor,
-        temporal: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        x = self.encode(class_ids, confidences, body, inventory, action, temporal)
+        x = self.encode(class_ids, confidences, body, inventory, action)
         h = self.backbone(x)
         return {
             "pred_damage": self.damage_head(h).squeeze(-1),
@@ -383,22 +348,13 @@ def rank_local_action_candidates(
     confidences = torch.tensor([observation["viewport_confidences"]], dtype=torch.float32, device=device)
     body_vec = torch.tensor([observation["body_vector"]], dtype=torch.float32, device=device)
     inv_vec = torch.tensor([observation["inventory_vector"]], dtype=torch.float32, device=device)
-    temporal_vector = observation.get("temporal_vector", [])
-    temporal_vec = (
-        torch.tensor([temporal_vector], dtype=torch.float32, device=device)
-        if temporal_vector
-        else None
-    )
 
     ranked: list[dict[str, Any]] = []
     for primitive in allowed_actions:
         if primitive == "do" and not _observation_supports_do(observation):
             continue
         action_idx = torch.tensor([action_to_idx[primitive]], dtype=torch.long, device=device)
-        try:
-            preds = evaluator(class_ids, confidences, body_vec, inv_vec, action_idx, temporal_vec)
-        except TypeError:
-            preds = evaluator(class_ids, confidences, body_vec, inv_vec, action_idx)
+        preds = evaluator(class_ids, confidences, body_vec, inv_vec, action_idx)
         utility = float(stage90r_action_utility(**preds).item())
         ranked.append(
             {

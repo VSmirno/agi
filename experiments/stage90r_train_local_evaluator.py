@@ -37,7 +37,6 @@ def _build_config(metadata: dict[str, Any]):
         n_body=len(metadata["body_keys"]),
         n_inventory=len(metadata["inventory_keys"]),
         n_actions=len(metadata["action_names"]),
-        temporal_dim=len(metadata.get("temporal_feature_names", [])),
     )
 
 
@@ -65,7 +64,6 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
             batch["body"],
             batch["inventory"],
             batch["action"],
-            batch["temporal"],
         )
         damage_mse = masked_mse(preds["pred_damage"], batch["damage"])
         resource_mse = masked_mse(preds["pred_resource_gain"], batch["resource_gain"])
@@ -270,13 +268,9 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
         confidences = torch.tensor([observation["viewport_confidences"]] * len(candidates), dtype=torch.float32, device=device)
         body = torch.tensor([observation["body_vector"]] * len(candidates), dtype=torch.float32, device=device)
         inventory = torch.tensor([observation["inventory_vector"]] * len(candidates), dtype=torch.float32, device=device)
-        temporal = torch.tensor([observation.get("temporal_vector", [])] * len(candidates), dtype=torch.float32, device=device)
         action = torch.tensor([candidate["action_index"] for candidate in candidates], dtype=torch.long, device=device)
 
-        try:
-            preds = model(class_ids, confidences, body, inventory, action, temporal)
-        except TypeError:
-            preds = model(class_ids, confidences, body, inventory, action)
+        preds = model(class_ids, confidences, body, inventory, action)
         pred_scores = stage90r_action_utility(**preds).detach().cpu().tolist()
         target_keys = [stage90r_target_order_key(candidate["label"]) for candidate in candidates]
 
@@ -404,21 +398,6 @@ def _selection_score(ranking: dict[str, Any]) -> float:
     )
 
 
-def _checkpoint_priority(
-    *,
-    valid_loss: float,
-    selection_score: float,
-) -> tuple[float, float]:
-    """Prefer calibrated gate-passing checkpoints before ranking margin.
-
-    Ranking-only selection can promote overfit models whose discrete ordering looks
-    strong on a particular split while the underlying heads are poorly calibrated
-    for online utility use. Lower validation loss wins first; ranking score only
-    breaks ties.
-    """
-    return (-float(valid_loss), float(selection_score))
-
-
 def _count_counterfactual_states(state_samples: list[dict[str, Any]]) -> int:
     return sum(
         1
@@ -487,9 +466,8 @@ def main() -> None:
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     history: list[dict[str, Any]] = []
-    best_valid_loss: float | None = None
     best_selection_score: float | None = None
-    best_checkpoint_priority: tuple[float, float] | None = None
+    best_valid_loss: float | None = None
     best_ranking_report: dict[str, Any] | None = None
     best_blocked_candidate: dict[str, Any] | None = None
     checkpoint_saved = False
@@ -516,15 +494,14 @@ def main() -> None:
             f"gate={valid_ranking['anti_collapse_gate']['status']}"
         )
         gate_passed = bool(valid_ranking["anti_collapse_gate"]["passed"])
-        candidate_priority = _checkpoint_priority(
-            valid_loss=valid_metrics["loss"],
-            selection_score=selection_score,
-        )
         if gate_passed and (
-            best_checkpoint_priority is None
-            or candidate_priority > best_checkpoint_priority
+            best_selection_score is None
+            or selection_score > best_selection_score
+            or (
+                selection_score == best_selection_score
+                and (best_valid_loss is None or valid_metrics["loss"] < best_valid_loss)
+            )
         ):
-            best_checkpoint_priority = candidate_priority
             best_selection_score = selection_score
             best_valid_loss = valid_metrics["loss"]
             best_ranking_report = valid_ranking
