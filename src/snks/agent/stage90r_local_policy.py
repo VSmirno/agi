@@ -27,20 +27,6 @@ _TEMPORAL_RESOURCE_CLIP = 4.0
 _TEMPORAL_DAMAGE_CLIP = 4.0
 _TEMPORAL_HEALTH_DELTA_CLIP = 4.0
 _TEMPORAL_FEATURE_NAMES = [
-    "prev_action_move_left",
-    "prev_action_move_right",
-    "prev_action_move_up",
-    "prev_action_move_down",
-    "prev_action_do",
-    "prev_action_sleep",
-    "recent_hist_move_left",
-    "recent_hist_move_right",
-    "recent_hist_move_up",
-    "recent_hist_move_down",
-    "recent_hist_do",
-    "recent_hist_sleep",
-    "action_streak_norm",
-    "stationary_streak_norm",
     "near_concept_streak_norm",
     "recent_displacement_norm",
     "recent_damage_norm",
@@ -107,20 +93,8 @@ class TemporalBeliefTracker:
 
     def build_context(self, *, near_concept: str | None) -> dict[str, Any]:
         current_near = str(near_concept or "empty")
-        prev_action_onehot = [
-            1.0 if self._prev_action == action else 0.0
-            for action in LOCAL_CORE_ACTIONS
-        ]
-        history_counter = Counter(self._recent_actions)
-        history_total = max(len(self._recent_actions), 1)
-        recent_action_hist = [
-            round(history_counter[action] / history_total, 3)
-            for action in LOCAL_CORE_ACTIONS
-        ]
         near_streak = self._near_concept_streak + 1 if current_near == self._prev_near_concept else 0
-        vector = prev_action_onehot + recent_action_hist + [
-            _clip_positive(self._action_streak, limit=float(_TEMPORAL_STREAK_CLIP)),
-            _clip_positive(self._stationary_streak, limit=float(_TEMPORAL_STREAK_CLIP)),
+        vector = [
             _clip_positive(near_streak, limit=float(_TEMPORAL_STREAK_CLIP)),
             _clip_positive(sum(self._recent_displacements), limit=_TEMPORAL_DISPLACEMENT_CLIP),
             _clip_positive(sum(self._recent_damage), limit=_TEMPORAL_DAMAGE_CLIP),
@@ -131,9 +105,6 @@ class TemporalBeliefTracker:
             "vector": vector,
             "feature_names": list(_TEMPORAL_FEATURE_NAMES),
             "signature": {
-                "prev_action": self._prev_action or "none",
-                "action_streak_bucket": _streak_bucket(self._action_streak),
-                "stationary_streak_bucket": _streak_bucket(self._stationary_streak),
                 "near_concept": current_near,
                 "near_concept_streak_bucket": _streak_bucket(near_streak),
                 "recent_displacement_bucket": _magnitude_bucket(

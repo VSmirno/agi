@@ -326,10 +326,10 @@ def test_temporal_belief_tracker_emits_nonzero_context_after_repeated_stall():
 
     context = tracker.build_context(near_concept="tree")
 
-    assert len(context["vector"]) > 10
-    assert context["signature"]["prev_action"] == "do"
+    assert len(context["vector"]) == 5
     assert context["signature"]["near_concept"] == "tree"
-    assert context["signature"]["action_streak_bucket"] in {"short", "medium", "long"}
+    assert context["signature"]["near_concept_streak_bucket"] in {"short", "medium", "long"}
+    assert context["signature"]["recent_resource_bucket"] in {"low", "medium", "high"}
 
 
 def test_build_local_observation_package_attaches_temporal_context():
