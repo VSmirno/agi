@@ -26,6 +26,35 @@ BASELINE_REF_PATH = DOCS_DIR / "stage90r_baseline_reference.json"
 DATASET_PATH = DOCS_DIR / "stage90r_local_dataset.json"
 SUMMARY_PATH = DOCS_DIR / "stage90r_local_dataset_summary.json"
 
+_FULL_COLLECTION_PROFILE = {
+    "name": "full",
+    "runtime_model_dim": 16384,
+    "runtime_n_locations": 50000,
+    "planner_horizon": 10,
+    "beam_width": 5,
+    "max_depth": 3,
+    "enable_post_plan_passive_rollout": True,
+    "record_local_counterfactuals": True,
+    "local_counterfactual_horizon": 3,
+    "verbose": True,
+}
+_SMOKE_LITE_COLLECTION_PROFILE = {
+    "name": "smoke_lite",
+    "runtime_model_dim": 2048,
+    "runtime_n_locations": 5000,
+    "planner_horizon": 4,
+    "beam_width": 2,
+    "max_depth": 2,
+    "enable_post_plan_passive_rollout": False,
+    "record_local_counterfactuals": "salient_only",
+    "local_counterfactual_horizon": 1,
+    "verbose": False,
+}
+
+
+def _collection_profile(*, smoke_lite: bool) -> dict[str, Any]:
+    return dict(_SMOKE_LITE_COLLECTION_PROFILE if smoke_lite else _FULL_COLLECTION_PROFILE)
+
 
 def _summarize_action_distribution(samples: list[dict[str, Any]]) -> dict[str, int]:
     counts: Counter[str] = Counter(sample.get("action", "unknown") for sample in samples)
@@ -50,6 +79,34 @@ def _escape_label_coverage(samples: list[dict[str, Any]]) -> dict[str, Any]:
         "valid_count": valid,
         "masked_count": total - valid,
         "valid_fraction": round(valid / max(total, 1), 3),
+    }
+
+
+def _belief_target_summary(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    if not samples:
+        return {
+            "progress_delta_mean": 0.0,
+            "stall_risk_mean": 0.0,
+            "affordance_persistence_mean": 0.0,
+            "threat_trend_mean": 0.0,
+        }
+    return {
+        "progress_delta_mean": round(
+            sum(float(sample["label"].get("progress_delta_h", 0.0)) for sample in samples) / len(samples),
+            3,
+        ),
+        "stall_risk_mean": round(
+            sum(float(sample["label"].get("stall_risk_h", 0.0)) for sample in samples) / len(samples),
+            3,
+        ),
+        "affordance_persistence_mean": round(
+            sum(float(sample["label"].get("affordance_persistence_h", 0.0)) for sample in samples) / len(samples),
+            3,
+        ),
+        "threat_trend_mean": round(
+            sum(float(sample["label"].get("threat_trend_h", 0.0)) for sample in samples) / len(samples),
+            3,
+        ),
     }
 
 
@@ -115,20 +172,31 @@ def main() -> None:
     parser.add_argument("--crop-world", action="store_true")
     parser.add_argument("--perception-mode", choices=("pixel", "symbolic"), default="pixel")
     parser.add_argument(
+        "--smoke-lite",
+        action="store_true",
+        help="Use a reduced world-model and search budget for a bounded local smoke dataset run.",
+    )
+    parser.add_argument(
         "--checkpoint",
         type=Path,
         default=ROOT / "demos" / "checkpoints" / "exp137" / "segmenter_9x9.pt",
     )
+    parser.add_argument("--baseline-ref-out", type=Path, default=BASELINE_REF_PATH)
+    parser.add_argument("--dataset-out", type=Path, default=DATASET_PATH)
+    parser.add_argument("--summary-out", type=Path, default=SUMMARY_PATH)
     args = parser.parse_args()
 
     DOCS_DIR.mkdir(exist_ok=True)
     baseline_reference = load_stage89_baseline_reference()
-    BASELINE_REF_PATH.write_text(json.dumps(baseline_reference, indent=2, default=_json_default))
+    args.baseline_ref_out.write_text(json.dumps(baseline_reference, indent=2, default=_json_default))
+    collection_profile = _collection_profile(smoke_lite=bool(args.smoke_lite))
 
     model, segmenter, tb, _tracker_unused, runtime = _build_runtime(
         seed=args.seed,
         checkpoint=args.checkpoint if args.perception_mode == "pixel" else None,
         crop_world=args.crop_world,
+        model_dim=int(collection_profile["runtime_model_dim"]),
+        n_locations=int(collection_profile["runtime_n_locations"]),
     )
     config = runtime["config"]
     learner = runtime["learner"]
@@ -151,16 +219,21 @@ def main() -> None:
             model=model,
             tracker=tracker,
             max_steps=args.max_steps,
+            horizon=int(collection_profile["planner_horizon"]),
+            beam_width=int(collection_profile["beam_width"]),
+            max_depth=int(collection_profile["max_depth"]),
             stimuli=stimuli,
             textbook=tb,
-            verbose=True,
+            verbose=bool(collection_profile["verbose"]),
             enable_dynamic_threat_model=config["enable_dynamic_threat_model"],
             enable_dynamic_threat_goals=config["enable_dynamic_threat_goals"],
             enable_motion_plans=config["enable_motion_plans"],
             enable_motion_chains=config["enable_motion_chains"],
-            enable_post_plan_passive_rollout=config["enable_post_plan_passive_rollout"],
+            enable_post_plan_passive_rollout=bool(collection_profile["enable_post_plan_passive_rollout"]),
             perception_mode=args.perception_mode,
             record_local_trace=True,
+            record_local_counterfactuals=bool(collection_profile["record_local_counterfactuals"]),
+            local_counterfactual_horizon=int(collection_profile["local_counterfactual_horizon"]),
         )
 
         damage_log = metrics.get("damage_log", [])
@@ -216,16 +289,17 @@ def main() -> None:
             "checkpoint": str(args.checkpoint),
             "crop_world": bool(args.crop_world),
             "perception_mode": args.perception_mode,
+            "collection_profile": collection_profile,
         },
         "episodes": episode_artifacts,
         "samples": all_samples,
         "state_samples": state_samples,
     }
-    DATASET_PATH.write_text(json.dumps(payload, indent=2, default=_json_default))
+    args.dataset_out.write_text(json.dumps(payload, indent=2, default=_json_default))
 
     summary = {
         "stage": "stage90r_local_dataset_summary",
-        "dataset_path": str(DATASET_PATH),
+        "dataset_path": str(args.dataset_out),
         "baseline_reference": baseline_reference,
         "config": payload["config"],
         "metadata": payload["metadata"],
@@ -240,13 +314,14 @@ def main() -> None:
             "action_distribution": _summarize_action_distribution(all_samples),
             "action_distribution_by_regime": _summarize_action_distribution_by_regime(all_samples),
             "escape_label_coverage": _escape_label_coverage(all_samples),
+            "belief_target_summary": _belief_target_summary(all_samples),
             "counterfactual_coverage": _counterfactual_coverage(all_samples),
             "state_centered": _state_centered_summary(state_samples),
         },
     }
-    SUMMARY_PATH.write_text(json.dumps(summary, indent=2, default=_json_default))
-    print(f"saved dataset: {DATASET_PATH}")
-    print(f"saved summary: {SUMMARY_PATH}")
+    args.summary_out.write_text(json.dumps(summary, indent=2, default=_json_default))
+    print(f"saved dataset: {args.dataset_out}")
+    print(f"saved summary: {args.summary_out}")
 
 
 if __name__ == "__main__":

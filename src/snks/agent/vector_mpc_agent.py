@@ -59,9 +59,11 @@ from snks.agent.stage90r_local_model import (
     rank_local_action_candidates,
 )
 from snks.agent.stage90r_local_policy import (
+    BeliefStateEncoder,
     build_local_observation_package,
     build_local_trace_entry,
     infer_local_regime,
+    nearest_hostile_distance,
 )
 
 
@@ -599,7 +601,7 @@ def run_vector_mpc_episode(
     record_step_trace: bool = False,
     record_death_bundle: bool = False,
     record_local_trace: bool = False,
-    record_local_counterfactuals: bool = True,
+    record_local_counterfactuals: bool | str = True,
     local_counterfactual_horizon: int = 3,
     local_action_advisor: Any | None = None,
     local_advisory_allowed_actions: list[str] | None = None,
@@ -679,6 +681,7 @@ def run_vector_mpc_episode(
         if local_advisory_allowed_actions is not None
         else ["move_left", "move_right", "move_up", "move_down", "do", "sleep"]
     )
+    local_belief_tracker = BeliefStateEncoder()
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -1053,6 +1056,11 @@ def run_vector_mpc_episode(
         player_pos_after = tuple(info.get("player_pos", player_pos))
         raw_inv_after = dict(info.get("inventory", {}))
         body_after = {v: float(raw_inv_after.get(v, body.get(v, 0.0))) for v in vitals}
+        inv_after = {
+            key: value
+            for key, value in raw_inv_after.items()
+            if key not in _vital_set
+        }
         facing_vec_after = _facing_delta(prev_move if not primitive.startswith("move_") else primitive)
         facing_tile_after = (
             (player_pos_after[0] + facing_vec_after[0], player_pos_after[1] + facing_vec_after[1])
@@ -1182,7 +1190,13 @@ def run_vector_mpc_episode(
                     horizon=min(local_counterfactual_horizon, horizon),
                     enable_post_plan_passive_rollout=enable_post_plan_passive_rollout,
                 )
-                if record_local_counterfactuals
+                if _should_record_local_counterfactuals(
+                    record_local_counterfactuals,
+                    near_concept=str(vf.near_concept),
+                    body=body,
+                    player_pos=player_pos,
+                    observed_dynamic_entities=observed_dynamic_entities,
+                )
                 else []
             )
             local_trace.append(
@@ -1204,6 +1218,11 @@ def run_vector_mpc_episode(
                             "arrow", player_pos, observed_dynamic_entities
                         ),
                     },
+                    near_concept=str(vf.near_concept),
+                    player_pos_before=player_pos,
+                    player_pos_after=player_pos_after,
+                    body_after=body_after,
+                    inventory_after=inv_after,
                     counterfactual_outcomes=counterfactual_outcomes,
                     done_after_step=bool(done),
                 )
@@ -1211,7 +1230,14 @@ def run_vector_mpc_episode(
         if record_local_advisory_trace and local_action_advisor is not None:
             from snks.agent.crafter_pixel_env import ACTION_TO_IDX
 
-            advisory_observation = build_local_observation_package(vf, body, inv)
+            advisory_observation = build_local_observation_package(
+                vf,
+                body,
+                inv,
+                belief_context=local_belief_tracker.build_context(
+                    near_concept=str(vf.near_concept)
+                ),
+            )
             advisory_threats = {
                 "zombie": _nearest_hostile_distance(
                     "zombie", player_pos, spatial_map, observed_dynamic_entities
@@ -1247,9 +1273,32 @@ def run_vector_mpc_episode(
                     },
                     "regime_labels": regime_labels,
                     "primary_regime": primary_regime,
+                    "belief_state_signature": dict(advisory_observation.get("belief_state_signature", {})),
                 }
             )
             local_advisory_trace.append(advisory_entry)
+        local_belief_tracker.observe_transition(
+            near_concept=str(vf.near_concept),
+            player_pos_before=player_pos,
+            player_pos_after=player_pos_after,
+            body_before=body,
+            body_after=body_after,
+            inventory_before=inv,
+            inventory_after=inv_after,
+            nearest_threat_distance_before=nearest_hostile_distance(
+                {
+                    "zombie": _nearest_hostile_distance(
+                        "zombie", player_pos, spatial_map, observed_dynamic_entities
+                    ),
+                    "skeleton": _nearest_hostile_distance(
+                        "skeleton", player_pos, spatial_map, observed_dynamic_entities
+                    ),
+                    "arrow": _nearest_dynamic_distance(
+                        "arrow", player_pos, observed_dynamic_entities
+                    ),
+                }
+            ),
+        )
 
         # --- Bug 6: clear chopped tile ---
         new_inv = dict(info.get("inventory", {}))
@@ -1391,6 +1440,34 @@ def run_vector_mpc_episode(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _should_record_local_counterfactuals(
+    record_local_counterfactuals: bool | str,
+    *,
+    near_concept: str | None,
+    body: dict[str, float],
+    player_pos: tuple[int, int],
+    observed_dynamic_entities: list[DynamicEntityState],
+) -> bool:
+    if isinstance(record_local_counterfactuals, bool):
+        return record_local_counterfactuals
+    mode = str(record_local_counterfactuals).strip().lower()
+    if mode in {"", "false", "none", "off"}:
+        return False
+    if mode not in {"salient_only", "salient"}:
+        return True
+    if str(near_concept or "empty") in {"tree", "water", "stone", "coal", "iron", "diamond", "cow"}:
+        return True
+    if body and min(float(body.get(key, 9.0)) for key in ("health", "food", "drink", "energy")) <= 4.0:
+        return True
+    px, py = int(player_pos[0]), int(player_pos[1])
+    for entity in observed_dynamic_entities:
+        if entity.concept_id not in {"zombie", "skeleton", "arrow"}:
+            continue
+        dist = abs(int(entity.position[0]) - px) + abs(int(entity.position[1]) - py)
+        if dist <= 3:
+            return True
+    return False
 
 def _build_local_counterfactual_outcomes(
     *,

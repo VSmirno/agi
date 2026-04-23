@@ -37,6 +37,9 @@ def _build_config(metadata: dict[str, Any]):
         n_body=len(metadata["body_keys"]),
         n_inventory=len(metadata["inventory_keys"]),
         n_actions=len(metadata["action_names"]),
+        belief_state_dim=len(
+            metadata.get("belief_state_feature_names", metadata.get("temporal_feature_names", []))
+        ),
     )
 
 
@@ -52,6 +55,10 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
         "resource_mse": 0.0,
         "survival_bce": 0.0,
         "escape_mse": 0.0,
+        "progress_mse": 0.0,
+        "stall_bce": 0.0,
+        "affordance_bce": 0.0,
+        "threat_trend_mse": 0.0,
         "survival_acc": 0.0,
     }
     n_batches = 0
@@ -64,6 +71,7 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
             batch["body"],
             batch["inventory"],
             batch["action"],
+            batch["temporal"],
         )
         damage_mse = masked_mse(preds["pred_damage"], batch["damage"])
         resource_mse = masked_mse(preds["pred_resource_gain"], batch["resource_gain"])
@@ -76,7 +84,26 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
             batch["escape_delta"],
             batch["escape_mask"],
         )
-        loss = damage_mse + 0.5 * resource_mse + survival_bce + 0.25 * escape_mse
+        progress_mse = masked_mse(preds["pred_progress_delta"], batch["progress_delta"])
+        stall_bce = F.binary_cross_entropy_with_logits(
+            preds["pred_stall_risk_logit"],
+            batch["stall_risk"],
+        )
+        affordance_bce = F.binary_cross_entropy_with_logits(
+            preds["pred_affordance_persistence_logit"],
+            batch["affordance_persistence"],
+        )
+        threat_trend_mse = masked_mse(preds["pred_threat_trend"], batch["threat_trend"])
+        loss = (
+            damage_mse
+            + 0.5 * resource_mse
+            + survival_bce
+            + 0.25 * escape_mse
+            + 0.5 * progress_mse
+            + 0.35 * stall_bce
+            + 0.25 * affordance_bce
+            + 0.35 * threat_trend_mse
+        )
 
         if optimizer is not None:
             optimizer.zero_grad()
@@ -92,6 +119,10 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
         totals["resource_mse"] += float(resource_mse.item())
         totals["survival_bce"] += float(survival_bce.item())
         totals["escape_mse"] += float(escape_mse.item())
+        totals["progress_mse"] += float(progress_mse.item())
+        totals["stall_bce"] += float(stall_bce.item())
+        totals["affordance_bce"] += float(affordance_bce.item())
+        totals["threat_trend_mse"] += float(threat_trend_mse.item())
         totals["survival_acc"] += float(survival_acc.item())
         n_batches += 1
 
@@ -268,9 +299,23 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
         confidences = torch.tensor([observation["viewport_confidences"]] * len(candidates), dtype=torch.float32, device=device)
         body = torch.tensor([observation["body_vector"]] * len(candidates), dtype=torch.float32, device=device)
         inventory = torch.tensor([observation["inventory_vector"]] * len(candidates), dtype=torch.float32, device=device)
+        belief_state = torch.tensor(
+            [
+                observation.get(
+                    "belief_state_vector",
+                    observation.get("temporal_vector", []),
+                )
+            ]
+            * len(candidates),
+            dtype=torch.float32,
+            device=device,
+        )
         action = torch.tensor([candidate["action_index"] for candidate in candidates], dtype=torch.long, device=device)
 
-        preds = model(class_ids, confidences, body, inventory, action)
+        try:
+            preds = model(class_ids, confidences, body, inventory, action, belief_state)
+        except TypeError:
+            preds = model(class_ids, confidences, body, inventory, action)
         pred_scores = stage90r_action_utility(**preds).detach().cpu().tolist()
         target_keys = [stage90r_target_order_key(candidate["label"]) for candidate in candidates]
 
@@ -347,6 +392,13 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
                             "pred_resource_gain": round(float(preds["pred_resource_gain"][idx].item()), 4),
                             "pred_survival_prob": round(float(torch.sigmoid(preds["pred_survival_logit"][idx]).item()), 4),
                             "pred_escape_delta": round(float(preds["pred_escape_delta"][idx].item()), 4),
+                            "pred_progress_delta": round(float(preds["pred_progress_delta"][idx].item()), 4),
+                            "pred_stall_risk": round(float(torch.sigmoid(preds["pred_stall_risk_logit"][idx]).item()), 4),
+                            "pred_affordance_persistence": round(
+                                float(torch.sigmoid(preds["pred_affordance_persistence_logit"][idx]).item()),
+                                4,
+                            ),
+                            "pred_threat_trend": round(float(preds["pred_threat_trend"][idx].item()), 4),
                             "target_label": candidate["label"],
                         }
                         for idx, candidate in enumerate(candidates)
@@ -396,6 +448,21 @@ def _selection_score(ranking: dict[str, Any]) -> float:
         - (0.25 * float(overall["dominant_action_share"])),
         4,
     )
+
+
+def _checkpoint_priority(
+    *,
+    valid_loss: float,
+    selection_score: float,
+) -> tuple[float, float]:
+    """Prefer calibrated gate-passing checkpoints before ranking margin.
+
+    Ranking-only selection can promote overfit models whose discrete ordering looks
+    strong on a particular split while the underlying heads are poorly calibrated
+    for online utility use. Lower validation loss wins first; ranking score only
+    breaks ties.
+    """
+    return (-float(valid_loss), float(selection_score))
 
 
 def _count_counterfactual_states(state_samples: list[dict[str, Any]]) -> int:
@@ -466,8 +533,9 @@ def main() -> None:
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     history: list[dict[str, Any]] = []
-    best_selection_score: float | None = None
     best_valid_loss: float | None = None
+    best_selection_score: float | None = None
+    best_checkpoint_priority: tuple[float, float] | None = None
     best_ranking_report: dict[str, Any] | None = None
     best_blocked_candidate: dict[str, Any] | None = None
     checkpoint_saved = False
@@ -494,14 +562,15 @@ def main() -> None:
             f"gate={valid_ranking['anti_collapse_gate']['status']}"
         )
         gate_passed = bool(valid_ranking["anti_collapse_gate"]["passed"])
+        candidate_priority = _checkpoint_priority(
+            valid_loss=valid_metrics["loss"],
+            selection_score=selection_score,
+        )
         if gate_passed and (
-            best_selection_score is None
-            or selection_score > best_selection_score
-            or (
-                selection_score == best_selection_score
-                and (best_valid_loss is None or valid_metrics["loss"] < best_valid_loss)
-            )
+            best_checkpoint_priority is None
+            or candidate_priority > best_checkpoint_priority
         ):
+            best_checkpoint_priority = candidate_priority
             best_selection_score = selection_score
             best_valid_loss = valid_metrics["loss"]
             best_ranking_report = valid_ranking

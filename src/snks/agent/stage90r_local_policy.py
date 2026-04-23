@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter, deque
 from typing import Any
 
 from snks.agent.crafter_pixel_env import ACTION_NAMES, ACTION_TO_IDX, INVENTORY_ITEMS
@@ -18,6 +19,202 @@ RESOURCE_CLASS_SET = set(LOCAL_RESOURCE_KEYS)
 HOSTILE_CLASS_SET = set(LOCAL_HOSTILE_KEYS)
 _PLAYER_CENTER_Y = VIEWPORT_ROWS // 2
 _PLAYER_CENTER_X = VIEWPORT_COLS // 2
+_BELIEF_TRANSITION_WINDOW = 4
+_BELIEF_STREAK_CLIP = 4
+_BELIEF_PROGRESS_CLIP = 4.0
+_BELIEF_STALL_CLIP = 4.0
+_BELIEF_THREAT_TREND_CLIP = 4.0
+_BELIEF_RESOURCE_CLIP = 4.0
+_BELIEF_DAMAGE_CLIP = 4.0
+_BELIEF_FEATURE_NAMES = [
+    "belief_affordance_stability_norm",
+    "belief_progress_norm",
+    "belief_stall_risk_norm",
+    "belief_threat_trend_norm",
+    "belief_resource_flow_norm",
+    "belief_damage_pressure_norm",
+]
+
+
+def _clip_signed(value: float, *, limit: float) -> float:
+    if limit <= 0:
+        return 0.0
+    return round(max(-1.0, min(1.0, float(value) / limit)), 3)
+
+
+def _clip_positive(value: float, *, limit: float) -> float:
+    if limit <= 0:
+        return 0.0
+    return round(max(0.0, min(1.0, float(value) / limit)), 3)
+
+
+def _streak_bucket(value: int) -> str:
+    value = int(max(0, value))
+    if value <= 0:
+        return "none"
+    if value == 1:
+        return "single"
+    if value == 2:
+        return "short"
+    if value == 3:
+        return "medium"
+    return "long"
+
+
+def _magnitude_bucket(value: float, *, positive_only: bool) -> str:
+    magnitude = float(value)
+    if positive_only:
+        if magnitude <= 0.0:
+            return "none"
+    else:
+        if abs(magnitude) <= 1e-6:
+            return "none"
+    magnitude = abs(magnitude)
+    if magnitude < 1.0:
+        return "low"
+    if magnitude < 2.5:
+        return "medium"
+    return "high"
+
+
+class BeliefStateEncoder:
+    """Compact state-evolution-centric belief state for local world-model ranking."""
+
+    def __init__(self) -> None:
+        self._prev_near_concept: str | None = None
+        self._near_concept_streak = 0
+        self._recent_progress: deque[float] = deque(maxlen=_BELIEF_TRANSITION_WINDOW)
+        self._recent_stall: deque[float] = deque(maxlen=_BELIEF_TRANSITION_WINDOW)
+        self._recent_threat_trend: deque[float] = deque(maxlen=_BELIEF_TRANSITION_WINDOW)
+        self._recent_resource_flow: deque[float] = deque(maxlen=_BELIEF_TRANSITION_WINDOW)
+        self._recent_damage_pressure: deque[float] = deque(maxlen=_BELIEF_TRANSITION_WINDOW)
+        self._prev_nearest_threat: int | None = None
+
+    def build_context(self, *, near_concept: str | None) -> dict[str, Any]:
+        current_near = str(near_concept or "empty")
+        near_streak = self._near_concept_streak + 1 if current_near == self._prev_near_concept else 0
+        affordance_stability = (
+            _clip_positive(near_streak, limit=float(_BELIEF_STREAK_CLIP))
+            if current_near in RESOURCE_CLASS_SET
+            else 0.0
+        )
+        vector = [
+            affordance_stability,
+            _clip_positive(sum(self._recent_progress), limit=_BELIEF_PROGRESS_CLIP),
+            _clip_positive(sum(self._recent_stall), limit=_BELIEF_STALL_CLIP),
+            _clip_signed(sum(self._recent_threat_trend), limit=_BELIEF_THREAT_TREND_CLIP),
+            _clip_positive(sum(self._recent_resource_flow), limit=_BELIEF_RESOURCE_CLIP),
+            _clip_positive(sum(self._recent_damage_pressure), limit=_BELIEF_DAMAGE_CLIP),
+        ]
+        return {
+            "vector": vector,
+            "feature_names": list(_BELIEF_FEATURE_NAMES),
+            "signature": {
+                "affordance_stability_bucket": _magnitude_bucket(
+                    affordance_stability * float(_BELIEF_STREAK_CLIP),
+                    positive_only=True,
+                ),
+                "progress_bucket": _magnitude_bucket(
+                    sum(self._recent_progress),
+                    positive_only=True,
+                ),
+                "stall_bucket": _magnitude_bucket(
+                    sum(self._recent_stall),
+                    positive_only=True,
+                ),
+                "threat_trend_bucket": _magnitude_bucket(
+                    sum(self._recent_threat_trend),
+                    positive_only=False,
+                ),
+                "resource_flow_bucket": _magnitude_bucket(
+                    sum(self._recent_resource_flow),
+                    positive_only=True,
+                ),
+                "damage_pressure_bucket": _magnitude_bucket(
+                    sum(self._recent_damage_pressure),
+                    positive_only=True,
+                ),
+            },
+        }
+
+    def observe_transition(
+        self,
+        *,
+        near_concept: str | None,
+        player_pos_before: tuple[int, int] | list[int],
+        player_pos_after: tuple[int, int] | list[int],
+        body_before: dict[str, float],
+        body_after: dict[str, float],
+        inventory_before: dict[str, Any],
+        inventory_after: dict[str, Any],
+        nearest_threat_distance_before: int | None = None,
+    ) -> None:
+        before_x, before_y = int(player_pos_before[0]), int(player_pos_before[1])
+        after_x, after_y = int(player_pos_after[0]), int(player_pos_after[1])
+        displacement = abs(after_x - before_x) + abs(after_y - before_y)
+
+        health_before = float(body_before.get("health", 0.0))
+        health_after = float(body_after.get("health", 0.0))
+        health_delta = health_after - health_before
+        damage_pressure = max(0.0, -health_delta)
+
+        resource_gain = 0.0
+        for key in set(inventory_before.keys()) | set(inventory_after.keys()):
+            delta = int(inventory_after.get(key, 0)) - int(inventory_before.get(key, 0))
+            if delta > 0:
+                resource_gain += float(delta)
+        threat_trend = 0.0
+        if nearest_threat_distance_before is not None and self._prev_nearest_threat is not None:
+            threat_trend = float(nearest_threat_distance_before - self._prev_nearest_threat)
+        if nearest_threat_distance_before is not None:
+            self._prev_nearest_threat = int(nearest_threat_distance_before)
+
+        progress_signal = 0.0
+        if displacement > 0:
+            progress_signal += 0.5
+        if resource_gain > 0.0:
+            progress_signal += min(0.5, 0.25 * resource_gain)
+        if threat_trend > 0.0:
+            progress_signal += min(0.25, 0.1 * threat_trend)
+        if health_delta > 0.0:
+            progress_signal += min(0.25, 0.1 * health_delta)
+        progress_signal = min(1.0, progress_signal)
+        stall_signal = 1.0 if displacement == 0 and resource_gain <= 0.0 and threat_trend <= 0.0 else 0.0
+
+        self._recent_progress.append(progress_signal)
+        self._recent_stall.append(stall_signal)
+        self._recent_threat_trend.append(threat_trend)
+        self._recent_resource_flow.append(resource_gain)
+        self._recent_damage_pressure.append(damage_pressure)
+
+        current_near = str(near_concept or "empty")
+        if current_near == self._prev_near_concept:
+            self._near_concept_streak += 1
+        else:
+            self._prev_near_concept = current_near
+            self._near_concept_streak = 1
+
+
+TemporalBeliefTracker = BeliefStateEncoder
+
+
+def _with_belief_state(
+    observation: dict[str, Any],
+    belief_context: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if belief_context is None:
+        return {
+            **observation,
+            "belief_state_vector": [],
+            "belief_state_feature_names": list(_BELIEF_FEATURE_NAMES),
+            "belief_state_signature": {},
+        }
+    return {
+        **observation,
+        "belief_state_vector": list(belief_context.get("vector", [])),
+        "belief_state_feature_names": list(belief_context.get("feature_names", _BELIEF_FEATURE_NAMES)),
+        "belief_state_signature": dict(belief_context.get("signature", {})),
+    }
 
 
 def dense_viewport_scene(vf: VisualField) -> tuple[list[list[int]], list[list[float]]]:
@@ -54,6 +251,9 @@ def build_local_observation_package(
     vf: VisualField,
     body: dict[str, float],
     inventory: dict[str, Any],
+    *,
+    belief_context: dict[str, Any] | None = None,
+    temporal_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     class_ids, confidences = dense_viewport_scene(vf)
     sparse_inventory = {
@@ -61,14 +261,19 @@ def build_local_observation_package(
         for key, value in inventory.items()
         if int(value) != 0
     }
-    return {
-        "viewport_class_ids": class_ids,
-        "viewport_confidences": confidences,
-        "body_vector": encode_body_vector(body),
-        "inventory_vector": encode_inventory_vector(inventory),
-        "body": {key: round(float(body.get(key, 0.0)), 3) for key in LOCAL_BODY_KEYS},
-        "inventory": sparse_inventory,
-    }
+    if belief_context is None and temporal_context is not None:
+        belief_context = temporal_context
+    return _with_belief_state(
+        {
+            "viewport_class_ids": class_ids,
+            "viewport_confidences": confidences,
+            "body_vector": encode_body_vector(body),
+            "inventory_vector": encode_inventory_vector(inventory),
+            "body": {key: round(float(body.get(key, 0.0)), 3) for key in LOCAL_BODY_KEYS},
+            "inventory": sparse_inventory,
+        },
+        belief_context,
+    )
 
 
 def _class_name(class_id: int) -> str:
@@ -255,6 +460,7 @@ def build_state_signature(
         "resource_geometry": resource_geometry,
         "regime_labels": regime_labels,
         "primary_regime": primary_regime,
+        "belief_state_signature": dict(observation.get("belief_state_signature", {})),
     }
 
 
@@ -314,6 +520,28 @@ def _horizon_label(
         escape_delta = None
     else:
         escape_delta = int(end_hostile - start_hostile)
+    start_pos = tuple(step.get("player_pos_before", (32, 32)))
+    end_pos = tuple(end_step.get("player_pos_after", end_step.get("player_pos_before", (32, 32))))
+    displacement_total = (
+        abs(int(end_pos[0]) - int(start_pos[0]))
+        + abs(int(end_pos[1]) - int(start_pos[1]))
+    )
+    threat_trend = (
+        round(float(end_hostile - start_hostile), 3)
+        if start_hostile is not None and end_hostile is not None
+        else 0.0
+    )
+    progress_delta = 0.0
+    if displacement_total > 0:
+        progress_delta += 0.5
+    if resource_gain > 0:
+        progress_delta += min(1.0, 0.5 * float(resource_gain))
+    if threat_trend > 0.0:
+        progress_delta += min(0.5, 0.25 * float(threat_trend))
+    if health_delta > 0.0:
+        progress_delta += min(0.25, 0.1 * float(health_delta))
+    start_near = str(step.get("near_concept", "empty"))
+    horizon_near = [str(candidate.get("near_concept", "empty")) for candidate in horizon_slice[1:]]
     label = {
         "health_delta_h": health_delta,
         "damage_h": horizon_damage,
@@ -323,6 +551,18 @@ def _horizon_label(
         "escape_delta_h": escape_delta,
         "nearest_hostile_now": start_hostile,
         "nearest_hostile_h": end_hostile,
+        "progress_delta_h": round(progress_delta, 3),
+        "stall_risk_h": (
+            1.0
+            if displacement_total == 0 and resource_gain == 0 and threat_trend <= 0.0 and health_delta <= 0.0
+            else 0.0
+        ),
+        "affordance_persistence_h": (
+            1.0
+            if start_near in RESOURCE_CLASS_SET and (resource_gain > 0 or start_near in horizon_near)
+            else 0.0
+        ),
+        "threat_trend_h": threat_trend,
     }
     return label, dict(start_threats)
 
@@ -343,6 +583,7 @@ def build_local_training_examples(
     final_body_clean = {key: round(float(final_body.get(key, 0.0)), 3) for key in LOCAL_BODY_KEYS}
     final_inv_clean = {key: int(final_inventory.get(key, 0)) for key in INVENTORY_ITEMS}
     examples: list[dict[str, Any]] = []
+    belief_tracker = BeliefStateEncoder()
 
     for idx, step in enumerate(local_trace):
         end_idx = min(idx + horizon, len(local_trace) - 1)
@@ -356,8 +597,12 @@ def build_local_training_examples(
             horizon_slice=local_trace[idx:end_idx + 1],
             used_terminal_fallback=used_terminal_fallback,
         )
-        state_signature = build_state_signature(step["observation"], start_threats)
-        regime_labels, primary_regime = infer_local_regime(step["observation"], start_threats)
+        belief_context = belief_tracker.build_context(
+            near_concept=str(step.get("near_concept", "empty"))
+        )
+        observation = _with_belief_state(step["observation"], belief_context)
+        state_signature = build_state_signature(observation, start_threats)
+        regime_labels, primary_regime = infer_local_regime(observation, start_threats)
 
         examples.append(
             {
@@ -368,7 +613,7 @@ def build_local_training_examples(
                 "action": step["action"],
                 "action_index": int(step["action_index"]),
                 "plan_origin": step.get("plan_origin"),
-                "observation": step["observation"],
+                "observation": observation,
                 "nearest_threat_distances": dict(start_threats),
                 "regime_labels": regime_labels,
                 "primary_regime": primary_regime,
@@ -378,6 +623,16 @@ def build_local_training_examples(
                 "label": label,
                 "counterfactual_outcomes": list(step.get("counterfactual_outcomes", [])),
             }
+        )
+        belief_tracker.observe_transition(
+            near_concept=str(step.get("near_concept", "empty")),
+            player_pos_before=tuple(step.get("player_pos_before", (32, 32))),
+            player_pos_after=tuple(step.get("player_pos_after", step.get("player_pos_before", (32, 32)))),
+            body_before=dict(step["observation"].get("body", {})),
+            body_after=dict(step.get("body_after", step["observation"].get("body", {}))),
+            inventory_before=dict(step["observation"].get("inventory", {})),
+            inventory_after=dict(step.get("inventory_after", step["observation"].get("inventory", {}))),
+            nearest_threat_distance_before=nearest_hostile_distance(start_threats),
         )
 
     return examples
@@ -413,6 +668,22 @@ def _aggregate_candidate_labels(samples: list[dict[str, Any]]) -> dict[str, Any]
         ),
         "resource_gain_h": round(
             sum(float(sample["label"]["resource_gain_h"]) for sample in samples) / len(samples),
+            3,
+        ),
+        "progress_delta_h": round(
+            sum(float(sample["label"].get("progress_delta_h", 0.0)) for sample in samples) / len(samples),
+            3,
+        ),
+        "stall_risk_h": round(
+            sum(float(sample["label"].get("stall_risk_h", 0.0)) for sample in samples) / len(samples),
+            3,
+        ),
+        "affordance_persistence_h": round(
+            sum(float(sample["label"].get("affordance_persistence_h", 0.0)) for sample in samples) / len(samples),
+            3,
+        ),
+        "threat_trend_h": round(
+            sum(float(sample["label"].get("threat_trend_h", 0.0)) for sample in samples) / len(samples),
             3,
         ),
         "inventory_delta_h": inventory_delta,
@@ -636,6 +907,11 @@ def build_local_trace_entry(
     primitive: str,
     plan_origin: str,
     nearest_threat_distances: dict[str, int | None],
+    near_concept: str,
+    player_pos_before: tuple[int, int],
+    player_pos_after: tuple[int, int],
+    body_after: dict[str, float],
+    inventory_after: dict[str, Any],
     counterfactual_outcomes: list[dict[str, Any]] | None = None,
     done_after_step: bool,
 ) -> dict[str, Any]:
@@ -645,6 +921,15 @@ def build_local_trace_entry(
         "action_index": int(ACTION_TO_IDX.get(primitive, 0)),
         "plan_origin": plan_origin,
         "observation": build_local_observation_package(vf, body, inventory),
+        "near_concept": str(near_concept),
+        "player_pos_before": [int(player_pos_before[0]), int(player_pos_before[1])],
+        "player_pos_after": [int(player_pos_after[0]), int(player_pos_after[1])],
+        "body_after": {key: round(float(body_after.get(key, 0.0)), 3) for key in LOCAL_BODY_KEYS},
+        "inventory_after": {
+            key: int(value)
+            for key, value in inventory_after.items()
+            if int(value) != 0
+        },
         "nearest_threat_distances": {
             key: (
                 int(nearest_threat_distances.get(key))
@@ -667,6 +952,7 @@ def local_dataset_metadata(horizon: int) -> dict[str, Any]:
         "inventory_keys": list(INVENTORY_ITEMS),
         "action_names": list(ACTION_NAMES),
         "core_action_names": list(LOCAL_CORE_ACTIONS),
+        "belief_state_feature_names": list(_BELIEF_FEATURE_NAMES),
         "regime_labels": [
             "hostile_contact",
             "hostile_near",

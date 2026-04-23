@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +25,8 @@ class LocalEvaluatorConfig:
     n_actions: int = 17
     tile_embed_dim: int = 12
     action_embed_dim: int = 8
+    belief_state_dim: int = 0
+    belief_state_hidden_dim: int = 32
     hidden_dim: int = 256
 
 
@@ -90,7 +93,14 @@ def split_samples_by_episode(
     samples: list[dict[str, Any]],
     train_ratio: float = 0.8,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    episode_keys = sorted({(int(sample["seed"]), int(sample["episode_id"])) for sample in samples})
+    def split_order(key: tuple[int, int]) -> tuple[str, tuple[int, int]]:
+        digest = hashlib.sha256(f"{key[0]}:{key[1]}".encode("utf-8")).hexdigest()
+        return digest, key
+
+    episode_keys = sorted(
+        {(int(sample["seed"]), int(sample["episode_id"])) for sample in samples},
+        key=split_order,
+    )
     if not episode_keys:
         return [], []
     cut = max(1, int(round(len(episode_keys) * train_ratio)))
@@ -129,6 +139,16 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
         [sample["action_index"] for sample in batch],
         dtype=torch.long,
     )
+    temporal = torch.tensor(
+        [
+            sample["observation"].get(
+                "belief_state_vector",
+                sample["observation"].get("temporal_vector", []),
+            )
+            for sample in batch
+        ],
+        dtype=torch.float32,
+    )
     damage = torch.tensor(
         [sample["label"]["damage_h"] for sample in batch],
         dtype=torch.float32,
@@ -153,17 +173,38 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
         ],
         dtype=torch.float32,
     )
+    progress_delta = torch.tensor(
+        [float(sample["label"].get("progress_delta_h", 0.0)) for sample in batch],
+        dtype=torch.float32,
+    )
+    stall_risk = torch.tensor(
+        [float(sample["label"].get("stall_risk_h", 0.0)) for sample in batch],
+        dtype=torch.float32,
+    )
+    affordance_persistence = torch.tensor(
+        [float(sample["label"].get("affordance_persistence_h", 0.0)) for sample in batch],
+        dtype=torch.float32,
+    )
+    threat_trend = torch.tensor(
+        [float(sample["label"].get("threat_trend_h", 0.0)) for sample in batch],
+        dtype=torch.float32,
+    )
     return {
         "class_ids": class_ids,
         "confidences": confidences,
         "body": body,
         "inventory": inventory,
         "action": action,
+        "temporal": temporal,
         "damage": damage,
         "resource_gain": resource_gain,
         "survived": survived,
         "escape_delta": escape_delta,
         "escape_mask": escape_mask,
+        "progress_delta": progress_delta,
+        "stall_risk": stall_risk,
+        "affordance_persistence": affordance_persistence,
+        "threat_trend": threat_trend,
     }
 
 
@@ -176,10 +217,21 @@ class LocalActionEvaluator(nn.Module):
         flattened_tiles = self.config.viewport_rows * self.config.viewport_cols
         tile_width = flattened_tiles * (self.config.tile_embed_dim + 1)
         action_width = self.config.action_embed_dim
-        input_dim = tile_width + self.config.n_body + self.config.n_inventory + action_width
+        belief_state_width = (
+            self.config.belief_state_hidden_dim if self.config.belief_state_dim > 0 else 0
+        )
+        input_dim = tile_width + self.config.n_body + self.config.n_inventory + action_width + belief_state_width
 
         self.tile_embedding = nn.Embedding(self.config.n_classes, self.config.tile_embed_dim)
         self.action_embedding = nn.Embedding(self.config.n_actions, self.config.action_embed_dim)
+        self.belief_state_encoder = (
+            nn.Sequential(
+                nn.Linear(self.config.belief_state_dim, self.config.belief_state_hidden_dim),
+                nn.ReLU(),
+            )
+            if self.config.belief_state_dim > 0
+            else None
+        )
         self.backbone = nn.Sequential(
             nn.Linear(input_dim, self.config.hidden_dim),
             nn.ReLU(),
@@ -190,6 +242,10 @@ class LocalActionEvaluator(nn.Module):
         self.resource_head = nn.Linear(self.config.hidden_dim, 1)
         self.survival_head = nn.Linear(self.config.hidden_dim, 1)
         self.escape_head = nn.Linear(self.config.hidden_dim, 1)
+        self.progress_head = nn.Linear(self.config.hidden_dim, 1)
+        self.stall_head = nn.Linear(self.config.hidden_dim, 1)
+        self.affordance_head = nn.Linear(self.config.hidden_dim, 1)
+        self.threat_trend_head = nn.Linear(self.config.hidden_dim, 1)
 
     def encode(
         self,
@@ -198,12 +254,22 @@ class LocalActionEvaluator(nn.Module):
         body: torch.Tensor,
         inventory: torch.Tensor,
         action: torch.Tensor,
+        belief_state: torch.Tensor | None = None,
     ) -> torch.Tensor:
         tile_embed = self.tile_embedding(class_ids)  # (B, 7, 9, E)
         tile_features = torch.cat([tile_embed, confidences.unsqueeze(-1)], dim=-1)
         tile_features = tile_features.reshape(tile_features.shape[0], -1)
         action_features = self.action_embedding(action)
-        return torch.cat([tile_features, body, inventory, action_features], dim=1)
+        features = [tile_features, body, inventory, action_features]
+        if self.belief_state_encoder is not None:
+            if belief_state is None:
+                belief_state = torch.zeros(
+                    (class_ids.shape[0], self.config.belief_state_dim),
+                    dtype=body.dtype,
+                    device=body.device,
+                )
+            features.append(self.belief_state_encoder(belief_state))
+        return torch.cat(features, dim=1)
 
     def forward(
         self,
@@ -212,14 +278,19 @@ class LocalActionEvaluator(nn.Module):
         body: torch.Tensor,
         inventory: torch.Tensor,
         action: torch.Tensor,
+        belief_state: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        x = self.encode(class_ids, confidences, body, inventory, action)
+        x = self.encode(class_ids, confidences, body, inventory, action, belief_state)
         h = self.backbone(x)
         return {
             "pred_damage": self.damage_head(h).squeeze(-1),
             "pred_resource_gain": self.resource_head(h).squeeze(-1),
             "pred_survival_logit": self.survival_head(h).squeeze(-1),
             "pred_escape_delta": self.escape_head(h).squeeze(-1),
+            "pred_progress_delta": self.progress_head(h).squeeze(-1),
+            "pred_stall_risk_logit": self.stall_head(h).squeeze(-1),
+            "pred_affordance_persistence_logit": self.affordance_head(h).squeeze(-1),
+            "pred_threat_trend": self.threat_trend_head(h).squeeze(-1),
         }
 
 
@@ -242,6 +313,10 @@ def stage90r_action_utility(
     pred_resource_gain: torch.Tensor,
     pred_survival_logit: torch.Tensor,
     pred_escape_delta: torch.Tensor,
+    pred_progress_delta: torch.Tensor,
+    pred_stall_risk_logit: torch.Tensor,
+    pred_affordance_persistence_logit: torch.Tensor,
+    pred_threat_trend: torch.Tensor,
 ) -> torch.Tensor:
     """Scalar action utility for local-only canary evaluation.
 
@@ -249,11 +324,17 @@ def stage90r_action_utility(
     Higher predicted damage is worse.
     """
     survival_prob = torch.sigmoid(pred_survival_logit)
+    stall_risk = torch.sigmoid(pred_stall_risk_logit)
+    affordance_persistence = torch.sigmoid(pred_affordance_persistence_logit)
     return (
         2.0 * survival_prob
         - pred_damage
-        + 0.25 * pred_resource_gain
+        + 0.20 * pred_resource_gain
         + 0.10 * pred_escape_delta
+        + 0.25 * pred_progress_delta
+        - 0.35 * stall_risk
+        + 0.10 * affordance_persistence
+        + 0.15 * pred_threat_trend
     )
 
 
@@ -348,13 +429,22 @@ def rank_local_action_candidates(
     confidences = torch.tensor([observation["viewport_confidences"]], dtype=torch.float32, device=device)
     body_vec = torch.tensor([observation["body_vector"]], dtype=torch.float32, device=device)
     inv_vec = torch.tensor([observation["inventory_vector"]], dtype=torch.float32, device=device)
+    belief_state_vector = observation.get("belief_state_vector", observation.get("temporal_vector", []))
+    belief_state_vec = (
+        torch.tensor([belief_state_vector], dtype=torch.float32, device=device)
+        if belief_state_vector
+        else None
+    )
 
     ranked: list[dict[str, Any]] = []
     for primitive in allowed_actions:
         if primitive == "do" and not _observation_supports_do(observation):
             continue
         action_idx = torch.tensor([action_to_idx[primitive]], dtype=torch.long, device=device)
-        preds = evaluator(class_ids, confidences, body_vec, inv_vec, action_idx)
+        try:
+            preds = evaluator(class_ids, confidences, body_vec, inv_vec, action_idx, belief_state_vec)
+        except TypeError:
+            preds = evaluator(class_ids, confidences, body_vec, inv_vec, action_idx)
         utility = float(stage90r_action_utility(**preds).item())
         ranked.append(
             {
@@ -364,6 +454,13 @@ def rank_local_action_candidates(
                 "pred_resource_gain": round(float(preds["pred_resource_gain"].item()), 4),
                 "pred_survival_prob": round(float(torch.sigmoid(preds["pred_survival_logit"]).item()), 4),
                 "pred_escape_delta": round(float(preds["pred_escape_delta"].item()), 4),
+                "pred_progress_delta": round(float(preds["pred_progress_delta"].item()), 4),
+                "pred_stall_risk": round(float(torch.sigmoid(preds["pred_stall_risk_logit"]).item()), 4),
+                "pred_affordance_persistence": round(
+                    float(torch.sigmoid(preds["pred_affordance_persistence_logit"]).item()),
+                    4,
+                ),
+                "pred_threat_trend": round(float(preds["pred_threat_trend"].item()), 4),
             }
         )
     ranked.sort(key=lambda item: item["score"], reverse=True)
@@ -424,7 +521,12 @@ def load_local_evaluator_artifact(
     device: torch.device | str | None = None,
 ) -> tuple[LocalActionEvaluator, dict[str, Any]]:
     ckpt = torch.load(path, map_location="cpu", weights_only=False)
-    config = LocalEvaluatorConfig(**ckpt["config"])
+    raw_config = dict(ckpt["config"])
+    if "temporal_dim" in raw_config and "belief_state_dim" not in raw_config:
+        raw_config["belief_state_dim"] = raw_config.pop("temporal_dim")
+    if "temporal_hidden_dim" in raw_config and "belief_state_hidden_dim" not in raw_config:
+        raw_config["belief_state_hidden_dim"] = raw_config.pop("temporal_hidden_dim")
+    config = LocalEvaluatorConfig(**raw_config)
     model = LocalActionEvaluator(config)
     model.load_state_dict(ckpt["state_dict"])
     if device is not None:

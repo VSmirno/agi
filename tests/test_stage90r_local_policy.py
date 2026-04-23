@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from snks.agent.perception import VisualField
 from snks.agent.stage90r_local_policy import (
+    BeliefStateEncoder,
     build_local_observation_package,
     build_state_signature,
     build_state_centered_training_examples,
@@ -46,6 +47,43 @@ def test_local_observation_package_does_not_depend_on_near_concept():
     assert obs["body_vector"] == [4.0, 8.0, 7.0, 6.0]
     assert obs["inventory_vector"][0] == 2
     assert obs["viewport_class_ids"][2][5] != 0
+
+
+def test_belief_state_context_excludes_direct_action_identity_features():
+    tracker = BeliefStateEncoder()
+
+    initial = tracker.build_context(near_concept="empty")
+    assert initial["feature_names"] == [
+        "belief_affordance_stability_norm",
+        "belief_progress_norm",
+        "belief_stall_risk_norm",
+        "belief_threat_trend_norm",
+        "belief_resource_flow_norm",
+        "belief_damage_pressure_norm",
+    ]
+    assert "prev_action" not in initial["signature"]
+    assert "action_streak_bucket" not in initial["signature"]
+    assert "stationary_streak_bucket" not in initial["signature"]
+
+    tracker.observe_transition(
+        near_concept="empty",
+        player_pos_before=(10, 10),
+        player_pos_after=(10, 11),
+        body_before={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+        body_after={"health": 8.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+        inventory_before={"wood": 0},
+        inventory_after={"wood": 1},
+        nearest_threat_distance_before=3,
+    )
+    next_context = tracker.build_context(near_concept="empty")
+
+    assert len(next_context["vector"]) == 6
+    assert next_context["signature"]["affordance_stability_bucket"] == "none"
+    assert next_context["signature"]["progress_bucket"] == "low"
+    assert next_context["signature"]["stall_bucket"] == "none"
+    assert next_context["signature"]["threat_trend_bucket"] == "none"
+    assert next_context["signature"]["resource_flow_bucket"] == "medium"
+    assert next_context["signature"]["damage_pressure_bucket"] == "medium"
 
 
 def test_build_local_training_examples_computes_horizon_labels():
@@ -99,6 +137,10 @@ def test_build_local_training_examples_computes_horizon_labels():
     assert first["label"]["resource_gain_h"] == 1
     assert first["label"]["escape_delta_h"] == 2
     assert first["label"]["survived_h"] is False
+    assert first["label"]["progress_delta_h"] == 1.0
+    assert first["label"]["stall_risk_h"] == 0.0
+    assert first["label"]["affordance_persistence_h"] == 0.0
+    assert first["label"]["threat_trend_h"] == 2.0
     assert first["primary_regime"] == "hostile_contact"
     assert "state_signature_key" in first
 
