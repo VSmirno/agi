@@ -224,7 +224,7 @@ def test_split_samples_by_episode_avoids_single_winner_resource_validation_slice
                     seed=seed,
                     episode_id=episode_id,
                     step=(len(samples) + step),
-                    state_key=f"{seed}:{state_name}:{action}",
+                    state_key=f"{seed}:{state_name}",
                     regime=regime,
                     action=action,
                     damage=damage,
