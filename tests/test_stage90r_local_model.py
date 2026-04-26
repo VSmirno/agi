@@ -247,6 +247,63 @@ def test_split_samples_by_episode_avoids_single_winner_resource_validation_slice
     assert valid_keys == {(911, 1)}
 
 
+def test_split_samples_by_episode_prefers_supported_diversity_over_tiny_perfect_tie_slice():
+    samples: list[dict[str, object]] = []
+
+    def add_state(seed: int, episode_id: int, state_name: str, regime: str, winner: str) -> None:
+        action_specs = {
+            "move_right": (0.0, 1.0 if winner == "move_right" else 0.0),
+            "move_left": (0.0, 1.0 if winner == "move_left" else 0.0),
+            "move_up": (0.0, 1.0 if winner == "move_up" else 0.0),
+            "move_down": (0.0, 1.0 if winner == "move_down" else 0.0),
+        }
+        for step, (action, (damage, resource_gain)) in enumerate(action_specs.items()):
+            if action != winner:
+                damage = 1.0
+                resource_gain = 0.0
+            samples.append(
+                _split_test_sample(
+                    seed=seed,
+                    episode_id=episode_id,
+                    step=(len(samples) + step),
+                    state_key=f"{seed}:{state_name}",
+                    regime=regime,
+                    action=action,
+                    damage=damage,
+                    resource_gain=resource_gain,
+                )
+            )
+
+    def add_tied_state(seed: int, episode_id: int, state_name: str, regime: str) -> None:
+        for step, action in enumerate(("move_right", "move_left", "move_up", "move_down")):
+            samples.append(
+                _split_test_sample(
+                    seed=seed,
+                    episode_id=episode_id,
+                    step=(len(samples) + step),
+                    state_key=f"{seed}:{state_name}",
+                    regime=regime,
+                    action=action,
+                    damage=0.0,
+                    resource_gain=0.0,
+                )
+            )
+
+    for idx in range(5):
+        add_state(920, 0, f"resource{idx}", "local_resource_facing", "move_right")
+    add_tied_state(921, 1, "tie0", "neutral")
+    add_state(922, 2, "diverse0", "local_resource_facing", "move_right")
+    add_state(922, 2, "diverse1", "neutral", "move_left")
+    add_state(922, 2, "diverse2", "neutral", "move_up")
+    add_state(922, 2, "diverse3", "local_resource_facing", "move_down")
+    add_state(923, 3, "filler0", "neutral", "move_left")
+
+    _train, valid = split_samples_by_episode(samples, train_ratio=0.75)
+
+    valid_keys = {(int(sample["seed"]), int(sample["episode_id"])) for sample in valid}
+    assert valid_keys == {(922, 2)}
+
+
 def test_collate_local_samples_builds_expected_tensors():
     batch = [
         {
