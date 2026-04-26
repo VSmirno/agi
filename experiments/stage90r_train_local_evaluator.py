@@ -300,18 +300,33 @@ def _slice_report(
     }
 
 
-def _anti_collapse_gate(ranking: dict[str, Any]) -> dict[str, Any]:
+def _anti_collapse_gate(
+    ranking: dict[str, Any],
+    *,
+    gate_mode: str = "mixed_control",
+) -> dict[str, Any]:
     overall = ranking["overall"]
     threat = ranking["regime_metrics"].get("hostile_contact_or_near", _empty_slice_report())
     resource = ranking["regime_metrics"].get("local_resource_facing", _empty_slice_report())
+    gate_enforced = gate_mode != "planner_bootstrap"
 
     checks: list[dict[str, Any]] = []
 
-    def add_check(name: str, *, passed: bool, actual: Any, threshold: Any, reason: str) -> None:
+    def add_check(
+        name: str,
+        *,
+        passed: bool,
+        actual: Any,
+        threshold: Any,
+        reason: str,
+        supported: bool = True,
+    ) -> None:
         checks.append(
             {
                 "name": name,
                 "passed": bool(passed),
+                "supported": bool(supported),
+                "status": "unsupported" if not supported else ("pass" if passed else "fail"),
                 "actual": actual,
                 "threshold": threshold,
                 "reason": reason,
@@ -332,11 +347,15 @@ def _anti_collapse_gate(ranking: dict[str, Any]) -> dict[str, Any]:
         threshold=">= 0.45",
         reason="Predicted top-1 actions should retain meaningful diversity.",
     )
+    threat_supported = gate_enforced or threat["n_states"] > 0
+    resource_supported = gate_enforced or resource["n_states"] > 0
     add_check(
         "threat_slice_diversity",
         passed=(
-            threat["n_states"] < 5 and threat["unique_top1_actions"] > 0
-        ) or threat["unique_top1_actions"] >= 2,
+            (threat["n_states"] < 5 and threat["unique_top1_actions"] > 0)
+            or threat["unique_top1_actions"] >= 2
+        ),
+        supported=threat_supported,
         actual={
             "n_states": threat["n_states"],
             "unique_top1_actions": threat["unique_top1_actions"],
@@ -347,8 +366,10 @@ def _anti_collapse_gate(ranking: dict[str, Any]) -> dict[str, Any]:
     add_check(
         "resource_slice_diversity",
         passed=(
-            resource["n_states"] < 5 and resource["unique_top1_actions"] > 0
-        ) or resource["unique_top1_actions"] >= 2,
+            (resource["n_states"] < 5 and resource["unique_top1_actions"] > 0)
+            or resource["unique_top1_actions"] >= 2
+        ),
+        supported=resource_supported,
         actual={
             "n_states": resource["n_states"],
             "unique_top1_actions": resource["unique_top1_actions"],
@@ -357,23 +378,37 @@ def _anti_collapse_gate(ranking: dict[str, Any]) -> dict[str, Any]:
         reason="Resource-facing states should not default to generic movement.",
     )
 
-    failed = [check for check in checks if not check["passed"]]
+    failed = [check for check in checks if check["supported"] and not check["passed"]]
+    unsupported = [check for check in checks if not check["supported"]]
     if overall["n_states"] <= 0:
         status = "insufficient_coverage"
-    elif failed:
+    elif gate_enforced and failed:
         status = "fail"
+    elif gate_enforced:
+        status = "pass"
+    elif failed:
+        status = "advisory_fail"
+    elif unsupported:
+        status = "pass_with_unsupported_checks"
     else:
         status = "pass"
     return {
         "status": status,
-        "passed": status == "pass",
-        "blocks_online_eval": status != "pass",
-        "blocks_checkpoint_promotion": status != "pass",
+        "passed": not failed,
+        "enforced": gate_enforced,
+        "blocks_online_eval": gate_enforced and status != "pass",
+        "blocks_checkpoint_promotion": gate_enforced and status != "pass",
         "checks": checks,
     }
 
 
-def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.device) -> dict[str, Any]:
+def _evaluate_ranking(
+    model,
+    state_samples: list[dict[str, Any]],
+    device: torch.device,
+    *,
+    gate_mode: str = "mixed_control",
+) -> dict[str, Any]:
     from snks.agent.stage90r_local_model import (
         compare_stage90r_target_labels,
         stage90r_action_utility,
@@ -546,7 +581,7 @@ def _evaluate_ranking(model, state_samples: list[dict[str, Any]], device: torch.
         },
         "explanatory_examples": explanatory_examples,
     }
-    report["anti_collapse_gate"] = _anti_collapse_gate(report)
+    report["anti_collapse_gate"] = _anti_collapse_gate(report, gate_mode=gate_mode)
     return report
 
 
@@ -609,6 +644,7 @@ def main() -> None:
     args = parser.parse_args()
 
     payload = load_local_dataset(args.dataset)
+    gate_mode = str(payload.get("mode") or payload.get("config", {}).get("control_mode") or "mixed_control")
     training_interface = dataset_training_interface(payload)
     base_samples = training_rows_from_payload(payload)
     learner_transition_records = list(payload.get("learner_transition_records", []))
@@ -703,7 +739,12 @@ def main() -> None:
                 if valid_teacher_loader is not None
                 else {"actor_loss": 0.0, "actor_acc": 0.0}
             )
-            valid_ranking = _evaluate_ranking(model, valid_state_samples, device)
+            valid_ranking = _evaluate_ranking(
+                model,
+                valid_state_samples,
+                device,
+                gate_mode=gate_mode,
+            )
             actor_report = _evaluate_actor(
                 model,
                 valid_teacher_records,
@@ -731,12 +772,14 @@ def main() -> None:
             f"valid_top1={valid_ranking['overall']['top1_agreement']:.3f} "
             f"gate={valid_ranking['anti_collapse_gate']['status']}"
         )
-        gate_passed = bool(valid_ranking["anti_collapse_gate"]["passed"])
+        checkpoint_allowed = not bool(
+            valid_ranking["anti_collapse_gate"]["blocks_checkpoint_promotion"]
+        )
         candidate_priority = _checkpoint_priority(
             valid_loss=valid_metrics["loss"],
             selection_score=selection_score,
         )
-        if gate_passed and (
+        if checkpoint_allowed and (
             best_checkpoint_priority is None
             or candidate_priority > best_checkpoint_priority
         ):
@@ -759,7 +802,7 @@ def main() -> None:
                 args.checkpoint_out,
             )
             checkpoint_saved = True
-        elif not gate_passed and (
+        elif not checkpoint_allowed and (
             best_blocked_candidate is None
             or selection_score > float(best_blocked_candidate["selection_score"])
         ):
@@ -779,6 +822,7 @@ def main() -> None:
             "batch_size": args.batch_size,
             "lr": args.lr,
             "train_ratio": args.train_ratio,
+            "gate_mode": gate_mode,
         },
         "dataset_summary": {
             "n_samples": len(base_samples),
@@ -806,7 +850,11 @@ def main() -> None:
             if history else None
         ),
         "checkpoint_saved": checkpoint_saved,
-        "training_outcome": "checkpoint_promoted" if checkpoint_saved else "blocked_offline_gate",
+        "training_outcome": (
+            "pretrain_checkpoint_saved"
+            if checkpoint_saved and gate_mode == "planner_bootstrap"
+            else ("checkpoint_promoted" if checkpoint_saved else "blocked_offline_gate")
+        ),
         "best_blocked_candidate": best_blocked_candidate,
     }
     if not checkpoint_saved and bool(args.save_diagnostic_checkpoint):

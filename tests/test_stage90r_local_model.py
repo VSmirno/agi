@@ -7,7 +7,11 @@ import torch
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
 
-from experiments.stage90r_train_local_evaluator import _checkpoint_priority, _evaluate_ranking
+from experiments.stage90r_train_local_evaluator import (
+    _anti_collapse_gate,
+    _checkpoint_priority,
+    _evaluate_ranking,
+)
 from snks.agent.stage90r_local_policy import (
     TemporalBeliefTracker,
     build_local_observation_package,
@@ -302,6 +306,54 @@ def test_split_samples_by_episode_prefers_supported_diversity_over_tiny_perfect_
 
     valid_keys = {(int(sample["seed"]), int(sample["episode_id"])) for sample in valid}
     assert valid_keys == {(922, 2)}
+
+
+def test_anti_collapse_gate_marks_bootstrap_threat_gap_as_unsupported_not_fail():
+    ranking = {
+        "overall": {
+            "n_states": 4,
+            "dominant_action_share": 0.5,
+            "predicted_top1_normalized_entropy": 0.58,
+        },
+        "regime_metrics": {
+            "hostile_contact_or_near": {"n_states": 0, "unique_top1_actions": 0},
+            "local_resource_facing": {"n_states": 2, "unique_top1_actions": 1},
+        },
+    }
+
+    gate = _anti_collapse_gate(ranking, gate_mode="planner_bootstrap")
+
+    assert gate["status"] == "pass_with_unsupported_checks"
+    assert gate["passed"] is True
+    assert gate["enforced"] is False
+    assert gate["blocks_checkpoint_promotion"] is False
+    threat_check = next(check for check in gate["checks"] if check["name"] == "threat_slice_diversity")
+    assert threat_check["status"] == "unsupported"
+    assert threat_check["supported"] is False
+
+
+def test_anti_collapse_gate_keeps_mixed_control_threat_gap_as_hard_fail():
+    ranking = {
+        "overall": {
+            "n_states": 4,
+            "dominant_action_share": 0.5,
+            "predicted_top1_normalized_entropy": 0.58,
+        },
+        "regime_metrics": {
+            "hostile_contact_or_near": {"n_states": 0, "unique_top1_actions": 0},
+            "local_resource_facing": {"n_states": 2, "unique_top1_actions": 1},
+        },
+    }
+
+    gate = _anti_collapse_gate(ranking, gate_mode="mixed_control")
+
+    assert gate["status"] == "fail"
+    assert gate["passed"] is False
+    assert gate["enforced"] is True
+    assert gate["blocks_checkpoint_promotion"] is True
+    threat_check = next(check for check in gate["checks"] if check["name"] == "threat_slice_diversity")
+    assert threat_check["status"] == "fail"
+    assert threat_check["supported"] is True
 
 
 def test_collate_local_samples_builds_expected_tensors():
