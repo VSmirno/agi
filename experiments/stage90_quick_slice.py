@@ -64,7 +64,14 @@ def load_stage89_baseline_reference() -> dict[str, Any]:
     return reference
 
 
-def _build_runtime(seed: int, checkpoint: Path, crop_world: bool) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
+def _build_runtime(
+    seed: int,
+    checkpoint: Path | None,
+    crop_world: bool,
+    *,
+    model_dim: int = 16384,
+    n_locations: int = 50000,
+) -> tuple[Any, Any, Any, Any, dict[str, Any]]:
     from snks.agent.crafter_textbook import CrafterTextbook
     from snks.agent.post_mortem import PostMortemLearner
     from snks.agent.vector_bootstrap import load_from_textbook
@@ -73,9 +80,6 @@ def _build_runtime(seed: int, checkpoint: Path, crop_world: bool) -> tuple[Any, 
 
     device = torch.device(pick_device())
     config = _stage89_mode_config("current")
-    model_dim = 16384
-    n_locations = 50000
-
     if checkpoint:
         model, segmenter, textbook_path = _build_model_and_segmenter(
             model_dim=model_dim,
@@ -97,7 +101,13 @@ def _build_runtime(seed: int, checkpoint: Path, crop_world: bool) -> tuple[Any, 
         ["health", "food", "drink", "energy"],
         include_vital_delta=config["include_vital_delta"],
     )
-    return model, segmenter, tb, None, {"config": config, "stimuli": stimuli, "learner": learner}
+    return model, segmenter, tb, None, {
+        "config": config,
+        "stimuli": stimuli,
+        "learner": learner,
+        "runtime_model_dim": int(model_dim),
+        "runtime_n_locations": int(n_locations),
+    }
 
 
 def main() -> None:
