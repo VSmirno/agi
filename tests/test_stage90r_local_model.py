@@ -182,7 +182,7 @@ def test_split_samples_by_episode_prefers_richer_threat_support_when_diversity_i
                     seed=seed,
                     episode_id=episode_id,
                     step=(len(samples) + step),
-                    state_key=f"{seed}:{state_name}:{action}",
+                    state_key=f"{seed}:{state_name}",
                     regime=regime,
                     action=action,
                     damage=damage,
