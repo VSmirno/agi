@@ -260,12 +260,14 @@ def split_samples_by_episode(
         state_samples = build_state_centered_training_examples(episode_rows)
         regime_counts: dict[str, int] = {}
         target_winner_counts: dict[str, float] = {}
+        comparison_state_count = 0
         for state in state_samples:
             regime = str(state.get("primary_regime", "neutral"))
             regime_counts[regime] = regime_counts.get(regime, 0) + 1
             candidates = list(state.get("candidate_actions", []))
-            if not candidates:
+            if len(candidates) < 2:
                 continue
+            comparison_state_count += 1
             best_key = max(stage90r_target_order_key(candidate["label"]) for candidate in candidates)
             winners = [
                 str(candidate["action"])
@@ -281,6 +283,7 @@ def split_samples_by_episode(
             "n_samples": len(episode_rows),
             "state_regime_counts": regime_counts,
             "target_winner_counts": target_winner_counts,
+            "comparison_state_count": comparison_state_count,
         }
 
     target_valid_samples = len(samples) - int(round(len(samples) * train_ratio))
@@ -291,9 +294,11 @@ def split_samples_by_episode(
         aggregate_regimes: dict[str, int] = {}
         aggregate_winners: dict[str, float] = {}
         n_valid_samples = 0
+        comparison_state_support = 0
         for key in valid_keys:
             profile = episode_profiles[key]
             n_valid_samples += int(profile["n_samples"])
+            comparison_state_support += int(profile["comparison_state_count"])
             for regime, count in profile["state_regime_counts"].items():
                 aggregate_regimes[regime] = aggregate_regimes.get(regime, 0) + int(count)
             for action, count in profile["target_winner_counts"].items():
@@ -319,13 +324,14 @@ def split_samples_by_episode(
         neutral_support = aggregate_regimes.get("neutral", 0)
         score = (
             threat_support,
-            resource_support,
-            neutral_support,
-            sum(1 for regime in critical_regimes if aggregate_regimes.get(regime, 0) > 0),
             int(len(aggregate_winners) >= 2),
             len(aggregate_winners),
             round(normalized_winner_entropy, 4),
             round(1.0 - dominant_winner_share, 4),
+            comparison_state_support,
+            resource_support,
+            neutral_support,
+            sum(1 for regime in critical_regimes if aggregate_regimes.get(regime, 0) > 0),
             -abs(n_valid_samples - target_valid_samples),
         )
         digest = hashlib.sha256(repr(valid_keys).encode("utf-8")).hexdigest()

@@ -205,6 +205,48 @@ def test_split_samples_by_episode_prefers_richer_threat_support_when_diversity_i
     assert (904, 4) in valid_keys
 
 
+def test_split_samples_by_episode_avoids_single_winner_resource_validation_slice_when_diverse_alternative_exists():
+    samples: list[dict[str, object]] = []
+
+    def add_state(seed: int, episode_id: int, state_name: str, regime: str, winner: str) -> None:
+        action_specs = {
+            "move_right": (0.0, 1.0 if winner == "move_right" else 0.0),
+            "move_left": (0.0, 1.0 if winner == "move_left" else 0.0),
+            "move_up": (0.0, 1.0 if winner == "move_up" else 0.0),
+            "move_down": (0.0, 1.0 if winner == "move_down" else 0.0),
+        }
+        for step, (action, (damage, resource_gain)) in enumerate(action_specs.items()):
+            if action != winner:
+                damage = 1.0
+                resource_gain = 0.0
+            samples.append(
+                _split_test_sample(
+                    seed=seed,
+                    episode_id=episode_id,
+                    step=(len(samples) + step),
+                    state_key=f"{seed}:{state_name}:{action}",
+                    regime=regime,
+                    action=action,
+                    damage=damage,
+                    resource_gain=resource_gain,
+                )
+            )
+
+    for idx in range(5):
+        add_state(910, 0, f"resource{idx}", "local_resource_facing", "move_right")
+    add_state(911, 1, "diverse0", "local_resource_facing", "move_right")
+    add_state(911, 1, "diverse1", "neutral", "move_left")
+    add_state(911, 1, "diverse2", "neutral", "move_up")
+    add_state(911, 1, "diverse3", "local_resource_facing", "move_down")
+    add_state(912, 2, "filler0", "neutral", "move_left")
+    add_state(913, 3, "filler1", "neutral", "move_right")
+
+    _train, valid = split_samples_by_episode(samples, train_ratio=0.75)
+
+    valid_keys = {(int(sample["seed"]), int(sample["episode_id"])) for sample in valid}
+    assert valid_keys == {(911, 1)}
+
+
 def test_collate_local_samples_builds_expected_tensors():
     batch = [
         {
