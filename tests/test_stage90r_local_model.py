@@ -11,6 +11,7 @@ from experiments.stage90r_train_local_evaluator import (
     _anti_collapse_gate,
     _checkpoint_priority,
     _evaluate_ranking,
+    _gate_policy,
 )
 from snks.agent.stage90r_local_policy import (
     TemporalBeliefTracker,
@@ -354,6 +355,39 @@ def test_anti_collapse_gate_keeps_mixed_control_threat_gap_as_hard_fail():
     threat_check = next(check for check in gate["checks"] if check["name"] == "threat_slice_diversity")
     assert threat_check["status"] == "fail"
     assert threat_check["supported"] is True
+
+
+def test_gate_policy_treats_one_epoch_mixed_control_as_smoke_only():
+    policy = _gate_policy("mixed_control", epochs=1)
+
+    assert policy["enforced"] is False
+    assert policy["saved_outcome"] == "smoke_checkpoint_saved"
+    assert policy["policy"] == "mixed_control_smoke_only"
+
+
+def test_anti_collapse_gate_keeps_smoke_only_mixed_control_advisory():
+    ranking = {
+        "overall": {
+            "n_states": 6,
+            "dominant_action_share": 0.6667,
+            "predicted_top1_normalized_entropy": 0.3552,
+        },
+        "regime_metrics": {
+            "hostile_contact_or_near": {"n_states": 6, "unique_top1_actions": 2},
+            "local_resource_facing": {"n_states": 1, "unique_top1_actions": 1},
+        },
+    }
+
+    gate = _anti_collapse_gate(
+        ranking,
+        gate_mode="mixed_control",
+        gate_enforced=False,
+    )
+
+    assert gate["status"] == "advisory_fail"
+    assert gate["passed"] is False
+    assert gate["enforced"] is False
+    assert gate["blocks_checkpoint_promotion"] is False
 
 
 def test_collate_local_samples_builds_expected_tensors():

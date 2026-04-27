@@ -19,6 +19,27 @@ DOCS_DIR = ROOT / "_docs"
 DEFAULT_DATASET_PATH = DOCS_DIR / "stage90r_local_dataset.json"
 DEFAULT_CKPT_PATH = DOCS_DIR / "stage90r_local_evaluator.pt"
 DEFAULT_EVAL_PATH = DOCS_DIR / "stage90r_local_evaluator_eval.json"
+MIXED_CONTROL_PROMOTION_MIN_EPOCHS = 3
+
+
+def _gate_policy(gate_mode: str, epochs: int) -> dict[str, Any]:
+    if gate_mode == "planner_bootstrap":
+        return {
+            "enforced": False,
+            "saved_outcome": "pretrain_checkpoint_saved",
+            "policy": "bootstrap_advisory",
+        }
+    if gate_mode == "mixed_control" and epochs < MIXED_CONTROL_PROMOTION_MIN_EPOCHS:
+        return {
+            "enforced": False,
+            "saved_outcome": "smoke_checkpoint_saved",
+            "policy": "mixed_control_smoke_only",
+        }
+    return {
+        "enforced": True,
+        "saved_outcome": "checkpoint_promoted",
+        "policy": "hard_gate",
+    }
 
 
 def _device() -> torch.device:
@@ -304,11 +325,13 @@ def _anti_collapse_gate(
     ranking: dict[str, Any],
     *,
     gate_mode: str = "mixed_control",
+    gate_enforced: bool | None = None,
 ) -> dict[str, Any]:
     overall = ranking["overall"]
     threat = ranking["regime_metrics"].get("hostile_contact_or_near", _empty_slice_report())
     resource = ranking["regime_metrics"].get("local_resource_facing", _empty_slice_report())
-    gate_enforced = gate_mode != "planner_bootstrap"
+    if gate_enforced is None:
+        gate_enforced = gate_mode != "planner_bootstrap"
 
     checks: list[dict[str, Any]] = []
 
@@ -408,6 +431,7 @@ def _evaluate_ranking(
     device: torch.device,
     *,
     gate_mode: str = "mixed_control",
+    gate_enforced: bool | None = None,
 ) -> dict[str, Any]:
     from snks.agent.stage90r_local_model import (
         compare_stage90r_target_labels,
@@ -581,7 +605,11 @@ def _evaluate_ranking(
         },
         "explanatory_examples": explanatory_examples,
     }
-    report["anti_collapse_gate"] = _anti_collapse_gate(report, gate_mode=gate_mode)
+    report["anti_collapse_gate"] = _anti_collapse_gate(
+        report,
+        gate_mode=gate_mode,
+        gate_enforced=gate_enforced,
+    )
     return report
 
 
@@ -645,6 +673,7 @@ def main() -> None:
 
     payload = load_local_dataset(args.dataset)
     gate_mode = str(payload.get("mode") or payload.get("config", {}).get("control_mode") or "mixed_control")
+    gate_policy = _gate_policy(gate_mode, args.epochs)
     training_interface = dataset_training_interface(payload)
     base_samples = training_rows_from_payload(payload)
     learner_transition_records = list(payload.get("learner_transition_records", []))
@@ -744,6 +773,7 @@ def main() -> None:
                 valid_state_samples,
                 device,
                 gate_mode=gate_mode,
+                gate_enforced=bool(gate_policy["enforced"]),
             )
             actor_report = _evaluate_actor(
                 model,
@@ -823,6 +853,8 @@ def main() -> None:
             "lr": args.lr,
             "train_ratio": args.train_ratio,
             "gate_mode": gate_mode,
+            "gate_policy": str(gate_policy["policy"]),
+            "mixed_control_promotion_min_epochs": MIXED_CONTROL_PROMOTION_MIN_EPOCHS,
         },
         "dataset_summary": {
             "n_samples": len(base_samples),
@@ -851,9 +883,7 @@ def main() -> None:
         ),
         "checkpoint_saved": checkpoint_saved,
         "training_outcome": (
-            "pretrain_checkpoint_saved"
-            if checkpoint_saved and gate_mode == "planner_bootstrap"
-            else ("checkpoint_promoted" if checkpoint_saved else "blocked_offline_gate")
+            str(gate_policy["saved_outcome"]) if checkpoint_saved else "blocked_offline_gate"
         ),
         "best_blocked_candidate": best_blocked_candidate,
     }
