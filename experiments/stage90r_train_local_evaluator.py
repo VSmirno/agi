@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,29 @@ def _gate_policy(gate_mode: str, epochs: int) -> dict[str, Any]:
         "saved_outcome": "checkpoint_promoted",
         "policy": "hard_gate",
     }
+
+
+def _set_random_seed(seed: int) -> None:
+    random.seed(seed)
+    try:
+        import numpy as np
+
+        np.random.seed(seed)
+    except Exception:
+        pass
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    if hasattr(torch.backends, "cudnn"):
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+
+def _seeded_generator(seed: int) -> torch.Generator:
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+    return generator
 
 
 def _device() -> torch.device:
@@ -666,6 +690,7 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--train-ratio", type=float, default=0.8)
+    parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--save-diagnostic-checkpoint", action="store_true")
     parser.add_argument("--checkpoint-out", type=Path, default=DEFAULT_CKPT_PATH)
     parser.add_argument("--eval-out", type=Path, default=DEFAULT_EVAL_PATH)
@@ -716,6 +741,9 @@ def main() -> None:
     if not train_samples or not valid_samples:
         raise ValueError("Transition/state-centered split produced an empty train or validation set")
 
+    if args.seed is not None:
+        _set_random_seed(int(args.seed))
+
     config = _build_config(payload["metadata"])
     model = LocalActionEvaluator(config)
     device = _device()
@@ -725,6 +753,7 @@ def main() -> None:
         Stage90RLocalDataset(train_samples),
         batch_size=min(args.batch_size, max(1, len(train_samples))),
         shuffle=True,
+        generator=_seeded_generator(int(args.seed)) if args.seed is not None else None,
         collate_fn=collate_local_samples,
     )
     valid_loader = DataLoader(
@@ -737,6 +766,7 @@ def main() -> None:
         Stage90RLocalDataset(train_teacher_records),
         batch_size=min(args.batch_size, max(1, len(train_teacher_records))),
         shuffle=True,
+        generator=_seeded_generator(int(args.seed) + 1) if args.seed is not None else None,
         collate_fn=collate_local_samples,
     ) if train_teacher_records else None
     valid_teacher_loader = DataLoader(
@@ -852,6 +882,7 @@ def main() -> None:
             "batch_size": args.batch_size,
             "lr": args.lr,
             "train_ratio": args.train_ratio,
+            "seed": args.seed,
             "gate_mode": gate_mode,
             "gate_policy": str(gate_policy["policy"]),
             "mixed_control_promotion_min_epochs": MIXED_CONTROL_PROMOTION_MIN_EPOCHS,

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import random
 import sys
 from pathlib import Path
 
+import numpy as np
 import torch
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
@@ -12,6 +14,7 @@ from experiments.stage90r_train_local_evaluator import (
     _checkpoint_priority,
     _evaluate_ranking,
     _gate_policy,
+    _set_random_seed,
 )
 from snks.agent.stage90r_local_policy import (
     TemporalBeliefTracker,
@@ -363,6 +366,24 @@ def test_gate_policy_treats_one_epoch_mixed_control_as_smoke_only():
     assert policy["enforced"] is False
     assert policy["saved_outcome"] == "smoke_checkpoint_saved"
     assert policy["policy"] == "mixed_control_smoke_only"
+
+
+def test_set_random_seed_makes_python_numpy_torch_streams_repeatable():
+    _set_random_seed(7)
+    first = (
+        random.random(),
+        float(np.random.rand()),
+        torch.rand(3).tolist(),
+    )
+
+    _set_random_seed(7)
+    second = (
+        random.random(),
+        float(np.random.rand()),
+        torch.rand(3).tolist(),
+    )
+
+    assert first == second
 
 
 def test_anti_collapse_gate_keeps_smoke_only_mixed_control_advisory():
