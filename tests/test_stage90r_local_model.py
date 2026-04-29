@@ -10,6 +10,7 @@ import torch
 sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
 
 from experiments.stage90r_train_local_evaluator import (
+    _apply_episode_split,
     _anti_collapse_gate,
     _checkpoint_priority,
     _evaluate_ranking,
@@ -160,6 +161,63 @@ def test_split_samples_by_episode_uses_state_level_fallback_for_two_episode_thre
     assert (1001, 1) in valid_keys
     assert any(str(sample["primary_regime"]).startswith("hostile") for sample in train)
     assert any(str(sample["primary_regime"]).startswith("hostile") for sample in valid)
+
+
+def test_split_samples_by_episode_counts_secondary_resource_labels_in_state_level_fallback():
+    samples: list[dict[str, object]] = []
+
+    def add_state(
+        seed: int,
+        episode_id: int,
+        state_name: str,
+        regime: str,
+        winner: str,
+        *,
+        extra_regime_labels: tuple[str, ...] = (),
+    ) -> None:
+        action_specs = {
+            "move_right": (0.0, 1.0 if winner == "move_right" else 0.0),
+            "move_left": (0.0, 1.0 if winner == "move_left" else 0.0),
+            "move_up": (0.0, 1.0 if winner == "move_up" else 0.0),
+            "move_down": (0.0, 1.0 if winner == "move_down" else 0.0),
+        }
+        start = len(samples)
+        for step, (action, (damage, resource_gain)) in enumerate(action_specs.items()):
+            if action != winner:
+                damage = 1.0
+                resource_gain = 0.0
+            samples.append(
+                _split_test_sample(
+                    seed=seed,
+                    episode_id=episode_id,
+                    step=(start + step),
+                    state_key=f"{seed}:{state_name}",
+                    regime=regime,
+                    action=action,
+                    damage=damage,
+                    resource_gain=resource_gain,
+                )
+            )
+        if extra_regime_labels:
+            for sample in samples[start:]:
+                sample["regime_labels"] = [regime, *extra_regime_labels]
+
+    add_state(1100, 0, "neutral0", "neutral", "move_right")
+    add_state(1100, 0, "resource0", "local_resource_facing", "move_up")
+    add_state(1101, 1, "threat0", "hostile_near", "move_down")
+    add_state(
+        1101,
+        1,
+        "threat_resource0",
+        "hostile_contact",
+        "move_left",
+        extra_regime_labels=("local_resource_facing",),
+    )
+
+    train, valid = split_samples_by_episode(samples, train_ratio=0.5)
+
+    assert any("local_resource_facing" in sample["regime_labels"] for sample in train)
+    assert any("local_resource_facing" in sample["regime_labels"] for sample in valid)
 
 
 def test_split_samples_by_episode_uses_stable_non_tail_partition():
@@ -358,6 +416,34 @@ def test_split_samples_by_episode_prefers_supported_diversity_over_tiny_perfect_
 
     valid_keys = {(int(sample["seed"]), int(sample["episode_id"])) for sample in valid}
     assert valid_keys == {(922, 2)}
+
+
+def test_apply_episode_split_uses_state_keys_when_episode_keys_overlap():
+    records = [
+        {
+            "seed": 1,
+            "episode_id": 0,
+            "step": 0,
+            "state_signature_key": "neutral",
+        },
+        {
+            "seed": 1,
+            "episode_id": 0,
+            "step": 1,
+            "state_signature_key": "threat",
+        },
+    ]
+
+    train_records, valid_records = _apply_episode_split(
+        records,
+        train_keys={(1, 0)},
+        valid_keys={(1, 0)},
+        train_state_keys={(1, 0, "neutral", 0)},
+        valid_state_keys={(1, 0, "threat", 0)},
+    )
+
+    assert [record["state_signature_key"] for record in train_records] == ["neutral"]
+    assert [record["state_signature_key"] for record in valid_records] == ["threat"]
 
 
 def test_anti_collapse_gate_marks_bootstrap_threat_gap_as_unsupported_not_fail():

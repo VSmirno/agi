@@ -238,6 +238,13 @@ def split_samples_by_episode(
             state_step,
         )
 
+    def sample_regimes(sample: dict[str, Any]) -> set[str]:
+        regimes = {str(regime) for regime in sample.get("regime_labels", []) if regime}
+        primary_regime = str(sample.get("primary_regime", "neutral"))
+        if primary_regime:
+            regimes.add(primary_regime)
+        return regimes or {"neutral"}
+
     def threat_support_from_counts(regime_counts: dict[str, int]) -> int:
         return (
             regime_counts.get("hostile_contact", 0)
@@ -258,14 +265,13 @@ def split_samples_by_episode(
                 {
                     "rows": [],
                     "n_samples": 0,
-                    "regime_counts": {},
+                    "regime_counts": None,
                 },
             )
             bucket["rows"].append(original_sample)
             bucket["n_samples"] += 1
-            regime = str(scoring_sample.get("primary_regime", "neutral"))
-            regime_counts = bucket["regime_counts"]
-            regime_counts[regime] = regime_counts.get(regime, 0) + 1
+            if bucket["regime_counts"] is None:
+                bucket["regime_counts"] = {regime: 1 for regime in sample_regimes(scoring_sample)}
 
         ordered_keys = sorted(state_groups, key=state_split_order)
         if len(ordered_keys) <= 1:
@@ -412,8 +418,8 @@ def split_samples_by_episode(
         target_winner_counts: dict[str, float] = {}
         comparison_state_count = 0
         for state in state_samples:
-            regime = str(state.get("primary_regime", "neutral"))
-            regime_counts[regime] = regime_counts.get(regime, 0) + 1
+            for regime in sample_regimes(state):
+                regime_counts[regime] = regime_counts.get(regime, 0) + 1
             candidates = list(state.get("candidate_actions", []))
             if len(candidates) < 2:
                 continue

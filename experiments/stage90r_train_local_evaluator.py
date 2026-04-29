@@ -226,11 +226,37 @@ def _apply_episode_split(
     records: list[dict[str, Any]],
     train_keys: set[tuple[int, int]],
     valid_keys: set[tuple[int, int]],
+    *,
+    train_state_keys: set[tuple[int, int, str, int]] | None = None,
+    valid_state_keys: set[tuple[int, int, str, int]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    def state_split_key(record: dict[str, Any]) -> tuple[int, int, str, int]:
+        state_signature = record.get("state_signature_key")
+        if state_signature not in (None, ""):
+            state_token = str(state_signature)
+            state_step = 0
+        else:
+            state_token = ""
+            state_step = int(record.get("step", 0))
+        return (
+            int(record["seed"]),
+            int(record["episode_id"]),
+            state_token,
+            state_step,
+        )
+
     train_records: list[dict[str, Any]] = []
     valid_records: list[dict[str, Any]] = []
     for record in records:
         key = (int(record["seed"]), int(record["episode_id"]))
+        if train_state_keys is not None and valid_state_keys is not None:
+            split_key = state_split_key(record)
+            if split_key in valid_state_keys:
+                valid_records.append(record)
+                continue
+            if split_key in train_state_keys:
+                train_records.append(record)
+                continue
         if key in valid_keys:
             valid_records.append(record)
         elif key in train_keys:
@@ -718,10 +744,30 @@ def main() -> None:
         (int(sample["seed"]), int(sample["episode_id"]))
         for sample in valid_base_samples
     }
+    train_state_keys = {
+        (
+            int(sample["seed"]),
+            int(sample["episode_id"]),
+            str(sample.get("state_signature_key", "")),
+            0 if sample.get("state_signature_key") not in (None, "") else int(sample.get("step", 0)),
+        )
+        for sample in train_base_samples
+    }
+    valid_state_keys = {
+        (
+            int(sample["seed"]),
+            int(sample["episode_id"]),
+            str(sample.get("state_signature_key", "")),
+            0 if sample.get("state_signature_key") not in (None, "") else int(sample.get("step", 0)),
+        )
+        for sample in valid_base_samples
+    }
     train_teacher_records, valid_teacher_records = _apply_episode_split(
         teacher_records,
         train_episode_keys,
         valid_episode_keys,
+        train_state_keys=train_state_keys,
+        valid_state_keys=valid_state_keys,
     )
     using_primary_transition_records = training_interface == "learner_transition_records"
     if using_primary_transition_records:
