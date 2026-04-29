@@ -610,11 +610,15 @@ def test_collate_local_samples_builds_expected_tensors():
             },
             "next_belief_state": {"vector": [0.7, 0.2]},
             "action_index": 3,
+            "primary_regime": "hostile_near",
+            "regime_labels": ["hostile_near", "local_resource_facing"],
             "horizon_outcome": {
                 "damage_h": 1.0,
                 "resource_gain_h": 0,
                 "survived_h": True,
                 "escape_delta_h": None,
+                "affordance_persistence_h": 1.0,
+                "threat_trend_h": -1.0,
             },
         }
     ]
@@ -630,6 +634,8 @@ def test_collate_local_samples_builds_expected_tensors():
     assert out["next_belief"].tolist() == [[0.699999988079071, 0.20000000298023224]]
     assert out["action"].tolist() == [3]
     assert out["escape_mask"].tolist() == [0.0]
+    assert out["danger_pressure"].tolist() == [0.75]
+    assert out["resource_opportunity"].tolist() == [0.75]
 
 
 def test_local_action_evaluator_forward_shapes():
@@ -651,6 +657,8 @@ def test_local_action_evaluator_forward_shapes():
     assert out["pred_stall_risk_logit"].shape == (2,)
     assert out["pred_affordance_persistence_logit"].shape == (2,)
     assert out["pred_threat_trend"].shape == (2,)
+    assert out["pred_danger_pressure_logit"].shape == (2,)
+    assert out["pred_resource_opportunity_logit"].shape == (2,)
     assert out["pred_next_belief_state"].shape == (2, 3)
     assert out["pred_actor_logits"].shape == (2, model.config.n_actions)
 

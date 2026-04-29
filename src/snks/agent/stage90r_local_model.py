@@ -531,6 +531,13 @@ def split_samples_by_episode(
 
 
 def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
+    def sample_regimes(sample: dict[str, Any]) -> set[str]:
+        regimes = {str(regime) for regime in sample.get("regime_labels", []) if regime}
+        primary_regime = str(sample.get("primary_regime", "neutral"))
+        if primary_regime:
+            regimes.add(primary_regime)
+        return regimes or {"neutral"}
+
     def sample_label(sample: dict[str, Any]) -> dict[str, Any]:
         label = (
             sample.get("label")
@@ -538,6 +545,28 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
             or sample.get("resulting_outcome")
             or {}
         )
+        regimes = sample_regimes(sample)
+        threat_trend = float(label.get("threat_trend_h", 0.0))
+        danger_pressure = 0.0
+        if "hostile_contact" in regimes:
+            danger_pressure += 0.65
+        elif "hostile_near" in regimes:
+            danger_pressure += 0.45
+        if "low_vitals" in regimes:
+            danger_pressure += 0.15
+        if float(label.get("damage_h", 0.0)) > 0.0:
+            danger_pressure += 0.20
+        if threat_trend < 0.0:
+            danger_pressure += min(0.20, 0.10 * abs(threat_trend))
+
+        resource_opportunity = 0.0
+        if "local_resource_facing" in regimes:
+            resource_opportunity += 0.50
+        if float(label.get("affordance_persistence_h", 0.0)) > 0.0:
+            resource_opportunity += 0.25
+        if float(label.get("resource_gain_h", 0.0)) > 0.0:
+            resource_opportunity += 0.25
+
         return {
             "damage_h": float(label.get("damage_h", 0.0)),
             "resource_gain_h": float(label.get("resource_gain_h", 0.0)),
@@ -546,7 +575,9 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
             "progress_delta_h": float(label.get("progress_delta_h", 0.0)),
             "stall_risk_h": float(label.get("stall_risk_h", 0.0)),
             "affordance_persistence_h": float(label.get("affordance_persistence_h", 0.0)),
-            "threat_trend_h": float(label.get("threat_trend_h", 0.0)),
+            "threat_trend_h": threat_trend,
+            "danger_pressure_h": min(1.0, round(danger_pressure, 4)),
+            "resource_opportunity_h": min(1.0, round(resource_opportunity, 4)),
         }
 
     class_ids = torch.tensor(
@@ -635,6 +666,14 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
         [float(sample_label(sample).get("threat_trend_h", 0.0)) for sample in batch],
         dtype=torch.float32,
     )
+    danger_pressure = torch.tensor(
+        [float(sample_label(sample).get("danger_pressure_h", 0.0)) for sample in batch],
+        dtype=torch.float32,
+    )
+    resource_opportunity = torch.tensor(
+        [float(sample_label(sample).get("resource_opportunity_h", 0.0)) for sample in batch],
+        dtype=torch.float32,
+    )
     teacher_action = torch.tensor(
         [
             int(sample.get("planner_action_index", sample.get("action_index", 0)))
@@ -694,6 +733,8 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
         "stall_risk": stall_risk,
         "affordance_persistence": affordance_persistence,
         "threat_trend": threat_trend,
+        "danger_pressure": danger_pressure,
+        "resource_opportunity": resource_opportunity,
         "teacher_action": teacher_action,
         "teacher_action_distribution": teacher_action_distribution,
         "teacher_mask": teacher_mask,
@@ -746,6 +787,8 @@ class LocalActionEvaluator(nn.Module):
         self.stall_head = nn.Linear(self.config.hidden_dim, 1)
         self.affordance_head = nn.Linear(self.config.hidden_dim, 1)
         self.threat_trend_head = nn.Linear(self.config.hidden_dim, 1)
+        self.danger_pressure_head = nn.Linear(self.config.hidden_dim, 1)
+        self.resource_opportunity_head = nn.Linear(self.config.hidden_dim, 1)
         self.next_belief_head = (
             nn.Linear(self.config.hidden_dim, self.config.belief_state_dim)
             if self.config.belief_state_dim > 0
@@ -821,6 +864,8 @@ class LocalActionEvaluator(nn.Module):
             "pred_stall_risk_logit": self.stall_head(h).squeeze(-1),
             "pred_affordance_persistence_logit": self.affordance_head(h).squeeze(-1),
             "pred_threat_trend": self.threat_trend_head(h).squeeze(-1),
+            "pred_danger_pressure_logit": self.danger_pressure_head(h).squeeze(-1),
+            "pred_resource_opportunity_logit": self.resource_opportunity_head(h).squeeze(-1),
             "pred_next_belief_state": (
                 self.next_belief_head(h)
                 if self.next_belief_head is not None

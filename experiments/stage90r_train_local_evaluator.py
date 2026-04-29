@@ -105,6 +105,8 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
         "stall_bce": 0.0,
         "affordance_bce": 0.0,
         "threat_trend_mse": 0.0,
+        "danger_pressure_bce": 0.0,
+        "resource_opportunity_bce": 0.0,
         "survival_acc": 0.0,
     }
     n_batches = 0
@@ -141,6 +143,14 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
             batch["affordance_persistence"],
         )
         threat_trend_mse = masked_mse(preds["pred_threat_trend"], batch["threat_trend"])
+        danger_pressure_bce = F.binary_cross_entropy_with_logits(
+            preds["pred_danger_pressure_logit"],
+            batch["danger_pressure"],
+        )
+        resource_opportunity_bce = F.binary_cross_entropy_with_logits(
+            preds["pred_resource_opportunity_logit"],
+            batch["resource_opportunity"],
+        )
         loss = (
             0.5 * next_belief_mse
             + damage_mse
@@ -151,6 +161,8 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
             + 0.35 * stall_bce
             + 0.25 * affordance_bce
             + 0.35 * threat_trend_mse
+            + 0.20 * danger_pressure_bce
+            + 0.20 * resource_opportunity_bce
         )
 
         if optimizer is not None:
@@ -172,6 +184,8 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
         totals["stall_bce"] += float(stall_bce.item())
         totals["affordance_bce"] += float(affordance_bce.item())
         totals["threat_trend_mse"] += float(threat_trend_mse.item())
+        totals["danger_pressure_bce"] += float(danger_pressure_bce.item())
+        totals["resource_opportunity_bce"] += float(resource_opportunity_bce.item())
         totals["survival_acc"] += float(survival_acc.item())
         n_batches += 1
 
