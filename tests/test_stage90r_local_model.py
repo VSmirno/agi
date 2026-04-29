@@ -10,6 +10,7 @@ import torch
 sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
 
 from experiments.stage90r_train_local_evaluator import (
+    _aggregate_teacher_targets_by_signature,
     _apply_episode_split,
     _anti_collapse_gate,
     _checkpoint_priority,
@@ -444,6 +445,58 @@ def test_apply_episode_split_uses_state_keys_when_episode_keys_overlap():
 
     assert [record["state_signature_key"] for record in train_records] == ["neutral"]
     assert [record["state_signature_key"] for record in valid_records] == ["threat"]
+
+
+def test_aggregate_teacher_targets_by_signature_builds_soft_targets_and_consistency_weights():
+    records = [
+        {"seed": 1, "episode_id": 0, "step": 0, "state_signature_key": "sigA", "planner_action_index": 2},
+        {"seed": 1, "episode_id": 0, "step": 1, "state_signature_key": "sigA", "planner_action_index": 2},
+        {"seed": 1, "episode_id": 0, "step": 2, "state_signature_key": "sigA", "planner_action_index": 1},
+        {"seed": 1, "episode_id": 0, "step": 3, "state_signature_key": "sigB", "planner_action_index": 0},
+    ]
+
+    aggregated = _aggregate_teacher_targets_by_signature(records, n_actions=4)
+
+    sig_a = [record for record in aggregated if record["state_signature_key"] == "sigA"]
+    assert len(sig_a) == 3
+    for record in sig_a:
+        assert record["teacher_action_distribution"] == [0.0, 1 / 3, 2 / 3, 0.0]
+        assert record["teacher_target_weight"] == 0.6667
+
+    sig_b = next(record for record in aggregated if record["state_signature_key"] == "sigB")
+    assert sig_b["teacher_action_distribution"] == [1.0, 0.0, 0.0, 0.0]
+    assert sig_b["teacher_target_weight"] == 1.0
+
+
+def test_collate_local_samples_preserves_soft_teacher_targets():
+    batch = [
+        {
+            "observation": {
+                "viewport_class_ids": [[0] * 9 for _ in range(7)],
+                "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+                "body_vector": [1.0, 1.0, 1.0, 1.0],
+                "inventory_vector": [0] * 12,
+                "belief_state_vector": [0.0, 0.0],
+            },
+            "next_belief_state": {"vector": [0.0, 0.0]},
+            "planner_action_index": 2,
+            "teacher_policy": "planner",
+            "teacher_action_distribution": [0.0, 0.25, 0.75, 0.0],
+            "teacher_target_weight": 0.75,
+            "action_index": 2,
+            "label": {
+                "damage_h": 0.0,
+                "resource_gain_h": 0.0,
+                "survived_h": 1.0,
+                "escape_delta_h": None,
+            },
+        }
+    ]
+
+    out = collate_local_samples(batch)
+
+    assert out["teacher_action_distribution"].tolist() == [[0.0, 0.25, 0.75, 0.0]]
+    assert out["teacher_target_weight"].tolist() == [0.75]
 
 
 def test_anti_collapse_gate_marks_bootstrap_threat_gap_as_unsupported_not_fail():

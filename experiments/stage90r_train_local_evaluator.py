@@ -204,15 +204,23 @@ def _run_teacher_epoch(model, loader, optimizer, device: torch.device) -> dict[s
             batch["temporal"],
         )
         logits = preds["pred_actor_logits"][active]
-        teacher_targets = batch["teacher_action"][active]
-        actor_loss = F.cross_entropy(logits, teacher_targets)
+        teacher_targets = batch["teacher_action_distribution"][active]
+        teacher_weights = batch["teacher_target_weight"][active]
+        log_probs = F.log_softmax(logits, dim=1)
+        per_sample_loss = -(teacher_targets * log_probs).sum(dim=1)
+        weight_total = torch.sum(teacher_weights)
+        if float(weight_total.item()) > 0.0:
+            actor_loss = torch.sum(per_sample_loss * teacher_weights) / weight_total
+        else:
+            actor_loss = torch.mean(per_sample_loss)
 
         if optimizer is not None:
             optimizer.zero_grad()
             actor_loss.backward()
             optimizer.step()
 
-        actor_acc = torch.mean((torch.argmax(logits, dim=1) == teacher_targets).float())
+        teacher_top1 = torch.argmax(teacher_targets, dim=1)
+        actor_acc = torch.mean((torch.argmax(logits, dim=1) == teacher_top1).float())
         totals["actor_loss"] += float(actor_loss.item())
         totals["actor_acc"] += float(actor_acc.item())
         n_batches += 1
@@ -262,6 +270,50 @@ def _apply_episode_split(
         elif key in train_keys:
             train_records.append(record)
     return train_records, valid_records
+
+
+def _aggregate_teacher_targets_by_signature(
+    records: list[dict[str, Any]],
+    *,
+    n_actions: int,
+) -> list[dict[str, Any]]:
+    def signature_key(record: dict[str, Any]) -> tuple[int, int, str, int]:
+        state_signature = record.get("state_signature_key")
+        if state_signature not in (None, ""):
+            state_token = str(state_signature)
+            state_step = 0
+        else:
+            state_token = ""
+            state_step = int(record.get("step", 0))
+        return (
+            int(record["seed"]),
+            int(record["episode_id"]),
+            state_token,
+            state_step,
+        )
+
+    bucket_counts: dict[tuple[int, int, str, int], Counter[int]] = {}
+    for record in records:
+        key = signature_key(record)
+        counter = bucket_counts.setdefault(key, Counter())
+        counter[int(record.get("planner_action_index", record.get("action_index", 0)))] += 1
+
+    aggregated: list[dict[str, Any]] = []
+    for record in records:
+        key = signature_key(record)
+        counter = bucket_counts[key]
+        total = sum(counter.values())
+        distribution = [0.0] * n_actions
+        if total > 0:
+            for action_idx, count in counter.items():
+                if 0 <= int(action_idx) < n_actions:
+                    distribution[int(action_idx)] = float(count) / float(total)
+        consistency = (max(counter.values()) / total) if total > 0 else 0.0
+        enriched = dict(record)
+        enriched["teacher_action_distribution"] = distribution
+        enriched["teacher_target_weight"] = round(float(consistency), 4)
+        aggregated.append(enriched)
+    return aggregated
 
 
 def _evaluate_actor(
@@ -725,6 +777,7 @@ def main() -> None:
     payload = load_local_dataset(args.dataset)
     gate_mode = str(payload.get("mode") or payload.get("config", {}).get("control_mode") or "mixed_control")
     gate_policy = _gate_policy(gate_mode, args.epochs)
+    action_names = list(payload["metadata"].get("action_names", []))
     training_interface = dataset_training_interface(payload)
     base_samples = training_rows_from_payload(payload)
     learner_transition_records = list(payload.get("learner_transition_records", []))
@@ -768,6 +821,14 @@ def main() -> None:
         valid_episode_keys,
         train_state_keys=train_state_keys,
         valid_state_keys=valid_state_keys,
+    )
+    train_teacher_records = _aggregate_teacher_targets_by_signature(
+        train_teacher_records,
+        n_actions=len(action_names),
+    )
+    valid_teacher_records = _aggregate_teacher_targets_by_signature(
+        valid_teacher_records,
+        n_actions=len(action_names),
     )
     using_primary_transition_records = training_interface == "learner_transition_records"
     if using_primary_transition_records:
@@ -855,7 +916,7 @@ def main() -> None:
                 model,
                 valid_teacher_records,
                 device,
-                action_names=list(payload["metadata"].get("action_names", [])),
+                action_names=action_names,
             )
         selection_score = _selection_score(valid_ranking)
         history.append(

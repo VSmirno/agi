@@ -651,6 +651,32 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
         ],
         dtype=torch.float32,
     )
+    n_teacher_actions = max(
+        [len(sample.get("teacher_action_distribution", [])) for sample in batch]
+        + [int(torch.max(teacher_action).item()) + 1 if len(batch) > 0 else 1]
+    )
+    teacher_action_distribution = torch.tensor(
+        [
+            (
+                list(sample["teacher_action_distribution"])[:n_teacher_actions]
+                + [0.0] * max(0, n_teacher_actions - len(sample["teacher_action_distribution"]))
+            )
+            if "teacher_action_distribution" in sample
+            else [
+                1.0 if idx == int(sample.get("planner_action_index", sample.get("action_index", 0))) else 0.0
+                for idx in range(n_teacher_actions)
+            ]
+            for sample in batch
+        ],
+        dtype=torch.float32,
+    )
+    teacher_target_weight = torch.tensor(
+        [
+            float(sample.get("teacher_target_weight", 1.0 if teacher_mask[idx].item() > 0 else 0.0))
+            for idx, sample in enumerate(batch)
+        ],
+        dtype=torch.float32,
+    )
     return {
         "class_ids": class_ids,
         "confidences": confidences,
@@ -669,7 +695,9 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
         "affordance_persistence": affordance_persistence,
         "threat_trend": threat_trend,
         "teacher_action": teacher_action,
+        "teacher_action_distribution": teacher_action_distribution,
         "teacher_mask": teacher_mask,
+        "teacher_target_weight": teacher_target_weight,
     }
 
 
