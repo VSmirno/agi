@@ -258,6 +258,118 @@ def _run_teacher_epoch(model, loader, optimizer, device: torch.device) -> dict[s
     return {key: round(value / n_batches, 4) for key, value in totals.items()}
 
 
+def _run_actor_agreement_epoch(
+    model,
+    state_samples: list[dict[str, Any]],
+    optimizer,
+    device: torch.device,
+    *,
+    action_names: list[str],
+) -> dict[str, float]:
+    from torch.nn import functional as F
+
+    from snks.agent.stage90r_local_model import stage90r_action_utility
+
+    if not state_samples:
+        return {
+            "agreement_loss": 0.0,
+            "agreement_acc": 0.0,
+        }
+
+    model.train(optimizer is not None)
+    noop_idx = next((idx for idx, name in enumerate(action_names) if str(name) == "noop"), 0)
+    total_loss = 0.0
+    total_acc = 0.0
+    n_states = 0
+
+    for state in state_samples:
+        candidates = list(state.get("candidate_actions", []))
+        if len(candidates) < 2:
+            continue
+
+        observation = state["observation"]
+        class_ids = torch.tensor(
+            [observation["viewport_class_ids"]] * len(candidates),
+            dtype=torch.long,
+            device=device,
+        )
+        confidences = torch.tensor(
+            [observation["viewport_confidences"]] * len(candidates),
+            dtype=torch.float32,
+            device=device,
+        )
+        body = torch.tensor(
+            [observation["body_vector"]] * len(candidates),
+            dtype=torch.float32,
+            device=device,
+        )
+        inventory = torch.tensor(
+            [observation["inventory_vector"]] * len(candidates),
+            dtype=torch.float32,
+            device=device,
+        )
+        belief_state = torch.tensor(
+            [
+                observation.get(
+                    "belief_state_vector",
+                    observation.get("temporal_vector", []),
+                )
+            ]
+            * len(candidates),
+            dtype=torch.float32,
+            device=device,
+        )
+        candidate_actions = torch.tensor(
+            [int(candidate["action_index"]) for candidate in candidates],
+            dtype=torch.long,
+            device=device,
+        )
+        evaluator_preds = model(
+            class_ids,
+            confidences,
+            body,
+            inventory,
+            candidate_actions,
+            belief_state,
+        )
+        evaluator_scores = stage90r_action_utility(**evaluator_preds).detach()
+        evaluator_probs = torch.softmax(evaluator_scores / 0.25, dim=0)
+
+        actor_preds = model(
+            class_ids[:1],
+            confidences[:1],
+            body[:1],
+            inventory[:1],
+            torch.tensor([noop_idx], dtype=torch.long, device=device),
+            belief_state[:1],
+        )
+        actor_logits = actor_preds["pred_actor_logits"][0][candidate_actions]
+        actor_log_probs = F.log_softmax(actor_logits, dim=0)
+        agreement_loss = -(evaluator_probs * actor_log_probs).sum()
+
+        if optimizer is not None:
+            optimizer.zero_grad()
+            agreement_loss.backward()
+            optimizer.step()
+
+        agreement_acc = float(
+            torch.argmax(actor_logits).item() == torch.argmax(evaluator_probs).item()
+        )
+        total_loss += float(agreement_loss.item())
+        total_acc += agreement_acc
+        n_states += 1
+
+    if n_states == 0:
+        return {
+            "agreement_loss": 0.0,
+            "agreement_acc": 0.0,
+        }
+    return {
+        "agreement_loss": round(total_loss / n_states, 4),
+        "agreement_acc": round(total_acc / n_states, 4),
+    }
+
+
 def _apply_episode_split(
     records: list[dict[str, Any]],
     train_keys: set[tuple[int, int]],
@@ -351,6 +463,59 @@ def _build_advisory_targets_by_signature(
                 distribution[action_index] += increment
         advisory_targets[key] = distribution
     return advisory_targets
+
+
+def _build_state_advisory_teacher_records(
+    state_samples: list[dict[str, Any]],
+    *,
+    n_actions: int,
+) -> list[dict[str, Any]]:
+    advisory_targets = _build_advisory_targets_by_signature(state_samples, n_actions=n_actions)
+    records: list[dict[str, Any]] = []
+    for state in state_samples:
+        representative = dict(state.get("representative_ref", {}))
+        key = _signature_key(
+            {
+                "seed": int(representative.get("seed", 0)),
+                "episode_id": int(representative.get("episode_id", 0)),
+                "step": int(representative.get("step", 0)),
+                "state_signature_key": state.get("state_signature_key"),
+            }
+        )
+        advisory_distribution = advisory_targets.get(key)
+        if advisory_distribution is None or sum(advisory_distribution) <= 0.0:
+            continue
+        teacher_action_index = int(
+            max(range(len(advisory_distribution)), key=lambda idx: float(advisory_distribution[idx]))
+        )
+        records.append(
+            {
+                "seed": int(representative.get("seed", 0)),
+                "episode_id": int(representative.get("episode_id", 0)),
+                "step": int(representative.get("step", 0)),
+                "teacher_policy": "state_advisory",
+                "teacher_mode": "ranking_state_advisory",
+                "planner_action_index": teacher_action_index,
+                "action_index": teacher_action_index,
+                "observation": state["observation"],
+                "next_belief_state": {
+                    "vector": list(
+                        state["observation"].get(
+                            "belief_state_vector",
+                            state["observation"].get("temporal_vector", []),
+                        )
+                    )
+                },
+                "nearest_threat_distances": dict(state.get("nearest_threat_distances", {})),
+                "regime_labels": list(state.get("regime_labels", [])),
+                "primary_regime": state.get("primary_regime"),
+                "state_signature": dict(state.get("state_signature", {})),
+                "state_signature_key": state.get("state_signature_key"),
+                "teacher_action_distribution": list(advisory_distribution),
+                "teacher_target_weight": 1.0,
+            }
+        )
+    return records
 
 
 def _aggregate_teacher_targets_by_signature(
@@ -511,10 +676,17 @@ def _anti_collapse_gate(
     gate_enforced: bool | None = None,
 ) -> dict[str, Any]:
     overall = ranking["overall"]
+    target_summary = ranking.get("target_summary", {})
     threat = ranking["regime_metrics"].get("hostile_contact_or_near", _empty_slice_report())
     resource = ranking["regime_metrics"].get("local_resource_facing", _empty_slice_report())
     if gate_enforced is None:
         gate_enforced = gate_mode != "planner_bootstrap"
+    overall_diversity_supported = True
+    if target_summary:
+        overall_diversity_supported = (
+            int(target_summary.get("n_states", overall["n_states"])) >= 5
+            and int(target_summary.get("unique_top1_actions", 0)) >= 2
+        )
 
     checks: list[dict[str, Any]] = []
 
@@ -542,16 +714,18 @@ def _anti_collapse_gate(
     add_check(
         "dominant_action_share",
         passed=overall["dominant_action_share"] <= 0.7,
+        supported=overall_diversity_supported,
         actual=overall["dominant_action_share"],
         threshold="<= 0.70",
-        reason="No single primitive should dominate almost all ranked states.",
+        reason="No single primitive should dominate almost all ranked states when the validation slice itself has diversity support.",
     )
     add_check(
         "predicted_top1_entropy",
         passed=overall["predicted_top1_normalized_entropy"] >= 0.45,
+        supported=overall_diversity_supported,
         actual=overall["predicted_top1_normalized_entropy"],
         threshold=">= 0.45",
-        reason="Predicted top-1 actions should retain meaningful diversity.",
+        reason="Predicted top-1 actions should retain meaningful diversity when the validation slice itself has diversity support.",
     )
     threat_supported = gate_enforced or threat["n_states"] > 0
     resource_supported = gate_enforced or resource["n_states"] > 0
@@ -628,6 +802,7 @@ def _evaluate_ranking(
     overall_pairwise_correct = 0
     overall_pairwise_total = 0
     overall_top1_counter: Counter[str] = Counter()
+    target_top1_counter: Counter[str] = Counter()
     overall_states = 0
 
     regime_buckets = {
@@ -684,6 +859,9 @@ def _evaluate_ranking(
         exact_top1_hit = pred_best_idx == target_best_idx
         top1_hit = pred_best_idx in tied_target_best_indices
         tie_state = len(tied_target_best_indices) > 1
+        target_increment = 1.0 / len(tied_target_best_indices)
+        for idx in tied_target_best_indices:
+            target_top1_counter[str(candidates[idx]["action"])] += target_increment
 
         pairwise_correct = 0
         pairwise_total = 0
@@ -813,6 +991,21 @@ def _evaluate_ranking(
                 n_action_space=6,
             )
             for regime, bucket in regime_buckets.items()
+        },
+        "target_summary": {
+            "n_states": overall_states,
+            "target_top1_distribution": {
+                key: round(float(value), 4)
+                for key, value in sorted(target_top1_counter.items())
+            },
+            "unique_top1_actions": len(target_top1_counter),
+            "target_top1_entropy": round(_entropy(target_top1_counter), 4),
+            "target_top1_normalized_entropy": round(
+                _entropy(target_top1_counter) / max(math.log(max(len(target_top1_counter), 1)), 1e-6)
+                if len(target_top1_counter) > 1
+                else 0.0,
+                4,
+            ),
         },
         "counterfactual_support": {
             "n_states_with_counterfactual_comparison": counterfactual_states,
@@ -968,6 +1161,11 @@ def main() -> None:
         n_actions=len(action_names),
         advisory_targets=valid_advisory_targets,
     )
+    train_state_advisory_records = _build_state_advisory_teacher_records(
+        train_state_samples,
+        n_actions=len(action_names),
+    )
+    train_actor_records = list(train_teacher_records) + list(train_state_advisory_records)
     if not train_samples or not valid_samples:
         raise ValueError("Transition/state-centered split produced an empty train or validation set")
 
@@ -993,12 +1191,12 @@ def main() -> None:
         collate_fn=collate_local_samples,
     )
     train_teacher_loader = DataLoader(
-        Stage90RLocalDataset(train_teacher_records),
-        batch_size=min(args.batch_size, max(1, len(train_teacher_records))),
+        Stage90RLocalDataset(train_actor_records),
+        batch_size=min(args.batch_size, max(1, len(train_actor_records))),
         shuffle=True,
         generator=_seeded_generator(int(args.seed) + 1) if args.seed is not None else None,
         collate_fn=collate_local_samples,
-    ) if train_teacher_records else None
+    ) if train_actor_records else None
     valid_teacher_loader = DataLoader(
         Stage90RLocalDataset(valid_teacher_records),
         batch_size=min(args.batch_size, max(1, len(valid_teacher_records))),
@@ -1021,12 +1219,26 @@ def main() -> None:
             if train_teacher_loader is not None
             else {"actor_loss": 0.0, "actor_acc": 0.0}
         )
+        train_actor_agreement_metrics = _run_actor_agreement_epoch(
+            model,
+            train_state_samples,
+            optimizer,
+            device,
+            action_names=action_names,
+        )
         with torch.no_grad():
             valid_metrics = _run_epoch(model, valid_loader, None, device)
             valid_actor_metrics = (
                 _run_teacher_epoch(model, valid_teacher_loader, None, device)
                 if valid_teacher_loader is not None
                 else {"actor_loss": 0.0, "actor_acc": 0.0}
+            )
+            valid_actor_agreement_metrics = _run_actor_agreement_epoch(
+                model,
+                valid_state_samples,
+                None,
+                device,
+                action_names=action_names,
             )
             valid_ranking = _evaluate_ranking(
                 model,
@@ -1047,8 +1259,10 @@ def main() -> None:
                 "epoch": epoch + 1,
                 "train": train_metrics,
                 "train_actor": train_actor_metrics,
+                "train_actor_agreement": train_actor_agreement_metrics,
                 "valid": valid_metrics,
                 "valid_actor": valid_actor_metrics,
+                "valid_actor_agreement": valid_actor_agreement_metrics,
                 "valid_ranking": valid_ranking,
                 "valid_actor_report": actor_report,
                 "selection_score": selection_score,
@@ -1126,6 +1340,7 @@ def main() -> None:
             "n_teacher_records": len(teacher_records),
             "n_train_teacher_records": len(train_teacher_records),
             "n_valid_teacher_records": len(valid_teacher_records),
+            "n_train_state_advisory_records": len(train_state_advisory_records),
             "n_train_episodes": len({(s["seed"], s["episode_id"]) for s in train_base_samples}),
             "n_valid_episodes": len({(s["seed"], s["episode_id"]) for s in valid_base_samples}),
             "n_train_state_samples": len(train_state_samples),

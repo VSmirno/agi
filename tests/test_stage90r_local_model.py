@@ -14,6 +14,7 @@ from experiments.stage90r_train_local_evaluator import (
     _apply_episode_split,
     _anti_collapse_gate,
     _build_advisory_targets_by_signature,
+    _build_state_advisory_teacher_records,
     _checkpoint_priority,
     _evaluate_ranking,
     _gate_policy,
@@ -513,6 +514,37 @@ def test_build_advisory_targets_by_signature_uses_target_winner_distribution():
     assert advisory == {(1, 0, "sigA", 0): [1.0, 0.0, 0.0, 0.0]}
 
 
+def test_build_state_advisory_teacher_records_exposes_teacher_distribution():
+    state_samples = [
+        {
+            "state_signature_key": "sigA",
+            "state_signature": {"nearest_hostile_bucket": "near"},
+            "observation": {
+                "viewport_class_ids": [[0] * 9 for _ in range(7)],
+                "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+                "body_vector": [9.0, 9.0, 9.0, 9.0],
+                "inventory_vector": [0] * 12,
+                "belief_state_vector": [0.0, 0.0],
+            },
+            "nearest_threat_distances": {"zombie": 2},
+            "regime_labels": ["hostile_near"],
+            "primary_regime": "hostile_near",
+            "representative_ref": {"seed": 1, "episode_id": 0, "step": 7},
+            "candidate_actions": [
+                {"action": "move_left", "action_index": 0, "label": {"survived_h": 1.0, "damage_h": 0.0, "escape_delta_h": None, "resource_gain_h": 0.0, "health_delta_h": 0.0}},
+                {"action": "move_right", "action_index": 1, "label": {"survived_h": 1.0, "damage_h": 1.0, "escape_delta_h": None, "resource_gain_h": 0.0, "health_delta_h": 0.0}},
+            ],
+        }
+    ]
+
+    records = _build_state_advisory_teacher_records(state_samples, n_actions=4)
+
+    assert len(records) == 1
+    assert records[0]["teacher_policy"] == "state_advisory"
+    assert records[0]["teacher_action_distribution"] == [1.0, 0.0, 0.0, 0.0]
+    assert records[0]["teacher_target_weight"] == 1.0
+
+
 def test_collate_local_samples_preserves_soft_teacher_targets():
     batch = [
         {
@@ -641,6 +673,33 @@ def test_anti_collapse_gate_keeps_smoke_only_mixed_control_advisory():
     assert gate["passed"] is False
     assert gate["enforced"] is False
     assert gate["blocks_checkpoint_promotion"] is False
+
+
+def test_anti_collapse_gate_marks_overall_entropy_checks_unsupported_for_tiny_unanimous_target_slice():
+    ranking = {
+        "overall": {
+            "n_states": 3,
+            "dominant_action_share": 1.0,
+            "predicted_top1_normalized_entropy": 0.0,
+        },
+        "target_summary": {
+            "n_states": 3,
+            "unique_top1_actions": 1,
+            "target_top1_distribution": {"move_down": 3.0},
+            "target_top1_normalized_entropy": 0.0,
+        },
+        "regime_metrics": {
+            "hostile_contact_or_near": {"n_states": 3, "unique_top1_actions": 1},
+            "local_resource_facing": {"n_states": 1, "unique_top1_actions": 1},
+        },
+    }
+
+    gate = _anti_collapse_gate(ranking, gate_mode="mixed_control")
+
+    dominant_check = next(check for check in gate["checks"] if check["name"] == "dominant_action_share")
+    entropy_check = next(check for check in gate["checks"] if check["name"] == "predicted_top1_entropy")
+    assert dominant_check["status"] == "unsupported"
+    assert entropy_check["status"] == "unsupported"
 
 
 def test_collate_local_samples_builds_expected_tensors():
@@ -825,6 +884,36 @@ def test_collate_local_samples_marks_planner_teacher_records():
 
     assert out["teacher_action"].tolist() == [1]
     assert out["teacher_mask"].tolist() == [1.0]
+
+
+def test_collate_local_samples_marks_advisory_teacher_records():
+    batch = [
+        {
+            "observation": {
+                "viewport_class_ids": [[0] * 9 for _ in range(7)],
+                "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+                "body_vector": [9.0, 9.0, 9.0, 9.0],
+                "inventory_vector": [0] * 12,
+                "belief_state_vector": [0.0, 0.0],
+            },
+            "teacher_policy": "state_advisory",
+            "teacher_action_distribution": [0.0, 1.0, 0.0, 0.0],
+            "teacher_target_weight": 1.0,
+            "action_index": 1,
+            "state_signature": {"nearest_hostile_bucket": "none"},
+            "resulting_outcome": {
+                "damage_h": 0.0,
+                "resource_gain_h": 0.0,
+                "survived_h": 1.0,
+                "escape_delta_h": None,
+            },
+        }
+    ]
+
+    out = collate_local_samples(batch)
+
+    assert out["teacher_mask"].tolist() == [1.0]
+    assert out["teacher_action_distribution"].tolist() == [[0.0, 1.0, 0.0, 0.0]]
 
 
 def test_stage90r_action_utility_prefers_safer_action():

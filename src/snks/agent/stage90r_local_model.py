@@ -807,7 +807,11 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
     teacher_mask = torch.tensor(
         [
             1.0
-            if "planner_action_index" in sample or sample.get("teacher_policy") == "planner"
+            if (
+                "teacher_action_distribution" in sample
+                or "planner_action_index" in sample
+                or sample.get("teacher_policy") == "planner"
+            )
             else 0.0
             for sample in batch
         ],

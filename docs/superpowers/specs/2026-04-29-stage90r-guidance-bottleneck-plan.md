@@ -65,6 +65,7 @@ actor supervision.
 |------|--------|------------|---------------|
 | Add guidance losses to evaluator training | S | Phase 3 | Guidance losses train numerically |
 | Keep actor training on blended advisory targets | S | Phase 2, Phase 3 | Teacher epoch uses the new targets |
+| Add direct actor/ranker agreement pass on state samples | S | Phase 3 | Actor can be distilled from evaluator preferences on the same states |
 | Extend focused tests for guidance tensors and forward outputs | S | Phase 3 | Tests cover the new contract |
 | Run narrow local tests | XS | Test updates | Focused tests pass |
 
@@ -76,6 +77,7 @@ actor supervision.
 |------|--------|------------|---------------|
 | Run `epochs=1` smoke on seed 7 | S | Phase 4 | Early actor/ranking behavior captured |
 | Run `epochs=3` canonical on seed 7 | S | Smoke | Endpoint behavior captured |
+| Make overall entropy gate support-aware for tiny unanimous target slices | XS | Canonical evidence | Global diversity checks are downgraded to unsupported when the target slice itself has no diversity support |
 | Summarize deltas vs soft-teacher and failed-prior baselines | XS | Canonical | One verification note states what improved or failed |
 
 ---

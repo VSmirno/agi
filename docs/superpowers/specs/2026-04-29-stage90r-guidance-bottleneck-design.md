@@ -118,6 +118,10 @@ This is not full planner replacement. It is advisory distillation:
 - ranking says what tended to win on that state
 - actor learns from the blended state-level advisory signal
 
+If blended advisory targets are still too weak, actor should receive a direct
+agreement/distillation pass from the evaluator's current state-candidate
+preferences on the same state samples.
+
 ## Non-Goals
 
 This redesign does not yet:
@@ -150,6 +154,11 @@ Secondary signals:
 
 - guidance heads train stably
 - explanatory examples show more coherent action-conditioned scoring
+- actor/ranking agreement improves on the same valid states
+
+For tiny unanimous validation slices, overall entropy/dominant-share checks
+should be treated as unsupported rather than hard-fail, because the target slice
+itself does not provide global diversity support.
 
 ## Risks
 
