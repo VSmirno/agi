@@ -97,12 +97,16 @@ def _split_test_sample(
     }
 
 
-def test_split_samples_by_episode_keeps_episode_boundaries():
+def test_split_samples_by_episode_keeps_episode_boundaries_outside_tiny_fallback():
     samples = [
         {"seed": 1, "episode_id": 0},
         {"seed": 1, "episode_id": 0},
         {"seed": 2, "episode_id": 1},
         {"seed": 2, "episode_id": 1},
+        {"seed": 3, "episode_id": 2},
+        {"seed": 3, "episode_id": 2},
+        {"seed": 4, "episode_id": 3},
+        {"seed": 4, "episode_id": 3},
     ]
 
     train, valid = split_samples_by_episode(samples, train_ratio=0.5)
@@ -112,6 +116,50 @@ def test_split_samples_by_episode_keeps_episode_boundaries():
     assert train_keys
     assert valid_keys
     assert train_keys.isdisjoint(valid_keys)
+
+
+def test_split_samples_by_episode_uses_state_level_fallback_for_two_episode_threat_holdout():
+    samples: list[dict[str, object]] = []
+
+    def add_state(seed: int, episode_id: int, state_name: str, regime: str, winner: str) -> None:
+        action_specs = {
+            "move_right": (0.0, 1.0 if winner == "move_right" else 0.0),
+            "move_left": (0.0, 1.0 if winner == "move_left" else 0.0),
+            "move_up": (0.0, 1.0 if winner == "move_up" else 0.0),
+            "move_down": (0.0, 1.0 if winner == "move_down" else 0.0),
+        }
+        for step, (action, (damage, resource_gain)) in enumerate(action_specs.items()):
+            if action != winner:
+                damage = 1.0
+                resource_gain = 0.0
+            samples.append(
+                _split_test_sample(
+                    seed=seed,
+                    episode_id=episode_id,
+                    step=(len(samples) + step),
+                    state_key=f"{seed}:{state_name}",
+                    regime=regime,
+                    action=action,
+                    damage=damage,
+                    resource_gain=resource_gain,
+                )
+            )
+
+    add_state(1000, 0, "neutral0", "neutral", "move_right")
+    add_state(1000, 0, "neutral1", "neutral", "move_right")
+    add_state(1001, 1, "threat0", "hostile_near", "move_down")
+    add_state(1001, 1, "threat1", "hostile_near", "move_down")
+    add_state(1001, 1, "threat2", "hostile_contact", "move_left")
+    add_state(1001, 1, "resource0", "local_resource_facing", "move_up")
+
+    train, valid = split_samples_by_episode(samples, train_ratio=0.5)
+
+    train_keys = {(int(sample["seed"]), int(sample["episode_id"])) for sample in train}
+    valid_keys = {(int(sample["seed"]), int(sample["episode_id"])) for sample in valid}
+    assert (1001, 1) in train_keys
+    assert (1001, 1) in valid_keys
+    assert any(str(sample["primary_regime"]).startswith("hostile") for sample in train)
+    assert any(str(sample["primary_regime"]).startswith("hostile") for sample in valid)
 
 
 def test_split_samples_by_episode_uses_stable_non_tail_partition():

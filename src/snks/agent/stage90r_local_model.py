@@ -217,6 +217,154 @@ def split_samples_by_episode(
         digest = hashlib.sha256(f"{key[0]}:{key[1]}".encode("utf-8")).hexdigest()
         return digest, key
 
+    def state_split_order(
+        key: tuple[int, int, str, int],
+    ) -> tuple[str, tuple[int, int, str, int]]:
+        digest = hashlib.sha256(f"{key[0]}:{key[1]}:{key[2]}:{key[3]}".encode("utf-8")).hexdigest()
+        return digest, key
+
+    def state_group_key(sample: dict[str, Any]) -> tuple[int, int, str, int]:
+        state_signature = sample.get("state_signature_key")
+        if state_signature not in (None, ""):
+            state_token = str(state_signature)
+            state_step = 0
+        else:
+            state_token = str(sample.get("state_id", ""))
+            state_step = int(sample.get("step", 0))
+        return (
+            int(sample["seed"]),
+            int(sample["episode_id"]),
+            state_token,
+            state_step,
+        )
+
+    def threat_support_from_counts(regime_counts: dict[str, int]) -> int:
+        return (
+            regime_counts.get("hostile_contact", 0)
+            + regime_counts.get("hostile_near", 0)
+            + regime_counts.get("low_vitals", 0)
+        )
+
+    def state_level_support_split() -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
+        indexed_pairs = list(zip(samples, scoring_samples, strict=False))
+        if not indexed_pairs:
+            return None
+
+        state_groups: dict[tuple[int, int, str, int], dict[str, Any]] = {}
+        for original_sample, scoring_sample in indexed_pairs:
+            key = state_group_key(scoring_sample)
+            bucket = state_groups.setdefault(
+                key,
+                {
+                    "rows": [],
+                    "n_samples": 0,
+                    "regime_counts": {},
+                },
+            )
+            bucket["rows"].append(original_sample)
+            bucket["n_samples"] += 1
+            regime = str(scoring_sample.get("primary_regime", "neutral"))
+            regime_counts = bucket["regime_counts"]
+            regime_counts[regime] = regime_counts.get(regime, 0) + 1
+
+        ordered_keys = sorted(state_groups, key=state_split_order)
+        if len(ordered_keys) <= 1:
+            return None
+
+        total_threat = sum(
+            threat_support_from_counts(state_groups[key]["regime_counts"]) for key in ordered_keys
+        )
+        if total_threat <= 1:
+            return None
+
+        target_valid_samples = len(samples) - int(round(len(samples) * train_ratio))
+        if len(ordered_keys) > 16:
+            valid_key_set: set[tuple[int, int, str, int]] = set()
+            valid_samples = 0
+            for key in ordered_keys:
+                if valid_samples >= target_valid_samples and valid_key_set:
+                    break
+                valid_key_set.add(key)
+                valid_samples += int(state_groups[key]["n_samples"])
+            train, valid = [], []
+            for key in ordered_keys:
+                rows = state_groups[key]["rows"]
+                if key in valid_key_set:
+                    valid.extend(rows)
+                else:
+                    train.extend(rows)
+            if train and valid:
+                return train, valid
+            return None
+
+        best_valid_keys: tuple[tuple[int, int, str, int], ...] | None = None
+        best_score: tuple[Any, ...] | None = None
+        best_digest: str | None = None
+        n_groups = len(ordered_keys)
+        for mask in range(1, (1 << n_groups) - 1):
+            valid_keys = tuple(ordered_keys[idx] for idx in range(n_groups) if mask & (1 << idx))
+            valid_key_set = set(valid_keys)
+            valid_samples = sum(int(state_groups[key]["n_samples"]) for key in valid_keys)
+            valid_threat = sum(
+                threat_support_from_counts(state_groups[key]["regime_counts"]) for key in valid_keys
+            )
+            train_threat = total_threat - valid_threat
+            if valid_threat <= 0 or train_threat <= 0:
+                continue
+
+            valid_resource = sum(
+                int(state_groups[key]["regime_counts"].get("local_resource_facing", 0) > 0)
+                for key in valid_keys
+            )
+            train_resource = sum(
+                int(state_groups[key]["regime_counts"].get("local_resource_facing", 0) > 0)
+                for key in ordered_keys
+                if key not in valid_key_set
+            )
+            valid_neutral = sum(
+                int(state_groups[key]["regime_counts"].get("neutral", 0) > 0)
+                for key in valid_keys
+            )
+            train_neutral = sum(
+                int(state_groups[key]["regime_counts"].get("neutral", 0) > 0)
+                for key in ordered_keys
+                if key not in valid_key_set
+            )
+
+            score = (
+                1,
+                min(valid_threat, train_threat),
+                int(valid_resource > 0 and train_resource > 0),
+                min(valid_resource, train_resource),
+                int(valid_neutral > 0 and train_neutral > 0),
+                -abs(valid_samples - target_valid_samples),
+                -abs(len(valid_keys) - max(1, round(n_groups * (1.0 - train_ratio)))),
+            )
+            digest = hashlib.sha256(repr(valid_keys).encode("utf-8")).hexdigest()
+            if (
+                best_score is None
+                or score > best_score
+                or (score == best_score and digest < str(best_digest))
+            ):
+                best_score = score
+                best_valid_keys = valid_keys
+                best_digest = digest
+
+        if not best_valid_keys:
+            return None
+
+        valid_key_set = set(best_valid_keys)
+        train, valid = [], []
+        for key in ordered_keys:
+            rows = state_groups[key]["rows"]
+            if key in valid_key_set:
+                valid.extend(rows)
+            else:
+                train.extend(rows)
+        if not train or not valid:
+            return None
+        return train, valid
+
     if not samples:
         return [], []
 
@@ -236,6 +384,8 @@ def split_samples_by_episode(
     )
     if len(episode_keys) <= 1:
         return fallback_split()
+    if len(episode_keys) == 2:
+        return state_level_support_split() or fallback_split()
     if len(episode_keys) > 12:
         return fallback_split()
 
@@ -346,6 +496,20 @@ def split_samples_by_episode(
 
     if not best_valid_keys:
         return fallback_split()
+
+    train_threat_support = sum(
+        threat_support_from_counts(episode_profiles[key]["state_regime_counts"])
+        for key in episode_keys
+        if key not in best_valid_keys
+    )
+    valid_threat_support = sum(
+        threat_support_from_counts(episode_profiles[key]["state_regime_counts"])
+        for key in best_valid_keys
+    )
+    if train_threat_support <= 0 < valid_threat_support:
+        state_level_split = state_level_support_split()
+        if state_level_split is not None:
+            return state_level_split
 
     valid_key_set = set(best_valid_keys)
     train, valid = [], []
