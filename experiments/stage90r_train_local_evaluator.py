@@ -105,8 +105,10 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
         "stall_bce": 0.0,
         "affordance_bce": 0.0,
         "threat_trend_mse": 0.0,
-        "danger_pressure_bce": 0.0,
-        "resource_opportunity_bce": 0.0,
+        "threat_urgency_bce": 0.0,
+        "opportunity_availability_bce": 0.0,
+        "vitality_pressure_bce": 0.0,
+        "progress_viability_bce": 0.0,
         "survival_acc": 0.0,
     }
     n_batches = 0
@@ -143,13 +145,21 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
             batch["affordance_persistence"],
         )
         threat_trend_mse = masked_mse(preds["pred_threat_trend"], batch["threat_trend"])
-        danger_pressure_bce = F.binary_cross_entropy_with_logits(
-            preds["pred_danger_pressure_logit"],
-            batch["danger_pressure"],
+        threat_urgency_bce = F.binary_cross_entropy_with_logits(
+            preds["pred_threat_urgency_logit"],
+            batch["threat_urgency"],
         )
-        resource_opportunity_bce = F.binary_cross_entropy_with_logits(
-            preds["pred_resource_opportunity_logit"],
-            batch["resource_opportunity"],
+        opportunity_availability_bce = F.binary_cross_entropy_with_logits(
+            preds["pred_opportunity_availability_logit"],
+            batch["opportunity_availability"],
+        )
+        vitality_pressure_bce = F.binary_cross_entropy_with_logits(
+            preds["pred_vitality_pressure_logit"],
+            batch["vitality_pressure"],
+        )
+        progress_viability_bce = F.binary_cross_entropy_with_logits(
+            preds["pred_progress_viability_logit"],
+            batch["progress_viability"],
         )
         loss = (
             0.5 * next_belief_mse
@@ -161,8 +171,10 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
             + 0.35 * stall_bce
             + 0.25 * affordance_bce
             + 0.35 * threat_trend_mse
-            + 0.20 * danger_pressure_bce
-            + 0.20 * resource_opportunity_bce
+            + 0.20 * threat_urgency_bce
+            + 0.20 * opportunity_availability_bce
+            + 0.15 * vitality_pressure_bce
+            + 0.15 * progress_viability_bce
         )
 
         if optimizer is not None:
@@ -184,8 +196,10 @@ def _run_epoch(model, loader, optimizer, device: torch.device) -> dict[str, floa
         totals["stall_bce"] += float(stall_bce.item())
         totals["affordance_bce"] += float(affordance_bce.item())
         totals["threat_trend_mse"] += float(threat_trend_mse.item())
-        totals["danger_pressure_bce"] += float(danger_pressure_bce.item())
-        totals["resource_opportunity_bce"] += float(resource_opportunity_bce.item())
+        totals["threat_urgency_bce"] += float(threat_urgency_bce.item())
+        totals["opportunity_availability_bce"] += float(opportunity_availability_bce.item())
+        totals["vitality_pressure_bce"] += float(vitality_pressure_bce.item())
+        totals["progress_viability_bce"] += float(progress_viability_bce.item())
         totals["survival_acc"] += float(survival_acc.item())
         n_batches += 1
 
@@ -286,43 +300,96 @@ def _apply_episode_split(
     return train_records, valid_records
 
 
+def _signature_key(record: dict[str, Any]) -> tuple[int, int, str, int]:
+    state_signature = record.get("state_signature_key")
+    if state_signature not in (None, ""):
+        state_token = str(state_signature)
+        state_step = 0
+    else:
+        state_token = ""
+        state_step = int(record.get("step", 0))
+    return (
+        int(record["seed"]),
+        int(record["episode_id"]),
+        state_token,
+        state_step,
+    )
+
+
+def _build_advisory_targets_by_signature(
+    state_samples: list[dict[str, Any]],
+    *,
+    n_actions: int,
+) -> dict[tuple[int, int, str, int], list[float]]:
+    from snks.agent.stage90r_local_model import stage90r_target_order_key
+
+    advisory_targets: dict[tuple[int, int, str, int], list[float]] = {}
+    for state in state_samples:
+        candidates = list(state.get("candidate_actions", []))
+        if not candidates:
+            continue
+        key = _signature_key(
+            {
+                "seed": int(state.get("representative_ref", {}).get("seed", 0)),
+                "episode_id": int(state.get("representative_ref", {}).get("episode_id", 0)),
+                "step": int(state.get("representative_ref", {}).get("step", 0)),
+                "state_signature_key": state.get("state_signature_key"),
+            }
+        )
+        target_keys = [stage90r_target_order_key(candidate["label"]) for candidate in candidates]
+        best_key = max(target_keys)
+        winner_indices = [
+            idx for idx, candidate_key in enumerate(target_keys) if candidate_key == best_key
+        ]
+        if not winner_indices:
+            continue
+        distribution = [0.0] * n_actions
+        increment = 1.0 / len(winner_indices)
+        for idx in winner_indices:
+            action_index = int(candidates[idx]["action_index"])
+            if 0 <= action_index < n_actions:
+                distribution[action_index] += increment
+        advisory_targets[key] = distribution
+    return advisory_targets
+
+
 def _aggregate_teacher_targets_by_signature(
     records: list[dict[str, Any]],
     *,
     n_actions: int,
+    advisory_targets: dict[tuple[int, int, str, int], list[float]] | None = None,
 ) -> list[dict[str, Any]]:
-    def signature_key(record: dict[str, Any]) -> tuple[int, int, str, int]:
-        state_signature = record.get("state_signature_key")
-        if state_signature not in (None, ""):
-            state_token = str(state_signature)
-            state_step = 0
-        else:
-            state_token = ""
-            state_step = int(record.get("step", 0))
-        return (
-            int(record["seed"]),
-            int(record["episode_id"]),
-            state_token,
-            state_step,
-        )
-
     bucket_counts: dict[tuple[int, int, str, int], Counter[int]] = {}
     for record in records:
-        key = signature_key(record)
+        key = _signature_key(record)
         counter = bucket_counts.setdefault(key, Counter())
         counter[int(record.get("planner_action_index", record.get("action_index", 0)))] += 1
 
     aggregated: list[dict[str, Any]] = []
     for record in records:
-        key = signature_key(record)
+        key = _signature_key(record)
         counter = bucket_counts[key]
         total = sum(counter.values())
-        distribution = [0.0] * n_actions
+        planner_distribution = [0.0] * n_actions
         if total > 0:
             for action_idx, count in counter.items():
                 if 0 <= int(action_idx) < n_actions:
-                    distribution[int(action_idx)] = float(count) / float(total)
+                    planner_distribution[int(action_idx)] = float(count) / float(total)
         consistency = (max(counter.values()) / total) if total > 0 else 0.0
+        advisory_distribution = (
+            advisory_targets.get(key)
+            if advisory_targets is not None
+            else None
+        )
+        if advisory_distribution is not None:
+            planner_mix = min(1.0, max(0.0, float(consistency)))
+            distribution = [
+                (planner_mix * float(planner_distribution[idx]))
+                + ((1.0 - planner_mix) * float(advisory_distribution[idx]))
+                for idx in range(n_actions)
+            ]
+        else:
+            distribution = planner_distribution
         enriched = dict(record)
         enriched["teacher_action_distribution"] = distribution
         enriched["teacher_target_weight"] = round(float(consistency), 4)
@@ -658,6 +725,22 @@ def _evaluate_ranking(
             bucket["top1"][pred_best_action] += 1
 
         if len(explanatory_examples) < 5:
+            pred_threat_urgency_logit = preds.get(
+                "pred_threat_urgency_logit",
+                torch.zeros(len(candidates), dtype=class_ids.dtype, device=device).float(),
+            )
+            pred_opportunity_availability_logit = preds.get(
+                "pred_opportunity_availability_logit",
+                torch.zeros(len(candidates), dtype=class_ids.dtype, device=device).float(),
+            )
+            pred_vitality_pressure_logit = preds.get(
+                "pred_vitality_pressure_logit",
+                torch.zeros(len(candidates), dtype=class_ids.dtype, device=device).float(),
+            )
+            pred_progress_viability_logit = preds.get(
+                "pred_progress_viability_logit",
+                torch.zeros(len(candidates), dtype=class_ids.dtype, device=device).float(),
+            )
             explanatory_examples.append(
                 {
                     "state_id": int(state.get("state_id", -1)),
@@ -684,6 +767,22 @@ def _evaluate_ranking(
                                 4,
                             ),
                             "pred_threat_trend": round(float(preds["pred_threat_trend"][idx].item()), 4),
+                            "pred_threat_urgency": round(
+                                float(torch.sigmoid(pred_threat_urgency_logit[idx]).item()),
+                                4,
+                            ),
+                            "pred_opportunity_availability": round(
+                                float(torch.sigmoid(pred_opportunity_availability_logit[idx]).item()),
+                                4,
+                            ),
+                            "pred_vitality_pressure": round(
+                                float(torch.sigmoid(pred_vitality_pressure_logit[idx]).item()),
+                                4,
+                            ),
+                            "pred_progress_viability": round(
+                                float(torch.sigmoid(pred_progress_viability_logit[idx]).item()),
+                                4,
+                            ),
                             "target_label": candidate["label"],
                         }
                         for idx, candidate in enumerate(candidates)
@@ -836,14 +935,6 @@ def main() -> None:
         train_state_keys=train_state_keys,
         valid_state_keys=valid_state_keys,
     )
-    train_teacher_records = _aggregate_teacher_targets_by_signature(
-        train_teacher_records,
-        n_actions=len(action_names),
-    )
-    valid_teacher_records = _aggregate_teacher_targets_by_signature(
-        valid_teacher_records,
-        n_actions=len(action_names),
-    )
     using_primary_transition_records = training_interface == "learner_transition_records"
     if using_primary_transition_records:
         train_samples = list(train_base_samples)
@@ -859,6 +950,24 @@ def main() -> None:
         valid_state_samples = build_state_centered_training_examples(valid_base_samples)
         train_samples = flatten_state_samples(train_state_samples)
         valid_samples = flatten_state_samples(valid_state_samples)
+    train_advisory_targets = _build_advisory_targets_by_signature(
+        train_state_samples,
+        n_actions=len(action_names),
+    )
+    valid_advisory_targets = _build_advisory_targets_by_signature(
+        valid_state_samples,
+        n_actions=len(action_names),
+    )
+    train_teacher_records = _aggregate_teacher_targets_by_signature(
+        train_teacher_records,
+        n_actions=len(action_names),
+        advisory_targets=train_advisory_targets,
+    )
+    valid_teacher_records = _aggregate_teacher_targets_by_signature(
+        valid_teacher_records,
+        n_actions=len(action_names),
+        advisory_targets=valid_advisory_targets,
+    )
     if not train_samples or not valid_samples:
         raise ValueError("Transition/state-centered split produced an empty train or validation set")
 

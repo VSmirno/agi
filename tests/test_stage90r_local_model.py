@@ -13,6 +13,7 @@ from experiments.stage90r_train_local_evaluator import (
     _aggregate_teacher_targets_by_signature,
     _apply_episode_split,
     _anti_collapse_gate,
+    _build_advisory_targets_by_signature,
     _checkpoint_priority,
     _evaluate_ranking,
     _gate_policy,
@@ -468,6 +469,50 @@ def test_aggregate_teacher_targets_by_signature_builds_soft_targets_and_consiste
     assert sig_b["teacher_target_weight"] == 1.0
 
 
+def test_aggregate_teacher_targets_by_signature_blends_planner_and_advisory_targets():
+    records = [
+        {"seed": 1, "episode_id": 0, "step": 0, "state_signature_key": "sigA", "planner_action_index": 2},
+        {"seed": 1, "episode_id": 0, "step": 1, "state_signature_key": "sigA", "planner_action_index": 2},
+        {"seed": 1, "episode_id": 0, "step": 2, "state_signature_key": "sigA", "planner_action_index": 1},
+    ]
+    advisory = {
+        (1, 0, "sigA", 0): [1.0, 0.0, 0.0, 0.0],
+    }
+
+    aggregated = _aggregate_teacher_targets_by_signature(
+        records,
+        n_actions=4,
+        advisory_targets=advisory,
+    )
+
+    for record in aggregated:
+        assert record["teacher_target_weight"] == 0.6667
+        assert [round(value, 6) for value in record["teacher_action_distribution"]] == [
+            round(1 / 3, 6),
+            round(2 / 9, 6),
+            round(4 / 9, 6),
+            0.0,
+        ]
+
+
+def test_build_advisory_targets_by_signature_uses_target_winner_distribution():
+    state_samples = [
+        {
+            "state_signature_key": "sigA",
+            "representative_ref": {"seed": 1, "episode_id": 0, "step": 7},
+            "candidate_actions": [
+                {"action": "move_left", "action_index": 0, "label": {"survived_h": 1.0, "damage_h": 0.0, "escape_delta_h": None, "resource_gain_h": 0.0, "health_delta_h": 0.0}},
+                {"action": "move_right", "action_index": 1, "label": {"survived_h": 1.0, "damage_h": 1.0, "escape_delta_h": None, "resource_gain_h": 0.0, "health_delta_h": 0.0}},
+                {"action": "move_up", "action_index": 2, "label": {"survived_h": 0.0, "damage_h": 0.0, "escape_delta_h": None, "resource_gain_h": 0.0, "health_delta_h": 0.0}},
+            ],
+        }
+    ]
+
+    advisory = _build_advisory_targets_by_signature(state_samples, n_actions=4)
+
+    assert advisory == {(1, 0, "sigA", 0): [1.0, 0.0, 0.0, 0.0]}
+
+
 def test_collate_local_samples_preserves_soft_teacher_targets():
     batch = [
         {
@@ -634,8 +679,10 @@ def test_collate_local_samples_builds_expected_tensors():
     assert out["next_belief"].tolist() == [[0.699999988079071, 0.20000000298023224]]
     assert out["action"].tolist() == [3]
     assert out["escape_mask"].tolist() == [0.0]
-    assert out["danger_pressure"].tolist() == [0.75]
-    assert out["resource_opportunity"].tolist() == [0.75]
+    assert out["threat_urgency"].tolist() == [0.6499999761581421]
+    assert out["opportunity_availability"].tolist() == [0.5]
+    assert out["vitality_pressure"].tolist() == [1.0]
+    assert out["progress_viability"].tolist() == [0.10000000149011612]
 
 
 def test_local_action_evaluator_forward_shapes():
@@ -657,8 +704,11 @@ def test_local_action_evaluator_forward_shapes():
     assert out["pred_stall_risk_logit"].shape == (2,)
     assert out["pred_affordance_persistence_logit"].shape == (2,)
     assert out["pred_threat_trend"].shape == (2,)
-    assert out["pred_danger_pressure_logit"].shape == (2,)
-    assert out["pred_resource_opportunity_logit"].shape == (2,)
+    assert out["pred_threat_urgency_logit"].shape == (2,)
+    assert out["pred_opportunity_availability_logit"].shape == (2,)
+    assert out["pred_vitality_pressure_logit"].shape == (2,)
+    assert out["pred_progress_viability_logit"].shape == (2,)
+    assert out["pred_guidance_vector"].shape == (2, 4)
     assert out["pred_next_belief_state"].shape == (2, 3)
     assert out["pred_actor_logits"].shape == (2, model.config.n_actions)
 

@@ -30,6 +30,7 @@ class LocalEvaluatorConfig:
     belief_state_dim: int = 0
     belief_state_hidden_dim: int = 32
     hidden_dim: int = 256
+    guidance_dim: int = 4
 
 
 class Stage90RLocalDataset(Dataset):
@@ -531,12 +532,54 @@ def split_samples_by_episode(
 
 
 def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
+    guidance_bucket_value = {
+        "none": 0.0,
+        "low": 0.35,
+        "medium": 0.65,
+        "high": 0.85,
+        "critical": 1.0,
+    }
+
     def sample_regimes(sample: dict[str, Any]) -> set[str]:
         regimes = {str(regime) for regime in sample.get("regime_labels", []) if regime}
         primary_regime = str(sample.get("primary_regime", "neutral"))
         if primary_regime:
             regimes.add(primary_regime)
         return regimes or {"neutral"}
+
+    def sample_signature(sample: dict[str, Any]) -> dict[str, Any]:
+        signature = sample.get("state_signature")
+        if isinstance(signature, dict) and signature:
+            return signature
+
+        observation = sample.get("observation", {})
+        nearest_threat_distances = sample.get("nearest_threat_distances", {})
+        distance_values = [
+            int(value)
+            for value in nearest_threat_distances.values()
+            if value is not None
+        ]
+        if not distance_values:
+            nearest_bucket = "none"
+        else:
+            nearest_distance = min(distance_values)
+            if nearest_distance <= 1:
+                nearest_bucket = "contact"
+            elif nearest_distance <= 3:
+                nearest_bucket = "near"
+            else:
+                nearest_bucket = "far"
+
+        return {
+            "body_buckets": [
+                int(round(float(value)))
+                for value in observation.get("body_vector", [])
+            ],
+            "nearest_hostile_bucket": nearest_bucket,
+            "resource_tiles": [],
+            "visible_hostiles": [],
+            "belief_state_signature": dict(observation.get("belief_state_signature", {})),
+        }
 
     def sample_label(sample: dict[str, Any]) -> dict[str, Any]:
         label = (
@@ -545,27 +588,7 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
             or sample.get("resulting_outcome")
             or {}
         )
-        regimes = sample_regimes(sample)
         threat_trend = float(label.get("threat_trend_h", 0.0))
-        danger_pressure = 0.0
-        if "hostile_contact" in regimes:
-            danger_pressure += 0.65
-        elif "hostile_near" in regimes:
-            danger_pressure += 0.45
-        if "low_vitals" in regimes:
-            danger_pressure += 0.15
-        if float(label.get("damage_h", 0.0)) > 0.0:
-            danger_pressure += 0.20
-        if threat_trend < 0.0:
-            danger_pressure += min(0.20, 0.10 * abs(threat_trend))
-
-        resource_opportunity = 0.0
-        if "local_resource_facing" in regimes:
-            resource_opportunity += 0.50
-        if float(label.get("affordance_persistence_h", 0.0)) > 0.0:
-            resource_opportunity += 0.25
-        if float(label.get("resource_gain_h", 0.0)) > 0.0:
-            resource_opportunity += 0.25
 
         return {
             "damage_h": float(label.get("damage_h", 0.0)),
@@ -576,8 +599,100 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
             "stall_risk_h": float(label.get("stall_risk_h", 0.0)),
             "affordance_persistence_h": float(label.get("affordance_persistence_h", 0.0)),
             "threat_trend_h": threat_trend,
-            "danger_pressure_h": min(1.0, round(danger_pressure, 4)),
-            "resource_opportunity_h": min(1.0, round(resource_opportunity, 4)),
+        }
+
+    def sample_guidance(sample: dict[str, Any]) -> dict[str, float]:
+        regimes = sample_regimes(sample)
+        signature = sample_signature(sample)
+        belief_signature = dict(signature.get("belief_state_signature", {}))
+        body_buckets = [
+            int(value)
+            for value in signature.get("body_buckets", [])
+            if value is not None
+        ]
+        nearest_bucket = str(signature.get("nearest_hostile_bucket", "none"))
+        visible_hostiles = list(signature.get("visible_hostiles", []))
+        resource_tiles = list(signature.get("resource_tiles", []))
+
+        threat_urgency = {
+            "none": 0.05,
+            "far": 0.25,
+            "near": 0.65,
+            "contact": 0.9,
+        }.get(nearest_bucket, 0.05)
+        if "hostile_contact" in regimes:
+            threat_urgency = max(threat_urgency, 0.9)
+        elif "hostile_near" in regimes:
+            threat_urgency = max(threat_urgency, 0.65)
+        if visible_hostiles:
+            threat_urgency += min(0.1, 0.05 * len(visible_hostiles))
+        if "low_vitals" in regimes:
+            threat_urgency += 0.1
+        threat_urgency += 0.15 * guidance_bucket_value.get(
+            str(belief_signature.get("damage_pressure_bucket", "none")),
+            0.0,
+        )
+        threat_urgency += 0.1 * guidance_bucket_value.get(
+            str(belief_signature.get("threat_trend_bucket", "none")),
+            0.0,
+        )
+
+        opportunity_availability = 0.0
+        if "local_resource_facing" in regimes:
+            opportunity_availability += 0.5
+        if resource_tiles:
+            opportunity_availability += min(0.2, 0.1 * len(resource_tiles))
+        opportunity_availability += 0.15 * guidance_bucket_value.get(
+            str(belief_signature.get("affordance_stability_bucket", "none")),
+            0.0,
+        )
+        opportunity_availability += 0.15 * guidance_bucket_value.get(
+            str(belief_signature.get("resource_flow_bucket", "none")),
+            0.0,
+        )
+
+        min_body = min(body_buckets) if body_buckets else 9
+        if min_body <= 3:
+            vitality_pressure = 1.0
+        elif min_body <= 4:
+            vitality_pressure = 0.85
+        elif min_body <= 6:
+            vitality_pressure = 0.55
+        elif min_body <= 8:
+            vitality_pressure = 0.2
+        else:
+            vitality_pressure = 0.0
+        vitality_pressure += 0.1 * guidance_bucket_value.get(
+            str(belief_signature.get("damage_pressure_bucket", "none")),
+            0.0,
+        )
+
+        progress_viability = 0.1
+        progress_viability += 0.55 * guidance_bucket_value.get(
+            str(belief_signature.get("progress_bucket", "none")),
+            0.0,
+        )
+        progress_viability += 0.1 * guidance_bucket_value.get(
+            str(belief_signature.get("affordance_stability_bucket", "none")),
+            0.0,
+        )
+        progress_viability += 0.1 * guidance_bucket_value.get(
+            str(belief_signature.get("resource_flow_bucket", "none")),
+            0.0,
+        )
+        progress_viability -= 0.35 * guidance_bucket_value.get(
+            str(belief_signature.get("stall_bucket", "none")),
+            0.0,
+        )
+
+        return {
+            "threat_urgency": min(1.0, round(max(0.0, threat_urgency), 4)),
+            "opportunity_availability": min(
+                1.0,
+                round(max(0.0, opportunity_availability), 4),
+            ),
+            "vitality_pressure": min(1.0, round(max(0.0, vitality_pressure), 4)),
+            "progress_viability": min(1.0, round(max(0.0, progress_viability), 4)),
         }
 
     class_ids = torch.tensor(
@@ -666,12 +781,20 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
         [float(sample_label(sample).get("threat_trend_h", 0.0)) for sample in batch],
         dtype=torch.float32,
     )
-    danger_pressure = torch.tensor(
-        [float(sample_label(sample).get("danger_pressure_h", 0.0)) for sample in batch],
+    threat_urgency = torch.tensor(
+        [sample_guidance(sample)["threat_urgency"] for sample in batch],
         dtype=torch.float32,
     )
-    resource_opportunity = torch.tensor(
-        [float(sample_label(sample).get("resource_opportunity_h", 0.0)) for sample in batch],
+    opportunity_availability = torch.tensor(
+        [sample_guidance(sample)["opportunity_availability"] for sample in batch],
+        dtype=torch.float32,
+    )
+    vitality_pressure = torch.tensor(
+        [sample_guidance(sample)["vitality_pressure"] for sample in batch],
+        dtype=torch.float32,
+    )
+    progress_viability = torch.tensor(
+        [sample_guidance(sample)["progress_viability"] for sample in batch],
         dtype=torch.float32,
     )
     teacher_action = torch.tensor(
@@ -733,8 +856,10 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
         "stall_risk": stall_risk,
         "affordance_persistence": affordance_persistence,
         "threat_trend": threat_trend,
-        "danger_pressure": danger_pressure,
-        "resource_opportunity": resource_opportunity,
+        "threat_urgency": threat_urgency,
+        "opportunity_availability": opportunity_availability,
+        "vitality_pressure": vitality_pressure,
+        "progress_viability": progress_viability,
         "teacher_action": teacher_action,
         "teacher_action_distribution": teacher_action_distribution,
         "teacher_mask": teacher_mask,
@@ -743,7 +868,7 @@ def collate_local_samples(batch: list[dict[str, Any]]) -> dict[str, torch.Tensor
 
 
 class LocalActionEvaluator(nn.Module):
-    """Action-conditioned short-horizon evaluator for Stage 90R."""
+    """Shared-state local evaluator with guidance bottleneck for Stage 90R."""
 
     def __init__(self, config: LocalEvaluatorConfig | None = None) -> None:
         super().__init__()
@@ -754,8 +879,8 @@ class LocalActionEvaluator(nn.Module):
         belief_state_width = (
             self.config.belief_state_hidden_dim if self.config.belief_state_dim > 0 else 0
         )
-        input_dim = tile_width + self.config.n_body + self.config.n_inventory + action_width + belief_state_width
-        policy_input_dim = tile_width + self.config.n_body + self.config.n_inventory + belief_state_width
+        state_input_dim = tile_width + self.config.n_body + self.config.n_inventory + belief_state_width
+        action_input_dim = self.config.hidden_dim + action_width + self.config.guidance_dim
 
         self.tile_embedding = nn.Embedding(self.config.n_classes, self.config.tile_embed_dim)
         self.action_embedding = nn.Embedding(self.config.n_actions, self.config.action_embed_dim)
@@ -767,14 +892,20 @@ class LocalActionEvaluator(nn.Module):
             if self.config.belief_state_dim > 0
             else None
         )
-        self.backbone = nn.Sequential(
-            nn.Linear(input_dim, self.config.hidden_dim),
+        self.state_backbone = nn.Sequential(
+            nn.Linear(state_input_dim, self.config.hidden_dim),
             nn.ReLU(),
             nn.Linear(self.config.hidden_dim, self.config.hidden_dim),
             nn.ReLU(),
         )
-        self.policy_backbone = nn.Sequential(
-            nn.Linear(policy_input_dim, self.config.hidden_dim),
+        self.guidance_backbone = nn.Sequential(
+            nn.Linear(self.config.hidden_dim, self.config.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.config.hidden_dim, self.config.hidden_dim),
+            nn.ReLU(),
+        )
+        self.action_backbone = nn.Sequential(
+            nn.Linear(action_input_dim, self.config.hidden_dim),
             nn.ReLU(),
             nn.Linear(self.config.hidden_dim, self.config.hidden_dim),
             nn.ReLU(),
@@ -787,40 +918,21 @@ class LocalActionEvaluator(nn.Module):
         self.stall_head = nn.Linear(self.config.hidden_dim, 1)
         self.affordance_head = nn.Linear(self.config.hidden_dim, 1)
         self.threat_trend_head = nn.Linear(self.config.hidden_dim, 1)
-        self.danger_pressure_head = nn.Linear(self.config.hidden_dim, 1)
-        self.resource_opportunity_head = nn.Linear(self.config.hidden_dim, 1)
+        self.threat_urgency_head = nn.Linear(self.config.hidden_dim, 1)
+        self.opportunity_availability_head = nn.Linear(self.config.hidden_dim, 1)
+        self.vitality_pressure_head = nn.Linear(self.config.hidden_dim, 1)
+        self.progress_viability_head = nn.Linear(self.config.hidden_dim, 1)
         self.next_belief_head = (
             nn.Linear(self.config.hidden_dim, self.config.belief_state_dim)
             if self.config.belief_state_dim > 0
             else None
         )
-        self.actor_head = nn.Linear(self.config.hidden_dim, self.config.n_actions)
+        self.actor_head = nn.Linear(
+            self.config.hidden_dim + self.config.guidance_dim,
+            self.config.n_actions,
+        )
 
-    def encode(
-        self,
-        class_ids: torch.Tensor,
-        confidences: torch.Tensor,
-        body: torch.Tensor,
-        inventory: torch.Tensor,
-        action: torch.Tensor,
-        belief_state: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        tile_embed = self.tile_embedding(class_ids)  # (B, 7, 9, E)
-        tile_features = torch.cat([tile_embed, confidences.unsqueeze(-1)], dim=-1)
-        tile_features = tile_features.reshape(tile_features.shape[0], -1)
-        action_features = self.action_embedding(action)
-        features = [tile_features, body, inventory, action_features]
-        if self.belief_state_encoder is not None:
-            if belief_state is None:
-                belief_state = torch.zeros(
-                    (class_ids.shape[0], self.config.belief_state_dim),
-                    dtype=body.dtype,
-                    device=body.device,
-                )
-            features.append(self.belief_state_encoder(belief_state))
-        return torch.cat(features, dim=1)
-
-    def encode_policy_context(
+    def encode_state_context(
         self,
         class_ids: torch.Tensor,
         confidences: torch.Tensor,
@@ -851,10 +963,32 @@ class LocalActionEvaluator(nn.Module):
         action: torch.Tensor,
         belief_state: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        x = self.encode(class_ids, confidences, body, inventory, action, belief_state)
-        h = self.backbone(x)
-        policy_context = self.encode_policy_context(class_ids, confidences, body, inventory, belief_state)
-        policy_h = self.policy_backbone(policy_context)
+        state_context = self.encode_state_context(
+            class_ids,
+            confidences,
+            body,
+            inventory,
+            belief_state,
+        )
+        z_state = self.state_backbone(state_context)
+        guidance_h = self.guidance_backbone(z_state)
+        pred_threat_urgency_logit = self.threat_urgency_head(guidance_h).squeeze(-1)
+        pred_opportunity_availability_logit = self.opportunity_availability_head(guidance_h).squeeze(-1)
+        pred_vitality_pressure_logit = self.vitality_pressure_head(guidance_h).squeeze(-1)
+        pred_progress_viability_logit = self.progress_viability_head(guidance_h).squeeze(-1)
+        guidance_vector = torch.stack(
+            [
+                torch.sigmoid(pred_threat_urgency_logit),
+                torch.sigmoid(pred_opportunity_availability_logit),
+                torch.sigmoid(pred_vitality_pressure_logit),
+                torch.sigmoid(pred_progress_viability_logit),
+            ],
+            dim=1,
+        )
+        action_features = self.action_embedding(action)
+        action_input = torch.cat([z_state, action_features, guidance_vector], dim=1)
+        h = self.action_backbone(action_input)
+        actor_input = torch.cat([z_state, guidance_vector], dim=1)
         return {
             "pred_damage": self.damage_head(h).squeeze(-1),
             "pred_resource_gain": self.resource_head(h).squeeze(-1),
@@ -864,14 +998,17 @@ class LocalActionEvaluator(nn.Module):
             "pred_stall_risk_logit": self.stall_head(h).squeeze(-1),
             "pred_affordance_persistence_logit": self.affordance_head(h).squeeze(-1),
             "pred_threat_trend": self.threat_trend_head(h).squeeze(-1),
-            "pred_danger_pressure_logit": self.danger_pressure_head(h).squeeze(-1),
-            "pred_resource_opportunity_logit": self.resource_opportunity_head(h).squeeze(-1),
+            "pred_threat_urgency_logit": pred_threat_urgency_logit,
+            "pred_opportunity_availability_logit": pred_opportunity_availability_logit,
+            "pred_vitality_pressure_logit": pred_vitality_pressure_logit,
+            "pred_progress_viability_logit": pred_progress_viability_logit,
+            "pred_guidance_vector": guidance_vector,
             "pred_next_belief_state": (
                 self.next_belief_head(h)
                 if self.next_belief_head is not None
                 else torch.zeros((h.shape[0], 0), dtype=h.dtype, device=h.device)
             ),
-            "pred_actor_logits": self.actor_head(policy_h),
+            "pred_actor_logits": self.actor_head(actor_input),
         }
 
 
@@ -1030,6 +1167,22 @@ def rank_local_action_candidates(
         except TypeError:
             preds = evaluator(class_ids, confidences, body_vec, inv_vec, action_idx)
         utility = float(stage90r_action_utility(**preds).item())
+        pred_threat_urgency_logit = preds.get(
+            "pred_threat_urgency_logit",
+            torch.zeros((), dtype=body_vec.dtype, device=body_vec.device),
+        )
+        pred_opportunity_availability_logit = preds.get(
+            "pred_opportunity_availability_logit",
+            torch.zeros((), dtype=body_vec.dtype, device=body_vec.device),
+        )
+        pred_vitality_pressure_logit = preds.get(
+            "pred_vitality_pressure_logit",
+            torch.zeros((), dtype=body_vec.dtype, device=body_vec.device),
+        )
+        pred_progress_viability_logit = preds.get(
+            "pred_progress_viability_logit",
+            torch.zeros((), dtype=body_vec.dtype, device=body_vec.device),
+        )
         ranked.append(
             {
                 "action": primitive,
@@ -1045,6 +1198,22 @@ def rank_local_action_candidates(
                     4,
                 ),
                 "pred_threat_trend": round(float(preds["pred_threat_trend"].item()), 4),
+                "pred_threat_urgency": round(
+                    float(torch.sigmoid(pred_threat_urgency_logit).item()),
+                    4,
+                ),
+                "pred_opportunity_availability": round(
+                    float(torch.sigmoid(pred_opportunity_availability_logit).item()),
+                    4,
+                ),
+                "pred_vitality_pressure": round(
+                    float(torch.sigmoid(pred_vitality_pressure_logit).item()),
+                    4,
+                ),
+                "pred_progress_viability": round(
+                    float(torch.sigmoid(pred_progress_viability_logit).item()),
+                    4,
+                ),
             }
         )
     ranked.sort(key=lambda item: item["score"], reverse=True)
