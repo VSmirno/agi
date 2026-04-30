@@ -986,21 +986,39 @@ def run_vector_mpc_episode(
                     rescue_trigger = _mixed_control_rescue_trigger(
                         body=body,
                         nearest_threat_distances=nearest_threats_now,
-                        actor_action=learner_action,
-                        planner_action=planner_primitive,
                         actor_non_progress_streak=actor_non_progress_streak,
                         low_vitals_threshold=float(rescue_low_vitals_threshold),
                         hostile_distance_threshold=int(rescue_hostile_distance_threshold),
                         stall_streak_threshold=int(rescue_stall_streak_threshold),
                     )
+                    rescue_action = None
+                    rescue_policy = None
                     if rescue_trigger is not None:
-                        primitive = planner_primitive
+                        advisory_ranked = rank_local_action_candidates(
+                            evaluator=local_actor_policy,
+                            observation=actor_observation,
+                            allowed_actions=local_advisory_allowed_actions,
+                            action_to_idx=ACTION_TO_IDX,
+                            device=local_advisory_device,
+                        )
+                        rescue_selection = _select_mixed_control_rescue_action(
+                            actor_action=learner_action,
+                            planner_action=planner_primitive,
+                            rescue_trigger=rescue_trigger,
+                            advisory_ranked=advisory_ranked,
+                        )
+                        if rescue_selection is not None:
+                            rescue_action, rescue_policy = rescue_selection
+                    if rescue_action is not None:
+                        primitive = rescue_action
                         control_origin = "planner_rescue"
                         rescue_pending = {
                             "step": int(step),
                             "trigger": rescue_trigger,
                             "planner_action": planner_primitive,
                             "learner_action": learner_action,
+                            "rescue_action": rescue_action,
+                            "rescue_policy": rescue_policy,
                             "rescue_applied": True,
                             "rescue_improved_outcome": None,
                             "pre_rescue_state": {
@@ -1605,15 +1623,11 @@ def _mixed_control_rescue_trigger(
     *,
     body: dict[str, float],
     nearest_threat_distances: dict[str, int | None],
-    actor_action: str,
-    planner_action: str,
     actor_non_progress_streak: int,
     low_vitals_threshold: float,
     hostile_distance_threshold: int,
     stall_streak_threshold: int,
 ) -> str | None:
-    if actor_action == planner_action:
-        return None
     if body and min(float(body.get(key, 9.0)) for key in ("health", "food", "drink", "energy")) <= low_vitals_threshold:
         return "low_vitals"
     nearest_hostile = nearest_hostile_distance(nearest_threat_distances)
@@ -1621,6 +1635,24 @@ def _mixed_control_rescue_trigger(
         return "hostile_contact"
     if actor_non_progress_streak >= stall_streak_threshold:
         return "repeated_non_progress"
+    return None
+
+
+def _select_mixed_control_rescue_action(
+    *,
+    actor_action: str,
+    planner_action: str,
+    rescue_trigger: str | None,
+    advisory_ranked: list[dict[str, Any]] | None = None,
+) -> tuple[str, str] | None:
+    if rescue_trigger is None:
+        return None
+    if actor_action != planner_action:
+        return planner_action, "planner_override"
+    if advisory_ranked:
+        advisory_best = str(advisory_ranked[0].get("action", actor_action))
+        if advisory_best != actor_action:
+            return advisory_best, "advisory_override"
     return None
 
 def _build_local_counterfactual_outcomes(
