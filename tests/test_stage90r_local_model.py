@@ -5,19 +5,24 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
 
 from experiments.stage90r_train_local_evaluator import (
     _aggregate_teacher_targets_by_signature,
+    _actor_training_contract,
     _apply_episode_split,
     _anti_collapse_gate,
     _build_advisory_targets_by_signature,
+    _build_signature_target_map,
+    _build_state_actor_selection_samples,
     _build_state_advisory_teacher_records,
     _checkpoint_priority,
     _evaluate_ranking,
     _gate_policy,
+    _project_distribution_to_candidate_actions,
     _set_random_seed,
 )
 from snks.agent.stage90r_local_policy import (
@@ -449,6 +454,62 @@ def test_apply_episode_split_uses_state_keys_when_episode_keys_overlap():
     assert [record["state_signature_key"] for record in valid_records] == ["threat"]
 
 
+def test_project_distribution_to_candidate_actions_renormalizes_subset():
+    projected = _project_distribution_to_candidate_actions(
+        [0.1, 0.3, 0.6, 0.0],
+        [2, 1],
+    )
+
+    assert projected == [pytest.approx(2.0 / 3.0), pytest.approx(1.0 / 3.0)]
+
+
+def test_build_state_actor_selection_samples_projects_signature_targets():
+    state_samples = [
+        {
+            "state_signature_key": "sig-a",
+            "representative_ref": {"seed": 7, "episode_id": 556, "step": 4},
+            "observation": {
+                "viewport_class_ids": [[0] * 9 for _ in range(7)],
+                "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+                "body_vector": [1.0, 0.0, 0.0, 0.0],
+                "inventory_vector": [0] * 12,
+                "belief_state_vector": [0.0, 1.0],
+            },
+            "candidate_actions": [
+                {"action_index": 0, "label": {"survived_h": 1.0}},
+                {"action_index": 2, "label": {"survived_h": 1.0}},
+                {"action_index": 3, "label": {"survived_h": 1.0}},
+            ],
+        }
+    ]
+    signature_targets = _build_signature_target_map(
+        [
+            {
+                "seed": 7,
+                "episode_id": 556,
+                "state_signature_key": "sig-a",
+                "teacher_action_distribution": [0.05, 0.0, 0.15, 0.8],
+                "teacher_target_weight": 0.6,
+            }
+        ]
+    )
+
+    selection_samples = _build_state_actor_selection_samples(
+        state_samples,
+        signature_targets=signature_targets,
+        advisory_targets={},
+    )
+
+    assert len(selection_samples) == 1
+    assert selection_samples[0]["teacher_candidate_actions"] == [0, 2, 3]
+    assert selection_samples[0]["teacher_candidate_distribution"] == [
+        pytest.approx(0.05),
+        pytest.approx(0.15),
+        pytest.approx(0.8),
+    ]
+    assert selection_samples[0]["teacher_target_weight"] == pytest.approx(0.6)
+
+
 def test_aggregate_teacher_targets_by_signature_builds_soft_targets_and_consistency_weights():
     records = [
         {"seed": 1, "episode_id": 0, "step": 0, "state_signature_key": "sigA", "planner_action_index": 2},
@@ -632,6 +693,12 @@ def test_gate_policy_treats_one_epoch_mixed_control_as_smoke_only():
     assert policy["policy"] == "mixed_control_smoke_only"
 
 
+def test_actor_training_contract_uses_state_selection_for_hard_modes():
+    assert _actor_training_contract("mixed_control") == "state_selection"
+    assert _actor_training_contract("rescue") == "state_selection"
+    assert _actor_training_contract("planner_bootstrap") == "flat_teacher"
+
+
 def test_set_random_seed_makes_python_numpy_torch_streams_repeatable():
     _set_random_seed(7)
     first = (
@@ -769,6 +836,7 @@ def test_local_action_evaluator_forward_shapes():
     assert out["pred_progress_viability_logit"].shape == (2,)
     assert out["pred_guidance_vector"].shape == (2, 4)
     assert out["pred_next_belief_state"].shape == (2, 3)
+    assert out["pred_actor_action_score"].shape == (2,)
     assert out["pred_actor_logits"].shape == (2, model.config.n_actions)
 
 

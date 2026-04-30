@@ -931,6 +931,7 @@ class LocalActionEvaluator(nn.Module):
             if self.config.belief_state_dim > 0
             else None
         )
+        self.actor_action_head = nn.Linear(self.config.hidden_dim, 1)
         self.actor_head = nn.Linear(
             self.config.hidden_dim + self.config.guidance_dim,
             self.config.n_actions,
@@ -1012,6 +1013,7 @@ class LocalActionEvaluator(nn.Module):
                 if self.next_belief_head is not None
                 else torch.zeros((h.shape[0], 0), dtype=h.dtype, device=h.device)
             ),
+            "pred_actor_action_score": self.actor_action_head(h).squeeze(-1),
             "pred_actor_logits": self.actor_head(actor_input),
         }
 
@@ -1233,6 +1235,13 @@ def rank_local_actor_candidates(
     device: torch.device | str,
     action_names: list[str] | None = None,
 ) -> list[dict[str, Any]]:
+    filtered_actions = [
+        primitive
+        for primitive in allowed_actions
+        if not (primitive == "do" and not _observation_supports_do(observation))
+    ]
+    if not filtered_actions:
+        return []
     class_ids = torch.tensor([observation["viewport_class_ids"]], dtype=torch.long, device=device)
     confidences = torch.tensor([observation["viewport_confidences"]], dtype=torch.float32, device=device)
     body_vec = torch.tensor([observation["body_vector"]], dtype=torch.float32, device=device)
@@ -1251,26 +1260,82 @@ def rank_local_actor_candidates(
         ),
         0,
     )
-    action_idx = torch.tensor([noop_idx], dtype=torch.long, device=device)
+    candidate_indices = [int(action_to_idx[primitive]) for primitive in filtered_actions]
+    repeated_class_ids = class_ids.repeat(len(candidate_indices), 1, 1)
+    repeated_confidences = confidences.repeat(len(candidate_indices), 1, 1)
+    repeated_body = body_vec.repeat(len(candidate_indices), 1)
+    repeated_inventory = inv_vec.repeat(len(candidate_indices), 1)
+    repeated_belief = (
+        belief_state_vec.repeat(len(candidate_indices), 1)
+        if belief_state_vec is not None
+        else None
+    )
+    candidate_action_idx = torch.tensor(candidate_indices, dtype=torch.long, device=device)
+    preds = None
     try:
-        preds = evaluator(class_ids, confidences, body_vec, inv_vec, action_idx, belief_state_vec)
-    except TypeError:
-        preds = evaluator(class_ids, confidences, body_vec, inv_vec, action_idx)
-    logits = preds["pred_actor_logits"][0]
-    probabilities = torch.softmax(logits, dim=0)
-    ranked: list[dict[str, Any]] = []
-    for primitive in allowed_actions:
-        if primitive == "do" and not _observation_supports_do(observation):
-            continue
-        primitive_idx = int(action_to_idx[primitive])
-        ranked.append(
-            {
-                "action": primitive,
-                "action_index": primitive_idx,
-                "logit": round(float(logits[primitive_idx].item()), 4),
-                "probability": round(float(probabilities[primitive_idx].item()), 4),
-            }
+        preds = evaluator(
+            repeated_class_ids,
+            repeated_confidences,
+            repeated_body,
+            repeated_inventory,
+            candidate_action_idx,
+            repeated_belief,
         )
+    except (TypeError, RuntimeError):
+        try:
+            preds = evaluator(
+                repeated_class_ids,
+                repeated_confidences,
+                repeated_body,
+                repeated_inventory,
+                candidate_action_idx,
+            )
+        except (TypeError, RuntimeError):
+            preds = None
+    ranked: list[dict[str, Any]] = []
+    if preds is not None and "pred_actor_action_score" in preds:
+        actor_scores = preds["pred_actor_action_score"]
+        probabilities = torch.softmax(actor_scores, dim=0)
+        for offset, primitive in enumerate(filtered_actions):
+            ranked.append(
+                {
+                    "action": primitive,
+                    "action_index": candidate_indices[offset],
+                    "logit": round(float(actor_scores[offset].item()), 4),
+                    "probability": round(float(probabilities[offset].item()), 4),
+                }
+            )
+    else:
+        fallback_action_idx = torch.tensor([noop_idx], dtype=torch.long, device=device)
+        try:
+            fallback_preds = evaluator(
+                class_ids,
+                confidences,
+                body_vec,
+                inv_vec,
+                fallback_action_idx,
+                belief_state_vec,
+            )
+        except TypeError:
+            fallback_preds = evaluator(
+                class_ids,
+                confidences,
+                body_vec,
+                inv_vec,
+                fallback_action_idx,
+            )
+        logits = fallback_preds["pred_actor_logits"][0]
+        probabilities = torch.softmax(logits, dim=0)
+        for primitive in filtered_actions:
+            primitive_idx = int(action_to_idx[primitive])
+            ranked.append(
+                {
+                    "action": primitive,
+                    "action_index": primitive_idx,
+                    "logit": round(float(logits[primitive_idx].item()), 4),
+                    "probability": round(float(probabilities[primitive_idx].item()), 4),
+                }
+            )
     ranked.sort(key=lambda item: (item["probability"], item["logit"]), reverse=True)
     return ranked
 

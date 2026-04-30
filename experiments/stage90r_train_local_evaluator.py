@@ -43,6 +43,12 @@ def _gate_policy(gate_mode: str, epochs: int) -> dict[str, Any]:
     }
 
 
+def _actor_training_contract(gate_mode: str) -> str:
+    if gate_mode in {"mixed_control", "rescue"}:
+        return "state_selection"
+    return "flat_teacher"
+
+
 def _set_random_seed(seed: int) -> None:
     random.seed(seed)
     try:
@@ -258,6 +264,103 @@ def _run_teacher_epoch(model, loader, optimizer, device: torch.device) -> dict[s
     return {key: round(value / n_batches, 4) for key, value in totals.items()}
 
 
+def _run_actor_selection_epoch(
+    model,
+    state_samples: list[dict[str, Any]],
+    optimizer,
+    device: torch.device,
+    *,
+    action_names: list[str],
+) -> dict[str, float]:
+    from torch.nn import functional as F
+
+    if not state_samples:
+        return {
+            "actor_loss": 0.0,
+            "actor_acc": 0.0,
+        }
+
+    model.train(optimizer is not None)
+    total_loss = 0.0
+    total_acc = 0.0
+    n_states = 0
+
+    for state in state_samples:
+        candidate_actions = list(state.get("teacher_candidate_actions", []))
+        teacher_distribution = list(state.get("teacher_candidate_distribution", []))
+        target_weight = float(state.get("teacher_target_weight", 1.0))
+        if len(candidate_actions) < 2 or len(candidate_actions) != len(teacher_distribution):
+            continue
+        if target_weight <= 0.0:
+            continue
+
+        observation = state["observation"]
+        class_ids = torch.tensor(
+            [observation["viewport_class_ids"]] * len(candidate_actions),
+            dtype=torch.long,
+            device=device,
+        )
+        confidences = torch.tensor(
+            [observation["viewport_confidences"]] * len(candidate_actions),
+            dtype=torch.float32,
+            device=device,
+        )
+        body = torch.tensor(
+            [observation["body_vector"]] * len(candidate_actions),
+            dtype=torch.float32,
+            device=device,
+        )
+        inventory = torch.tensor(
+            [observation["inventory_vector"]] * len(candidate_actions),
+            dtype=torch.float32,
+            device=device,
+        )
+        belief_state = torch.tensor(
+            [
+                observation.get(
+                    "belief_state_vector",
+                    observation.get("temporal_vector", []),
+                )
+            ]
+            * len(candidate_actions),
+            dtype=torch.float32,
+            device=device,
+        )
+        candidate_tensor = torch.tensor(candidate_actions, dtype=torch.long, device=device)
+        preds = model(
+            class_ids,
+            confidences,
+            body,
+            inventory,
+            candidate_tensor,
+            belief_state,
+        )
+        target_tensor = torch.tensor(teacher_distribution, dtype=torch.float32, device=device)
+        logits = preds["pred_actor_action_score"]
+        log_probs = F.log_softmax(logits, dim=0)
+        actor_loss = (-(target_tensor * log_probs).sum()) * target_weight
+
+        if optimizer is not None:
+            optimizer.zero_grad()
+            actor_loss.backward()
+            optimizer.step()
+
+        actor_acc = float(torch.argmax(logits).item() == torch.argmax(target_tensor).item())
+        total_loss += float(actor_loss.item())
+        total_acc += actor_acc
+        n_states += 1
+
+    if n_states == 0:
+        return {
+            "actor_loss": 0.0,
+            "actor_acc": 0.0,
+        }
+    return {
+        "actor_loss": round(total_loss / n_states, 4),
+        "actor_acc": round(total_acc / n_states, 4),
+    }
+
+
 def _run_actor_agreement_epoch(
     model,
     state_samples: list[dict[str, Any]],
@@ -277,7 +380,6 @@ def _run_actor_agreement_epoch(
         }
 
     model.train(optimizer is not None)
-    noop_idx = next((idx for idx, name in enumerate(action_names) if str(name) == "noop"), 0)
     total_loss = 0.0
     total_acc = 0.0
     n_states = 0
@@ -336,14 +438,14 @@ def _run_actor_agreement_epoch(
         evaluator_probs = torch.softmax(evaluator_scores / 0.25, dim=0)
 
         actor_preds = model(
-            class_ids[:1],
-            confidences[:1],
-            body[:1],
-            inventory[:1],
-            torch.tensor([noop_idx], dtype=torch.long, device=device),
-            belief_state[:1],
+            class_ids,
+            confidences,
+            body,
+            inventory,
+            candidate_actions,
+            belief_state,
         )
-        actor_logits = actor_preds["pred_actor_logits"][0][candidate_actions]
+        actor_logits = actor_preds["pred_actor_action_score"]
         actor_log_probs = F.log_softmax(actor_logits, dim=0)
         agreement_loss = -(evaluator_probs * actor_log_probs).sum()
 
@@ -428,6 +530,18 @@ def _signature_key(record: dict[str, Any]) -> tuple[int, int, str, int]:
     )
 
 
+def _signature_key_from_state_sample(state: dict[str, Any]) -> tuple[int, int, str, int]:
+    representative = dict(state.get("representative_ref", {}))
+    return _signature_key(
+        {
+            "seed": int(representative.get("seed", 0)),
+            "episode_id": int(representative.get("episode_id", 0)),
+            "step": int(representative.get("step", 0)),
+            "state_signature_key": state.get("state_signature_key"),
+        }
+    )
+
+
 def _build_advisory_targets_by_signature(
     state_samples: list[dict[str, Any]],
     *,
@@ -440,14 +554,7 @@ def _build_advisory_targets_by_signature(
         candidates = list(state.get("candidate_actions", []))
         if not candidates:
             continue
-        key = _signature_key(
-            {
-                "seed": int(state.get("representative_ref", {}).get("seed", 0)),
-                "episode_id": int(state.get("representative_ref", {}).get("episode_id", 0)),
-                "step": int(state.get("representative_ref", {}).get("step", 0)),
-                "state_signature_key": state.get("state_signature_key"),
-            }
-        )
+        key = _signature_key_from_state_sample(state)
         target_keys = [stage90r_target_order_key(candidate["label"]) for candidate in candidates]
         best_key = max(target_keys)
         winner_indices = [
@@ -474,14 +581,7 @@ def _build_state_advisory_teacher_records(
     records: list[dict[str, Any]] = []
     for state in state_samples:
         representative = dict(state.get("representative_ref", {}))
-        key = _signature_key(
-            {
-                "seed": int(representative.get("seed", 0)),
-                "episode_id": int(representative.get("episode_id", 0)),
-                "step": int(representative.get("step", 0)),
-                "state_signature_key": state.get("state_signature_key"),
-            }
-        )
+        key = _signature_key_from_state_sample(state)
         advisory_distribution = advisory_targets.get(key)
         if advisory_distribution is None or sum(advisory_distribution) <= 0.0:
             continue
@@ -562,6 +662,74 @@ def _aggregate_teacher_targets_by_signature(
     return aggregated
 
 
+def _build_signature_target_map(
+    records: list[dict[str, Any]],
+) -> dict[tuple[int, int, str, int], dict[str, Any]]:
+    targets: dict[tuple[int, int, str, int], dict[str, Any]] = {}
+    for record in records:
+        key = _signature_key(record)
+        existing = targets.get(key)
+        candidate = {
+            "distribution": list(record.get("teacher_action_distribution", [])),
+            "weight": float(record.get("teacher_target_weight", 1.0)),
+        }
+        if existing is None or candidate["weight"] >= float(existing["weight"]):
+            targets[key] = candidate
+    return targets
+
+
+def _project_distribution_to_candidate_actions(
+    distribution: list[float],
+    candidate_actions: list[int],
+) -> list[float]:
+    projected = [
+        max(0.0, float(distribution[action_idx])) if 0 <= int(action_idx) < len(distribution) else 0.0
+        for action_idx in candidate_actions
+    ]
+    total = sum(projected)
+    if total <= 0.0:
+        return []
+    return [float(value) / float(total) for value in projected]
+
+
+def _build_state_actor_selection_samples(
+    state_samples: list[dict[str, Any]],
+    *,
+    signature_targets: dict[tuple[int, int, str, int], dict[str, Any]],
+    advisory_targets: dict[tuple[int, int, str, int], list[float]],
+) -> list[dict[str, Any]]:
+    actor_samples: list[dict[str, Any]] = []
+    for state in state_samples:
+        candidates = list(state.get("candidate_actions", []))
+        candidate_actions = [int(candidate["action_index"]) for candidate in candidates]
+        if len(candidate_actions) < 2:
+            continue
+        key = _signature_key_from_state_sample(state)
+        signature_entry = signature_targets.get(key)
+        full_distribution = None
+        target_weight = 1.0
+        if signature_entry is not None:
+            full_distribution = list(signature_entry.get("distribution", []))
+            target_weight = float(signature_entry.get("weight", 1.0))
+        if (not full_distribution or sum(full_distribution) <= 0.0) and key in advisory_targets:
+            full_distribution = list(advisory_targets[key])
+            target_weight = max(target_weight, 1.0)
+        if not full_distribution or sum(full_distribution) <= 0.0:
+            continue
+        projected_distribution = _project_distribution_to_candidate_actions(
+            full_distribution,
+            candidate_actions,
+        )
+        if not projected_distribution:
+            continue
+        enriched = dict(state)
+        enriched["teacher_candidate_actions"] = candidate_actions
+        enriched["teacher_candidate_distribution"] = projected_distribution
+        enriched["teacher_target_weight"] = round(float(target_weight), 4)
+        actor_samples.append(enriched)
+    return actor_samples
+
+
 def _evaluate_actor(
     model,
     teacher_records: list[dict[str, Any]],
@@ -607,6 +775,91 @@ def _evaluate_actor(
         "top1_accuracy": round(correct / max(n, 1), 4),
         "predicted_action_distribution": dict(sorted(pred_counter.items())),
         "teacher_action_distribution": dict(sorted(teacher_counter.items())),
+    }
+
+
+def _evaluate_actor_selection(
+    model,
+    state_samples: list[dict[str, Any]],
+    device: torch.device,
+    action_names: list[str],
+) -> dict[str, Any]:
+    if not state_samples:
+        return {
+            "n_records": 0,
+            "top1_accuracy": 0.0,
+            "predicted_action_distribution": {},
+            "teacher_action_distribution": {},
+        }
+
+    pred_counter: Counter[str] = Counter()
+    target_counter: Counter[str] = Counter()
+    correct = 0
+    n = 0
+    for state in state_samples:
+        candidate_actions = list(state.get("teacher_candidate_actions", []))
+        teacher_distribution = list(state.get("teacher_candidate_distribution", []))
+        if len(candidate_actions) < 2 or len(candidate_actions) != len(teacher_distribution):
+            continue
+
+        observation = state["observation"]
+        class_ids = torch.tensor(
+            [observation["viewport_class_ids"]] * len(candidate_actions),
+            dtype=torch.long,
+            device=device,
+        )
+        confidences = torch.tensor(
+            [observation["viewport_confidences"]] * len(candidate_actions),
+            dtype=torch.float32,
+            device=device,
+        )
+        body = torch.tensor(
+            [observation["body_vector"]] * len(candidate_actions),
+            dtype=torch.float32,
+            device=device,
+        )
+        inventory = torch.tensor(
+            [observation["inventory_vector"]] * len(candidate_actions),
+            dtype=torch.float32,
+            device=device,
+        )
+        belief_state = torch.tensor(
+            [
+                observation.get(
+                    "belief_state_vector",
+                    observation.get("temporal_vector", []),
+                )
+            ]
+            * len(candidate_actions),
+            dtype=torch.float32,
+            device=device,
+        )
+        candidate_tensor = torch.tensor(candidate_actions, dtype=torch.long, device=device)
+        preds = model(
+            class_ids,
+            confidences,
+            body,
+            inventory,
+            candidate_tensor,
+            belief_state,
+        )
+        actor_scores = preds["pred_actor_action_score"]
+        pred_offset = int(torch.argmax(actor_scores).item())
+        target_offset = int(torch.argmax(torch.tensor(teacher_distribution)).item())
+        pred_idx = int(candidate_actions[pred_offset])
+        target_idx = int(candidate_actions[target_offset])
+        pred_name = action_names[pred_idx] if 0 <= pred_idx < len(action_names) else str(pred_idx)
+        target_name = action_names[target_idx] if 0 <= target_idx < len(action_names) else str(target_idx)
+        pred_counter[pred_name] += 1
+        target_counter[target_name] += 1
+        correct += int(pred_idx == target_idx)
+        n += 1
+
+    return {
+        "n_records": n,
+        "top1_accuracy": round(correct / max(n, 1), 4),
+        "predicted_action_distribution": dict(sorted(pred_counter.items())),
+        "teacher_action_distribution": dict(sorted(target_counter.items())),
     }
 
 
@@ -1161,6 +1414,17 @@ def main() -> None:
         n_actions=len(action_names),
         advisory_targets=valid_advisory_targets,
     )
+    actor_training_contract = _actor_training_contract(gate_mode)
+    train_actor_selection_samples = _build_state_actor_selection_samples(
+        train_state_samples,
+        signature_targets=_build_signature_target_map(train_teacher_records),
+        advisory_targets=train_advisory_targets,
+    )
+    valid_actor_selection_samples = _build_state_actor_selection_samples(
+        valid_state_samples,
+        signature_targets=_build_signature_target_map(valid_teacher_records),
+        advisory_targets=valid_advisory_targets,
+    )
     train_state_advisory_records = _build_state_advisory_teacher_records(
         train_state_samples,
         n_actions=len(action_names),
@@ -1214,11 +1478,20 @@ def main() -> None:
     checkpoint_saved = False
     for epoch in range(args.epochs):
         train_metrics = _run_epoch(model, train_loader, optimizer, device)
-        train_actor_metrics = (
-            _run_teacher_epoch(model, train_teacher_loader, optimizer, device)
-            if train_teacher_loader is not None
-            else {"actor_loss": 0.0, "actor_acc": 0.0}
-        )
+        if actor_training_contract == "state_selection":
+            train_actor_metrics = _run_actor_selection_epoch(
+                model,
+                train_actor_selection_samples,
+                optimizer,
+                device,
+                action_names=action_names,
+            )
+        else:
+            train_actor_metrics = (
+                _run_teacher_epoch(model, train_teacher_loader, optimizer, device)
+                if train_teacher_loader is not None
+                else {"actor_loss": 0.0, "actor_acc": 0.0}
+            )
         train_actor_agreement_metrics = _run_actor_agreement_epoch(
             model,
             train_state_samples,
@@ -1228,11 +1501,20 @@ def main() -> None:
         )
         with torch.no_grad():
             valid_metrics = _run_epoch(model, valid_loader, None, device)
-            valid_actor_metrics = (
-                _run_teacher_epoch(model, valid_teacher_loader, None, device)
-                if valid_teacher_loader is not None
-                else {"actor_loss": 0.0, "actor_acc": 0.0}
-            )
+            if actor_training_contract == "state_selection":
+                valid_actor_metrics = _run_actor_selection_epoch(
+                    model,
+                    valid_actor_selection_samples,
+                    None,
+                    device,
+                    action_names=action_names,
+                )
+            else:
+                valid_actor_metrics = (
+                    _run_teacher_epoch(model, valid_teacher_loader, None, device)
+                    if valid_teacher_loader is not None
+                    else {"actor_loss": 0.0, "actor_acc": 0.0}
+                )
             valid_actor_agreement_metrics = _run_actor_agreement_epoch(
                 model,
                 valid_state_samples,
@@ -1247,12 +1529,20 @@ def main() -> None:
                 gate_mode=gate_mode,
                 gate_enforced=bool(gate_policy["enforced"]),
             )
-            actor_report = _evaluate_actor(
-                model,
-                valid_teacher_records,
-                device,
-                action_names=action_names,
-            )
+            if actor_training_contract == "state_selection":
+                actor_report = _evaluate_actor_selection(
+                    model,
+                    valid_actor_selection_samples,
+                    device,
+                    action_names=action_names,
+                )
+            else:
+                actor_report = _evaluate_actor(
+                    model,
+                    valid_teacher_records,
+                    device,
+                    action_names=action_names,
+                )
         selection_score = _selection_score(valid_ranking)
         history.append(
             {
@@ -1329,6 +1619,7 @@ def main() -> None:
             "seed": args.seed,
             "gate_mode": gate_mode,
             "gate_policy": str(gate_policy["policy"]),
+            "actor_training_contract": actor_training_contract,
             "mixed_control_promotion_min_epochs": MIXED_CONTROL_PROMOTION_MIN_EPOCHS,
         },
         "dataset_summary": {
@@ -1341,6 +1632,8 @@ def main() -> None:
             "n_train_teacher_records": len(train_teacher_records),
             "n_valid_teacher_records": len(valid_teacher_records),
             "n_train_state_advisory_records": len(train_state_advisory_records),
+            "n_train_actor_selection_states": len(train_actor_selection_samples),
+            "n_valid_actor_selection_states": len(valid_actor_selection_samples),
             "n_train_episodes": len({(s["seed"], s["episode_id"]) for s in train_base_samples}),
             "n_valid_episodes": len({(s["seed"], s["episode_id"]) for s in valid_base_samples}),
             "n_train_state_samples": len(train_state_samples),
