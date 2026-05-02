@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-05-02 — Stage 90R Emergency Safety Controller
+**Что сделано:** введён first-class emergency safety controller, который
+активируется по explicit danger/vitals/outcome features, а не главным образом по
+`actor != planner`; emergency-relevant Crafter facts частично вынесены в
+`configs/crafter_textbook.yaml`; rescue telemetry расширена до activation
+reasons / override source / utility components / immediate outcome delta.
+
+**Результаты:**
+- implementation commit: `71d1e29`
+- focused tests: `23 passed`
+- bounded HyperPC compare (`mixed_control_rescue`, symbolic, smoke-lite, seed 7,
+  4 episodes, CPU-only):
+  - candidate `avg_survival = 190.0`
+  - frozen `9083357 avg_survival = 179.25`
+  - `early_hostile_deaths_without_rescue = 0`
+  - `hostile_deaths_without_rescue = 0`
+- Stage decision: **PASS**
+
+**Допущения/ограничения:**
+- **Proof пока CPU-only.** Online GPU-path hang остаётся отдельной соседней
+  проблемой и не закрыт этим stage.
+- **Fallback field в eval payload не самодостаточен.** В clean hyper checkout
+  baseline summary не подтянулся в JSON, поэтому verdict делался по frozen
+  repository artifact, а не по встроенному `fallback_criterion.status`.
+- **Textbook migration bounded.** Вынесены только факты, прямо нужные для
+  emergency path; repo-wide cleanup Crafter literals не является частью этого
+  stage.
+- **Stimuli-layer вопрос остаётся открытым.** Этот PASS не доказывает, что
+  полный stimuli refactor не нужен; он показывает, что правильный controller
+  layer уже даёт измеримый rescue-side gain.
+
+---
+
 ## 2026-04-20 — Stage 90 Reset: Viewport-First Local Survival
 **Что установлено:** Stage 90 cause-finding и последующие diagnostics нашли реальные mechanism-баги
 в short-horizon симуляции (`zombie/skeleton proximity damage`, сохранение `predicted_health=0`,
