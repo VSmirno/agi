@@ -9,6 +9,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 
 from stage90_quick_slice import _build_runtime, _json_default, load_stage89_baseline_reference
@@ -48,6 +49,10 @@ def _device() -> torch.device:
 
 def _runtime_profile(*, smoke_lite: bool) -> dict[str, Any]:
     return dict(_SMOKE_LITE_RUNTIME_PROFILE if smoke_lite else _FULL_RUNTIME_PROFILE)
+
+
+def _eval_episode_rng(*, base_seed: int, episode_index: int) -> np.random.RandomState:
+    return np.random.RandomState(base_seed + episode_index)
 
 
 def _action_summary(action_counts: Counter[str]) -> dict[str, Any]:
@@ -639,11 +644,13 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
             enable_post_plan_passive_rollout=bool(runtime_profile["enable_post_plan_passive_rollout"]),
             perception_mode=args.perception_mode,
             local_actor_policy=evaluator,
+            local_advisory_device=device,
             mixed_control_actor_share=float(args.actor_share),
             enable_planner_rescue=bool(args.enable_planner_rescue),
             record_local_trace=True,
             record_local_counterfactuals="salient_only",
             local_counterfactual_horizon=1,
+            rng=_eval_episode_rng(base_seed=args.seed, episode_index=ep),
         )
         attribution = analyzer.attribute(metrics.get("damage_log", []), metrics.get("episode_steps", 0))
         learner.update(attribution)

@@ -37,6 +37,50 @@ reasons / override source / utility components / immediate outcome delta.
 
 ---
 
+## 2026-05-02 — Stage 91 CUDA Eval Path Fix
+**Что установлено:** HyperPC bare-command drift шёл не от shell activation, а от
+editable-install в conda env: `__editable__.snks-0.1.0.pth` тащил `snks` из
+`/opt/cuda/agi/src`, поэтому голый запуск не был self-contained относительно
+verify checkout. После принудительного перехода на canonical checkout
+обнаружился реальный GPU bug: mixed-control eval строил local advisory tensors
+на CPU при том, что local evaluator был уже на CUDA.
+
+**Что сделано:** в `experiments/stage90r_eval_local_policy.py` для eval path
+явно прокинут `local_advisory_device=device`; helper `_eval_episode_rng(...)`
+сохраняет deterministic per-episode arbitration для eval-only mixed-control
+сценария. Добавлен focused test `tests/test_stage90r_eval_local_policy.py`.
+
+**Результаты:**
+- focused tests:
+  - `tests/test_stage90r_eval_local_policy.py`
+  - `tests/test_vector_mpc_agent.py`
+  - result: `6 passed`
+- HyperPC minimal GPU repro после фикса: **PASS**
+- HyperPC full `seed=7` GPU compare после фикса: **PASS**
+  - `avg_survival = 157.75`
+  - `rescue_rate = 0.437`
+  - `planner_dependence = 0.452`
+  - `learner_control_fraction = 0.222`
+
+**Canonical CUDA rule:**
+- не полагаться на bare interpreter import path из env
+- запускать verify checkout self-contained с явным
+  `PYTHONPATH=<verify>/src:<verify>:<verify>/experiments`
+- использовать тот же env interpreter:
+  `/opt/cuda/miniforge3/envs/agi-stage90r-py311/bin/python`
+
+**Допущения/ограничения:**
+- **CUDA path исправлен, но Stage 91 nondeterminism не закрыт.** GPU eval теперь
+  проходит, однако multi-seed robustness regression остаётся отдельной задачей.
+- **Editable-install env всё ещё drift-prone.** Пока `snks` editable install
+  смотрит в `/opt/cuda/agi/src`, bare recorded command не является canonical
+  способом воспроизведения verify checkout.
+- **Исторический Stage 90R PASS остаётся CPU-based proof point.** Этот CUDA fix
+  исправляет инфраструктурный eval path и device placement, но не переписывает
+  исходное доказательство Stage 90R задним числом.
+
+---
+
 ## 2026-04-20 — Stage 90 Reset: Viewport-First Local Survival
 **Что установлено:** Stage 90 cause-finding и последующие diagnostics нашли реальные mechanism-баги
 в short-horizon симуляции (`zombie/skeleton proximity damage`, сохранение `predicted_health=0`,
