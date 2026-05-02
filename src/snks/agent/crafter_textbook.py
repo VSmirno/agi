@@ -337,6 +337,12 @@ class CrafterTextbook:
         return sem if isinstance(sem, dict) else {}
 
     @property
+    def emergency_control_block(self) -> dict[str, Any]:
+        """Stage 90R: narrow emergency-controller facts and thresholds."""
+        block = self.data.get("emergency_control", {}) or {}
+        return block if isinstance(block, dict) else {}
+
+    @property
     def goals_block(self) -> dict:
         return self.data.get("goals", {})
 

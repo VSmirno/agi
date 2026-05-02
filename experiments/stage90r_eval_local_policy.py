@@ -17,6 +17,9 @@ ROOT = Path(__file__).parent.parent
 DOCS_DIR = ROOT / "_docs"
 LOCAL_ONLY_OUT_PATH = DOCS_DIR / "stage90r_local_only_eval.json"
 PLANNER_ADVISORY_OUT_PATH = DOCS_DIR / "stage90r_planner_advisory_eval.json"
+STAGE90R_RESCUE_BASELINE_COMPARE_PATH = (
+    DOCS_DIR / "hyper_stage90r_mixed_control_rescue_compare" / "comparison_summary.json"
+)
 _FULL_RUNTIME_PROFILE = {
     "model_dim": 16384,
     "n_locations": 50000,
@@ -58,6 +61,31 @@ def _action_summary(action_counts: Counter[str]) -> dict[str, Any]:
         if action_counts
         else 0.0,
     }
+
+
+def _load_stage90r_rescue_baseline_reference() -> dict[str, Any]:
+    reference = {
+        "baseline_commit": "9083357",
+        "comparison_path": str(STAGE90R_RESCUE_BASELINE_COMPARE_PATH),
+        "available": False,
+        "summary": None,
+    }
+    if not STAGE90R_RESCUE_BASELINE_COMPARE_PATH.exists():
+        return reference
+    payload = json.loads(STAGE90R_RESCUE_BASELINE_COMPARE_PATH.read_text())
+    baseline = dict(payload.get("baseline_9083357", {}))
+    reference["available"] = True
+    reference["summary"] = baseline.get("summary")
+    reference["eval_json"] = baseline.get("eval_json")
+    reference["compare_metadata"] = {
+        "mode": payload.get("mode"),
+        "perception_mode": payload.get("perception_mode"),
+        "smoke_lite": payload.get("smoke_lite"),
+        "seed": payload.get("seed"),
+        "n_episodes": payload.get("n_episodes"),
+        "max_steps": payload.get("max_steps"),
+    }
+    return reference
 
 
 def _summarize_planner_advisory_trace(trace: list[dict[str, Any]]) -> dict[str, Any]:
@@ -564,7 +592,7 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
         offline_gate=evaluator_artifact.get("offline_gate"),
         allow_override=bool(args.allow_offline_gate_failure),
     )
-    baseline_reference = load_stage89_baseline_reference()
+    baseline_reference = _load_stage90r_rescue_baseline_reference()
     runtime_profile = _runtime_profile(smoke_lite=bool(args.smoke_lite))
     model, segmenter, tb, _tracker_unused, runtime = _build_runtime(
         seed=args.seed,
@@ -580,7 +608,11 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
 
     controller_counts: Counter[str] = Counter()
     rescue_trigger_counts: Counter[str] = Counter()
+    rescue_override_source_counts: Counter[str] = Counter()
+    rescue_activation_reason_counts: Counter[str] = Counter()
     death_causes: Counter[str] = Counter()
+    early_hostile_deaths_without_rescue = 0
+    hostile_deaths_without_rescue = 0
     results: list[dict[str, Any]] = []
     t0 = time.time()
 
@@ -624,8 +656,21 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
         local_controller_counts = Counter(str(step.get("controller", "unknown")) for step in local_trace)
         controller_counts.update(local_controller_counts)
         rescue_trigger_counts.update(str(event.get("trigger", "unknown")) for event in rescue_trace)
+        rescue_override_source_counts.update(
+            str(event.get("override_source", event.get("rescue_policy", "unknown")))
+            for event in rescue_trace
+        )
+        rescue_activation_reason_counts.update(
+            str(event.get("activation_reason", event.get("trigger", "unknown")))
+            for event in rescue_trace
+        )
         death_cause = metrics.get("death_cause", "alive")
         death_causes[death_cause] += 1
+        hostile_death_without_rescue = death_cause in {"zombie", "skeleton", "arrow"} and not rescue_trace
+        if hostile_death_without_rescue:
+            hostile_deaths_without_rescue += 1
+            if int(metrics.get("episode_steps", 0)) <= 50:
+                early_hostile_deaths_without_rescue += 1
         results.append(
             {
                 "episode_id": ep,
@@ -634,6 +679,7 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
                 "death_cause": death_cause,
                 "controller_distribution": dict(sorted(local_controller_counts.items())),
                 "n_rescue_events": len(rescue_trace),
+                "hostile_death_without_rescue": bool(hostile_death_without_rescue),
                 "rescue_trace": rescue_trace[: args.max_explanations_per_episode],
                 "local_trace_excerpt": local_trace[: args.max_explanations_per_episode],
             }
@@ -642,10 +688,18 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
         print(f"ep{ep:3d}: len={metrics.get('episode_steps', 0):4.0f} death={death_cause:12s} rescues={len(rescue_trace):2d} [{elapsed:.0f}s]")
 
     total_steps = sum(sum(ep["controller_distribution"].values()) for ep in results)
+    planner_aligned_emergency_steps = rescue_override_source_counts.get("planner_aligned_safety", 0)
+    baseline_avg_survival = None
+    if baseline_reference.get("summary"):
+        baseline_avg_survival = baseline_reference["summary"].get("avg_survival")
+    avg_survival = round(sum(ep["episode_steps"] for ep in results) / max(len(results), 1), 2)
+    fallback_status = "UNKNOWN"
+    if baseline_avg_survival is not None:
+        fallback_status = "PASS" if avg_survival >= float(baseline_avg_survival) else "PARTIAL"
     payload = {
         "stage": "stage90r_mixed_control_rescue_eval",
         "mode": "mixed_control_rescue",
-        "architecture_role": "actor_bootstrap_with_explicit_planner_rescue",
+        "architecture_role": "actor_bootstrap_with_first_class_emergency_safety_controller",
         "baseline_reference": baseline_reference,
         "config": {
             "n_episodes": args.n_episodes,
@@ -659,16 +713,30 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
             "smoke_lite": bool(args.smoke_lite),
         },
         "summary": {
-            "avg_survival": round(sum(ep["episode_steps"] for ep in results) / max(len(results), 1), 2),
+            "avg_survival": avg_survival,
             "death_cause_breakdown": dict(death_causes),
             "controller_distribution": dict(sorted(controller_counts.items())),
             "planner_dependence": round(
-                (controller_counts.get("planner_bootstrap", 0) + controller_counts.get("planner_rescue", 0)) / max(total_steps, 1),
+                (
+                    controller_counts.get("planner_bootstrap", 0)
+                    + controller_counts.get("planner_rescue", 0)
+                    + planner_aligned_emergency_steps
+                ) / max(total_steps, 1),
                 3,
             ),
             "learner_control_fraction": round(controller_counts.get("learner_actor", 0) / max(total_steps, 1), 3),
             "rescue_rate": round(sum(rescue_trigger_counts.values()) / max(total_steps, 1), 3),
             "rescue_trigger_distribution": dict(sorted(rescue_trigger_counts.items())),
+            "rescue_activation_reason_distribution": dict(sorted(rescue_activation_reason_counts.items())),
+            "rescue_override_source_distribution": dict(sorted(rescue_override_source_counts.items())),
+            "early_hostile_deaths_without_rescue": int(early_hostile_deaths_without_rescue),
+            "hostile_deaths_without_rescue": int(hostile_deaths_without_rescue),
+            "fallback_criterion": {
+                "baseline_commit": "9083357",
+                "baseline_avg_survival": baseline_avg_survival,
+                "candidate_avg_survival": avg_survival,
+                "status": fallback_status,
+            },
         },
         "offline_gate": offline_gate,
         "episodes": results,

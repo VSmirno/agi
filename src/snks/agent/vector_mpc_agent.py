@@ -59,6 +59,10 @@ from snks.agent.stage90r_local_model import (
     rank_local_actor_candidates,
     rank_local_action_candidates,
 )
+from snks.agent.stage90r_emergency_controller import (
+    EmergencySafetyController,
+    EmergencyWorldFacts,
+)
 from snks.agent.stage90r_local_policy import (
     BeliefStateEncoder,
     build_local_observation_package,
@@ -646,6 +650,13 @@ def run_vector_mpc_episode(
         if textbook is not None
         else None
     )
+    emergency_facts = EmergencyWorldFacts.from_textbook(textbook)
+    emergency_controller = EmergencySafetyController(
+        facts=emergency_facts,
+        low_vitals_threshold=float(rescue_low_vitals_threshold),
+        hostile_distance_threshold=int(rescue_hostile_distance_threshold),
+        stall_streak_threshold=int(rescue_stall_streak_threshold),
+    )
 
     entity_tracker = DynamicEntityTracker()
     # Register known dynamic concepts
@@ -930,7 +941,21 @@ def run_vector_mpc_episode(
         )
         env_facing_before = _env_tile_truth(env, facing_tile_before)
 
-        # --- Choose planner / actor primitive, then apply explicit rescue if needed ---
+        health_now = body.get("health", 0.0)
+        predicted_best_health = (
+            best_traj.final_state.body.get("health", health_now)
+            if best_traj.final_state is not None
+            else health_now
+        )
+        predicted_best_loss = max(0.0, health_now - predicted_best_health)
+        predicted_baseline_health = (
+            baseline_traj.final_state.body.get("health", health_now)
+            if baseline_traj is not None and baseline_traj.final_state is not None
+            else health_now
+        )
+        predicted_baseline_loss = max(0.0, health_now - predicted_baseline_health)
+
+        # --- Choose planner / actor primitive, then let emergency controller arbitrate ---
         if best_plan.steps:
             planner_primitive = expand_to_primitive(
                 best_plan.steps[0], player_pos, spatial_map, model, rng,
@@ -947,28 +972,27 @@ def run_vector_mpc_episode(
         learner_action_index: int | None = None
         rescue_trigger: str | None = None
         rescue_pending: dict[str, Any] | None = None
-        nearest_threats_now = {
-            "zombie": _nearest_hostile_distance(
-                "zombie", player_pos, spatial_map, observed_dynamic_entities
+        nearest_threats_now = _nearest_emergency_threat_distances(
+            emergency_facts,
+            player_pos,
+            spatial_map,
+            observed_dynamic_entities,
+        )
+        actor_observation = build_local_observation_package(
+            vf,
+            body,
+            inv,
+            belief_context=local_belief_tracker.build_context(
+                near_concept=str(vf.near_concept)
             ),
-            "skeleton": _nearest_hostile_distance(
-                "skeleton", player_pos, spatial_map, observed_dynamic_entities
-            ),
-            "arrow": _nearest_dynamic_distance(
-                "arrow", player_pos, observed_dynamic_entities
-            ),
-        }
-        if local_actor_policy is not None and float(mixed_control_actor_share) > 0.0:
+        )
+        advisory_ranked: list[dict[str, Any]] = []
+        emergency_candidate_outcomes: list[dict[str, Any]] = []
+        if local_actor_policy is not None and (
+            float(mixed_control_actor_share) > 0.0 or bool(enable_planner_rescue)
+        ):
             from snks.agent.crafter_pixel_env import ACTION_NAMES, ACTION_TO_IDX
 
-            actor_observation = build_local_observation_package(
-                vf,
-                body,
-                inv,
-                belief_context=local_belief_tracker.build_context(
-                    near_concept=str(vf.near_concept)
-                ),
-            )
             actor_ranked = rank_local_actor_candidates(
                 evaluator=local_actor_policy,
                 observation=actor_observation,
@@ -982,70 +1006,83 @@ def run_vector_mpc_episode(
                 learner_action_index = int(actor_ranked[0]["action_index"])
                 primitive = learner_action
                 control_origin = "learner_actor"
-                if bool(enable_planner_rescue):
-                    rescue_trigger = _mixed_control_rescue_trigger(
-                        body=body,
-                        nearest_threat_distances=nearest_threats_now,
-                        actor_non_progress_streak=actor_non_progress_streak,
-                        low_vitals_threshold=float(rescue_low_vitals_threshold),
-                        hostile_distance_threshold=int(rescue_hostile_distance_threshold),
-                        stall_streak_threshold=int(rescue_stall_streak_threshold),
-                    )
-                    rescue_action = None
-                    rescue_policy = None
-                    if rescue_trigger is not None:
-                        advisory_ranked = rank_local_action_candidates(
-                            evaluator=local_actor_policy,
-                            observation=actor_observation,
-                            allowed_actions=local_advisory_allowed_actions,
-                            action_to_idx=ACTION_TO_IDX,
-                            device=local_advisory_device,
-                        )
-                        rescue_selection = _select_mixed_control_rescue_action(
-                            actor_action=learner_action,
-                            planner_action=planner_primitive,
-                            rescue_trigger=rescue_trigger,
-                            advisory_ranked=advisory_ranked,
-                        )
-                        if rescue_selection is not None:
-                            rescue_action, rescue_policy = rescue_selection
-                    if rescue_action is not None:
-                        primitive = rescue_action
-                        control_origin = "planner_rescue"
-                        rescue_pending = {
-                            "step": int(step),
-                            "trigger": rescue_trigger,
-                            "planner_action": planner_primitive,
-                            "learner_action": learner_action,
-                            "rescue_action": rescue_action,
-                            "rescue_policy": rescue_policy,
-                            "rescue_applied": True,
-                            "rescue_improved_outcome": None,
-                            "pre_rescue_state": {
-                                "primary_regime": infer_local_regime(actor_observation, nearest_threats_now)[1],
-                                "body": {
-                                    key: round(float(value), 3)
-                                    for key, value in body.items()
-                                },
-                                "nearest_threat_distances": dict(nearest_threats_now),
-                                "belief_state_signature": dict(actor_observation.get("belief_state_signature", {})),
-                            },
-                            "post_rescue_outcome": {},
-                        }
+            if bool(enable_planner_rescue):
+                advisory_ranked = rank_local_action_candidates(
+                    evaluator=local_actor_policy,
+                    observation=actor_observation,
+                    allowed_actions=local_advisory_allowed_actions,
+                    action_to_idx=ACTION_TO_IDX,
+                    device=local_advisory_device,
+                )
 
-        health_now = body.get("health", 0.0)
-        predicted_best_health = (
-            best_traj.final_state.body.get("health", health_now)
-            if best_traj.final_state is not None
-            else health_now
-        )
-        predicted_best_loss = max(0.0, health_now - predicted_best_health)
-        predicted_baseline_health = (
-            baseline_traj.final_state.body.get("health", health_now)
-            if baseline_traj is not None and baseline_traj.final_state is not None
-            else health_now
-        )
-        predicted_baseline_loss = max(0.0, health_now - predicted_baseline_health)
+        if bool(enable_planner_rescue):
+            emergency_candidate_outcomes = _build_local_counterfactual_outcomes(
+                model=model,
+                state=state,
+                vf=vf,
+                cache=step_cache,
+                vitals=vitals,
+                horizon=min(local_counterfactual_horizon, horizon),
+                enable_post_plan_passive_rollout=enable_post_plan_passive_rollout,
+            )
+            emergency_features = emergency_controller.evaluate(
+                body=body,
+                nearest_threat_distances=nearest_threats_now,
+                actor_non_progress_streak=actor_non_progress_streak,
+                planner_action=planner_primitive,
+                current_action=primitive,
+                learner_action=learner_action,
+                belief_state_signature=dict(actor_observation.get("belief_state_signature", {})),
+                candidate_outcomes=emergency_candidate_outcomes,
+                predicted_baseline_loss=float(predicted_baseline_loss),
+                predicted_selected_loss=float(predicted_best_loss),
+            )
+            if emergency_features.activated:
+                pre_emergency_action = primitive
+                emergency_selection = emergency_controller.select_action(
+                    current_action=primitive,
+                    planner_action=planner_primitive,
+                    learner_action=learner_action,
+                    candidate_outcomes=emergency_candidate_outcomes,
+                    advisory_ranked=advisory_ranked,
+                    allowed_actions=local_advisory_allowed_actions,
+                )
+                primitive = emergency_selection.action
+                control_origin = "emergency_safety"
+                rescue_trigger = emergency_features.primary_reason or "emergency_score"
+                _regime_labels, primary_regime = infer_local_regime(actor_observation, nearest_threats_now)
+                rescue_pending = {
+                    "step": int(step),
+                    "trigger": rescue_trigger,
+                    "activation_reason": rescue_trigger,
+                    "activation_reasons": list(emergency_features.reasons),
+                    "activation_score": emergency_features.score,
+                    "activation_features": dict(emergency_features.values),
+                    "planner_action": planner_primitive,
+                    "learner_action": learner_action,
+                    "pre_emergency_action": pre_emergency_action,
+                    "rescue_action": emergency_selection.action,
+                    "emergency_action": emergency_selection.action,
+                    "rescue_policy": emergency_selection.override_source,
+                    "override_source": emergency_selection.override_source,
+                    "action_selection_reason": emergency_selection.reason,
+                    "utility_components": dict(emergency_selection.utility_components),
+                    "ranked_emergency_actions": list(emergency_selection.ranked_actions),
+                    "rescue_applied": True,
+                    "rescue_improved_outcome": None,
+                    "pre_rescue_state": {
+                        "primary_regime": primary_regime,
+                        "body": {
+                            key: round(float(value), 3)
+                            for key, value in body.items()
+                        },
+                        "nearest_threat_distances": dict(nearest_threats_now),
+                        "belief_state_signature": dict(actor_observation.get("belief_state_signature", {})),
+                    },
+                    "candidate_outcome_excerpt": emergency_candidate_outcomes[:4],
+                    "post_rescue_outcome": {},
+                }
+
         arrow_threat_now = any(entity.concept_id == "arrow" for entity in observed_dynamic_entities)
         # Stage 89 telemetry fix:
         # visible projectile != imminent threat. Many steps contain an arrow in
@@ -1435,6 +1472,7 @@ def run_vector_mpc_episode(
                 "inventory_gain_step": int(step_inventory_gain),
                 "nearest_hostile_after": post_nearest,
             }
+            rescue_pending["immediate_outcome_delta"] = dict(rescue_pending["post_rescue_outcome"])
             if rescue_trigger == "repeated_non_progress":
                 rescue_pending["rescue_improved_outcome"] = bool(step_displacement > 0 or step_inventory_gain > 0)
             else:
@@ -1617,6 +1655,31 @@ def _should_record_local_counterfactuals(
         if dist <= 3:
             return True
     return False
+
+
+def _nearest_emergency_threat_distances(
+    facts: EmergencyWorldFacts,
+    player_pos: tuple[int, int],
+    spatial_map: CrafterSpatialMap,
+    observed_dynamic_entities: list[DynamicEntityState],
+) -> dict[str, int | None]:
+    distances: dict[str, int | None] = {}
+    for concept_id in facts.hostile_concepts:
+        dynamic_dist = _nearest_dynamic_distance(
+            concept_id,
+            player_pos,
+            observed_dynamic_entities,
+        )
+        if concept_id == "arrow":
+            distances[concept_id] = dynamic_dist
+        else:
+            distances[concept_id] = _nearest_hostile_distance(
+                concept_id,
+                player_pos,
+                spatial_map,
+                observed_dynamic_entities,
+            )
+    return distances
 
 
 def _mixed_control_rescue_trigger(

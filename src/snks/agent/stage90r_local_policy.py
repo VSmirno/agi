@@ -843,6 +843,15 @@ def build_rescue_records(
                 "rescue_improved_outcome": event.get("rescue_improved_outcome"),
                 "pre_rescue_state": dict(event.get("pre_rescue_state", {})),
                 "post_rescue_outcome": dict(event.get("post_rescue_outcome", {})),
+                "activation_reason": event.get("activation_reason", event.get("trigger")),
+                "activation_reasons": list(event.get("activation_reasons", [])),
+                "activation_score": event.get("activation_score"),
+                "activation_features": dict(event.get("activation_features", {})),
+                "emergency_action": event.get("emergency_action", event.get("rescue_action")),
+                "override_source": event.get("override_source", event.get("rescue_policy")),
+                "action_selection_reason": event.get("action_selection_reason"),
+                "utility_components": dict(event.get("utility_components", {})),
+                "immediate_outcome_delta": dict(event.get("immediate_outcome_delta", {})),
             }
         )
     return records

@@ -42,6 +42,15 @@ env_semantics:
     blocked_by: impassable     # impassable concepts stop the move
     updates_facing: true       # even a blocked move updates last_action/facing
 
+# Stage 90R emergency controller facts. These are intentionally narrow:
+# the controller reads category membership and activation threshold here,
+# while per-entity threat reach still comes from passive spatial rules below.
+emergency_control:
+  activation_threshold: 1.0
+  hostile_categories: [enemy, projectile]
+  resource_categories: [resource]
+  default_hostile_emergency_range: 1
+
 vocabulary:
   # `blocking: true` means the player cannot walk THROUGH this tile.
   # Stage 82 migrated from `impassable_concepts()` heuristic in code —
