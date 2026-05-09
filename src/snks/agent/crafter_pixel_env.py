@@ -24,6 +24,46 @@ try:
 except ImportError:
     HAS_CRAFTER = False
 
+
+# --- Determinism patch for crafter.env.Env._balance_chunk ---
+# Crafter stores per-chunk objects in a `set` (`engine.World._chunks`,
+# defaultdict(set)). `Env.step` then does:
+#     for chunk, objs in self._world.chunks.items():
+#         self._balance_chunk(chunk, objs)
+# and `_balance_object(self, chunk, objs, ...)` does:
+#     creatures = [obj for obj in objs if isinstance(obj, cls)]
+#     ...
+#     creatures[random.randint(0, len(creatures))]   # despawn
+# Iteration order of a set of object instances depends on `id(obj)`
+# (memory address), which is *not* covered by PYTHONHASHSEED and differs
+# across Python processes — so the same env seed produces different
+# zombie/skeleton/cow despawn picks across runs, breaking determinism.
+# The fix sorts objs by (pos, type, id) before passing into the original
+# routine so iteration order is fully deterministic given world state.
+_CRAFTER_DETERMINISM_PATCHED = False
+
+
+def _install_crafter_determinism_patch() -> None:
+    global _CRAFTER_DETERMINISM_PATCHED
+    if _CRAFTER_DETERMINISM_PATCHED or not HAS_CRAFTER:
+        return
+    import crafter.env as _crafter_env
+
+    _orig_balance_chunk = _crafter_env.Env._balance_chunk
+
+    def _deterministic_balance_chunk(self, chunk, objs):
+        sorted_objs = sorted(
+            objs,
+            key=lambda o: (int(o.pos[0]), int(o.pos[1]), type(o).__name__),
+        )
+        return _orig_balance_chunk(self, chunk, sorted_objs)
+
+    _crafter_env.Env._balance_chunk = _deterministic_balance_chunk
+    _CRAFTER_DETERMINISM_PATCHED = True
+
+
+_install_crafter_determinism_patch()
+
 # Semantic map IDs → material names (0-indexed in constants, 1-indexed in semantic map)
 # Plus creature IDs observed: 13=player, 14=cow, 15=zombie, 16=skeleton
 SEMANTIC_NAMES = {

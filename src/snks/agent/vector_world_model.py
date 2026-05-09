@@ -137,7 +137,10 @@ class CausalSDM:
 
         # 0.5th percentile → ~0.5% of locations activate (SNR ~15)
         target_pct_idx = max(1, int(dists_flat.numel() * 0.005))
-        radius = int(dists_flat.kthvalue(target_pct_idx).values.item())
+        # kthvalue lacks a CUDA-deterministic implementation in torch 2.5.1+cu121,
+        # so it blocks torch.use_deterministic_algorithms(True). Offload to CPU:
+        # one-shot init call, perf cost negligible, numerics identical.
+        radius = int(dists_flat.cpu().kthvalue(target_pct_idx).values.item())
 
         # Verify and nudge toward 0.3-1.5% activation band
         query = self.addresses[0]
@@ -300,6 +303,9 @@ class VectorWorldModel:
         # Passive spatial reach facts from textbook.
         # Dict: concept_id -> manhattan range for applying `concept -> proximity`.
         self.proximity_ranges: dict[str, int] = {}
+        # Passive movement behavior facts from textbook.
+        # Dict: concept_id -> behavior string, e.g. "chase_player".
+        self.movement_behaviors: dict[str, str] = {}
 
     def _ensure_concept(self, concept_id: str) -> torch.Tensor:
         if concept_id not in self.concepts:
@@ -502,6 +508,7 @@ class VectorWorldModel:
             "memory": self.memory.state_dict(),
             "action_requirements": self.action_requirements,
             "proximity_ranges": self.proximity_ranges,
+            "movement_behaviors": self.movement_behaviors,
         }, path)
 
     def load(self, path: str | Path) -> bool:
@@ -534,6 +541,7 @@ class VectorWorldModel:
         self.roles    = {k: v.to(self.device) for k, v in data["roles"].items()}
         self.action_requirements = data.get("action_requirements", {})
         self.proximity_ranges = data.get("proximity_ranges", {})
+        self.movement_behaviors = data.get("movement_behaviors", {})
 
         # Load SDM: replace addresses (same address space as loaded vectors),
         # replace content (start from gen1's knowledge, not an empty slate).
