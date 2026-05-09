@@ -55,6 +55,18 @@ data/MNIST/
 !demos/checkpoints/
 demos/checkpoints/*.pt
 
+# Ad-hoc experiment outputs under _docs/ (per-run dumps, not findings).
+# Curated forensics corpora are committed explicitly when added.
+_docs/local_*/
+_docs/hyper_*/
+_docs/minipc_*/
+_docs/*.json
+_docs/*.pt
+_docs/*.txt
+
+# Lockfile not under version control (pinned env lives elsewhere)
+uv.lock
+
 # Claude Code
 .agents/
 .claude/
