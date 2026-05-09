@@ -277,12 +277,18 @@ class EmergencySafetyController:
             escape_delta_raw = label.get("escape_delta_h")
             escape_delta = 0.0 if escape_delta_raw is None else float(escape_delta_raw)
             nearest_h = label.get("nearest_hostile_h")
+            effective_displacement = float(label.get("effective_displacement_h", 0.0))
+            blocked = bool(label.get("blocked_h", False))
+            adjacent_after = bool(label.get("adjacent_hostile_after_h", False))
             resource_gain = float(label.get("resource_gain_h", 0.0))
             advisory_rank = advisory_rank_by_action.get(action)
             advisory_bonus = 0.0 if advisory_rank is None else max(0.0, 0.6 - 0.15 * advisory_rank)
             planner_bonus = 0.2 if action == planner_action else 0.0
             learner_penalty = -0.1 if learner_action is not None and action == learner_action else 0.0
             sleep_threat_penalty = -1.5 if action == "sleep" and label.get("nearest_hostile_now") is not None else 0.0
+            blocked_penalty = -3.0 if blocked else 0.0
+            adjacent_penalty = -2.0 if adjacent_after else 0.0
+            displacement_bonus = min(1.0, 0.5 * effective_displacement)
             utility = (
                 (6.0 if survived else -12.0)
                 - 4.0 * damage
@@ -293,6 +299,9 @@ class EmergencySafetyController:
                 + planner_bonus
                 + learner_penalty
                 + sleep_threat_penalty
+                + blocked_penalty
+                + adjacent_penalty
+                + displacement_bonus
             )
             ranked.append(
                 {
@@ -304,6 +313,9 @@ class EmergencySafetyController:
                         "health_delta_h": round(float(health_delta), 4),
                         "escape_delta_h": None if escape_delta_raw is None else round(float(escape_delta), 4),
                         "nearest_hostile_h": nearest_h,
+                        "effective_displacement_h": round(float(effective_displacement), 4),
+                        "blocked_h": blocked,
+                        "adjacent_hostile_after_h": adjacent_after,
                         "resource_gain_h": round(float(resource_gain), 4),
                         "advisory_rank": advisory_rank,
                         "planner_aligned": action == planner_action,

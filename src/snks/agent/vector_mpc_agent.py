@@ -1762,6 +1762,10 @@ def _build_local_counterfactual_outcomes(
             enable_post_plan_passive_rollout=enable_post_plan_passive_rollout,
         )
         final_state = trajectory.final_state or state
+        displacement_h = (
+            abs(int(final_state.player_pos[0]) - int(state.player_pos[0]))
+            + abs(int(final_state.player_pos[1]) - int(state.player_pos[1]))
+        )
         end_threats = {
             "zombie": _nearest_hostile_distance("zombie", final_state.player_pos, final_state.spatial_map, final_state.dynamic_entities),
             "skeleton": _nearest_hostile_distance("skeleton", final_state.player_pos, final_state.spatial_map, final_state.dynamic_entities),
@@ -1810,6 +1814,13 @@ def _build_local_counterfactual_outcomes(
                     "escape_delta_h": escape_delta,
                     "nearest_hostile_now": start_hostile,
                     "nearest_hostile_h": end_hostile,
+                    "effective_displacement_h": int(displacement_h),
+                    "blocked_h": bool(
+                        primitive.startswith("move_") and displacement_h == 0
+                    ),
+                    "adjacent_hostile_after_h": bool(
+                        end_hostile is not None and int(end_hostile) <= 1
+                    ),
                 },
             }
         )

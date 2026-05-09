@@ -259,6 +259,47 @@ class TestSimulateForward:
         assert traj.final_state.player_pos == (10, 9)
         assert traj.final_state.body["health"] == 9.0
 
+    def test_move_into_known_blocked_tile_stays_put(self, model, base_state):
+        spatial_map = CrafterSpatialMap()
+        spatial_map.mark_blocked((10, 9))
+        state = VectorState(
+            inventory=dict(base_state.inventory),
+            body=dict(base_state.body),
+            player_pos=(10, 10),
+            spatial_map=spatial_map,
+        )
+        plan = VectorPlan(steps=[VectorPlanStep(action="move_up", target="self")])
+
+        traj = simulate_forward(model, plan, state, vital_vars=["health"], horizon=1)
+
+        assert traj.final_state is not None
+        assert traj.final_state.player_pos == (10, 10)
+
+    def test_move_into_hostile_occupied_tile_stays_put_and_takes_damage(self, model, base_state):
+        model.proximity_ranges["zombie"] = 1
+        for _ in range(10):
+            model.learn("zombie", "proximity", {"health": -3})
+
+        state = VectorState(
+            inventory=dict(base_state.inventory),
+            body=dict(base_state.body),
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="zombie",
+                    position=(10, 9),
+                    velocity=None,
+                )
+            ],
+        )
+        plan = VectorPlan(steps=[VectorPlanStep(action="move_up", target="self")])
+
+        traj = simulate_forward(model, plan, state, vital_vars=["health"], horizon=1)
+
+        assert traj.final_state is not None
+        assert traj.final_state.player_pos == (10, 10)
+        assert traj.final_state.body["health"] == 6.0
+
     def test_do_water_does_not_fire_from_distance(self, model, base_state):
         load_from_textbook(model, TEXTBOOK_PATH)
         spatial_map = CrafterSpatialMap()
@@ -306,6 +347,30 @@ class TestSimulateForward:
         traj = simulate_forward(model, VectorPlan(steps=[]), state, vital_vars=["health"], horizon=1)
         assert traj.final_state is not None
         assert traj.final_state.body["health"] == 6.0
+
+    def test_textbook_seeded_zombie_chase_keeps_move_away_dangerous(self, base_state):
+        model = VectorWorldModel(dim=1024, n_locations=512, seed=42)
+        load_from_textbook(model, TEXTBOOK_PATH)
+
+        state = VectorState(
+            inventory=dict(base_state.inventory),
+            body=dict(base_state.body),
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(
+                    concept_id="zombie",
+                    position=(11, 10),
+                    velocity=None,
+                )
+            ],
+        )
+        plan = VectorPlan(steps=[VectorPlanStep(action="move_up", target="self")])
+
+        traj = simulate_forward(model, plan, state, vital_vars=["health"], horizon=1)
+
+        assert traj.final_state is not None
+        assert traj.final_state.player_pos == (10, 9)
+        assert traj.final_state.body["health"] < 9.0
 
     def test_bootstrap_loads_proximity_range_facts(self):
         model = VectorWorldModel(dim=8192, n_locations=5000, seed=42)

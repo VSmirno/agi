@@ -79,6 +79,18 @@ verify checkout. После принудительного перехода на
   исправляет инфраструктурный eval path и device placement, но не переписывает
   исходное доказательство Stage 90R задним числом.
 
+**Follow-up instrumentation:** для дальнейшего Stage 91 root-cause rerun в
+`mixed_control_rescue` eval добавлены diagnostic fields `rescue_trace_tail`,
+`local_trace_tail` и опциональный `death_trace_bundle`. Это не меняет policy
+path; цель - перестать диагностировать слабые seed только по первым 8 шагам
+trace и получить terminal-step evidence у смерти.
+
+**Follow-up measurement fix:** summary теперь отдельно считает hostile deaths
+`without_rescue`, `after_prior_rescue`, `with_terminal_rescue` и
+`without_terminal_rescue`. Старое поле `hostile_deaths_without_rescue` само по
+себе оказалось слишком слабым: оно скрывало failure mode “rescue активировался
+много раз, но hostile death всё равно произошла”.
+
 ---
 
 ## 2026-04-20 — Stage 90 Reset: Viewport-First Local Survival

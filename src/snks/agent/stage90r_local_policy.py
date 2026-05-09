@@ -559,6 +559,14 @@ def _horizon_label(
         "escape_delta_h": escape_delta,
         "nearest_hostile_now": start_hostile,
         "nearest_hostile_h": end_hostile,
+        "effective_displacement_h": int(displacement_total),
+        "blocked_h": bool(
+            str(step.get("action", "")).startswith("move_")
+            and displacement_total == 0
+        ),
+        "adjacent_hostile_after_h": bool(
+            end_hostile is not None and int(end_hostile) <= 1
+        ),
         "progress_delta_h": round(progress_delta, 3),
         "stall_risk_h": (
             1.0

@@ -96,3 +96,19 @@ class TestBootstrap:
         # Spatial: zombie, skeleton = 2
         # Body rate: food, drink, energy = 3
         assert stats["passive_rules"] >= 4
+
+    def test_bootstrap_loads_hostile_movement_behaviors(self, seeded_model):
+        model, _ = seeded_model
+
+        assert model.movement_behaviors["zombie"] == "chase_player"
+        assert model.movement_behaviors["skeleton"] == "chase_player"
+
+    def test_save_and_load_preserves_movement_behaviors(self, seeded_model, tmp_path):
+        model, _ = seeded_model
+        path = tmp_path / "vector_model.pt"
+        model.save(path)
+
+        restored = VectorWorldModel(dim=8192, n_locations=5000, seed=7)
+        assert restored.load(path) is True
+        assert restored.movement_behaviors["zombie"] == "chase_player"
+        assert restored.movement_behaviors["skeleton"] == "chase_player"

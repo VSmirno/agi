@@ -60,8 +60,15 @@ CUDA_VISIBLE_DEVICES=0 \
   --local-evaluator "$VERIFY/_docs/stage90r_seed7_actor_selection_probe3.pt" \
   --enable-planner-rescue \
   --smoke-lite \
+  --terminal-trace-steps 32 \
+  --record-death-bundle \
   --out "$VERIFY/_docs/stage91_gpu_eval_seed7.json"
 ```
+
+For root-cause reruns, keep `--terminal-trace-steps` and
+`--record-death-bundle` enabled. The default head excerpts are useful for
+early-pattern inspection, but the regression now needs terminal-step evidence
+from weak episodes.
 
 ## Verification Evidence
 

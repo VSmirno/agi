@@ -98,3 +98,58 @@ def test_emergency_selector_prefers_escape_over_progress_under_threat():
     assert selection.action == "move_right"
     assert selection.override_source == "independent_emergency_choice"
     assert selection.utility_components["damage_h"] == 0.0
+
+
+def test_emergency_selector_penalizes_blocked_or_still_adjacent_moves():
+    controller = EmergencySafetyController(
+        facts=EmergencyWorldFacts(
+            hostile_concepts=("zombie",),
+            threat_ranges={"zombie": 1},
+            source="test",
+        )
+    )
+    candidate_outcomes = [
+        {
+            "action": "move_left",
+            "label": {
+                "survived_h": True,
+                "damage_h": 0.0,
+                "health_delta_h": 0.0,
+                "escape_delta_h": 1,
+                "nearest_hostile_now": 1,
+                "nearest_hostile_h": 1,
+                "effective_displacement_h": 0,
+                "blocked_h": True,
+                "adjacent_hostile_after_h": True,
+                "resource_gain_h": 0,
+            },
+        },
+        {
+            "action": "move_right",
+            "label": {
+                "survived_h": True,
+                "damage_h": 0.0,
+                "health_delta_h": 0.0,
+                "escape_delta_h": 1,
+                "nearest_hostile_now": 1,
+                "nearest_hostile_h": 2,
+                "effective_displacement_h": 1,
+                "blocked_h": False,
+                "adjacent_hostile_after_h": False,
+                "resource_gain_h": 0,
+            },
+        },
+    ]
+
+    selection = controller.select_action(
+        current_action="move_left",
+        planner_action="move_left",
+        learner_action="move_left",
+        candidate_outcomes=candidate_outcomes,
+        advisory_ranked=[{"action": "move_left"}, {"action": "move_right"}],
+        allowed_actions=["move_left", "move_right"],
+    )
+
+    assert selection.action == "move_right"
+    assert selection.utility_components["blocked_h"] is False
+    assert selection.utility_components["adjacent_hostile_after_h"] is False

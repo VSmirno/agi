@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from snks.agent.crafter_spatial_map import CrafterSpatialMap
+from snks.agent.perception import VisualField
+from snks.agent.vector_world_model import VectorWorldModel
 from snks.agent.vector_mpc_agent import (
     _select_mixed_control_rescue_action,
+    _build_local_counterfactual_outcomes,
     _mixed_control_rescue_trigger,
     _should_record_local_counterfactuals,
 )
-from snks.agent.vector_sim import DynamicEntityState
+from snks.agent.vector_sim import DynamicEntityState, VectorState
 
 
 def test_should_record_local_counterfactuals_salient_only_uses_resource_or_threat_salience():
@@ -94,3 +98,68 @@ def test_select_mixed_control_rescue_action_skips_consensus_without_alternative(
         rescue_trigger="hostile_contact",
         advisory_ranked=[{"action": "move_up"}],
     ) is None
+
+
+def test_build_local_counterfactual_outcomes_emits_feasibility_labels_for_blocked_move():
+    model = VectorWorldModel(dim=1024, n_locations=512, seed=42)
+    model.proximity_ranges["zombie"] = 1
+    for _ in range(10):
+        model.learn("zombie", "proximity", {"health": -3})
+
+    spatial_map = CrafterSpatialMap()
+    spatial_map.mark_blocked((10, 9))
+    state = VectorState(
+        inventory={},
+        body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+        player_pos=(10, 10),
+        spatial_map=spatial_map,
+        dynamic_entities=[
+            DynamicEntityState(concept_id="zombie", position=(11, 10), velocity=None)
+        ],
+    )
+    vf = VisualField(detections=[], near_concept="tree", near_similarity=1.0)
+
+    outcomes = _build_local_counterfactual_outcomes(
+        model=model,
+        state=state,
+        vf=vf,
+        cache=None,
+        vitals=["health"],
+        horizon=1,
+        enable_post_plan_passive_rollout=False,
+    )
+
+    move_up = next(outcome for outcome in outcomes if outcome["action"] == "move_up")
+
+    assert move_up["label"]["effective_displacement_h"] == 0
+    assert move_up["label"]["blocked_h"] is True
+    assert move_up["label"]["adjacent_hostile_after_h"] is True
+
+
+def test_build_local_counterfactual_outcomes_keeps_near_concept_for_do_target():
+    model = VectorWorldModel(dim=1024, n_locations=512, seed=42)
+    for _ in range(10):
+        model.learn("tree", "do", {"wood": 1})
+
+    state = VectorState(
+        inventory={"wood": 0},
+        body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+        player_pos=(10, 10),
+        last_action="move_right",
+        spatial_map=CrafterSpatialMap(),
+        dynamic_entities=[],
+    )
+    vf = VisualField(detections=[], near_concept="tree", near_similarity=1.0)
+
+    outcomes = _build_local_counterfactual_outcomes(
+        model=model,
+        state=state,
+        vf=vf,
+        cache=None,
+        vitals=["health"],
+        horizon=1,
+        enable_post_plan_passive_rollout=False,
+    )
+
+    do_outcome = next(outcome for outcome in outcomes if outcome["action"] == "do")
+    assert do_outcome["target"] == "tree"

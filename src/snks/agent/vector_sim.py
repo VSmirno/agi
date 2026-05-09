@@ -85,16 +85,26 @@ class VectorState:
             dy = 1
         elif action == "move_up":
             dy = -1
+        target = (px + dx, py + dy)
+        if self._move_target_blocked(target):
+            target = (px, py)
 
         return VectorState(
             inventory=dict(self.inventory),
             body=dict(self.body),
-            player_pos=(px + dx, py + dy),
+            player_pos=target,
             step=self.step,
             last_action=action,
             spatial_map=self.spatial_map,
             dynamic_entities=list(self.dynamic_entities),
         )
+
+    def _move_target_blocked(self, target: tuple[int, int]) -> bool:
+        spatial_map = self.spatial_map
+        if spatial_map is not None and hasattr(spatial_map, "is_blocked"):
+            if bool(spatial_map.is_blocked(target)):
+                return True
+        return any(tuple(entity.position) == tuple(target) for entity in self.dynamic_entities)
 
     def is_dead(self, vital_vars: list[str] | None = None) -> bool:
         """Check if any vital body variable <= 0."""
@@ -444,6 +454,13 @@ def _advance_dynamic_entities(
         pos = entity.position
         if entity.velocity is not None:
             pos = (pos[0] + entity.velocity[0], pos[1] + entity.velocity[1])
+        else:
+            pos = _apply_movement_behavior(
+                entity_pos=entity.position,
+                player_pos=next_state.player_pos,
+                behavior=model.movement_behaviors.get(entity.concept_id),
+                tick=next_state.step,
+            )
         moved = DynamicEntityState(
             concept_id=entity.concept_id,
             position=pos,
@@ -477,6 +494,46 @@ def _advance_dynamic_entities(
 
     next_state.dynamic_entities = updated_entities
     return next_state
+
+
+def _apply_movement_behavior(
+    *,
+    entity_pos: tuple[int, int],
+    player_pos: tuple[int, int],
+    behavior: str | None,
+    tick: int,
+) -> tuple[int, int]:
+    if behavior is None:
+        return entity_pos
+    if behavior == "chase_player":
+        return _step_toward_pos(entity_pos, player_pos)
+    if behavior == "flee_player":
+        dx = entity_pos[0] - player_pos[0]
+        dy = entity_pos[1] - player_pos[1]
+        if abs(dx) >= abs(dy) and dx != 0:
+            return (entity_pos[0] + (1 if dx > 0 else -1), entity_pos[1])
+        if dy != 0:
+            return (entity_pos[0], entity_pos[1] + (1 if dy > 0 else -1))
+        return entity_pos
+    if behavior == "random_walk":
+        seed = (entity_pos[0] * 31 + entity_pos[1] * 17 + tick) & 3
+        deltas = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+        dx, dy = deltas[seed]
+        return (entity_pos[0] + dx, entity_pos[1] + dy)
+    return entity_pos
+
+
+def _step_toward_pos(
+    current: tuple[int, int],
+    target: tuple[int, int],
+) -> tuple[int, int]:
+    dx = target[0] - current[0]
+    dy = target[1] - current[1]
+    if abs(dx) >= abs(dy) and dx != 0:
+        return (current[0] + (1 if dx > 0 else -1), current[1])
+    if dy != 0:
+        return (current[0], current[1] + (1 if dy > 0 else -1))
+    return current
 
 
 def _apply_effect_same_tick(state: VectorState, decoded_effect: dict[str, int]) -> VectorState:

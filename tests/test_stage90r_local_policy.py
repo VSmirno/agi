@@ -149,6 +149,65 @@ def test_build_local_training_examples_computes_horizon_labels():
     assert "state_signature_key" in first
 
 
+def test_build_local_training_examples_emits_blocked_and_adjacency_labels():
+    local_trace = [
+        {
+            "step": 0,
+            "action": "move_up",
+            "action_index": 3,
+            "plan_origin": "baseline",
+            "observation": {
+                "viewport_class_ids": [[0] * 9 for _ in range(7)],
+                "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+                "body_vector": [5.0, 7.0, 7.0, 7.0],
+                "inventory_vector": [0] * 12,
+                "body": {"health": 5.0, "food": 7.0, "drink": 7.0, "energy": 7.0},
+                "inventory": {"wood": 0},
+            },
+            "player_pos_before": [10, 10],
+            "player_pos_after": [10, 10],
+            "body_after": {"health": 3.0, "food": 7.0, "drink": 7.0, "energy": 7.0},
+            "inventory_after": {"wood": 0},
+            "nearest_threat_distances": {"zombie": 1, "skeleton": None, "arrow": None},
+            "done_after_step": False,
+        },
+        {
+            "step": 1,
+            "action": "sleep",
+            "action_index": 6,
+            "plan_origin": "baseline",
+            "observation": {
+                "viewport_class_ids": [[0] * 9 for _ in range(7)],
+                "viewport_confidences": [[0.0] * 9 for _ in range(7)],
+                "body_vector": [3.0, 7.0, 7.0, 7.0],
+                "inventory_vector": [0] * 12,
+                "body": {"health": 3.0, "food": 7.0, "drink": 7.0, "energy": 7.0},
+                "inventory": {"wood": 0},
+            },
+            "player_pos_before": [10, 10],
+            "player_pos_after": [10, 10],
+            "body_after": {"health": 3.0, "food": 7.0, "drink": 7.0, "energy": 7.0},
+            "inventory_after": {"wood": 0},
+            "nearest_threat_distances": {"zombie": 1, "skeleton": None, "arrow": None},
+            "done_after_step": True,
+        },
+    ]
+
+    samples = build_local_training_examples(
+        local_trace=local_trace,
+        final_body={"health": 3.0, "food": 7.0, "drink": 7.0, "energy": 7.0},
+        final_inventory={"wood": 0},
+        seed=9,
+        episode_id=1,
+        horizon=1,
+    )
+
+    first = samples[0]
+    assert first["label"]["effective_displacement_h"] == 0
+    assert first["label"]["blocked_h"] is True
+    assert first["label"]["adjacent_hostile_after_h"] is True
+
+
 def test_build_learner_transition_records_emits_next_state_and_outcomes():
     local_trace = [
         {

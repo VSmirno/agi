@@ -134,6 +134,18 @@ def load_from_textbook(model: "VectorWorldModel", yaml_path: str | Path) -> dict
                 model.learn(entity, "proximity", effect)
             stats["passive_rules"] += 1
 
+    # --- Passive movement rules: seed as explicit behavior facts ---
+    for rule in data.get("rules", []):
+        if rule.get("passive") != "movement":
+            continue
+
+        entity = rule.get("entity", "")
+        behavior = rule.get("behavior", "")
+        if entity and behavior:
+            model._ensure_concept(entity)
+            model.movement_behaviors[entity] = str(behavior)
+            stats["passive_rules"] += 1
+
     # --- Passive body_rate: seed as background rates ---
     # These are per-tick rates — small values. We encode them as
     # associations with a special "tick" action.

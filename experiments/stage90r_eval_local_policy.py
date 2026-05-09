@@ -55,6 +55,28 @@ def _eval_episode_rng(*, base_seed: int, episode_index: int) -> np.random.Random
     return np.random.RandomState(base_seed + episode_index)
 
 
+def _trace_tail(trace: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
+    return trace[-limit:]
+
+
+def _is_hostile_death(death_cause: str) -> bool:
+    return death_cause in {"zombie", "skeleton", "arrow"}
+
+
+def _terminal_rescue_event_count(
+    rescue_trace: list[dict[str, Any]],
+    *,
+    episode_steps: int,
+    terminal_window: int,
+) -> int:
+    if terminal_window <= 0:
+        return 0
+    first_terminal_step = max(0, int(episode_steps) - int(terminal_window))
+    return sum(int(event.get("step", -1)) >= first_terminal_step for event in rescue_trace)
+
+
 def _action_summary(action_counts: Counter[str]) -> dict[str, Any]:
     return {
         "action_counts": dict(action_counts),
@@ -213,6 +235,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--smoke-lite", action="store_true")
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument("--max-explanations-per-episode", type=int, default=8)
+    parser.add_argument("--terminal-trace-steps", type=int, default=8)
+    parser.add_argument("--record-death-bundle", action="store_true")
     return parser
 
 
@@ -618,6 +642,10 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
     death_causes: Counter[str] = Counter()
     early_hostile_deaths_without_rescue = 0
     hostile_deaths_without_rescue = 0
+    early_hostile_deaths_after_prior_rescue = 0
+    hostile_deaths_after_prior_rescue = 0
+    hostile_deaths_with_terminal_rescue = 0
+    hostile_deaths_without_terminal_rescue = 0
     results: list[dict[str, Any]] = []
     t0 = time.time()
 
@@ -647,9 +675,11 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
             local_advisory_device=device,
             mixed_control_actor_share=float(args.actor_share),
             enable_planner_rescue=bool(args.enable_planner_rescue),
+            record_death_bundle=bool(args.record_death_bundle),
             record_local_trace=True,
             record_local_counterfactuals="salient_only",
             local_counterfactual_horizon=1,
+            death_capture_steps=max(int(args.terminal_trace_steps), int(args.max_explanations_per_episode)),
             rng=_eval_episode_rng(base_seed=args.seed, episode_index=ep),
         )
         attribution = analyzer.attribute(metrics.get("damage_log", []), metrics.get("episode_steps", 0))
@@ -673,11 +703,28 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
         )
         death_cause = metrics.get("death_cause", "alive")
         death_causes[death_cause] += 1
-        hostile_death_without_rescue = death_cause in {"zombie", "skeleton", "arrow"} and not rescue_trace
+        hostile_death = _is_hostile_death(death_cause)
+        terminal_rescue_event_count = _terminal_rescue_event_count(
+            rescue_trace,
+            episode_steps=int(metrics.get("episode_steps", 0)),
+            terminal_window=int(args.terminal_trace_steps),
+        )
+        hostile_death_without_rescue = hostile_death and not rescue_trace
+        hostile_death_after_prior_rescue = hostile_death and bool(rescue_trace)
+        hostile_death_with_terminal_rescue = hostile_death and terminal_rescue_event_count > 0
         if hostile_death_without_rescue:
             hostile_deaths_without_rescue += 1
             if int(metrics.get("episode_steps", 0)) <= 50:
                 early_hostile_deaths_without_rescue += 1
+        if hostile_death_after_prior_rescue:
+            hostile_deaths_after_prior_rescue += 1
+            if int(metrics.get("episode_steps", 0)) <= 50:
+                early_hostile_deaths_after_prior_rescue += 1
+        if hostile_death:
+            if terminal_rescue_event_count > 0:
+                hostile_deaths_with_terminal_rescue += 1
+            else:
+                hostile_deaths_without_terminal_rescue += 1
         results.append(
             {
                 "episode_id": ep,
@@ -687,8 +734,15 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
                 "controller_distribution": dict(sorted(local_controller_counts.items())),
                 "n_rescue_events": len(rescue_trace),
                 "hostile_death_without_rescue": bool(hostile_death_without_rescue),
+                "hostile_death_after_prior_rescue": bool(hostile_death_after_prior_rescue),
+                "terminal_rescue_event_count": int(terminal_rescue_event_count),
+                "first_rescue_step": rescue_trace[0]["step"] if rescue_trace else None,
+                "last_rescue_step": rescue_trace[-1]["step"] if rescue_trace else None,
                 "rescue_trace": rescue_trace[: args.max_explanations_per_episode],
+                "rescue_trace_tail": _trace_tail(rescue_trace, int(args.terminal_trace_steps)),
                 "local_trace_excerpt": local_trace[: args.max_explanations_per_episode],
+                "local_trace_tail": _trace_tail(local_trace, int(args.terminal_trace_steps)),
+                "death_trace_bundle": metrics.get("death_trace_bundle"),
             }
         )
         elapsed = time.time() - t0
@@ -718,6 +772,9 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
             "enable_planner_rescue": bool(args.enable_planner_rescue),
             "allow_offline_gate_failure": bool(args.allow_offline_gate_failure),
             "smoke_lite": bool(args.smoke_lite),
+            "max_explanations_per_episode": int(args.max_explanations_per_episode),
+            "terminal_trace_steps": int(args.terminal_trace_steps),
+            "record_death_bundle": bool(args.record_death_bundle),
         },
         "summary": {
             "avg_survival": avg_survival,
@@ -738,6 +795,10 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
             "rescue_override_source_distribution": dict(sorted(rescue_override_source_counts.items())),
             "early_hostile_deaths_without_rescue": int(early_hostile_deaths_without_rescue),
             "hostile_deaths_without_rescue": int(hostile_deaths_without_rescue),
+            "early_hostile_deaths_after_prior_rescue": int(early_hostile_deaths_after_prior_rescue),
+            "hostile_deaths_after_prior_rescue": int(hostile_deaths_after_prior_rescue),
+            "hostile_deaths_with_terminal_rescue": int(hostile_deaths_with_terminal_rescue),
+            "hostile_deaths_without_terminal_rescue": int(hostile_deaths_without_terminal_rescue),
             "fallback_criterion": {
                 "baseline_commit": "9083357",
                 "baseline_avg_survival": baseline_avg_survival,
