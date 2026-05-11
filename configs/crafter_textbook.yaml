@@ -61,6 +61,7 @@ vocabulary:
   - { id: coal,     category: resource, blocking: true }
   - { id: iron,     category: resource, blocking: true }
   - { id: table,    category: crafted,  blocking: true }
+  - { id: lava,     category: hazard,   blocking: false }
   - { id: empty,    category: terrain,  blocking: false }
   - { id: zombie,   category: enemy, dangerous: true, blocking: true }
   - { id: skeleton, category: enemy, dangerous: true, blocking: true }
@@ -227,6 +228,14 @@ rules:
     entity: arrow
     range: 1
     effect: { body: { health: -0.5 } }
+
+  # Lava: standing ON the tile burns (range=0 means on-tile).
+  # Unlike enemies whose damage applies within proximity, lava only
+  # hurts when the player is ON it. Strong magnitude — instant kill.
+  - passive: spatial
+    entity: lava
+    range: 0
+    effect: { body: { health: -1.0 } }
 
   # ===== PASSIVE: stateful body dynamics =====
   # Rough directional facts:

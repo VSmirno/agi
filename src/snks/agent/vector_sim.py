@@ -104,6 +104,19 @@ class VectorState:
         if spatial_map is not None and hasattr(spatial_map, "is_blocked"):
             if bool(spatial_map.is_blocked(target)):
                 return True
+        # Perceived blocking tiles (water, tree, stone, etc.) block movement
+        # in the sim too. Without this, the planner only learns a tile is
+        # impassable after the real env rejects a move, which makes the
+        # agent bounce against water/stone in tight spaces for many steps.
+        # Lava is intentionally NOT here — it's a hazard, not a barrier,
+        # and falls under the proximity-damage path.
+        if spatial_map is not None and hasattr(spatial_map, "concept_at"):
+            tile = spatial_map.concept_at(target)
+            if tile in {
+                "water", "tree", "stone", "coal", "iron", "diamond",
+                "table", "furnace", "cow", "zombie", "skeleton",
+            }:
+                return True
         return any(tuple(entity.position) == tuple(target) for entity in self.dynamic_entities)
 
     def is_dead(self, vital_vars: list[str] | None = None) -> bool:
@@ -483,6 +496,28 @@ def _advance_dynamic_entities(
             should_apply = True
 
         if should_apply:
+            if cache is not None and hit_key in cache:
+                effect_vec, confidence = cache[hit_key]
+            else:
+                effect_vec, confidence = model.predict(*hit_key)
+            if confidence >= 0.2:
+                decoded = model.decode_effect(effect_vec)
+                next_state = _apply_effect_same_tick(next_state, decoded)
+                next_state.last_action = action
+
+    # Static-tile hazards (e.g. lava): proximity_range[c] == 0 means damage
+    # applies when the player is ON the tile, not within distance N. Without
+    # this, planning rollouts predict zero damage for moves into lava and
+    # the agent walks straight in.
+    spatial_map = next_state.spatial_map
+    if spatial_map is not None and hasattr(spatial_map, "concept_at"):
+        tile_concept = spatial_map.concept_at(next_state.player_pos)
+        if (
+            tile_concept is not None
+            and tile_concept in model.proximity_ranges
+            and int(model.proximity_ranges[tile_concept]) == 0
+        ):
+            hit_key = (tile_concept, "proximity")
             if cache is not None and hit_key in cache:
                 effect_vec, confidence = cache[hit_key]
             else:

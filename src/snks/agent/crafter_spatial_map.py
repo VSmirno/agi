@@ -46,6 +46,11 @@ class CrafterSpatialMap:
     def is_blocked(self, pos: tuple[int, int]) -> bool:
         return (int(pos[0]), int(pos[1])) in self._blocked
 
+    def concept_at(self, pos: tuple[int, int]) -> str | None:
+        """Return the concept observed at `pos`, or None if unvisited."""
+        entry = self._map.get((int(pos[0]), int(pos[1])))
+        return entry[0] if entry else None
+
     def update(
         self, player_pos: tuple[int, int], near_str: str, confidence: float = 1.0
     ) -> None:

@@ -749,6 +749,7 @@ def run_vector_mpc_episode(
         else:
             raise ValueError(f"Unknown perception_mode: {perception_mode}")
         _update_spatial_map(spatial_map, vf, player_pos)
+        _update_spatial_map_hazards(spatial_map, info, player_pos)
         entity_tracker.update(vf, player_pos)
 
         # --- Homeostatic tracker ---
@@ -963,8 +964,43 @@ def run_vector_mpc_episode(
                 near_concept=vf.near_concept,
             )
         else:
-            move_actions = [a for a in model.actions if a.startswith("move_")]
-            planner_primitive = str(rng.choice(move_actions)) if move_actions else "move_right"
+            # Baseline plan (empty) won the ranking. RNG fallback now
+            # restricts to plans that are
+            #   (a) alive-predicted in score (score[0] >= 0; not lethal)
+            #   (b) NOT a move whose sim rollout produced zero
+            #       displacement (i.e. not a blocked move pretending to
+            #       be a no-op). `sleep`/`do` plans naturally have zero
+            #       displacement and are kept — they can still be
+            #       productive (recover energy, gather resource).
+            # Without (b), in a water-peninsula the planner draws RNG
+            # over {move_up, move_right, move_down (all blocked, no-op),
+            # move_left (real move), sleep, do} and only escapes 1/6th
+            # of the time, leaving the agent stuck for many ticks.
+            def _is_meaningful(plan, traj):
+                if not plan.steps:
+                    return False
+                first = plan.steps[0]
+                if first.action.startswith("move_"):
+                    if not traj.states or len(traj.states) < 2:
+                        return False
+                    if tuple(traj.states[0].player_pos) == tuple(traj.states[1].player_pos):
+                        return False
+                return True
+
+            alive_concrete = [
+                p for s, p, t in scored
+                if s[0] >= 0 and _is_meaningful(p, t)
+            ]
+            if alive_concrete:
+                chosen_plan = alive_concrete[rng.randint(0, len(alive_concrete))]
+                planner_primitive = expand_to_primitive(
+                    chosen_plan.steps[0], player_pos, spatial_map, model, rng,
+                    last_action=prev_move,
+                    near_concept=vf.near_concept,
+                )
+            else:
+                move_actions = [a for a in model.actions if a.startswith("move_")]
+                planner_primitive = str(rng.choice(move_actions)) if move_actions else "move_right"
 
         primitive = planner_primitive
         control_origin = "planner_bootstrap"
@@ -1868,6 +1904,49 @@ def _env_tile_truth(env: Any, pos: tuple[int, int] | None) -> dict[str, str | No
         "material": str(material) if material is not None else None,
         "object": str(object_name) if object_name is not None else None,
     }
+
+_HAZARD_CONCEPTS = {"lava"}
+
+
+def _update_spatial_map_hazards(
+    spatial_map: "CrafterSpatialMap",
+    info: dict,
+    player_pos: tuple[int, int],
+    radius: int = 5,
+) -> None:
+    """Scan info["semantic"] around the player for static hazard tiles and
+    write them into spatial_map.
+
+    Bypasses NEAR_TO_IDX / NEAR_CLASSES (which the trained local actor
+    `.pt` depends on for its output dimension). Adding hazards there
+    triggers a CUDA index-out-of-bounds in the actor's logits because
+    the model was trained with the old class set.
+
+    Direct semantic scan keeps the actor untouched while still letting
+    the planner see lava tiles via spatial_map.concept_at(...).
+    """
+    import numpy as np
+    from snks.agent.crafter_pixel_env import SEMANTIC_NAMES
+    semantic = info.get("semantic")
+    if semantic is None:
+        return
+    semantic = np.asarray(semantic)
+    py, px = int(player_pos[0]), int(player_pos[1])
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            wy, wx = py + dy, px + dx
+            if not (0 <= wy < semantic.shape[0] and 0 <= wx < semantic.shape[1]):
+                continue
+            name = SEMANTIC_NAMES.get(int(semantic[wy, wx]), "unknown")
+            if name in _HAZARD_CONCEPTS:
+                # Hazards are immutable — write directly into _map to
+                # bypass spatial_map.update's "empty overrides stale
+                # resource labels" rule that would otherwise erase
+                # this entry on the next perception step.
+                key = (int(wy), int(wx))
+                spatial_map._map[key] = (name, 1.0, 1)
+                spatial_map._visited.add(key)
+
 
 def _update_spatial_map(
     spatial_map: CrafterSpatialMap,
