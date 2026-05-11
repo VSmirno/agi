@@ -88,6 +88,16 @@ class CrafterSpatialMap:
                 # if the initial resource observation had higher confidence
                 # (e.g. written via near_concept conf≈1.0).
                 self._map[key] = (near_str, confidence, 1)
+            elif near_str in {"table", "furnace"} and confidence >= 0.5:
+                # Placed objects only appear through the agent's own action,
+                # so an observation of one is authoritative — it must
+                # overwrite the prior "empty" (or any other) label even when
+                # confidences are equal. Without this the table the agent
+                # just placed stays invisible to the planner because the
+                # cell was previously written as "empty" at conf=1.0 and the
+                # `confidence > old_conf` rule below tied with conf=1.0
+                # from the new table observation, ignoring the new label.
+                self._map[key] = (near_str, confidence, 1)
             elif confidence > old_conf:
                 # Different label, higher confidence — replace
                 self._map[key] = (near_str, confidence, 1)

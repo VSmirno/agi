@@ -225,6 +225,22 @@ def _cached_predict(
     return model.predict(concept_id, action)
 
 
+def _adjacent_concepts(
+    spatial_map: CrafterSpatialMap,
+    player_pos: tuple[int, int] | None,
+) -> set[str]:
+    """Concepts present in the four cardinal-adjacent tiles of player_pos."""
+    if player_pos is None or not hasattr(spatial_map, "concept_at"):
+        return set()
+    px, py = player_pos
+    out: set[str] = set()
+    for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+        concept = spatial_map.concept_at((px + dx, py + dy))
+        if concept is not None:
+            out.add(concept)
+    return out
+
+
 def generate_candidate_plans(
     model: VectorWorldModel,
     state: VectorState,
@@ -235,6 +251,7 @@ def generate_candidate_plans(
     cache: PredictionCache | None = None,
     enable_motion_plans: bool = True,
     enable_motion_chains: bool = True,
+    player_pos: tuple[int, int] | None = None,
 ) -> list[VectorPlan]:
     """Generate plans via forward imagination.
 
@@ -288,9 +305,89 @@ def generate_candidate_plans(
     # sleep wins only when min_vital improves in simulation (vitals low);
     # baseline (dist=0, -steps=0) beats idle sleep when vitals full.
     for action in self_actions:
+        # Suppress `sleep` plan while energy is comfortable. Crafter is
+        # split into a safe early phase (no zombies / skeletons) and a
+        # hostile night phase; turns spent sleeping during the safe phase
+        # are lost gathering/crafting opportunity. The energy<3 threshold
+        # matches the textbook-derived `sleep` goal trigger in
+        # GoalSelector, so the planner only proposes sleep when the goal
+        # layer would have promoted it anyway. Vitals are capped at 9.0 by
+        # apply_effect, so without this gate sleep ties with motion plans
+        # in scoring and the RNG fallback fires it ~1/N of the time.
+        if action == "sleep":
+            if state.body.get("energy", 0.0) >= 3.0:
+                continue
         candidates.append(VectorPlan(
             steps=[VectorPlanStep(action=action, target="self")],
             origin=f"self:{action}",
+        ))
+
+    # Crafting plans (make/place). The targets here are inventory items or
+    # placed objects (wood_pickaxe, table, …), never tile concepts in
+    # `known`. Iterate `model.action_requirements` (seeded from textbook
+    # `make`/`place` rules) so these plans get a chance to be picked.
+    # Without this, the agent could carry 9 wood and never try to craft.
+    #
+    # Adjacency requirements (e.g. `make_wood_pickaxe` requires `table`
+    # adjacent): handled via `model.near_requirements`. When the required
+    # concept isn't adjacent, prepend `place_X` if feasible. "empty" near is
+    # treated as always satisfied (the env finds an open tile).
+    adj_concepts = _adjacent_concepts(spatial_map, player_pos)
+    for (target, action), _reqs in model.action_requirements.items():
+        if action not in ("make", "place"):
+            continue
+        if not model.requirements_met(target, action, state.inventory):
+            continue
+        effect_vec, confidence = _cached_predict(cache, model, target, action)
+        if confidence < 0.2:
+            continue
+        decoded = model.decode_effect(effect_vec)
+        if not _has_positive_effect(decoded, state):
+            continue
+
+        near_req = model.near_requirements.get((target, action))
+        if near_req is None or near_req == "empty" or near_req in adj_concepts:
+            candidates.append(VectorPlan(
+                steps=[VectorPlanStep(action=action, target=target)],
+                origin=f"single:{target}:{action}",
+            ))
+            continue
+
+        # Adjacency requirement not met. If an instance of the required tile
+        # already exists somewhere on the map, emit the single make plan —
+        # `expand_to_primitive` will navigate to it. Only when no instance
+        # exists do we fall through to a `[place_near_req, make_target]`
+        # chain plan that prepends a fresh placement. Without this guard the
+        # planner kept generating chain plans every step the agent strayed
+        # from its prior table, and the top-band RNG fired `place_table`
+        # over and over, leaving rows of stacked tables on the map.
+        existing_near_pos = spatial_map.find_nearest(near_req, player_pos) if player_pos is not None else None
+        if existing_near_pos is not None:
+            candidates.append(VectorPlan(
+                steps=[VectorPlanStep(action=action, target=target)],
+                origin=f"single:{target}:{action}",
+            ))
+            continue
+
+        # No instance exists — prepend a place plan when feasible against
+        # the post-place inventory.
+        place_key = (near_req, "place")
+        place_reqs = model.action_requirements.get(place_key)
+        if place_reqs is None:
+            continue
+        if not model.requirements_met(near_req, "place", state.inventory):
+            continue
+        post_inv = dict(state.inventory)
+        for item, cost in place_reqs.items():
+            post_inv[item] = post_inv.get(item, 0) - int(cost)
+        if not model.requirements_met(target, action, post_inv):
+            continue
+        candidates.append(VectorPlan(
+            steps=[
+                VectorPlanStep(action="place", target=near_req),
+                VectorPlanStep(action=action, target=target),
+            ],
+            origin=f"chain:place_{near_req}+{action}_{target}",
         ))
 
     # Motion-only plans. Needed for dynamic-threat avoidance:
@@ -527,6 +624,37 @@ def expand_to_primitive(
         # The player is physically adjacent; execute the action directly.
         if near_concept is not None and near_concept == plan_step.target and plan_step.action == "do":
             return "do"
+        # make/place act on inventory or facing tile — no spatial target needed
+        # in the spatial map (the named target lives in inventory). But the
+        # textbook may declare an adjacency requirement (e.g. `make_*`
+        # requires `near: table`). Honor it here so the primitive expansion
+        # navigates to an existing required-tile if any exist on the map and
+        # only places a new one when none does. Without this guard the agent
+        # ends up placing a fresh table every time it strays from the prior
+        # one — visible as 3 tables stacked next to each other.
+        if plan_step.action in ("make", "place"):
+            from snks.agent.crafter_pixel_env import ACTION_TO_IDX
+            near_req = getattr(model, "near_requirements", {}).get(
+                (plan_step.target, plan_step.action)
+            )
+            if near_req and near_req != "empty":
+                px, py = player_pos
+                adj: set[str] = set()
+                if hasattr(spatial_map, "concept_at"):
+                    for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                        concept = spatial_map.concept_at((px + dx, py + dy))
+                        if concept is not None:
+                            adj.add(concept)
+                if near_req not in adj:
+                    near_pos = spatial_map.find_nearest(near_req, player_pos)
+                    if near_pos is not None:
+                        return _step_toward(player_pos, near_pos, model, rng)
+                    place_compound = f"place_{near_req}"
+                    if place_compound in ACTION_TO_IDX:
+                        return place_compound
+            compound = f"{plan_step.action}_{plan_step.target}"
+            if compound in ACTION_TO_IDX:
+                return compound
         # Target not in spatial map — explore
         move_actions = [a for a in model.actions if a.startswith("move_")]
         return str(rng.choice(move_actions)) if move_actions else "move_right"
@@ -748,7 +876,7 @@ def run_vector_mpc_episode(
             vf = perceive_semantic_field(info)
         else:
             raise ValueError(f"Unknown perception_mode: {perception_mode}")
-        _update_spatial_map(spatial_map, vf, player_pos)
+        _update_spatial_map(spatial_map, vf, player_pos, prev_move=prev_move)
         _update_spatial_map_hazards(spatial_map, info, player_pos)
         entity_tracker.update(vf, player_pos)
 
@@ -852,6 +980,7 @@ def run_vector_mpc_episode(
             cache=step_cache,
             enable_motion_plans=enable_motion_plans,
             enable_motion_chains=enable_motion_chains,
+            player_pos=player_pos,
         )
 
         # Sort candidates by proximity to first target — closer first.
@@ -867,6 +996,13 @@ def run_vector_mpc_episode(
             max_dist = 0
             for step in plan.steps:
                 if step.target == "self":
+                    continue
+                # make/place act on inventory or the facing/adjacent tile and
+                # do not depend on the named target existing in the spatial map
+                # (`wood_pickaxe` lives in inventory; `table` will be placed
+                # adjacent). Adjacency is enforced separately during plan
+                # generation via `near_requirements`.
+                if step.action in ("make", "place"):
                     continue
                 # near_concept == target means the resource is immediately adjacent
                 # to the player. find_nearest skips player_pos (Bug 5 guard), so
@@ -988,11 +1124,19 @@ def run_vector_mpc_episode(
                 return True
 
             alive_concrete = [
-                p for s, p, t in scored
+                (s, p, t) for s, p, t in scored
                 if s[0] >= 0 and _is_meaningful(p, t)
             ]
             if alive_concrete:
-                chosen_plan = alive_concrete[rng.randint(0, len(alive_concrete))]
+                # `scored` is already sorted desc by full score tuple. Pick
+                # plans in the top score band and RNG within only that band.
+                # Without this, uniform RNG across all alive plans dilutes
+                # rare-but-valuable plans (e.g. `make_wood_pickaxe`) among
+                # the many tied-zero motion plans — agent gathers wood and
+                # stands next to a table but almost never executes the make.
+                top_score = alive_concrete[0][0]
+                top_band = [p for s, p, t in alive_concrete if s == top_score]
+                chosen_plan = top_band[rng.randint(0, len(top_band))]
                 planner_primitive = expand_to_primitive(
                     chosen_plan.steps[0], player_pos, spatial_map, model, rng,
                     last_action=prev_move,
@@ -1952,6 +2096,7 @@ def _update_spatial_map(
     spatial_map: CrafterSpatialMap,
     vf: VisualField,
     player_pos: tuple[int, int],
+    prev_move: str | None = None,
 ) -> None:
     """Write viewport detections into spatial_map with confidence."""
     # Only naturally-occurring world objects go into spatial_map.
@@ -1960,13 +2105,31 @@ def _update_spatial_map(
     _NATURAL_CONCEPTS = {
         "tree", "stone", "coal", "iron", "diamond",
         "water", "cow", "zombie", "skeleton", "empty",
+        # Placed objects (`table`, `furnace`) are persistent within an episode
+        # and even more important to remember than consumable resources:
+        # without them in the map, `find_nearest("table", ...)` returns None,
+        # which made the planner regenerate `place_<near_req>` plans every
+        # step the agent strayed from its prior table, leaving rows of
+        # stacked tables on the map and never executing the make plan
+        # they were chained to.
+        "table", "furnace",
     }
 
     px, py = int(player_pos[0]), int(player_pos[1])
     center_row, center_col = 3, 4  # 7×9 viewport
 
     if vf.near_concept in _NATURAL_CONCEPTS:
-        spatial_map.update((px, py), vf.near_concept, vf.near_similarity)
+        # near_concept describes the FACING tile, so record the label at the
+        # facing tile coordinate — not the player's own tile, which is
+        # actually empty (player can't stand on a resource/table). Writing at
+        # player_pos produced lying entries like `(28,34) → "table"` even
+        # though the table sits at (28,33), and `find_nearest("table")` then
+        # returned the player's prior position instead of the placed table.
+        facing_delta = _facing_delta(prev_move)
+        if facing_delta == (0, 0):
+            facing_delta = (0, 1)  # default facing: down
+        fx, fy = px + facing_delta[0], py + facing_delta[1]
+        spatial_map.update((fx, fy), vf.near_concept, vf.near_similarity)
 
     for cid, conf, gy, gx in vf.detections:
         if cid not in _NATURAL_CONCEPTS:

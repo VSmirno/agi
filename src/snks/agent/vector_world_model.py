@@ -300,6 +300,13 @@ class VectorWorldModel:
         # E.g., ("iron", "do") → {"stone_pickaxe": 1}
         # Used by planner to filter plans whose requirements aren't met.
         self.action_requirements: dict[tuple[str, str], dict[str, int]] = {}
+        # Adjacency-requirement facts from textbook: which concept must occupy
+        # one of the four cardinal-adjacent tiles for an action to succeed
+        # (e.g., make_wood_pickaxe needs `table` adjacent). The sentinel
+        # "empty" means "any non-blocking adjacent tile" and is treated as
+        # always satisfied at plan-generation time. Used by the planner to
+        # chain place_X before make_Y when the required tile isn't adjacent.
+        self.near_requirements: dict[tuple[str, str], str] = {}
         # Passive spatial reach facts from textbook.
         # Dict: concept_id -> manhattan range for applying `concept -> proximity`.
         self.proximity_ranges: dict[str, int] = {}
@@ -507,6 +514,7 @@ class VectorWorldModel:
             "roles": {k: v.cpu() for k, v in self.roles.items()},
             "memory": self.memory.state_dict(),
             "action_requirements": self.action_requirements,
+            "near_requirements": self.near_requirements,
             "proximity_ranges": self.proximity_ranges,
             "movement_behaviors": self.movement_behaviors,
         }, path)
@@ -540,6 +548,7 @@ class VectorWorldModel:
         self.actions  = {k: v.to(self.device) for k, v in data["actions"].items()}
         self.roles    = {k: v.to(self.device) for k, v in data["roles"].items()}
         self.action_requirements = data.get("action_requirements", {})
+        self.near_requirements = data.get("near_requirements", {})
         self.proximity_ranges = data.get("proximity_ranges", {})
         self.movement_behaviors = data.get("movement_behaviors", {})
 

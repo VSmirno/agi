@@ -100,6 +100,13 @@ def load_from_textbook(model: "VectorWorldModel", yaml_path: str | Path) -> dict
                 merged = {k: min(existing.get(k, v), v) for k, v in req_dict.items()}
                 model.action_requirements[(near, action)] = merged
 
+        # Adjacency requirement: which concept must be in one of the four
+        # cardinal-adjacent tiles. The planner uses this to chain `place_X`
+        # before `make_Y` when the required tile isn't adjacent.
+        near = rule.get("near")
+        if near:
+            model.near_requirements[(target, action)] = str(near)
+
         # Write seed association multiple times for confidence
         model._ensure_concept(target)
         model._ensure_action(action)

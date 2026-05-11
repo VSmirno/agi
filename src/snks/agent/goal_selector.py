@@ -32,8 +32,8 @@ class Goal:
             return max(0.0, trajectory.vital_delta("drink"))
         elif self.id == "sleep":
             return max(0.0, trajectory.vital_delta("energy"))
-        elif self.id == "craft_wood_sword":
-            return 1.0 if trajectory.item_gained("wood_sword") else 0.0
+        elif self.id.startswith("craft_"):
+            return 1.0 if trajectory.item_gained(self.id.removeprefix("craft_")) else 0.0
         elif self.id == "gather_wood":
             return max(0.0, trajectory.inventory_delta("wood"))
         elif self.id == "explore":
@@ -63,6 +63,18 @@ class GoalSelector:
     ):
         self._threats = self._derive_threats(textbook)
         self._allow_dynamic_entity_goals = allow_dynamic_entity_goals
+        # entity -> weapon mapping derived from textbook fight rules.
+        # Used by _dynamic_entity_goal to switch fight_X → craft_<weapon>
+        # when the required weapon is missing from inventory.
+        self._entity_weapons: dict[str, str] = {}
+        for rule in textbook.rules:
+            if rule.get("action") != "do":
+                continue
+            target = rule.get("target")
+            req = rule.get("requires", {}) or {}
+            weapon = next(iter(req), None)
+            if target and weapon:
+                self._entity_weapons[target] = weapon
 
     def select(self, state: "VectorState") -> Goal:
         """Pure function: current state → active goal. Called every step."""
@@ -75,8 +87,7 @@ class GoalSelector:
                 return threat.response_fn(state)
         return Goal("explore")
 
-    @staticmethod
-    def _dynamic_entity_goal(state: "VectorState") -> Goal | None:
+    def _dynamic_entity_goal(self, state: "VectorState") -> Goal | None:
         """Promote live dynamic threats into goal selection.
 
         Stage 89b: threat geometry already lives in `dynamic_entities`, so the
@@ -85,10 +96,19 @@ class GoalSelector:
         present in the runtime world state.
         """
         present = {entity.concept_id for entity in state.dynamic_entities}
+
+        def _goal_for(entity: str) -> Goal:
+            # Without the required weapon, "fight" is futile — promote crafting
+            # the weapon instead so plans that produce it earn goal_progress.
+            weapon = self._entity_weapons.get(entity)
+            if weapon and state.inventory.get(weapon, 0) <= 0:
+                return Goal(f"craft_{weapon}")
+            return Goal(f"fight_{entity}")
+
         if "arrow" in present or "skeleton" in present:
-            return Goal("fight_skeleton")
+            return _goal_for("skeleton")
         if "zombie" in present:
-            return Goal("fight_zombie")
+            return _goal_for("zombie")
         return None
 
     def _derive_threats(self, textbook: "CrafterTextbook") -> list[_Threat]:
@@ -189,6 +209,36 @@ class GoalSelector:
                         ),
                         response_fn=lambda s, _m=material: Goal(f"gather_{_m}"),
                     ))
+
+        # Proactive craft threat: when all materials for a weapon's `make`
+        # rule are on hand and the weapon is missing, switch goal to
+        # craft_<weapon>. Without this the agent stockpiles wood (gather
+        # goal active) but never converts it into a sword — `do tree` keeps
+        # winning on inventory_delta while crafting plans get zero goal
+        # progress. The proactive craft threat is added at the END of the
+        # threat list so dynamic-entity and vital-deficit threats still take
+        # priority.
+        proactive_craft_seen: set[str] = set()
+        for fight_rule in fight_rules:
+            fight_req = fight_rule.get("requires", {}) or {}
+            weapon = next(iter(fight_req), None)
+            if weapon is None or weapon in proactive_craft_seen:
+                continue
+            proactive_craft_seen.add(weapon)
+            for make_rule in make_rules:
+                if make_rule.get("result") != weapon:
+                    continue
+                make_req = {k: int(v) for k, v in (make_rule.get("requires", {}) or {}).items()}
+                if not make_req:
+                    continue
+                result.append(_Threat(
+                    active_fn=lambda s, _w=weapon, _r=make_req: (
+                        s.inventory.get(_w, 0) < 1
+                        and all(s.inventory.get(m, 0) >= q for m, q in _r.items())
+                    ),
+                    response_fn=lambda s, _w=weapon: Goal(f"craft_{_w}"),
+                ))
+                break
 
         return result
 
