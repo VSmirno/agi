@@ -8,7 +8,7 @@
 [![env](https://img.shields.io/badge/env-Crafter-green)](https://github.com/danijar/crafter)
 [![determinism](https://img.shields.io/badge/eval-byte%20deterministic-success)](src/snks/agent/crafter_pixel_env.py)
 [![tests](https://img.shields.io/badge/agent%20tests-89%2F89%20passing-brightgreen)](tests/agent)
-[![license](https://img.shields.io/badge/license-TBD-lightgrey)](#license)
+[![license](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 
 ---
 
@@ -277,5 +277,7 @@ under `_docs/` on the development machine and is not checked into git.
 
 ## License
 
-License is not yet finalised. Contact the maintainer for terms applicable to
-your intended use.
+[PolyForm Noncommercial 1.0.0](LICENSE). Noncommercial use — personal
+research, education, hobby projects, public-research and nonprofit
+organisations — is permitted. Commercial use requires a separate license
+from the maintainer.
