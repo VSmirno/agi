@@ -201,12 +201,23 @@ now byte-identical across runs at a fixed seed:
 
 Short-term (weeks):
 
-1. **Episodic Substrate Snapshots** — at every decision point, bundle the
-   visible scene, inventory, body state, near concept, active goal and chosen
-   plan origin into an HDC vector, write to a persistent episodic SDM,
-   retrieve by similarity at the next planning step as an additional
-   `EpisodicMemoryStimulus`. First cross-episode learning that does not
-   require new rules in the textbook.
+1. ✅ **Outcome-role cross-episode learning** (PCCS step 1, *landed
+   2026-05-12*). `VectorWorldModel` now carries a second role-binding
+   `bind(bind(concept, action), role_outcome_h) → outcome_vec` inside the
+   *same* CausalSDM that holds physics-effect predictions. After H=5
+   env steps, every decision's realised outcome (`survived`, `damage`,
+   `died_to`) is written through `model.learn_outcome` and queried at the
+   next planning step by `OutcomeStimulus` as a death-warning signal.
+   Persistence reuses `VectorWorldModel.save/load` — one file per seed
+   contains physics + outcomes + textbook-derived requirements. On seed
+   17 ep 0 (full-profile, strict-deterministic), gen2 (substrate loaded
+   from gen1) survives to max episode length and dies from dehydration
+   instead of being killed by the zombie that ended gen1 — the death
+   recall from gen1 successfully steered the planner away from the same
+   hostile context. Multiseed mean: `do +45%`, `craft +44%`. Two
+   independent runs with identical preloaded substrate produce
+   byte-identical action+position traces (Stage 91 determinism
+   preserved). Details in [`docs/architecture-report-2026-05-11.md`](docs/architecture-report-2026-05-11.md) §Дополнение.
 2. **Persistent placed-object memory** — keep placed tables and furnaces in
    the spatial map across viewport excursions instead of relying on
    re-observation.
