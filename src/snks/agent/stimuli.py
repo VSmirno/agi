@@ -14,11 +14,12 @@ Stage 85 adds CuriosityStimulus here — zero changes to vector_sim.py.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from snks.agent.death_hypothesis import DeathHypothesis
     from snks.agent.vector_sim import VectorTrajectory
+    from snks.agent.vector_world_model import VectorWorldModel
 
 
 @dataclass
@@ -119,6 +120,101 @@ class CuriosityStimulus(Stimulus):
             else 1.0
         )
         return self.weight * surprise * relevance
+
+
+def resolve_outcome_pair(
+    plan_steps: list,
+    near_concept: str | None,
+) -> tuple[str, str] | None:
+    """Resolve the (concept, action) pair the outcome role is keyed on.
+
+    Shared by `OutcomeStimulus` (read side) and the lifecycle recorder
+    (write side) so the planner and the learner agree on the address.
+    Returns None when no pair can be resolved (e.g. motion plan without
+    a known facing concept).
+    """
+    if not plan_steps:
+        if near_concept is None:
+            return None
+        return (str(near_concept), "noop")
+    first = plan_steps[0]
+    action = first.action
+    target = first.target
+    if action in ("do", "make", "place"):
+        return (str(target), action)
+    if action == "sleep":
+        return ("self", "sleep")
+    if action.startswith("move_"):
+        if near_concept is None:
+            return None
+        return (str(near_concept), action)
+    return None
+
+
+@dataclass
+class OutcomeStimulus(Stimulus):
+    """Cross-episode advisory signal from the world model's outcome role.
+
+    For each candidate trajectory, resolve the `(concept, action)` pair the
+    plan represents and call `model.predict_outcome(concept, action)`. When
+    a confident match is returned, the decoded outcome contributes a
+    composite signal:
+
+        weight * confidence * (
+            survived_bonus if survived else -died_penalty
+            - damage_unit_penalty * damage_h
+            - death_cause_penalty if died_to is not None
+        )
+
+    Concept resolution per plan shape (matches the spec §3):
+      - `do` plan       : (plan.steps[0].target, "do")
+      - `make`/`place`  : (plan.steps[0].target, plan.steps[0].action)
+      - `sleep`         : ("self", "sleep")
+      - motion plan     : (near_concept_provider(), plan.steps[0].action)
+      - empty/baseline  : (near_concept_provider(), "noop")
+
+    `near_concept_provider` is a callable set per planning step by
+    `run_vector_mpc_episode`; it returns the current `vf.near_concept`
+    string so motion / baseline queries are conditioned on what the agent
+    is currently facing.
+    """
+
+    model: "VectorWorldModel | None" = None
+    weight: float = 1.0
+    survived_bonus: float = 1.0
+    died_penalty: float = 3.0
+    damage_unit_penalty: float = 0.25
+    death_cause_penalty: float = 5.0
+    near_concept_provider: "Callable[[], str | None] | None" = None
+
+    def _resolve_pair(
+        self, trajectory: "VectorTrajectory",
+    ) -> tuple[str, str] | None:
+        near = self.near_concept_provider() if self.near_concept_provider else None
+        return resolve_outcome_pair(trajectory.plan.steps, near)
+
+    def evaluate(self, trajectory: "VectorTrajectory") -> float:
+        if self.model is None:
+            return 0.0
+        pair = self._resolve_pair(trajectory)
+        if pair is None:
+            return 0.0
+        decoded, confidence = self.model.predict_outcome(pair[0], pair[1])
+        if decoded is None:
+            return 0.0
+        # Only NEGATIVE recall contributes. Survived outcomes are the default
+        # expectation — boosting them would systematically pull the planner
+        # away from candidate plans that the agent has not yet tried
+        # (crafting plans have no recall → 0 boost → relatively penalised
+        # vs known-safe motion/do plans). The stimulus is a "death
+        # warning", not a value function. This matches the user's framing:
+        # "если в этом контексте я уже умирал → не делай так".
+        if decoded.get("survived_h", True):
+            return 0.0
+        signal = -self.died_penalty - self.damage_unit_penalty * float(decoded.get("damage_h", 0))
+        if decoded.get("died_to") not in (None, "none"):
+            signal -= self.death_cause_penalty
+        return self.weight * confidence * signal
 
 
 @dataclass

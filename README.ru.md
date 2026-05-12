@@ -205,12 +205,23 @@ Stage 91 закрыл многомесячное расследование но
 
 Краткосрочно (недели):
 
-1. **Episodic Substrate Snapshots** — на каждой точке решения бандлим
-   visible scene, inventory, body state, near concept, active goal и
-   выбранный plan origin в HDC-вектор, пишем в персистентный episodic SDM,
-   при следующем планировании делаем similarity-query — получаем
-   дополнительный стимул `EpisodicMemoryStimulus`. Первое cross-episode
-   обучение, не требующее новых правил в textbook.
+1. ✅ **Outcome-role cross-episode learning** (PCCS step 1, *приземлено
+   2026-05-12*). `VectorWorldModel` теперь хранит вторую роль
+   `bind(bind(concept, action), role_outcome_h) → outcome_vec` в **той же**
+   CausalSDM что и physics-effect predictions. Через H=5 env-шагов после
+   каждого решения наблюдённый outcome (`survived`, `damage`, `died_to`)
+   пишется через `model.learn_outcome`; на следующем шаге планнера
+   `OutcomeStimulus` запрашивает его как death-warning сигнал.
+   Persistence через существующий `VectorWorldModel.save/load` — один
+   `.pt` на seed хранит physics + outcomes + textbook-derived
+   requirements. На seed 17 ep 0 (full-profile, strict-deterministic):
+   gen2 (substrate из gen1) доходит до max episode length и умирает от
+   dehydration вместо того чтобы быть убитым zombie как в gen1 —
+   death-recall из gen1 успешно увёл планнер от того же hostile
+   контекста. Multiseed mean: `do +45%`, `craft +44%`. Два независимых
+   run'а с identical preloaded substrate дают byte-identical action+pos
+   трейсы (Stage 91 determinism сохранён). Детали в
+   [`docs/architecture-report-2026-05-11.md`](docs/architecture-report-2026-05-11.md) §Дополнение.
 2. **Persistent placed-object memory** — placed-tables/furnaces переживают
    уход из viewport, не приходится re-observe каждый раз.
 3. **Emergency-safety craft override** — если goal=`craft_<weapon>` и

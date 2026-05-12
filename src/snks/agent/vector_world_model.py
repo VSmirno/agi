@@ -98,6 +98,7 @@ class CausalSDM:
                  seed: int = 42, device: torch.device | str | None = None):
         self.n_locations = n_locations
         self.dim = dim
+        self.seed = int(seed)
         self.n_writes = 0
         self.device = torch.device(device) if device else torch.device("cpu")
 
@@ -236,9 +237,17 @@ class CausalSDM:
         return predictions, confidences
 
     def state_dict(self) -> dict:
-        """Serialize for persistence."""
+        """Serialize for persistence.
+
+        Addresses are deterministic from `seed` (see __init__), so we
+        store the seed instead of the (n_locations × dim × 4) addresses
+        tensor — cuts the on-disk size of a VectorWorldModel snapshot in
+        half (~3.3 GB → 0.0 saved by addresses, content stays the same).
+        Legacy snapshots that still contain `addresses` are loaded
+        unchanged by load_state_dict().
+        """
         return {
-            "addresses": self.addresses.cpu(),
+            "seed": self.seed,
             "content": self.content.cpu(),
             "activation_radius": self.activation_radius,
             "n_writes": self.n_writes,
@@ -247,15 +256,36 @@ class CausalSDM:
         }
 
     def load_state_dict(self, d: dict) -> None:
-        """Load state, replacing addresses and merging content additively."""
+        """Load state, restoring addresses and merging content additively.
+
+        Two supported snapshot layouts:
+          - new (preferred): contains `seed`; addresses are regenerated
+            with `torch.Generator().manual_seed(seed)` on load.
+          - legacy: contains an `addresses` tensor; used verbatim.
+
+        Content counters are merged additively into whatever the current
+        instance holds (so a fresh-init zero content becomes the loaded
+        content; an already-trained instance accumulates the loaded
+        history on top of its own writes).
+        """
         if d["dim"] != self.dim:
             raise ValueError(f"Dimension mismatch: {d['dim']} vs {self.dim}")
         if d["n_locations"] != self.n_locations:
             raise ValueError(f"Location count mismatch: {d['n_locations']} vs {self.n_locations}")
-        # Replace addresses (must match for content to be meaningful)
-        self.addresses = d["addresses"].to(self.device)
+        if "addresses" in d:
+            self.addresses = d["addresses"].to(self.device)
+        elif "seed" in d:
+            self.seed = int(d["seed"])
+            rng = torch.Generator(device="cpu")
+            rng.manual_seed(self.seed)
+            addresses_cpu = torch.randint(
+                0, 2, (self.n_locations, self.dim),
+                dtype=torch.float32, generator=rng,
+            )
+            self.addresses = addresses_cpu.to(self.device)
+        else:
+            raise ValueError("CausalSDM snapshot has neither 'addresses' nor 'seed'")
         self.activation_radius = d["activation_radius"]
-        # Additive merge of content counters
         loaded_content = d["content"].to(self.device)
         self.content += loaded_content
         self.n_writes += d["n_writes"]
@@ -406,6 +436,106 @@ class VectorWorldModel:
         address = bind(v_concept, v_action)
         return self.memory.read(address)
 
+    # ------------------------------------------------------------------ #
+    # Outcome-role: cross-episode trajectory outcomes per (concept, action)
+    # ------------------------------------------------------------------ #
+    #
+    # Stored in the SAME `self.memory` SDM as physics-effect predictions
+    # but at a parallel address `bind(bind(concept, action), role_outcome_h)`.
+    # XOR-binding makes the outcome address orthogonal to the effect address
+    # for the same pair, so outcome writes do not pollute physics reads and
+    # vice versa.
+    #
+    # outcome_dict shape: {"survived_h": bool, "damage_h": int, "died_to": str | None}
+
+    def _outcome_address(self, concept_id: str, action: str) -> torch.Tensor:
+        v_concept = self._ensure_concept(concept_id)
+        v_action = self._ensure_action(action)
+        v_role = self._ensure_role("__OUTCOME_H__")
+        return bind(bind(v_concept, v_action), v_role)
+
+    def encode_outcome(self, outcome: dict) -> torch.Tensor:
+        """Encode a {survived_h, damage_h, died_to} dict as a single HDC bundle."""
+        parts: list[torch.Tensor] = []
+        survived_concept = self._ensure_concept(
+            "alive" if outcome.get("survived_h", True) else "dead"
+        )
+        parts.append(bind(self._ensure_role("survived_h"), survived_concept))
+
+        damage = max(0, min(int(outcome.get("damage_h", 0)), self.max_scalar))
+        damage_vec = encode_scalar(damage, self.dim, self.max_scalar).to(self.device)
+        parts.append(bind(self._ensure_role("damage_h"), damage_vec))
+
+        died_to = outcome.get("died_to") or "none"
+        parts.append(bind(self._ensure_role("died_to"), self._ensure_concept(died_to)))
+        return bundle(parts)
+
+    def decode_outcome(self, outcome_vec: torch.Tensor) -> dict:
+        """Recover {survived_h, damage_h, died_to} from an HDC outcome bundle."""
+        survived = self._argmax_outcome_concept(
+            outcome_vec, "survived_h", ("alive", "dead"), sim_floor=0.5,
+        )
+        survived_bool = survived == "alive" if survived is not None else True
+
+        damage_unbound = bind(outcome_vec, self._ensure_role("damage_h"))
+        damage = max(0, min(decode_scalar(damage_unbound, self.max_scalar), self.max_scalar))
+
+        # died_to is checked against any concept that has been seen so far;
+        # restrict to a small candidate set of known death causes plus "none"
+        # to keep the comparison bounded.
+        death_candidates = tuple(
+            name for name in self.concepts
+            if name in ("none", "zombie", "skeleton", "arrow", "lava", "health", "done", "drink", "food", "energy")
+        )
+        if not death_candidates:
+            death_candidates = ("none",)
+        died = self._argmax_outcome_concept(
+            outcome_vec, "died_to", death_candidates, sim_floor=0.55,
+        )
+        if died is None or died == "none":
+            died = None
+
+        return {"survived_h": survived_bool, "damage_h": damage, "died_to": died}
+
+    def _argmax_outcome_concept(
+        self, bundled: torch.Tensor, role_name: str,
+        candidates: tuple[str, ...], sim_floor: float = 0.55,
+    ) -> str | None:
+        if not candidates:
+            return None
+        role = self._ensure_role(role_name)
+        unbound = bind(bundled, role)
+        best_name: str | None = None
+        best_sim = sim_floor
+        for cand in candidates:
+            sim = hamming_similarity(unbound, self._ensure_concept(cand))
+            if sim > best_sim:
+                best_sim = sim
+                best_name = cand
+        return best_name
+
+    def learn_outcome(self, concept_id: str, action: str, outcome: dict) -> None:
+        """Record an observed trajectory outcome for the (concept, action) pair.
+
+        The write goes to a role-distinguished address so physics-effect
+        predictions for the same pair are unaffected.
+        """
+        address = self._outcome_address(concept_id, action)
+        outcome_vec = self.encode_outcome(outcome)
+        self.memory.write(address, outcome_vec)
+
+    def predict_outcome(self, concept_id: str, action: str) -> tuple[dict | None, float]:
+        """Retrieve the expected outcome for a (concept, action) pair.
+
+        Returns (decoded_outcome_dict, confidence). When confidence is below
+        the noise floor the dict is None — caller treats that as "no recall".
+        """
+        address = self._outcome_address(concept_id, action)
+        outcome_vec, confidence = self.memory.read(address)
+        if confidence < 0.2:
+            return None, confidence
+        return self.decode_outcome(outcome_vec), confidence
+
     def requirements_met(
         self, concept_id: str, action: str, inventory: dict[str, int],
     ) -> bool:
@@ -552,10 +682,25 @@ class VectorWorldModel:
         self.proximity_ranges = data.get("proximity_ranges", {})
         self.movement_behaviors = data.get("movement_behaviors", {})
 
-        # Load SDM: replace addresses (same address space as loaded vectors),
-        # replace content (start from gen1's knowledge, not an empty slate).
+        # Load SDM: addresses either come verbatim (legacy snapshot) or
+        # are regenerated from the stored seed (new compact snapshot).
+        # Content is REPLACED here (not merged), preserving the gen1
+        # knowledge as the gen2 starting point rather than accumulating
+        # gen1 on top of a textbook-bootstrapped gen2 SDM.
         mem = data["memory"]
-        self.memory.addresses = mem["addresses"].to(self.device)
+        if "addresses" in mem:
+            self.memory.addresses = mem["addresses"].to(self.device)
+        elif "seed" in mem:
+            self.memory.seed = int(mem["seed"])
+            rng = torch.Generator(device="cpu")
+            rng.manual_seed(self.memory.seed)
+            addresses_cpu = torch.randint(
+                0, 2, (self.memory.n_locations, self.memory.dim),
+                dtype=torch.float32, generator=rng,
+            )
+            self.memory.addresses = addresses_cpu.to(self.device)
+        else:
+            raise ValueError("VectorWorldModel snapshot memory has neither 'addresses' nor 'seed'")
         self.memory.activation_radius = mem["activation_radius"]
         self.memory.content = mem["content"].to(self.device).clone()
         self.memory.n_writes = mem["n_writes"]
