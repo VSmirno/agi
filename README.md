@@ -72,6 +72,8 @@ The reference benchmark is the [Crafter](https://github.com/danijar/crafter)
 environment, evaluated under strict CUDA determinism (byte-identical episodes
 across runs at fixed seeds).
 
+![Crafter seed 17 ep 0 — Variant B: first successful weapon craft at step 48](demos/crafting_seed17_ep0.gif)
+
 ### What the agent does today
 
 | Capability | Source | Status |
