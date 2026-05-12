@@ -406,6 +406,106 @@ class VectorWorldModel:
         address = bind(v_concept, v_action)
         return self.memory.read(address)
 
+    # ------------------------------------------------------------------ #
+    # Outcome-role: cross-episode trajectory outcomes per (concept, action)
+    # ------------------------------------------------------------------ #
+    #
+    # Stored in the SAME `self.memory` SDM as physics-effect predictions
+    # but at a parallel address `bind(bind(concept, action), role_outcome_h)`.
+    # XOR-binding makes the outcome address orthogonal to the effect address
+    # for the same pair, so outcome writes do not pollute physics reads and
+    # vice versa.
+    #
+    # outcome_dict shape: {"survived_h": bool, "damage_h": int, "died_to": str | None}
+
+    def _outcome_address(self, concept_id: str, action: str) -> torch.Tensor:
+        v_concept = self._ensure_concept(concept_id)
+        v_action = self._ensure_action(action)
+        v_role = self._ensure_role("__OUTCOME_H__")
+        return bind(bind(v_concept, v_action), v_role)
+
+    def encode_outcome(self, outcome: dict) -> torch.Tensor:
+        """Encode a {survived_h, damage_h, died_to} dict as a single HDC bundle."""
+        parts: list[torch.Tensor] = []
+        survived_concept = self._ensure_concept(
+            "alive" if outcome.get("survived_h", True) else "dead"
+        )
+        parts.append(bind(self._ensure_role("survived_h"), survived_concept))
+
+        damage = max(0, min(int(outcome.get("damage_h", 0)), self.max_scalar))
+        damage_vec = encode_scalar(damage, self.dim, self.max_scalar).to(self.device)
+        parts.append(bind(self._ensure_role("damage_h"), damage_vec))
+
+        died_to = outcome.get("died_to") or "none"
+        parts.append(bind(self._ensure_role("died_to"), self._ensure_concept(died_to)))
+        return bundle(parts)
+
+    def decode_outcome(self, outcome_vec: torch.Tensor) -> dict:
+        """Recover {survived_h, damage_h, died_to} from an HDC outcome bundle."""
+        survived = self._argmax_outcome_concept(
+            outcome_vec, "survived_h", ("alive", "dead"), sim_floor=0.5,
+        )
+        survived_bool = survived == "alive" if survived is not None else True
+
+        damage_unbound = bind(outcome_vec, self._ensure_role("damage_h"))
+        damage = max(0, min(decode_scalar(damage_unbound, self.max_scalar), self.max_scalar))
+
+        # died_to is checked against any concept that has been seen so far;
+        # restrict to a small candidate set of known death causes plus "none"
+        # to keep the comparison bounded.
+        death_candidates = tuple(
+            name for name in self.concepts
+            if name in ("none", "zombie", "skeleton", "arrow", "lava", "health", "done", "drink", "food", "energy")
+        )
+        if not death_candidates:
+            death_candidates = ("none",)
+        died = self._argmax_outcome_concept(
+            outcome_vec, "died_to", death_candidates, sim_floor=0.55,
+        )
+        if died is None or died == "none":
+            died = None
+
+        return {"survived_h": survived_bool, "damage_h": damage, "died_to": died}
+
+    def _argmax_outcome_concept(
+        self, bundled: torch.Tensor, role_name: str,
+        candidates: tuple[str, ...], sim_floor: float = 0.55,
+    ) -> str | None:
+        if not candidates:
+            return None
+        role = self._ensure_role(role_name)
+        unbound = bind(bundled, role)
+        best_name: str | None = None
+        best_sim = sim_floor
+        for cand in candidates:
+            sim = hamming_similarity(unbound, self._ensure_concept(cand))
+            if sim > best_sim:
+                best_sim = sim
+                best_name = cand
+        return best_name
+
+    def learn_outcome(self, concept_id: str, action: str, outcome: dict) -> None:
+        """Record an observed trajectory outcome for the (concept, action) pair.
+
+        The write goes to a role-distinguished address so physics-effect
+        predictions for the same pair are unaffected.
+        """
+        address = self._outcome_address(concept_id, action)
+        outcome_vec = self.encode_outcome(outcome)
+        self.memory.write(address, outcome_vec)
+
+    def predict_outcome(self, concept_id: str, action: str) -> tuple[dict | None, float]:
+        """Retrieve the expected outcome for a (concept, action) pair.
+
+        Returns (decoded_outcome_dict, confidence). When confidence is below
+        the noise floor the dict is None — caller treats that as "no recall".
+        """
+        address = self._outcome_address(concept_id, action)
+        outcome_vec, confidence = self.memory.read(address)
+        if confidence < 0.2:
+            return None, confidence
+        return self.decode_outcome(outcome_vec), confidence
+
     def requirements_met(
         self, concept_id: str, action: str, inventory: dict[str, int],
     ) -> bool:
