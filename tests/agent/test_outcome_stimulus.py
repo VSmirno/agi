@@ -61,7 +61,14 @@ def test_unknown_pair_returns_zero() -> None:
     assert stim.evaluate(_traj("do", "tree")) == 0.0
 
 
-def test_positive_recall_yields_positive_signal() -> None:
+def test_survived_recall_contributes_zero() -> None:
+    """A survived recall produces no signal — the stimulus is death-only.
+
+    The previous design boosted known-safe pairs which systematically
+    pulled the planner away from never-tried pairs (e.g. crafting).
+    Survival is the default expectation, so it contributes nothing; only
+    death warnings shift ranking.
+    """
     model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=29)
     _train(model, "tree", "do", survived=True, damage=0, died_to=None)
     stim = OutcomeStimulus(
@@ -70,7 +77,7 @@ def test_positive_recall_yields_positive_signal() -> None:
         near_concept_provider=lambda: "grass",
     )
     score = stim.evaluate(_traj("do", "tree"))
-    assert score > 0.0, f"survived-true context should produce positive signal, got {score}"
+    assert score == 0.0, f"survived-true recall should contribute zero, got {score}"
 
 
 def test_death_recall_yields_strong_negative() -> None:
@@ -87,7 +94,15 @@ def test_death_recall_yields_strong_negative() -> None:
 
 
 def test_per_candidate_differentiation() -> None:
-    """Two candidates in the same context produce DIFFERENT signals."""
+    """Two candidates in the same context produce DIFFERENT signals.
+
+    Under the death-only semantics: a survived recall is 0, a death
+    recall is strongly negative. The differentiation property (which the
+    previous bundled-context substrate lacked) holds when one of the two
+    candidates has a death recall — `0 vs -10` reorders ranking exactly
+    the same way `+1 vs -10` would, while keeping never-tried candidates
+    on equal footing with known-safe ones.
+    """
     model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=37)
     _train(model, "tree", "do", survived=True, damage=0, died_to=None)
     _train(model, "zombie", "do", survived=False, damage=9, died_to="zombie")
@@ -98,14 +113,8 @@ def test_per_candidate_differentiation() -> None:
     )
     tree_score = stim.evaluate(_traj("do", "tree"))
     zomb_score = stim.evaluate(_traj("do", "zombie"))
-    # The previous bundled-context substrate failed because tree_score == zomb_score.
-    # This is the core property of the new design.
-    assert tree_score > 0.0 > zomb_score, (
-        f"Per-candidate signals must differ: tree={tree_score:.3f}, zombie={zomb_score:.3f}"
-    )
-    assert abs(tree_score - zomb_score) > 1.0, (
-        f"Signals must differ substantially, got delta={abs(tree_score - zomb_score):.3f}"
-    )
+    assert tree_score == 0.0
+    assert zomb_score < -1.0, f"zombie death recall should be strongly negative, got {zomb_score}"
 
 
 def test_motion_plan_uses_near_concept() -> None:
@@ -122,13 +131,13 @@ def test_motion_plan_uses_near_concept() -> None:
     )
     move_left_self = _traj("move_left", "self")
 
-    # Facing lava → strong negative.
+    # Facing lava → strong negative (death recall).
     near["value"] = "lava"
     assert stim.evaluate(move_left_self) < -1.0
 
-    # Facing grass → positive.
+    # Facing grass → zero (survived recall does not contribute).
     near["value"] = "grass"
-    assert stim.evaluate(move_left_self) > 0.0
+    assert stim.evaluate(move_left_self) == 0.0
 
 
 def test_baseline_plan_uses_near_concept() -> None:
@@ -145,14 +154,15 @@ def test_baseline_plan_uses_near_concept() -> None:
 
 
 def test_weight_scales_signal_linearly() -> None:
+    """Weight linearly scales the (negative) death-recall signal."""
     model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=47)
-    _train(model, "tree", "do", survived=True, damage=0, died_to=None)
+    _train(model, "zombie", "do", survived=False, damage=9, died_to="zombie")
     base = OutcomeStimulus(
         model=model, weight=1.0, near_concept_provider=lambda: "grass",
-    ).evaluate(_traj("do", "tree"))
+    ).evaluate(_traj("do", "zombie"))
     doubled = OutcomeStimulus(
         model=model, weight=2.0, near_concept_provider=lambda: "grass",
-    ).evaluate(_traj("do", "tree"))
+    ).evaluate(_traj("do", "zombie"))
     assert abs(doubled - 2.0 * base) < 1e-5, (
         f"weight should scale signal linearly: base={base:.4f}, doubled={doubled:.4f}"
     )

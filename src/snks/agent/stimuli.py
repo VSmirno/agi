@@ -202,10 +202,16 @@ class OutcomeStimulus(Stimulus):
         decoded, confidence = self.model.predict_outcome(pair[0], pair[1])
         if decoded is None:
             return 0.0
-        signal = (
-            self.survived_bonus if decoded.get("survived_h", True) else -self.died_penalty
-        )
-        signal -= self.damage_unit_penalty * float(decoded.get("damage_h", 0))
+        # Only NEGATIVE recall contributes. Survived outcomes are the default
+        # expectation — boosting them would systematically pull the planner
+        # away from candidate plans that the agent has not yet tried
+        # (crafting plans have no recall → 0 boost → relatively penalised
+        # vs known-safe motion/do plans). The stimulus is a "death
+        # warning", not a value function. This matches the user's framing:
+        # "если в этом контексте я уже умирал → не делай так".
+        if decoded.get("survived_h", True):
+            return 0.0
+        signal = -self.died_penalty - self.damage_unit_penalty * float(decoded.get("damage_h", 0))
         if decoded.get("died_to") not in (None, "none"):
             signal -= self.death_cause_penalty
         return self.weight * confidence * signal
