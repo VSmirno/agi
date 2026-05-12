@@ -14,11 +14,12 @@ Stage 85 adds CuriosityStimulus here — zero changes to vector_sim.py.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from snks.agent.death_hypothesis import DeathHypothesis
     from snks.agent.vector_sim import VectorTrajectory
+    from snks.agent.vector_world_model import VectorWorldModel
 
 
 @dataclass
@@ -119,6 +120,84 @@ class CuriosityStimulus(Stimulus):
             else 1.0
         )
         return self.weight * surprise * relevance
+
+
+@dataclass
+class OutcomeStimulus(Stimulus):
+    """Cross-episode advisory signal from the world model's outcome role.
+
+    For each candidate trajectory, resolve the `(concept, action)` pair the
+    plan represents and call `model.predict_outcome(concept, action)`. When
+    a confident match is returned, the decoded outcome contributes a
+    composite signal:
+
+        weight * confidence * (
+            survived_bonus if survived else -died_penalty
+            - damage_unit_penalty * damage_h
+            - death_cause_penalty if died_to is not None
+        )
+
+    Concept resolution per plan shape (matches the spec §3):
+      - `do` plan       : (plan.steps[0].target, "do")
+      - `make`/`place`  : (plan.steps[0].target, plan.steps[0].action)
+      - `sleep`         : ("self", "sleep")
+      - motion plan     : (near_concept_provider(), plan.steps[0].action)
+      - empty/baseline  : (near_concept_provider(), "noop")
+
+    `near_concept_provider` is a callable set per planning step by
+    `run_vector_mpc_episode`; it returns the current `vf.near_concept`
+    string so motion / baseline queries are conditioned on what the agent
+    is currently facing.
+    """
+
+    model: "VectorWorldModel | None" = None
+    weight: float = 1.0
+    survived_bonus: float = 1.0
+    died_penalty: float = 3.0
+    damage_unit_penalty: float = 0.25
+    death_cause_penalty: float = 5.0
+    near_concept_provider: "Callable[[], str | None] | None" = None
+
+    def _resolve_pair(
+        self, trajectory: "VectorTrajectory",
+    ) -> tuple[str, str] | None:
+        plan = trajectory.plan
+        near = self.near_concept_provider() if self.near_concept_provider else None
+        # Baseline plan — query at the facing tile.
+        if not plan.steps:
+            if near is None:
+                return None
+            return (str(near), "noop")
+        first = plan.steps[0]
+        action = first.action
+        target = first.target
+        if action in ("do", "make", "place"):
+            return (str(target), action)
+        if action == "sleep":
+            return ("self", "sleep")
+        if action.startswith("move_"):
+            if near is None:
+                return None
+            return (str(near), action)
+        # Unknown action — skip.
+        return None
+
+    def evaluate(self, trajectory: "VectorTrajectory") -> float:
+        if self.model is None:
+            return 0.0
+        pair = self._resolve_pair(trajectory)
+        if pair is None:
+            return 0.0
+        decoded, confidence = self.model.predict_outcome(pair[0], pair[1])
+        if decoded is None:
+            return 0.0
+        signal = (
+            self.survived_bonus if decoded.get("survived_h", True) else -self.died_penalty
+        )
+        signal -= self.damage_unit_penalty * float(decoded.get("damage_h", 0))
+        if decoded.get("died_to") not in (None, "none"):
+            signal -= self.death_cause_penalty
+        return self.weight * confidence * signal
 
 
 @dataclass
