@@ -711,6 +711,71 @@ def expand_to_primitive(
 # Main episode loop
 # ---------------------------------------------------------------------------
 
+class _OutcomeRecorder:
+    """Per-episode pending-ring buffer for outcome-role writes.
+
+    On `push(step, plan_steps, near, health_now)` we resolve the
+    `(concept, action)` pair for the chosen plan and remember the
+    decision-time health. After `horizon` env steps `flush_due(...)`
+    computes `damage_h = health_at_decision - health_now` and writes
+    `(survived=True, damage, died_to=None)` via `model.learn_outcome`.
+    On death `flush_on_death(...)` writes the remaining pending snapshots
+    with `survived=False, died_to=<cause>`.
+
+    Identical lifecycle to the previous EpisodicEpisodeRecorder, but
+    every write goes into the same `VectorWorldModel.memory` SDM at the
+    outcome-role address — no separate substrate object.
+    """
+
+    def __init__(self, model, horizon: int, resolver) -> None:
+        self.model = model
+        self.horizon = max(1, int(horizon))
+        self._resolve = resolver
+        self._pending: list[dict] = []
+
+    def push(self, step: int, plan_steps: list, near: "str | None",
+             health_now: float) -> None:
+        pair = self._resolve(plan_steps, near)
+        if pair is None:
+            return
+        self._pending.append({
+            "due": step + self.horizon,
+            "concept": pair[0],
+            "action": pair[1],
+            "health_start": float(health_now),
+        })
+
+    def flush_due(self, current_step: int, health_now: float) -> int:
+        kept: list[dict] = []
+        flushed = 0
+        for snap in self._pending:
+            if snap["due"] <= current_step:
+                damage = max(0, int(round(snap["health_start"] - health_now)))
+                self.model.learn_outcome(snap["concept"], snap["action"], {
+                    "survived_h": True,
+                    "damage_h": damage,
+                    "died_to": None,
+                })
+                flushed += 1
+            else:
+                kept.append(snap)
+        self._pending = kept
+        return flushed
+
+    def flush_on_death(self, health_now: float, died_to: "str | None") -> int:
+        flushed = 0
+        for snap in self._pending:
+            damage = max(0, int(round(snap["health_start"] - health_now)))
+            self.model.learn_outcome(snap["concept"], snap["action"], {
+                "survived_h": False,
+                "damage_h": damage,
+                "died_to": died_to,
+            })
+            flushed += 1
+        self._pending = []
+        return flushed
+
+
 def run_vector_mpc_episode(
     env: Any,
     segmenter: Any,
@@ -749,6 +814,10 @@ def run_vector_mpc_episode(
     rescue_stall_streak_threshold: int = 2,
     death_capture_steps: int = DEFAULT_DEATH_TRACE_HORIZON,
     perception_mode: str = "pixel",
+    enable_outcome_learning: bool = False,
+    world_model_path: "str | Path | None" = None,
+    outcome_horizon: int = 5,
+    outcome_stimulus_weight: float = 1.0,
 ) -> dict:
     """Run one episode with vector MPC planning.
 
@@ -768,6 +837,29 @@ def run_vector_mpc_episode(
             VitalDeltaStimulus(["health"]),
             HomeostasisStimulus(vitals),
         ])
+
+    # Outcome-role lifecycle: load persistent world-model state if requested,
+    # wire `OutcomeStimulus` into the planner's stimuli list, and prepare an
+    # outcome recorder that writes realised trajectory outcomes back into the
+    # SAME `model.memory` at the outcome-role address. Persistence happens
+    # via the existing VectorWorldModel.save/load (one .pt per seed contains
+    # physics-role + requirement dicts + outcome-role writes together).
+    outcome_recorder = None
+    _outcome_near_holder: dict[str, "str | None"] = {"value": None}
+    if enable_outcome_learning:
+        from snks.agent.stimuli import OutcomeStimulus, resolve_outcome_pair
+        if world_model_path is not None:
+            from pathlib import Path as _Path
+            model.load(_Path(world_model_path))
+        stimuli.stimuli.append(OutcomeStimulus(
+            model=model,
+            weight=outcome_stimulus_weight,
+            near_concept_provider=lambda: _outcome_near_holder["value"],
+        ))
+        outcome_recorder = _OutcomeRecorder(
+            model=model, horizon=int(outcome_horizon),
+            resolver=resolve_outcome_pair,
+        )
 
     from snks.agent.goal_selector import Goal, GoalSelector
     goal_selector = (
@@ -1019,6 +1111,11 @@ def run_vector_mpc_episode(
 
         # Current goal for this step (pure function of current state)
         current_goal = goal_selector.select(state) if goal_selector else Goal("explore")
+
+        # Refresh outcome-stimulus near-concept holder so motion/baseline
+        # plans query the substrate conditioned on the current facing tile.
+        if enable_outcome_learning:
+            _outcome_near_holder["value"] = str(vf.near_concept) if vf.near_concept else None
 
         scored: list[tuple[tuple, VectorPlan, VectorTrajectory]] = []
         for plan in candidates:
@@ -1369,6 +1466,17 @@ def run_vector_mpc_episode(
         else:
             prev_plan_target = None
         prev_player_pos = player_pos
+
+        # Outcome-recorder: snapshot the chosen plan's (concept, action) at
+        # decision time so that after `outcome_horizon` env steps we can
+        # write the realised outcome back into the world model.
+        if enable_outcome_learning and outcome_recorder is not None:
+            outcome_recorder.push(
+                step=step,
+                plan_steps=best_plan.steps,
+                near=str(vf.near_concept) if vf.near_concept else None,
+                health_now=float(body.get("health", 9.0)),
+            )
 
         pixels, _reward, done, info = env.step(primitive)
         player_pos_after = tuple(info.get("player_pos", player_pos))
@@ -1737,7 +1845,22 @@ def run_vector_mpc_episode(
                     ))
             else:
                 cause_of_death = "done"
+            # Flush any pending outcome-recorder snapshots with the
+            # episode's death cause before exiting the loop.
+            if enable_outcome_learning and outcome_recorder is not None:
+                outcome_recorder.flush_on_death(
+                    health_now=float(body_at_end.get("health", 0.0)),
+                    died_to=cause_of_death,
+                )
             break
+
+        # Non-done branch: flush any outcome snapshots whose horizon ended
+        # at this step. body_after is defined right after env.step above.
+        if enable_outcome_learning and outcome_recorder is not None:
+            outcome_recorder.flush_due(
+                current_step=step,
+                health_now=float(body_after.get("health", 9.0)),
+            )
 
     # --- Metrics ---
     total_actions = sum(action_counts.values())
@@ -1752,6 +1875,14 @@ def run_vector_mpc_episode(
     death_cause = dominant_cause(attribution)
     final_raw_inv = dict(info.get("inventory", {}))
     final_body = {v: float(final_raw_inv.get(v, 0.0)) for v in vitals}
+    # Persist the world model (concepts/actions/roles/SDM/outcomes/
+    # requirements) so the next episode of this seed starts with all
+    # accumulated experience. Save BEFORE building the death-trace bundle
+    # so a crash during death-trace doesn't lose state.
+    if enable_outcome_learning and world_model_path is not None:
+        from pathlib import Path as _Path
+        model.save(_Path(world_model_path))
+
     death_trace_bundle = None
     if record_death_bundle and death_cause != "alive":
         death_trace_bundle = build_death_trace_bundle(

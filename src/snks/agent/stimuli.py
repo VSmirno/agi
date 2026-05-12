@@ -122,6 +122,35 @@ class CuriosityStimulus(Stimulus):
         return self.weight * surprise * relevance
 
 
+def resolve_outcome_pair(
+    plan_steps: list,
+    near_concept: str | None,
+) -> tuple[str, str] | None:
+    """Resolve the (concept, action) pair the outcome role is keyed on.
+
+    Shared by `OutcomeStimulus` (read side) and the lifecycle recorder
+    (write side) so the planner and the learner agree on the address.
+    Returns None when no pair can be resolved (e.g. motion plan without
+    a known facing concept).
+    """
+    if not plan_steps:
+        if near_concept is None:
+            return None
+        return (str(near_concept), "noop")
+    first = plan_steps[0]
+    action = first.action
+    target = first.target
+    if action in ("do", "make", "place"):
+        return (str(target), action)
+    if action == "sleep":
+        return ("self", "sleep")
+    if action.startswith("move_"):
+        if near_concept is None:
+            return None
+        return (str(near_concept), action)
+    return None
+
+
 @dataclass
 class OutcomeStimulus(Stimulus):
     """Cross-episode advisory signal from the world model's outcome role.
@@ -161,26 +190,8 @@ class OutcomeStimulus(Stimulus):
     def _resolve_pair(
         self, trajectory: "VectorTrajectory",
     ) -> tuple[str, str] | None:
-        plan = trajectory.plan
         near = self.near_concept_provider() if self.near_concept_provider else None
-        # Baseline plan — query at the facing tile.
-        if not plan.steps:
-            if near is None:
-                return None
-            return (str(near), "noop")
-        first = plan.steps[0]
-        action = first.action
-        target = first.target
-        if action in ("do", "make", "place"):
-            return (str(target), action)
-        if action == "sleep":
-            return ("self", "sleep")
-        if action.startswith("move_"):
-            if near is None:
-                return None
-            return (str(near), action)
-        # Unknown action — skip.
-        return None
+        return resolve_outcome_pair(trajectory.plan.steps, near)
 
     def evaluate(self, trajectory: "VectorTrajectory") -> float:
         if self.model is None:
