@@ -98,6 +98,7 @@ class CausalSDM:
                  seed: int = 42, device: torch.device | str | None = None):
         self.n_locations = n_locations
         self.dim = dim
+        self.seed = int(seed)
         self.n_writes = 0
         self.device = torch.device(device) if device else torch.device("cpu")
 
@@ -236,9 +237,17 @@ class CausalSDM:
         return predictions, confidences
 
     def state_dict(self) -> dict:
-        """Serialize for persistence."""
+        """Serialize for persistence.
+
+        Addresses are deterministic from `seed` (see __init__), so we
+        store the seed instead of the (n_locations × dim × 4) addresses
+        tensor — cuts the on-disk size of a VectorWorldModel snapshot in
+        half (~3.3 GB → 0.0 saved by addresses, content stays the same).
+        Legacy snapshots that still contain `addresses` are loaded
+        unchanged by load_state_dict().
+        """
         return {
-            "addresses": self.addresses.cpu(),
+            "seed": self.seed,
             "content": self.content.cpu(),
             "activation_radius": self.activation_radius,
             "n_writes": self.n_writes,
@@ -247,15 +256,36 @@ class CausalSDM:
         }
 
     def load_state_dict(self, d: dict) -> None:
-        """Load state, replacing addresses and merging content additively."""
+        """Load state, restoring addresses and merging content additively.
+
+        Two supported snapshot layouts:
+          - new (preferred): contains `seed`; addresses are regenerated
+            with `torch.Generator().manual_seed(seed)` on load.
+          - legacy: contains an `addresses` tensor; used verbatim.
+
+        Content counters are merged additively into whatever the current
+        instance holds (so a fresh-init zero content becomes the loaded
+        content; an already-trained instance accumulates the loaded
+        history on top of its own writes).
+        """
         if d["dim"] != self.dim:
             raise ValueError(f"Dimension mismatch: {d['dim']} vs {self.dim}")
         if d["n_locations"] != self.n_locations:
             raise ValueError(f"Location count mismatch: {d['n_locations']} vs {self.n_locations}")
-        # Replace addresses (must match for content to be meaningful)
-        self.addresses = d["addresses"].to(self.device)
+        if "addresses" in d:
+            self.addresses = d["addresses"].to(self.device)
+        elif "seed" in d:
+            self.seed = int(d["seed"])
+            rng = torch.Generator(device="cpu")
+            rng.manual_seed(self.seed)
+            addresses_cpu = torch.randint(
+                0, 2, (self.n_locations, self.dim),
+                dtype=torch.float32, generator=rng,
+            )
+            self.addresses = addresses_cpu.to(self.device)
+        else:
+            raise ValueError("CausalSDM snapshot has neither 'addresses' nor 'seed'")
         self.activation_radius = d["activation_radius"]
-        # Additive merge of content counters
         loaded_content = d["content"].to(self.device)
         self.content += loaded_content
         self.n_writes += d["n_writes"]
@@ -652,10 +682,25 @@ class VectorWorldModel:
         self.proximity_ranges = data.get("proximity_ranges", {})
         self.movement_behaviors = data.get("movement_behaviors", {})
 
-        # Load SDM: replace addresses (same address space as loaded vectors),
-        # replace content (start from gen1's knowledge, not an empty slate).
+        # Load SDM: addresses either come verbatim (legacy snapshot) or
+        # are regenerated from the stored seed (new compact snapshot).
+        # Content is REPLACED here (not merged), preserving the gen1
+        # knowledge as the gen2 starting point rather than accumulating
+        # gen1 on top of a textbook-bootstrapped gen2 SDM.
         mem = data["memory"]
-        self.memory.addresses = mem["addresses"].to(self.device)
+        if "addresses" in mem:
+            self.memory.addresses = mem["addresses"].to(self.device)
+        elif "seed" in mem:
+            self.memory.seed = int(mem["seed"])
+            rng = torch.Generator(device="cpu")
+            rng.manual_seed(self.memory.seed)
+            addresses_cpu = torch.randint(
+                0, 2, (self.memory.n_locations, self.memory.dim),
+                dtype=torch.float32, generator=rng,
+            )
+            self.memory.addresses = addresses_cpu.to(self.device)
+        else:
+            raise ValueError("VectorWorldModel snapshot memory has neither 'addresses' nor 'seed'")
         self.memory.activation_radius = mem["activation_radius"]
         self.memory.content = mem["content"].to(self.device).clone()
         self.memory.n_writes = mem["n_writes"]
