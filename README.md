@@ -1,4 +1,4 @@
-# SNKS — Continuous Cognitive Synthesis System
+# CCSS — Continuous Cognitive Synthesis System
 
 > Research architecture for general agents that learn continuously, with HDC/SDM associative memory and a symbolic top-down planner — not LLM, not deep RL.
 
