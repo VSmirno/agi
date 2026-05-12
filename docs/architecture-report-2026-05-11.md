@@ -532,6 +532,28 @@ Determinism: два независимых run'а одного и того же 
 - **Замена lex-tuple scoring на substrate decode** — PCCS step 3.
 - **Kuramoto phase coupling вместо XOR-binding** — PCCS step 4.
 
+### Новый gap (обнаружен 2026-05-12 при forensic gen2 seed-17): exploration of unknown vs navigation to known
+
+После outcome-role landing seed-17 gen2 умер от dehydration на step 220 (MAX). Forensic трейса выявил **новый класс failure**, не связанный с outcome learning:
+
+- За весь эпизод агент **ни разу не увидел воду** (`near=water` не встречен за 220 шагов; near-concept distribution: `empty 153, tree 27, stone 15, arrow 13, table 10, coal 2, water 0`).
+- На step 140 `drink=3` (порог `find_water` goal'а из textbook) — GoalSelector корректно переключился на `find_water`.
+- Но planner не может построить `single:water:do` plan без water-cell в `CrafterSpatialMap`: `find_nearest("water") → None` → `expand_to_primitive` падает на random move через RNG fallback.
+- Random walk медленнее чем decay скорости drink (drink -1 per ~20 шагов; на случайное nахождение воды нужны сотни шагов).
+- Outcome-role здесь молчит — never had (water, do) write, ничего не запрашивается, спасти не может.
+
+**Структурный gap**: planner имеет аппарат для **navigation to known concept positions** (через `spatial_map.find_nearest`) и для **random exploration motion** (RNG fallback). Но НЕТ promoted **goal-conditioned frontier exploration**: «у меня цель find_water, водa не в карте, иди к ближайшей unvisited ячейке вместо случайного шага».
+
+`CrafterSpatialMap.unvisited_neighbors(player_pos, radius=5)` уже существует и возвращает unvisited non-blocked cells. `CuriosityStimulus` существует с weight=0.1 — слишком мало чтобы driv'ить агента когда уже есть goal+stimuli. Нужно либо:
+
+- **(A)** Adaptive `CuriosityStimulus.weight` при vital<threshold и target-concept unknown — поднять до survival-level.
+- **(B)** `expand_to_primitive` для `find_<thing>` goal'а с unknown target → step toward nearest unvisited frontier (через `spatial_map.unvisited_neighbors`). Минимально инвазивно.
+- **(C)** Полноценный goal-conditioned outcome substrate (PCCS step 1.5) — отдельный канал per goal в SDM, чтобы `(c, a)` recall зависел от текущего goal.
+
+(B) — самое прямое решение на 1-2 часа. (A) — quick hack. (C) — большая архитектурная работа.
+
+Зафиксирован как **next-priority gap после TextbookPromoter** (или параллельно, не блокирует друг друга).
+
 ### Файлы, затронутые outcome-role работой
 
 - `src/snks/agent/vector_world_model.py` — `learn_outcome`/`predict_outcome` методы, новая роль `__OUTCOME_H__`, сжатый save (без addresses).
