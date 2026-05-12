@@ -239,6 +239,14 @@ def main() -> None:
                         help="Skip perception overlay; output plain mp4 only")
     parser.add_argument("--full-profile", action="store_true",
                         help="Use full SDM profile (16384/50000) instead of smoke-lite (2048/5000). Slower, but planning is reliable.")
+    parser.add_argument("--enable-outcome-learning", action="store_true",
+                        help="Enable cross-episode outcome-role learning (PCCS step 1). Off by default.")
+    parser.add_argument("--world-model-path", type=Path, default=None,
+                        help="Path to load/save VectorWorldModel.save() snapshot for this seed. Required for cross-episode persistence.")
+    parser.add_argument("--outcome-horizon", type=int, default=5,
+                        help="Env steps after each decision before its outcome is written back to the world model.")
+    parser.add_argument("--outcome-weight", type=float, default=1.0,
+                        help="OutcomeStimulus weight in score_trajectory.base.")
     args = parser.parse_args()
 
     from snks.agent.crafter_pixel_env import CrafterPixelEnv
@@ -301,6 +309,10 @@ def main() -> None:
         local_advisory_device=device,
         mixed_control_actor_share=float(args.actor_share),
         enable_planner_rescue=bool(args.enable_planner_rescue),
+        enable_outcome_learning=bool(args.enable_outcome_learning),
+        world_model_path=args.world_model_path,
+        outcome_horizon=int(args.outcome_horizon),
+        outcome_stimulus_weight=float(args.outcome_weight),
         record_death_bundle=True,
         record_local_trace=True,
         record_local_counterfactuals="salient_only",
