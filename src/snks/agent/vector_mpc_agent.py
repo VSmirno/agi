@@ -24,6 +24,7 @@ import numpy as np
 import torch
 
 from snks.agent.crafter_spatial_map import CrafterSpatialMap
+from snks.agent.textbook_promoter import TextbookPromoter
 from snks.agent.perception import (
     HomeostaticTracker,
     VisualField,
@@ -75,6 +76,53 @@ from snks.agent.stage90r_local_policy import (
 # ---------------------------------------------------------------------------
 # Dynamic entity tracker (lightweight, from mpc_agent)
 # ---------------------------------------------------------------------------
+
+
+def _promoted_nodes_path(world_model_path: str | Path | None) -> Path | None:
+    """Return the schema-v1 promoted YAML sibling for a world-model snapshot."""
+    if world_model_path is None:
+        return None
+    path = Path(world_model_path)
+    return path.with_name(f"{path.stem}_promoted.yaml")
+
+
+def _load_promoted_entities_into_spatial_map(
+    promoter: TextbookPromoter,
+    promoted_path: Path | None,
+    spatial_map: CrafterSpatialMap,
+) -> list[dict[str, Any]]:
+    """Pre-fill spatial memory from persisted entity observations."""
+    if promoted_path is None:
+        return []
+    nodes = promoter.load_nodes(promoted_path)
+    for node in nodes:
+        if node.get("type") != "entity_observation":
+            continue
+        body = node.get("body", {})
+        provenance = node.get("provenance", {})
+        position = body.get("position")
+        concept = body.get("concept")
+        if not isinstance(position, list) or len(position) != 2 or not isinstance(concept, str):
+            continue
+        key = (int(position[0]), int(position[1]))
+        spatial_map._map[key] = (
+            concept,
+            float(provenance.get("confidence", 1.0)),
+            int(provenance.get("observation_count", 1)),
+        )
+        spatial_map._visited.add(key)
+    return nodes
+
+
+def _next_promoted_episode_index(prior_nodes: list[dict[str, Any]]) -> int:
+    """Infer the next per-seed episode index from persisted promoted nodes."""
+    last_seen = [
+        int(node.get("provenance", {}).get("last_seen_episode", -1))
+        for node in prior_nodes
+        if isinstance(node, dict)
+    ]
+    return max(last_seen, default=-1) + 1
+
 
 class DynamicEntityTracker:
     """Track positions of moving entities between ticks.
@@ -846,6 +894,9 @@ def run_vector_mpc_episode(
     # physics-role + requirement dicts + outcome-role writes together).
     outcome_recorder = None
     _outcome_near_holder: dict[str, "str | None"] = {"value": None}
+    promoter = TextbookPromoter()
+    promoted_path = _promoted_nodes_path(world_model_path)
+    promoted_nodes_prior: list[dict[str, Any]] = []
     if enable_outcome_learning:
         from snks.agent.stimuli import OutcomeStimulus, resolve_outcome_pair
         if world_model_path is not None:
@@ -886,6 +937,11 @@ def run_vector_mpc_episode(
 
     pixels, info = env.reset()
     spatial_map = CrafterSpatialMap()
+    promoted_nodes_prior = _load_promoted_entities_into_spatial_map(
+        promoter=promoter,
+        promoted_path=promoted_path,
+        spatial_map=spatial_map,
+    )
     prev_inv: dict[str, int] | None = None
     prev_body: dict[str, float] | None = None
     prev_action: str | None = None
@@ -1882,6 +1938,15 @@ def run_vector_mpc_episode(
     if enable_outcome_learning and world_model_path is not None:
         from pathlib import Path as _Path
         model.save(_Path(world_model_path))
+    if promoted_path is not None:
+        promoted_nodes_new = promoter.collect_entity_observations(
+            spatial_map,
+            episode_index=_next_promoted_episode_index(promoted_nodes_prior),
+        )
+        promoter.save_nodes(
+            promoter.merge_nodes(promoted_nodes_prior, promoted_nodes_new),
+            promoted_path,
+        )
 
     death_trace_bundle = None
     if record_death_bundle and death_cause != "alive":

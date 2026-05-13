@@ -55,6 +55,12 @@ def _eval_episode_rng(*, base_seed: int, episode_index: int) -> np.random.Random
     return np.random.RandomState(base_seed + episode_index)
 
 
+def _world_model_path_for_seed(world_model_dir: Path | None, env_seed: int) -> Path | None:
+    if world_model_dir is None:
+        return None
+    return Path(world_model_dir) / f"seed{int(env_seed)}.pt"
+
+
 def _trace_tail(trace: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     if limit <= 0:
         return []
@@ -237,6 +243,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-explanations-per-episode", type=int, default=8)
     parser.add_argument("--terminal-trace-steps", type=int, default=8)
     parser.add_argument("--record-death-bundle", action="store_true")
+    parser.add_argument("--enable-outcome-learning", action="store_true")
+    parser.add_argument("--world-model-dir", type=Path, default=None)
+    parser.add_argument("--outcome-horizon", type=int, default=5)
+    parser.add_argument("--outcome-weight", type=float, default=1.0)
     return parser
 
 
@@ -516,7 +526,8 @@ def _run_planner_advisory_analysis(args: argparse.Namespace) -> tuple[dict[str, 
     t0 = time.time()
 
     for ep in range(args.n_episodes):
-        env = CrafterPixelEnv(seed=args.seed + ep)
+        env_seed = args.seed + ep
+        env = CrafterPixelEnv(seed=env_seed)
         tracker = HomeostaticTracker()
         tracker.init_from_textbook(tb.body_block)
         metrics = run_vector_mpc_episode(
@@ -542,6 +553,10 @@ def _run_planner_advisory_analysis(args: argparse.Namespace) -> tuple[dict[str, 
             record_local_advisory_trace=True,
             local_advisory_top_k=args.top_k,
             local_advisory_device=device,
+            enable_outcome_learning=bool(args.enable_outcome_learning),
+            world_model_path=_world_model_path_for_seed(args.world_model_dir, env_seed),
+            outcome_horizon=int(args.outcome_horizon),
+            outcome_stimulus_weight=float(args.outcome_weight),
         )
 
         attribution = analyzer.attribute(metrics.get("damage_log", []), metrics.get("episode_steps", 0))
@@ -594,6 +609,8 @@ def _run_planner_advisory_analysis(args: argparse.Namespace) -> tuple[dict[str, 
             "allow_offline_gate_failure": bool(args.allow_offline_gate_failure),
             "smoke_lite": bool(args.smoke_lite),
             "top_k": args.top_k,
+            "enable_outcome_learning": bool(args.enable_outcome_learning),
+            "world_model_dir": str(args.world_model_dir) if args.world_model_dir else None,
         },
         "summary": {
             "avg_survival": avg_survival,
@@ -650,7 +667,8 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
     t0 = time.time()
 
     for ep in range(args.n_episodes):
-        env = CrafterPixelEnv(seed=args.seed + ep)
+        env_seed = args.seed + ep
+        env = CrafterPixelEnv(seed=env_seed)
         tracker = HomeostaticTracker()
         tracker.init_from_textbook(tb.body_block)
         metrics = run_vector_mpc_episode(
@@ -680,6 +698,10 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
             record_local_counterfactuals="salient_only",
             local_counterfactual_horizon=1,
             death_capture_steps=max(int(args.terminal_trace_steps), int(args.max_explanations_per_episode)),
+            enable_outcome_learning=bool(args.enable_outcome_learning),
+            world_model_path=_world_model_path_for_seed(args.world_model_dir, env_seed),
+            outcome_horizon=int(args.outcome_horizon),
+            outcome_stimulus_weight=float(args.outcome_weight),
             rng=_eval_episode_rng(base_seed=args.seed, episode_index=ep),
         )
         attribution = analyzer.attribute(metrics.get("damage_log", []), metrics.get("episode_steps", 0))
@@ -775,6 +797,8 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
             "max_explanations_per_episode": int(args.max_explanations_per_episode),
             "terminal_trace_steps": int(args.terminal_trace_steps),
             "record_death_bundle": bool(args.record_death_bundle),
+            "enable_outcome_learning": bool(args.enable_outcome_learning),
+            "world_model_dir": str(args.world_model_dir) if args.world_model_dir else None,
         },
         "summary": {
             "avg_survival": avg_survival,
