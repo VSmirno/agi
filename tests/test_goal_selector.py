@@ -92,12 +92,21 @@ class TestGoalProgressVitals:
         )
         assert Goal("sleep").progress(traj) == pytest.approx(5.0)
 
-    def test_fight_zombie_positive_health_delta(self):
+    def test_fight_zombie_progresses_on_targeted_do_plan(self):
+        from snks.agent.vector_sim import VectorPlanStep
         traj = make_trajectory(
             body_start={"health": 3.0, "food": 5.0, "drink": 5.0, "energy": 5.0},
             body_end={"health": 7.0, "food": 5.0, "drink": 5.0, "energy": 5.0},
         )
-        assert Goal("fight_zombie").progress(traj) == pytest.approx(4.0)
+        traj.plan = VectorPlan(steps=[VectorPlanStep(action="do", target="zombie")])
+        assert Goal("fight_zombie").progress(traj) == pytest.approx(1.0)
+
+    def test_fight_zombie_does_not_progress_from_self_healing(self):
+        traj = make_trajectory(
+            body_start={"health": 3.0, "food": 5.0, "drink": 5.0, "energy": 5.0},
+            body_end={"health": 7.0, "food": 5.0, "drink": 5.0, "energy": 5.0},
+        )
+        assert Goal("fight_zombie").progress(traj) == pytest.approx(0.0)
 
     def test_single_state_trajectory_returns_zero(self):
         s = make_state()
@@ -217,7 +226,7 @@ class TestGoalSelectorSelect:
     def test_dynamic_arrow_overrides_proactive_gather_goal(self, selector):
         state = make_state(
             body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
-            inventory={"wood": 0, "wood_sword": 0},
+            inventory={"wood": 0, "wood_sword": 1},
         )
         state.dynamic_entities = [
             DynamicEntityState(concept_id="arrow", position=(9, 10), velocity=(1, 0))
@@ -228,13 +237,46 @@ class TestGoalSelectorSelect:
     def test_dynamic_zombie_overrides_proactive_gather_goal(self, selector):
         state = make_state(
             body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
-            inventory={"wood": 0, "wood_sword": 0},
+            inventory={"wood": 0, "wood_sword": 1},
         )
         state.dynamic_entities = [
             DynamicEntityState(concept_id="zombie", position=(11, 10), velocity=(-1, 0))
         ]
         goal = selector.select(state)
         assert goal.id == "fight_zombie"
+        assert goal.requested_capability == "armed_melee"
+        assert goal.reason == "dynamic_threat_present"
+
+    def test_dynamic_zombie_without_weapon_returns_craft_with_parent_goal(self, selector):
+        state = make_state(
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            inventory={"wood": 5, "wood_sword": 0},
+        )
+        state.dynamic_entities = [
+            DynamicEntityState(concept_id="zombie", position=(11, 10), velocity=(-1, 0))
+        ]
+
+        goal = selector.select(state)
+
+        assert goal.id == "craft_wood_sword"
+        assert goal.parent_goal == "fight_zombie"
+        assert goal.requested_capability == "armed_melee"
+        assert goal.blocked_by == "missing:wood_sword"
+        assert goal.reason == "required_weapon_missing"
+
+    def test_low_drink_overrides_dynamic_zombie(self, selector):
+        state = make_state(
+            body={"health": 9.0, "food": 9.0, "drink": 2.0, "energy": 9.0},
+            inventory={"wood": 5, "wood_sword": 1},
+        )
+        state.dynamic_entities = [
+            DynamicEntityState(concept_id="zombie", position=(11, 10), velocity=(-1, 0))
+        ]
+
+        goal = selector.select(state)
+
+        assert goal.id == "find_water"
+        assert goal.reason == "low_drink"
 
     def test_dynamic_goals_can_be_disabled(self, textbook):
         selector = GoalSelector(textbook, allow_dynamic_entity_goals=False)

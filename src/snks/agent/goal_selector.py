@@ -19,13 +19,27 @@ if TYPE_CHECKING:
 @dataclass
 class Goal:
     id: str
+    parent_goal: str | None = None
+    requested_capability: str | None = None
+    blocked_by: str | None = None
+    reason: str | None = None
+
+    def to_trace(self) -> dict:
+        return {
+            "id": self.id,
+            "parent_goal": self.parent_goal,
+            "requested_capability": self.requested_capability,
+            "blocked_by": self.blocked_by,
+            "reason": self.reason,
+        }
 
     def progress(self, trajectory: "VectorTrajectory") -> float:
         """How much did this trajectory advance the goal? Returns float >= 0."""
-        if self.id == "fight_zombie":
-            return max(0.0, trajectory.vital_delta("health"))
-        elif self.id == "fight_skeleton":
-            return max(0.0, trajectory.vital_delta("health"))
+        if self.id.startswith("fight_"):
+            target = self.id.removeprefix("fight_")
+            if any(step.action == "do" and step.target == target for step in trajectory.plan.steps):
+                return 1.0
+            return 0.0
         elif self.id == "find_cow":
             return max(0.0, trajectory.vital_delta("food"))
         elif self.id == "find_water":
@@ -78,6 +92,9 @@ class GoalSelector:
 
     def select(self, state: "VectorState") -> Goal:
         """Pure function: current state → active goal. Called every step."""
+        vital_goal = self._vital_goal(state)
+        if vital_goal is not None:
+            return vital_goal
         if self._allow_dynamic_entity_goals:
             dynamic_goal = self._dynamic_entity_goal(state)
             if dynamic_goal is not None:
@@ -102,13 +119,33 @@ class GoalSelector:
             # the weapon instead so plans that produce it earn goal_progress.
             weapon = self._entity_weapons.get(entity)
             if weapon and state.inventory.get(weapon, 0) <= 0:
-                return Goal(f"craft_{weapon}")
-            return Goal(f"fight_{entity}")
+                return Goal(
+                    f"craft_{weapon}",
+                    parent_goal=f"fight_{entity}",
+                    requested_capability="armed_melee",
+                    blocked_by=f"missing:{weapon}",
+                    reason="required_weapon_missing",
+                )
+            return Goal(
+                f"fight_{entity}",
+                requested_capability="armed_melee" if weapon else None,
+                reason="dynamic_threat_present",
+            )
 
         if "arrow" in present or "skeleton" in present:
             return _goal_for("skeleton")
         if "zombie" in present:
             return _goal_for("zombie")
+        return None
+
+    @staticmethod
+    def _vital_goal(state: "VectorState") -> Goal | None:
+        """Critical body needs outrank optional engagement with threats."""
+        if state.body.get("health", 9) < 2:
+            return Goal("find_cow", reason="critical_health")
+        for vital, goal_id in [("food", "find_cow"), ("drink", "find_water"), ("energy", "sleep")]:
+            if state.body.get(vital, 9) < 3:
+                return Goal(goal_id, reason=f"low_{vital}")
         return None
 
     def _derive_threats(self, textbook: "CrafterTextbook") -> list[_Threat]:
@@ -265,9 +302,19 @@ class GoalSelector:
 
         def response(state: "VectorState", _e: str = entity, _w: str | None = weapon) -> Goal:
             if _w and state.inventory.get(_w, 0) > 0:
-                return Goal(f"fight_{_e}")
+                return Goal(
+                    f"fight_{_e}",
+                    requested_capability="armed_melee",
+                    reason="spatial_threat_present",
+                )
             elif _w:
-                return Goal(f"craft_{_w}")
+                return Goal(
+                    f"craft_{_w}",
+                    parent_goal=f"fight_{_e}",
+                    requested_capability="armed_melee",
+                    blocked_by=f"missing:{_w}",
+                    reason="required_weapon_missing",
+                )
             return Goal("explore")
 
         return _Threat(active_fn=active, response_fn=response)

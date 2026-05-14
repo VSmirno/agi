@@ -82,9 +82,6 @@ def load_from_textbook(model: "VectorWorldModel", yaml_path: str | Path) -> dict
         for var, delta in rule_effect.get("body", {}).items():
             effect[var] = int(delta)
 
-        if not effect:
-            continue
-
         # Load requirements as facts (not into SDM — category 1 lookup).
         # Register under both (target/result, action) AND (near, action) so that
         # requirements_met works whether the plan uses the result or the near-concept
@@ -106,6 +103,9 @@ def load_from_textbook(model: "VectorWorldModel", yaml_path: str | Path) -> dict
         near = rule.get("near")
         if near:
             model.near_requirements[(target, action)] = str(near)
+
+        if not effect:
+            continue
 
         # Write seed association multiple times for confidence
         model._ensure_concept(target)

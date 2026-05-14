@@ -24,6 +24,7 @@ import numpy as np
 import torch
 
 from snks.agent.crafter_spatial_map import CrafterSpatialMap
+from snks.agent.capability_state import extract_capability_state
 from snks.agent.textbook_promoter import TextbookPromoter
 from snks.agent.perception import (
     HomeostaticTracker,
@@ -310,10 +311,9 @@ def generate_candidate_plans(
     if cache is None:
         cache = build_prediction_cache(model, known, target_actions)
 
-    # Concepts that are never valid plan targets.
+    # Concepts that are never valid resource/crafting plan targets.
     # "empty" — background tile, no resource to gather.
     # "self"  — handled separately via self_actions (sleep).
-    # enemies — attacking doesn't yield inventory resources.
     non_targetable = {"empty", "self", "zombie", "skeleton"}
 
     for concept_id in known:
@@ -337,6 +337,21 @@ def generate_candidate_plans(
                     steps=[VectorPlanStep(action=action, target=concept_id)],
                     origin=f"single:{concept_id}:{action}",
                 ))
+
+    # Requirement-only `do` rules, such as combat rules with
+    # `effect.remove_entity`, do not produce inventory/body deltas and
+    # therefore do not pass the positive-effect gate above. They are still
+    # legitimate plans when the textbook declares requirements and the target
+    # is visible/known; goal progress decides whether they matter.
+    for (target, action), _reqs in model.action_requirements.items():
+        if action != "do" or target not in known:
+            continue
+        if not model.requirements_met(target, action, state.inventory):
+            continue
+        candidates.append(VectorPlan(
+            steps=[VectorPlanStep(action=action, target=target)],
+            origin=f"single:{target}:{action}",
+        ))
 
     # Self-actions as standalone plans (no target concept).
     # No confidence/effect gate — scoring handles everything:
@@ -1176,6 +1191,7 @@ def run_vector_mpc_episode(
 
         # Current goal for this step (pure function of current state)
         current_goal = goal_selector.select(state) if goal_selector else Goal("explore")
+        capability_state = extract_capability_state(inv, textbook)
 
         # Refresh outcome-stimulus near-concept holder so motion/baseline
         # plans query the substrate conditioned on the current facing tile.
@@ -1594,6 +1610,8 @@ def run_vector_mpc_episode(
             snapshot = {
                 "step": step,
                 "goal": current_goal.id if current_goal is not None else None,
+                "goal_trace": current_goal.to_trace() if current_goal is not None else None,
+                "capability_state": capability_state.to_trace(),
                 "player_pos_before": list(player_pos),
                 "player_pos_after": list(player_pos_after),
                 "body_before": {
@@ -1671,6 +1689,7 @@ def run_vector_mpc_episode(
                 "done_after_step": bool(done),
             })
         if record_local_trace:
+            capability_state_after = extract_capability_state(inv_after, textbook)
             counterfactual_outcomes = (
                 _build_local_counterfactual_outcomes(
                     model=model,
@@ -1727,6 +1746,14 @@ def run_vector_mpc_episode(
                     if target_dist_before is not None
                     else None
                 ),
+            }
+            local_entry["goal"] = current_goal.to_trace() if current_goal is not None else None
+            local_entry["capability_state"] = capability_state.to_trace()
+            local_entry["capability_state_after"] = capability_state_after.to_trace()
+            local_entry["capability_delta"] = {
+                key: capability_state_after.to_trace()[key]
+                for key in capability_state_after.to_trace()
+                if capability_state_after.to_trace()[key] != capability_state.to_trace()[key]
             }
             local_trace.append(local_entry)
         if record_local_advisory_trace and local_action_advisor is not None:
