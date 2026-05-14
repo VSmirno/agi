@@ -129,6 +129,27 @@ class TestGenerateCandidatePlans:
         assert "self:move_up" not in origins
         assert not any(origin.startswith("self:motion_chain:") for origin in origins)
 
+    def test_skips_helper_near_requirement_make_keys(self, seeded_model):
+        state = VectorState(
+            inventory={"wood": 5},
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+        )
+
+        candidates = generate_candidate_plans(
+            seeded_model,
+            state,
+            CrafterSpatialMap(),
+            visible_concepts=set(),
+            player_pos=(10, 10),
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+        )
+        origins = {p.origin for p in candidates}
+
+        assert "single:table:make" not in origins
+        assert "chain:place_table+make_wood_sword" in origins
+
 
 class TestGenerateChains:
     def test_chains_extend_beyond_single_step(self, seeded_model, base_state):

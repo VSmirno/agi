@@ -91,27 +91,17 @@ def _load_promoted_entities_into_spatial_map(
     promoted_path: Path | None,
     spatial_map: CrafterSpatialMap,
 ) -> list[dict[str, Any]]:
-    """Pre-fill spatial memory from persisted entity observations."""
+    """Load persisted entity observations without asserting them in the live map.
+
+    Promoted entity nodes are cross-episode evidence. Crafter resets placed
+    objects between episodes, so writing these positions into the current
+    spatial map makes the planner navigate to stale tables/furnaces and
+    suppresses legitimate `place_*` plans.
+    """
     if promoted_path is None:
         return []
-    nodes = promoter.load_nodes(promoted_path)
-    for node in nodes:
-        if node.get("type") != "entity_observation":
-            continue
-        body = node.get("body", {})
-        provenance = node.get("provenance", {})
-        position = body.get("position")
-        concept = body.get("concept")
-        if not isinstance(position, list) or len(position) != 2 or not isinstance(concept, str):
-            continue
-        key = (int(position[0]), int(position[1]))
-        spatial_map._map[key] = (
-            concept,
-            float(provenance.get("confidence", 1.0)),
-            int(provenance.get("observation_count", 1)),
-        )
-        spatial_map._visited.add(key)
-    return nodes
+    _ = spatial_map
+    return promoter.load_nodes(promoted_path)
 
 
 def _next_promoted_episode_index(prior_nodes: list[dict[str, Any]]) -> int:
@@ -333,7 +323,7 @@ def generate_candidate_plans(
             # For "make": only allow concepts that have a textbook requirement entry.
             # Blocks spurious SDM associations (diamond:make, coal:make, etc.)
             # that were never declared in the textbook.
-            if action == "make" and (concept_id, action) not in model.action_requirements:
+            if action == "make" and not _is_declared_crafting_rule(model, concept_id, action):
                 continue
             # Requirement check — facts from textbook (category 1)
             if not model.requirements_met(concept_id, action, state.inventory):
@@ -383,6 +373,8 @@ def generate_candidate_plans(
     adj_concepts = _adjacent_concepts(spatial_map, player_pos)
     for (target, action), _reqs in model.action_requirements.items():
         if action not in ("make", "place"):
+            continue
+        if not _is_declared_crafting_rule(model, target, action):
             continue
         if not model.requirements_met(target, action, state.inventory):
             continue
@@ -522,6 +514,13 @@ def _has_positive_effect(decoded: dict[str, int], state: VectorState) -> bool:
     return False
 
 
+def _is_declared_crafting_rule(model: VectorWorldModel, target: str, action: str) -> bool:
+    """Return True for real textbook make/place rules, not helper requirement keys."""
+    if action not in ("make", "place"):
+        return False
+    return (target, action) in model.near_requirements
+
+
 def _generate_chains(
     model: VectorWorldModel,
     state: VectorState,
@@ -546,7 +545,7 @@ def _generate_chains(
         if concept_id in non_targetable:
             continue
         for action in plan_actions:
-            if action == "make" and (concept_id, action) not in model.action_requirements:
+            if action == "make" and not _is_declared_crafting_rule(model, concept_id, action):
                 continue
             # First step: check requirements against actual inventory.
             if not model.requirements_met(concept_id, action, state.inventory):
@@ -580,7 +579,7 @@ def _generate_chains(
                 if concept_id in non_targetable:
                     continue
                 for action in plan_actions:
-                    if action == "make" and (concept_id, action) not in model.action_requirements:
+                    if action == "make" and not _is_declared_crafting_rule(model, concept_id, action):
                         continue
                     # Check requirements against hypothetical state after prior steps.
                     if not model.requirements_met(concept_id, action, prev_state.inventory):
@@ -1024,8 +1023,18 @@ def run_vector_mpc_episode(
             vf = perceive_semantic_field(info)
         else:
             raise ValueError(f"Unknown perception_mode: {perception_mode}")
+        station_diag_before_perception = _station_spatial_debug(
+            spatial_map,
+            player_pos,
+            concepts=("table", "furnace"),
+        )
         _update_spatial_map(spatial_map, vf, player_pos, prev_move=prev_move)
         _update_spatial_map_hazards(spatial_map, info, player_pos)
+        station_diag_after_perception = _station_spatial_debug(
+            spatial_map,
+            player_pos,
+            concepts=("table", "furnace"),
+        )
         entity_tracker.update(vf, player_pos)
 
         # --- Homeostatic tracker ---
@@ -1681,30 +1690,45 @@ def run_vector_mpc_episode(
                 )
                 else []
             )
-            local_trace.append(
-                build_local_trace_entry(
-                    step=step,
-                    vf=vf,
-                    body=body,
-                    inventory=inv,
-                    primitive=primitive,
-                    plan_origin=best_plan.origin,
-                    controller=control_origin,
-                    planner_action=planner_primitive,
-                    learner_action=learner_action,
-                    learner_action_index=learner_action_index,
-                    rescue_applied=bool(rescue_pending is not None),
-                    rescue_trigger=rescue_trigger,
-                    nearest_threat_distances=nearest_threats_now,
-                    near_concept=str(vf.near_concept),
-                    player_pos_before=player_pos,
-                    player_pos_after=player_pos_after,
-                    body_after=body_after,
-                    inventory_after=inv_after,
-                    counterfactual_outcomes=counterfactual_outcomes,
-                    done_after_step=bool(done),
-                )
+            local_entry = build_local_trace_entry(
+                step=step,
+                vf=vf,
+                body=body,
+                inventory=inv,
+                primitive=primitive,
+                plan_origin=best_plan.origin,
+                controller=control_origin,
+                planner_action=planner_primitive,
+                learner_action=learner_action,
+                learner_action_index=learner_action_index,
+                rescue_applied=bool(rescue_pending is not None),
+                rescue_trigger=rescue_trigger,
+                nearest_threat_distances=nearest_threats_now,
+                near_concept=str(vf.near_concept),
+                player_pos_before=player_pos,
+                player_pos_after=player_pos_after,
+                body_after=body_after,
+                inventory_after=inv_after,
+                counterfactual_outcomes=counterfactual_outcomes,
+                done_after_step=bool(done),
             )
+            local_entry["station_spatial_debug"] = {
+                "before_perception_update": station_diag_before_perception,
+                "after_perception_update": station_diag_after_perception,
+                "selected_target": str(selected_target) if selected_target is not None else None,
+                "selected_action": str(selected_action) if selected_action is not None else None,
+                "target_pos_before": (
+                    [int(target_pos_before[0]), int(target_pos_before[1])]
+                    if target_pos_before is not None
+                    else None
+                ),
+                "target_dist_before": (
+                    int(target_dist_before)
+                    if target_dist_before is not None
+                    else None
+                ),
+            }
+            local_trace.append(local_entry)
         if record_local_advisory_trace and local_action_advisor is not None:
             from snks.agent.crafter_pixel_env import ACTION_TO_IDX
 
@@ -2224,6 +2248,49 @@ def _spatial_label_at(
     if entry is None:
         return None
     return str(entry[0])
+
+
+def _station_spatial_debug(
+    spatial_map: CrafterSpatialMap,
+    player_pos: tuple[int, int],
+    *,
+    concepts: tuple[str, ...],
+    entry_limit: int = 12,
+) -> dict[str, Any]:
+    """Small JSON-safe snapshot of known crafting-station positions."""
+    py, px = int(player_pos[0]), int(player_pos[1])
+    entries: list[dict[str, Any]] = []
+    for (y, x), (concept, confidence, count) in getattr(spatial_map, "_map", {}).items():
+        if concept not in concepts:
+            continue
+        dist = abs(int(y) - py) + abs(int(x) - px)
+        entries.append({
+            "concept": str(concept),
+            "pos": [int(y), int(x)],
+            "dist": int(dist),
+            "confidence": round(float(confidence), 4),
+            "count": int(count),
+        })
+    entries.sort(key=lambda item: (item["dist"], item["concept"], item["pos"]))
+
+    nearest: dict[str, Any] = {}
+    for concept in concepts:
+        pos = spatial_map.find_nearest(concept, player_pos)
+        nearest[concept] = {
+            "pos": [int(pos[0]), int(pos[1])] if pos is not None else None,
+            "dist": (
+                int(abs(pos[0] - py) + abs(pos[1] - px))
+                if pos is not None
+                else None
+            ),
+        }
+
+    return {
+        "player_pos": [py, px],
+        "nearest": nearest,
+        "entries": entries[:entry_limit],
+        "n_entries": len(entries),
+    }
 
 
 def _env_tile_truth(env: Any, pos: tuple[int, int] | None) -> dict[str, str | None]:

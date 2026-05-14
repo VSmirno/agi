@@ -3,11 +3,14 @@ from __future__ import annotations
 from snks.agent.crafter_spatial_map import CrafterSpatialMap
 from snks.agent.perception import VisualField
 from snks.agent.vector_world_model import VectorWorldModel
+from snks.agent.textbook_promoter import TextbookPromoter
 from snks.agent.vector_mpc_agent import (
     _select_mixed_control_rescue_action,
     _build_local_counterfactual_outcomes,
+    _load_promoted_entities_into_spatial_map,
     _mixed_control_rescue_trigger,
     _should_record_local_counterfactuals,
+    _station_spatial_debug,
 )
 from snks.agent.vector_sim import DynamicEntityState, VectorState
 
@@ -98,6 +101,74 @@ def test_select_mixed_control_rescue_action_skips_consensus_without_alternative(
         rescue_trigger="hostile_contact",
         advisory_ranked=[{"action": "move_up"}],
     ) is None
+
+
+def test_station_spatial_debug_reports_known_station_entries():
+    spatial_map = CrafterSpatialMap()
+    spatial_map._map[(28, 34)] = ("table", 1.0, 25)
+    spatial_map._map[(27, 31)] = ("furnace", 0.8, 3)
+    spatial_map._map[(26, 31)] = ("tree", 1.0, 4)
+
+    debug = _station_spatial_debug(
+        spatial_map,
+        (26, 31),
+        concepts=("table", "furnace"),
+    )
+
+    assert debug["nearest"]["table"] == {"pos": [28, 34], "dist": 5}
+    assert debug["nearest"]["furnace"] == {"pos": [27, 31], "dist": 1}
+    assert debug["entries"] == [
+        {
+            "concept": "furnace",
+            "pos": [27, 31],
+            "dist": 1,
+            "confidence": 0.8,
+            "count": 3,
+        },
+        {
+            "concept": "table",
+            "pos": [28, 34],
+            "dist": 5,
+            "confidence": 1.0,
+            "count": 25,
+        },
+    ]
+    assert debug["n_entries"] == 2
+
+
+def test_promoted_entities_do_not_seed_current_episode_spatial_map(tmp_path):
+    promoted_path = tmp_path / "seed17_promoted.yaml"
+    promoter = TextbookPromoter()
+    nodes = [
+        {
+            "type": "entity_observation",
+            "body": {"concept": "table", "position": [26, 31]},
+            "provenance": {
+                "source": "spatial_map_compiler",
+                "observation_count": 10,
+                "observed_in_episodes": 1,
+                "first_seen_episode": 0,
+                "last_seen_episode": 0,
+                "confidence": 1.0,
+            },
+        }
+    ]
+    promoter.save_nodes(nodes, promoted_path)
+
+    spatial_map = CrafterSpatialMap()
+    loaded = _load_promoted_entities_into_spatial_map(
+        promoter=promoter,
+        promoted_path=promoted_path,
+        spatial_map=spatial_map,
+    )
+
+    assert loaded == nodes
+    assert spatial_map.find_nearest("table", (26, 31)) is None
+    assert _station_spatial_debug(
+        spatial_map,
+        (26, 31),
+        concepts=("table", "furnace"),
+    )["n_entries"] == 0
 
 
 def test_build_local_counterfactual_outcomes_emits_feasibility_labels_for_blocked_move():
