@@ -522,9 +522,11 @@ def _generate_motion_chains(
 
 
 def _has_positive_effect(decoded: dict[str, int], state: VectorState) -> bool:
-    """Check if effect has any positive inventory delta."""
+    """Check if an effect can improve inventory or currently depleted body state."""
     for var, val in decoded.items():
         if var not in state.body and val > 0:
+            return True
+        if var in state.body and val > 0 and float(state.body.get(var, 0.0)) < 9.0:
             return True
     return False
 

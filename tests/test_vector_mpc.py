@@ -171,6 +171,46 @@ class TestGenerateCandidatePlans:
         assert seeded_model.action_requirements[("zombie", "do")] == {"wood_sword": 1}
         assert "single:zombie:do" in origins
 
+    def test_includes_body_recovery_plan_when_vital_depleted(self, seeded_model):
+        state = VectorState(
+            inventory={},
+            body={"health": 9.0, "food": 9.0, "drink": 2.0, "energy": 9.0},
+            player_pos=(10, 10),
+        )
+
+        candidates = generate_candidate_plans(
+            seeded_model,
+            state,
+            CrafterSpatialMap(),
+            visible_concepts={"water"},
+            player_pos=(10, 10),
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+        )
+        origins = {p.origin for p in candidates}
+
+        assert "single:water:do" in origins
+
+    def test_skips_body_recovery_plan_when_vital_full(self, seeded_model):
+        state = VectorState(
+            inventory={},
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+        )
+
+        candidates = generate_candidate_plans(
+            seeded_model,
+            state,
+            CrafterSpatialMap(),
+            visible_concepts={"water"},
+            player_pos=(10, 10),
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+        )
+        origins = {p.origin for p in candidates}
+
+        assert "single:water:do" not in origins
+
 
 class TestGenerateChains:
     def test_chains_extend_beyond_single_step(self, seeded_model, base_state):
