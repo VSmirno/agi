@@ -151,20 +151,27 @@ class TestStepToward:
     def setup_method(self):
         self.rng = np.random.RandomState(42)
 
+    # Convention (verified empirically against Crafter env, 2026-05-17):
+    # pos[0] = X (horizontal, move_right=+1, move_left=-1)
+    # pos[1] = Y (vertical,   move_down=+1,  move_up=-1)
+    # Earlier versions of this suite used the inverted convention; tests
+    # below are now aligned with vector_sim.move_player and the production
+    # `_step_toward` implementation.
+
     def test_moves_down_when_target_below(self):
-        action = _step_toward((0, 0), (3, 0), self.rng)
+        action = _step_toward((0, 0), (0, 3), self.rng)
         assert action == "move_down"
 
     def test_moves_up_when_target_above(self):
-        action = _step_toward((5, 0), (2, 0), self.rng)
+        action = _step_toward((0, 5), (0, 2), self.rng)
         assert action == "move_up"
 
     def test_moves_right_when_target_right(self):
-        action = _step_toward((0, 0), (0, 5), self.rng)
+        action = _step_toward((0, 0), (5, 0), self.rng)
         assert action == "move_right"
 
     def test_moves_left_when_target_left(self):
-        action = _step_toward((0, 5), (0, 0), self.rng)
+        action = _step_toward((5, 0), (0, 0), self.rng)
         assert action == "move_left"
 
     def test_at_target_returns_valid_move(self):
