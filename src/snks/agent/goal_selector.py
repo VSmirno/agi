@@ -206,8 +206,10 @@ class GoalSelector:
         only suppresses unrelated gather/craft goals when an active threat is
         present in the runtime world state.
         """
-        present = {entity.concept_id for entity in state.dynamic_entities}
-
+        # Collect hostile entities with their distances. Only entities with
+        # a textbook "do <entity> requires {weapon}" rule are considered
+        # hostile here — that's what `_entity_weapons` indexes. Arrows are
+        # treated as the skeleton that fired them (no separate fight rule).
         def _goal_for(entity: str) -> Goal:
             # Without the required weapon, "fight" is futile — promote crafting
             # the weapon instead so plans that produce it earn goal_progress.
@@ -226,11 +228,26 @@ class GoalSelector:
                 reason="dynamic_threat_present",
             )
 
-        if "arrow" in present or "skeleton" in present:
-            return _goal_for("skeleton")
-        if "zombie" in present:
-            return _goal_for("zombie")
-        return None
+        px, py = state.player_pos
+        hostiles: list[tuple[int, str]] = []
+        for ent in state.dynamic_entities:
+            cid = "skeleton" if ent.concept_id == "arrow" else ent.concept_id
+            if cid not in self._entity_weapons:
+                continue
+            dist = abs(ent.position[0] - px) + abs(ent.position[1] - py)
+            hostiles.append((dist, cid))
+
+        if not hostiles:
+            return None
+
+        # Pick the nearest hostile. Ties broken by textbook iteration order
+        # (sort key is just distance — stable, deterministic). Previously
+        # the layer hardcoded skeleton>zombie priority regardless of distance,
+        # so even when a zombie was adjacent and a skeleton was 5 tiles
+        # away the agent would still emit fight_skeleton goal and never
+        # face the zombie. seed 17 ep 0 (Phase 1 video) showed exactly that.
+        hostiles.sort(key=lambda dc: dc[0])
+        return _goal_for(hostiles[0][1])
 
     @staticmethod
     def _vital_goal(state: "VectorState") -> Goal | None:

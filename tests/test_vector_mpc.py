@@ -604,3 +604,118 @@ class TestFrontierExpandPrimitive:
             near_concept="empty",
         )
         assert primitive.startswith("move_")
+
+
+# ---------------------------------------------------------------------------
+# Phase 2A — dynamic-entity-aware plan generation
+# ---------------------------------------------------------------------------
+
+class TestDynamicEntityAwarePlans:
+    def test_single_cow_do_emitted_when_cow_only_in_dynamic_tracker(
+        self, seeded_model
+    ):
+        state = VectorState(
+            inventory={},
+            body={"health": 9.0, "food": 4.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(concept_id="cow", position=(13, 10))
+            ],
+        )
+        candidates = generate_candidate_plans(
+            seeded_model,
+            state,
+            CrafterSpatialMap(),  # cow NOT in spatial_map
+            visible_concepts=set(),  # not visible this tick either
+            player_pos=(10, 10),
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+        )
+        origins = {p.origin for p in candidates}
+        assert "single:cow:do" in origins, (
+            "cow plan must come from dynamic_entities source"
+        )
+
+    def test_single_zombie_do_emitted_when_armed_and_zombie_tracked(
+        self, seeded_model
+    ):
+        state = VectorState(
+            inventory={"wood_sword": 1},
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(concept_id="zombie", position=(11, 10))
+            ],
+        )
+        candidates = generate_candidate_plans(
+            seeded_model,
+            state,
+            CrafterSpatialMap(),
+            visible_concepts=set(),
+            player_pos=(10, 10),
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+        )
+        origins = {p.origin for p in candidates}
+        assert "single:zombie:do" in origins
+
+    def test_single_zombie_do_NOT_emitted_when_unarmed(self, seeded_model):
+        state = VectorState(
+            inventory={},  # no sword
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(concept_id="zombie", position=(11, 10))
+            ],
+        )
+        candidates = generate_candidate_plans(
+            seeded_model,
+            state,
+            CrafterSpatialMap(),
+            visible_concepts=set(),
+            player_pos=(10, 10),
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+        )
+        origins = {p.origin for p in candidates}
+        assert "single:zombie:do" not in origins
+
+
+class TestExpandPrimitiveDynamicFallback:
+    def test_expand_uses_dynamic_position_when_target_not_in_spatial_map(
+        self, seeded_model
+    ):
+        # Empty spatial map, but cow tracked at (15, 10) — agent at (10, 10).
+        # Cow is east → expect move_right (delta +5 on X axis).
+        sm = CrafterSpatialMap()
+        rng = np.random.RandomState(0)
+        primitive = expand_to_primitive(
+            VectorPlanStep(action="do", target="cow"),
+            player_pos=(10, 10),
+            spatial_map=sm,
+            model=seeded_model,
+            rng=rng,
+            last_action=None,
+            near_concept="empty",
+            dynamic_entities=[
+                DynamicEntityState(concept_id="cow", position=(15, 10))
+            ],
+        )
+        assert primitive == "move_right"
+
+    def test_expand_falls_back_to_random_when_neither_source_has_target(
+        self, seeded_model
+    ):
+        rng = np.random.RandomState(0)
+        primitive = expand_to_primitive(
+            VectorPlanStep(action="do", target="cow"),
+            player_pos=(10, 10),
+            spatial_map=CrafterSpatialMap(),
+            model=seeded_model,
+            rng=rng,
+            last_action=None,
+            near_concept="empty",
+            dynamic_entities=[],
+        )
+        # No cow anywhere → falls back to random move
+        assert primitive.startswith("move_")

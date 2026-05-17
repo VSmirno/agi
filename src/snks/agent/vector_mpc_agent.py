@@ -305,8 +305,19 @@ def generate_candidate_plans(
     """
     candidates: list[VectorPlan] = []
 
-    # Gather all known concepts (visible + in spatial map)
-    known = set(visible_concepts) | set(spatial_map.known_objects.keys())
+    # Gather all known concepts. Three sources:
+    #   visible_concepts → what perception sees this tick
+    #   spatial_map.known_objects → resource tiles remembered from prior ticks
+    #   state.dynamic_entities → cow/zombie/skeleton/arrow currently tracked
+    #     by DynamicEntityTracker (may sit outside the viewport but the
+    #     tracker still knows their position). Without this third source the
+    #     planner generates no `single:cow:do` plan once cow walks off
+    #     screen, and the agent ignores it entirely (seed 17 ep 0 finding).
+    known = (
+        set(visible_concepts)
+        | set(spatial_map.known_objects.keys())
+        | {entity.concept_id for entity in state.dynamic_entities}
+    )
 
     # Single-step plans: try each concept × target-action
     action_ids = list(model.actions.keys())
@@ -320,7 +331,13 @@ def generate_candidate_plans(
     # Concepts that are never valid resource/crafting plan targets.
     # "empty" — background tile, no resource to gather.
     # "self"  — handled separately via self_actions (sleep).
-    non_targetable = {"empty", "self", "zombie", "skeleton"}
+    # zombie/skeleton are intentionally absent: textbook declares
+    # `do <entity> requires {wood_sword}` so the requirements-only loop
+    # below emits `single:<entity>:do` plans when the agent is armed.
+    # Before the Phase-2 removal of those names from non_targetable, the
+    # first loop's positive-effect gate filtered them out and the planner
+    # generated no combat plan at all even with `wood_sword=2` in inventory.
+    non_targetable = {"empty", "self"}
 
     for concept_id in known:
         if concept_id in non_targetable:
@@ -696,6 +713,7 @@ def expand_to_primitive(
     rng: np.random.RandomState,
     last_action: str | None = None,
     near_concept: str | None = None,
+    dynamic_entities: "list[DynamicEntityState] | None" = None,
 ) -> str:
     """Expand a plan step to a single env primitive.
 
@@ -726,6 +744,21 @@ def expand_to_primitive(
         return str(rng.choice(move_actions)) if move_actions else "move_right"
 
     target_pos = spatial_map.find_nearest(plan_step.target, player_pos)
+
+    # Phase-2: fall back to dynamic-entity tracker for cow/zombie/skeleton/arrow
+    # that are tracked but not in the static spatial_map. Without this, even
+    # though `_plan_distance` now allows the plan to win, `expand_to_primitive`
+    # would still drop into random-move because find_nearest returned None.
+    if target_pos is None and dynamic_entities:
+        tracked = [
+            e.position for e in dynamic_entities
+            if e.concept_id == plan_step.target
+        ]
+        if tracked:
+            target_pos = min(
+                tracked,
+                key=lambda p: abs(p[0] - player_pos[0]) + abs(p[1] - player_pos[1]),
+            )
 
     if target_pos is None and plan_step.action not in ("sleep",):
         # near_concept == target: resource is at the player's center tile —
@@ -1185,7 +1218,14 @@ def run_vector_mpc_episode(
             )
 
         # --- Build per-step prediction cache (one batched GPU op) ---
-        known_step = set(vf.visible_concepts()) | set(spatial_map.known_objects.keys())
+        # Include dynamic-entity concept_ids so prediction cache covers
+        # `do <entity>` lookups when the entity is currently tracked but
+        # not in the static spatial map.
+        known_step = (
+            set(vf.visible_concepts())
+            | set(spatial_map.known_objects.keys())
+            | {entity.concept_id for entity in observed_dynamic_entities}
+        )
         target_acts = [a for a in model.actions if a in ("do", "make", "place")]
         if enable_dynamic_threat_model and observed_dynamic_entities and "proximity" in model.actions:
             target_acts.append("proximity")
@@ -1249,7 +1289,21 @@ def run_vector_mpc_episode(
                     continue
                 pos = spatial_map.find_nearest(step.target, player_pos)
                 if pos is None:
-                    return 9999
+                    # Fall back to dynamic-entity tracker: cow/zombie/skeleton
+                    # can be tracked outside the spatial-map view. Use the
+                    # closest tracked instance of `step.target`. Without this
+                    # fallback the plan's known=0 and baseline always wins,
+                    # even when DynamicEntityTracker has a live position.
+                    tracked = [
+                        e.position for e in state.dynamic_entities
+                        if e.concept_id == step.target
+                    ]
+                    if not tracked:
+                        return 9999
+                    pos = min(
+                        tracked,
+                        key=lambda p: abs(p[0] - player_pos[0]) + abs(p[1] - player_pos[1]),
+                    )
                 max_dist = max(max_dist, abs(pos[0] - player_pos[0]) + abs(pos[1] - player_pos[1]))
             return max_dist
 
@@ -1340,6 +1394,7 @@ def run_vector_mpc_episode(
                 best_plan.steps[0], player_pos, spatial_map, model, rng,
                 last_action=prev_move,
                 near_concept=vf.near_concept,
+                dynamic_entities=observed_dynamic_entities,
             )
         else:
             # Baseline plan (empty) won the ranking. RNG fallback now
@@ -1383,6 +1438,7 @@ def run_vector_mpc_episode(
                     chosen_plan.steps[0], player_pos, spatial_map, model, rng,
                     last_action=prev_move,
                     near_concept=vf.near_concept,
+                    dynamic_entities=observed_dynamic_entities,
                 )
             else:
                 move_actions = [a for a in model.actions if a.startswith("move_")]

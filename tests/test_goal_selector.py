@@ -454,3 +454,45 @@ class TestFrontierProgressEpsilon:
         trace = goal.to_trace()
         assert trace["target_concept"] == "water"
         assert trace["id"] == "find_water"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2A — distance-based fight priority
+# ---------------------------------------------------------------------------
+
+class TestFightPriorityByDistance:
+    def test_nearest_zombie_wins_over_far_skeleton(self, selector):
+        state = make_state(inventory={"wood_sword": 1})
+        state.dynamic_entities = [
+            DynamicEntityState(concept_id="skeleton", position=(20, 10)),
+            DynamicEntityState(concept_id="zombie", position=(11, 10)),
+        ]
+        goal = selector.select(state)
+        assert goal.id == "fight_zombie"
+        assert goal.target_concept == "zombie"
+
+    def test_nearest_skeleton_wins_over_far_zombie(self, selector):
+        state = make_state(inventory={"wood_sword": 1})
+        state.dynamic_entities = [
+            DynamicEntityState(concept_id="zombie", position=(20, 10)),
+            DynamicEntityState(concept_id="skeleton", position=(11, 10)),
+        ]
+        goal = selector.select(state)
+        assert goal.id == "fight_skeleton"
+
+    def test_arrow_routes_to_fight_skeleton(self, selector):
+        state = make_state(inventory={"wood_sword": 1})
+        state.dynamic_entities = [
+            DynamicEntityState(concept_id="arrow", position=(11, 10)),
+        ]
+        goal = selector.select(state)
+        assert goal.id == "fight_skeleton"
+
+    def test_unarmed_promotes_craft_subgoal_with_fight_parent(self, selector):
+        state = make_state(inventory={"wood": 5})  # has crafting material, no sword
+        state.dynamic_entities = [
+            DynamicEntityState(concept_id="zombie", position=(11, 10)),
+        ]
+        goal = selector.select(state)
+        assert goal.id == "craft_wood_sword"
+        assert goal.parent_goal == "fight_zombie"
