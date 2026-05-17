@@ -16,6 +16,14 @@ if TYPE_CHECKING:
     from snks.agent.crafter_textbook import CrafterTextbook
 
 
+# Tiebreaker awarded to a frontier-exploration plan whose target concept
+# matches the active goal's `target_concept`. Small enough that any concrete
+# plan with measurable goal_progress beats it, large enough to win over the
+# zero-progress baseline plan in the lex-tuple sort. Documented as a
+# tiebreaker, not a tunable weight — never raise it to "fix" survival numbers.
+FRONTIER_PROGRESS_EPSILON: float = 0.05
+
+
 @dataclass
 class Goal:
     id: str
@@ -23,6 +31,11 @@ class Goal:
     requested_capability: str | None = None
     blocked_by: str | None = None
     reason: str | None = None
+    # Concept the goal wants the agent to physically locate or interact with
+    # (e.g. find_water → "water", fight_zombie → "zombie"). Derived from
+    # textbook by GoalSelector — Goal carries it so planner mechanism can
+    # query the cognitive map without parsing the goal id string.
+    target_concept: str | None = None
 
     def to_trace(self) -> dict:
         return {
@@ -31,6 +44,7 @@ class Goal:
             "requested_capability": self.requested_capability,
             "blocked_by": self.blocked_by,
             "reason": self.reason,
+            "target_concept": self.target_concept,
         }
 
     def progress(self, trajectory: "VectorTrajectory") -> float:
@@ -39,17 +53,20 @@ class Goal:
             target = self.id.removeprefix("fight_")
             if any(step.action == "do" and step.target == target for step in trajectory.plan.steps):
                 return 1.0
-            return 0.0
+            return self._frontier_epsilon(trajectory)
         elif self.id == "find_cow":
-            return max(0.0, trajectory.vital_delta("food"))
+            v = trajectory.vital_delta("food")
+            return v if v > 0 else self._frontier_epsilon(trajectory)
         elif self.id == "find_water":
-            return max(0.0, trajectory.vital_delta("drink"))
+            v = trajectory.vital_delta("drink")
+            return v if v > 0 else self._frontier_epsilon(trajectory)
         elif self.id == "sleep":
             return max(0.0, trajectory.vital_delta("energy"))
         elif self.id.startswith("craft_"):
             return 1.0 if trajectory.item_gained(self.id.removeprefix("craft_")) else 0.0
         elif self.id == "gather_wood":
-            return max(0.0, trajectory.inventory_delta("wood"))
+            v = trajectory.inventory_delta("wood")
+            return v if v > 0 else self._frontier_epsilon(trajectory)
         elif self.id == "explore":
             # Textbook-seeded sleep has confidence=0.5 → surprise=0.5, which would
             # beat baseline (confidences=[]) giving explore_progress=0.5. Guard: a
@@ -59,6 +76,25 @@ class Goal:
             ):
                 return 0.0
             return trajectory.avg_surprise()
+        return 0.0
+
+    def _frontier_epsilon(self, trajectory: "VectorTrajectory") -> float:
+        """Tiebreaker for directed-exploration plans toward this goal's target.
+
+        A frontier plan whose `target` matches the goal's `target_concept`
+        earns `FRONTIER_PROGRESS_EPSILON` so the goal_prog slot of the score
+        tuple beats baseline (which scores 0). Any concrete plan that
+        actually advances the goal scores ≥ 1.0 (or the real vital delta),
+        which dominates the tiebreaker.
+        """
+        if self.target_concept is None:
+            return 0.0
+        plan = trajectory.plan
+        if not plan.steps:
+            return 0.0
+        first = plan.steps[0]
+        if first.action == "frontier_seek" and first.target == self.target_concept:
+            return FRONTIER_PROGRESS_EPSILON
         return 0.0
 
 
@@ -89,20 +125,78 @@ class GoalSelector:
             weapon = next(iter(req), None)
             if target and weapon:
                 self._entity_weapons[target] = weapon
+        # goal-id -> target concept, derived from textbook `do` rules. Lets
+        # the planner mechanism look at Goal.target_concept directly instead
+        # of parsing the goal id string. Crafter facts stay in the textbook;
+        # this method is the only place that translates them into goal labels.
+        self._goal_targets: dict[str, str] = self._derive_goal_targets(textbook)
+
+    @staticmethod
+    def _derive_goal_targets(textbook: "CrafterTextbook") -> dict[str, str]:
+        """Build `goal_id -> concept_id` from textbook `do` rules.
+
+        Two key forms are emitted per matching rule so the existing
+        resource-named goals (`find_cow`, `find_water`) and the more
+        generic vital-named form (`find_food`, `find_drink`) both resolve
+        to the same concept without parsing goal ids in Python:
+
+        - rule `do <target>` with body delta `<vital>` > 0 →
+            `find_<vital>: target` AND `find_<target>: target`
+        - rule `do <target>` with `effect.remove_entity == target` →
+            `fight_<target>: target`
+        - rule `do <target>` with inventory delta `<item>` > 0 →
+            `gather_<item>: target` AND `gather_<target>: target`
+
+        First matching rule wins (subsequent duplicates ignored). Ambiguity
+        should be resolved by editing the textbook, never by override logic
+        here.
+        """
+        targets: dict[str, str] = {}
+        for rule in textbook.rules:
+            if rule.get("action") != "do":
+                continue
+            target = rule.get("target")
+            if not target:
+                continue
+            effect = rule.get("effect", {}) or {}
+            body_effect = effect.get("body", {}) or {}
+            for vital, delta in body_effect.items():
+                if isinstance(delta, (int, float)) and delta > 0:
+                    targets.setdefault(f"find_{vital}", target)
+                    targets.setdefault(f"find_{target}", target)
+            inv_effect = effect.get("inventory", {}) or {}
+            for item, delta in inv_effect.items():
+                if isinstance(delta, (int, float)) and delta > 0:
+                    targets.setdefault(f"gather_{item}", target)
+                    targets.setdefault(f"gather_{target}", target)
+            if effect.get("remove_entity") == target:
+                targets.setdefault(f"fight_{target}", target)
+        return targets
+
+    def _attach_target(self, goal: Goal) -> Goal:
+        """Populate `goal.target_concept` from the textbook-derived map.
+
+        If the goal id is not in the map (e.g. `craft_*`, `sleep`,
+        `explore`, or a `gather_<thing>` whose rule is absent), `target_concept`
+        stays None and the planner falls back to its normal behaviour.
+        """
+        if goal.target_concept is None:
+            goal.target_concept = self._goal_targets.get(goal.id)
+        return goal
 
     def select(self, state: "VectorState") -> Goal:
         """Pure function: current state → active goal. Called every step."""
         vital_goal = self._vital_goal(state)
         if vital_goal is not None:
-            return vital_goal
+            return self._attach_target(vital_goal)
         if self._allow_dynamic_entity_goals:
             dynamic_goal = self._dynamic_entity_goal(state)
             if dynamic_goal is not None:
-                return dynamic_goal
+                return self._attach_target(dynamic_goal)
         for threat in self._threats:
             if threat.active_fn(state):
-                return threat.response_fn(state)
-        return Goal("explore")
+                return self._attach_target(threat.response_fn(state))
+        return self._attach_target(Goal("explore"))
 
     def _dynamic_entity_goal(self, state: "VectorState") -> Goal | None:
         """Promote live dynamic threats into goal selection.

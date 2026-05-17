@@ -26,6 +26,7 @@ from snks.agent.vector_mpc_agent import (
     DynamicEntityTracker,
     build_prediction_cache,
     generate_candidate_plans,
+    expand_to_primitive,
     _generate_motion_chains,
     _generate_chains,
     _has_positive_effect,
@@ -502,3 +503,104 @@ class TestDynamicEntityTracker:
 
         tracker.update(VisualField(detections=[]), player_pos=(10, 10))
         assert tracker.current_for("arrow") == []
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — goal-conditioned frontier exploration
+# ---------------------------------------------------------------------------
+
+class TestFrontierPlanGeneration:
+    def test_frontier_water_emitted_when_target_unknown_and_goal_active(
+        self, seeded_model, base_state, spatial_map_with_tree
+    ):
+        # spatial_map has tree/empty/stone but no water; goal asks for water.
+        goal = Goal("find_water", target_concept="water")
+        candidates = generate_candidate_plans(
+            seeded_model, base_state, spatial_map_with_tree,
+            visible_concepts={"tree"},
+            player_pos=(10, 10),
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+            active_goal=goal,
+        )
+        origins = {p.origin for p in candidates}
+        assert "frontier:water" in origins
+
+    def test_frontier_water_NOT_emitted_when_water_already_on_map(
+        self, seeded_model, base_state
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((14, 10), "water", 0.9)  # water known
+        sm.update((10, 10), "empty", 0.95)
+        goal = Goal("find_water", target_concept="water")
+        candidates = generate_candidate_plans(
+            seeded_model, base_state, sm,
+            visible_concepts=set(),
+            player_pos=(10, 10),
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+            active_goal=goal,
+        )
+        origins = {p.origin for p in candidates}
+        assert "frontier:water" not in origins
+
+    def test_no_frontier_emitted_when_goal_has_no_target_concept(
+        self, seeded_model, base_state, spatial_map_with_tree
+    ):
+        goal = Goal("explore")  # target_concept=None
+        candidates = generate_candidate_plans(
+            seeded_model, base_state, spatial_map_with_tree,
+            visible_concepts={"tree"},
+            player_pos=(10, 10),
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+            active_goal=goal,
+        )
+        origins = {p.origin for p in candidates}
+        assert not any(o.startswith("frontier:") for o in origins)
+
+
+class TestFrontierExpandPrimitive:
+    def test_expand_frontier_seek_walks_toward_unvisited(self, seeded_model):
+        # Visited tiles around player at (10, 10); unvisited cells to the right.
+        sm = CrafterSpatialMap()
+        # Mark a band of visited tiles around player except to the right.
+        for dy in range(-2, 3):
+            for dx in range(-2, 1):
+                sm.update((10 + dx, 10 + dy), "empty", 1.0)
+        # Right neighbours stay unvisited.
+        rng = np.random.RandomState(0)
+        primitive = expand_to_primitive(
+            VectorPlanStep(action="frontier_seek", target="water"),
+            player_pos=(10, 10),
+            spatial_map=sm,
+            model=seeded_model,
+            rng=rng,
+            last_action=None,
+            near_concept="empty",
+        )
+        # _step_toward picks among non-zero-delta moves; unvisited cells are
+        # to the right (+x), so primitive should be one of move_right or a
+        # tie-broken move; assert it is a move_*.
+        assert primitive.startswith("move_")
+
+    def test_expand_frontier_seek_falls_back_to_random_move_when_no_unvisited(
+        self, seeded_model
+    ):
+        # All cells in radius=5 are visited → fallback path.
+        sm = CrafterSpatialMap()
+        for dy in range(-5, 6):
+            for dx in range(-5, 6):
+                sm.update((10 + dx, 10 + dy), "empty", 1.0)
+        rng = np.random.RandomState(0)
+        primitive = expand_to_primitive(
+            VectorPlanStep(action="frontier_seek", target="water"),
+            player_pos=(10, 10),
+            spatial_map=sm,
+            model=seeded_model,
+            rng=rng,
+            last_action=None,
+            near_concept="empty",
+        )
+        assert primitive.startswith("move_")

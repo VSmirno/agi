@@ -275,6 +275,27 @@ def simulate_forward(
             enabled=enable_post_plan_passive_rollout,
         )
 
+    # Phase-1 frontier exploration plans are pseudo-actions: the agent
+    # walks toward unvisited cells at runtime (expand_to_primitive emits a
+    # real `move_*` primitive). The sim cannot model the outcome because
+    # there is no world-model rule for `frontier_seek` — it is a mechanism,
+    # not a fact. Treat the plan as a passive rollout from the initial
+    # state so vital decay, dynamic threats and outcome-stimulus scoring
+    # all behave consistently with the baseline plan; goal_progress earns
+    # the FRONTIER_PROGRESS_EPSILON tiebreaker via Goal.progress.
+    if plan.steps[0].action == "frontier_seek":
+        return _passive_rollout(
+            model=model,
+            state=state,
+            states=states,
+            horizon=horizon,
+            vital_vars=vital_vars,
+            cache=cache,
+            plan=plan,
+            confidences=confidences,
+            enabled=enable_post_plan_passive_rollout,
+        )
+
     for step in plan.steps[:horizon]:
         primitive_action, allow_effect = _materialize_plan_step(step, state)
         state = _advance_dynamic_entities(model, state, primitive_action, cache)

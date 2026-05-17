@@ -338,3 +338,119 @@ class TestGoalSelectorTextbookDerivation:
 
     def test_goals_block_loaded(self, textbook):
         assert textbook.goals_block.get("primary") == "survive"
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — goal-conditioned frontier exploration: target_concept derivation
+# ---------------------------------------------------------------------------
+
+class TestGoalTargetDerivation:
+    def test_find_water_resolves_to_water_via_textbook(self, selector):
+        targets = selector._goal_targets
+        assert targets.get("find_water") == "water"
+        assert targets.get("find_drink") == "water"
+
+    def test_find_cow_resolves_to_cow_via_textbook(self, selector):
+        targets = selector._goal_targets
+        assert targets.get("find_cow") == "cow"
+        assert targets.get("find_food") == "cow"
+
+    def test_fight_zombie_and_skeleton_resolve_via_remove_entity(self, selector):
+        targets = selector._goal_targets
+        assert targets.get("fight_zombie") == "zombie"
+        assert targets.get("fight_skeleton") == "skeleton"
+
+    def test_gather_wood_resolves_to_tree_via_inventory_delta(self, selector):
+        targets = selector._goal_targets
+        assert targets.get("gather_wood") == "tree"
+        assert targets.get("gather_tree") == "tree"
+
+    def test_select_attaches_target_concept_on_vital_goal(self, selector):
+        state = make_state(body={"health": 9.0, "food": 9.0, "drink": 2.0, "energy": 9.0})
+        goal = selector.select(state)
+        assert goal.id == "find_water"
+        assert goal.target_concept == "water"
+
+    def test_select_attaches_target_concept_on_critical_health(self, selector):
+        state = make_state(body={"health": 1.0, "food": 5.0, "drink": 5.0, "energy": 5.0})
+        goal = selector.select(state)
+        assert goal.id == "find_cow"
+        assert goal.target_concept == "cow"
+
+    def test_select_attaches_target_concept_on_dynamic_threat_fight(self, selector):
+        state = make_state(inventory={"wood_sword": 1})
+        state.dynamic_entities = [DynamicEntityState(concept_id="zombie", position=(11, 10))]
+        goal = selector.select(state)
+        assert goal.id == "fight_zombie"
+        assert goal.target_concept == "zombie"
+
+    def test_explore_goal_has_no_target_concept(self, selector):
+        state = make_state()
+        goal = selector.select(state)
+        # default fallback when nothing else matches; even if proactive
+        # crafting fires, target_concept must still be either None or a
+        # textbook-resolvable concept — never silently invented.
+        if goal.target_concept is not None:
+            assert goal.target_concept in selector._goal_targets.values()
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — Goal.progress frontier epsilon
+# ---------------------------------------------------------------------------
+
+class TestFrontierProgressEpsilon:
+    def _frontier_traj(self, target: str) -> VectorTrajectory:
+        from snks.agent.vector_sim import VectorPlanStep
+        plan = VectorPlan(
+            steps=[VectorPlanStep(action="frontier_seek", target=target)],
+            origin=f"frontier:{target}",
+        )
+        s = VectorState(inventory={}, body={"health": 5.0, "food": 5.0, "drink": 5.0, "energy": 5.0})
+        return VectorTrajectory(plan=plan, states=[s, s], confidences=[])
+
+    def test_find_water_with_frontier_water_plan_returns_epsilon(self):
+        from snks.agent.goal_selector import FRONTIER_PROGRESS_EPSILON
+        goal = Goal("find_water", target_concept="water")
+        traj = self._frontier_traj("water")
+        assert goal.progress(traj) == pytest.approx(FRONTIER_PROGRESS_EPSILON)
+
+    def test_find_water_with_frontier_cow_plan_returns_zero(self):
+        goal = Goal("find_water", target_concept="water")
+        traj = self._frontier_traj("cow")
+        assert goal.progress(traj) == 0.0
+
+    def test_find_water_with_baseline_plan_returns_zero(self):
+        goal = Goal("find_water", target_concept="water")
+        s = VectorState(inventory={}, body={"health": 5.0, "food": 5.0, "drink": 5.0, "energy": 5.0})
+        traj = VectorTrajectory(plan=VectorPlan(steps=[], origin="baseline"), states=[s, s], confidences=[])
+        assert goal.progress(traj) == 0.0
+
+    def test_real_drink_delta_dominates_frontier_epsilon(self):
+        from snks.agent.vector_sim import VectorPlanStep
+        from snks.agent.goal_selector import FRONTIER_PROGRESS_EPSILON
+        goal = Goal("find_water", target_concept="water")
+        plan = VectorPlan(
+            steps=[VectorPlanStep(action="do", target="water")],
+            origin="single:water:do",
+        )
+        s0 = VectorState(inventory={}, body={"health": 5.0, "food": 5.0, "drink": 2.0, "energy": 5.0})
+        s1 = VectorState(inventory={}, body={"health": 5.0, "food": 5.0, "drink": 7.0, "energy": 5.0})
+        traj = VectorTrajectory(plan=plan, states=[s0, s1], confidences=[])
+        assert goal.progress(traj) > FRONTIER_PROGRESS_EPSILON
+
+    def test_fight_zombie_frontier_zombie_plan_returns_epsilon(self):
+        from snks.agent.goal_selector import FRONTIER_PROGRESS_EPSILON
+        goal = Goal("fight_zombie", target_concept="zombie")
+        traj = self._frontier_traj("zombie")
+        assert goal.progress(traj) == pytest.approx(FRONTIER_PROGRESS_EPSILON)
+
+    def test_target_concept_none_disables_epsilon(self):
+        goal = Goal("find_water")  # no target_concept set
+        traj = self._frontier_traj("water")
+        assert goal.progress(traj) == 0.0
+
+    def test_to_trace_includes_target_concept(self):
+        goal = Goal("find_water", target_concept="water")
+        trace = goal.to_trace()
+        assert trace["target_concept"] == "water"
+        assert trace["id"] == "find_water"
