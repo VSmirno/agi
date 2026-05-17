@@ -1043,14 +1043,14 @@ def run_vector_mpc_episode(
         station_diag_before_perception = _station_spatial_debug(
             spatial_map,
             player_pos,
-            concepts=("table", "furnace"),
+            concepts=_SPATIAL_DEBUG_CONCEPTS,
         )
         _update_spatial_map(spatial_map, vf, player_pos, prev_move=prev_move)
         _update_spatial_map_hazards(spatial_map, info, player_pos)
         station_diag_after_perception = _station_spatial_debug(
             spatial_map,
             player_pos,
-            concepts=("table", "furnace"),
+            concepts=_SPATIAL_DEBUG_CONCEPTS,
         )
         entity_tracker.update(vf, player_pos)
 
@@ -2277,6 +2277,24 @@ def _spatial_label_at(
     if entry is None:
         return None
     return str(entry[0])
+
+
+# Concepts surfaced in `local_trace[*].station_spatial_debug.nearest` for
+# Phase-1 frontier-exploration validation. Stations stay first to preserve the
+# field's original ordering; resources are appended so a recorder can answer
+# "does the agent know where water/cow/coal/iron/tree/stone is right now?".
+_SPATIAL_DEBUG_CONCEPTS: tuple[str, ...] = (
+    "table",
+    "furnace",
+    "water",
+    "cow",
+    "coal",
+    "iron",
+    "tree",
+    "stone",
+    "diamond",
+    "plant",
+)
 
 
 def _station_spatial_debug(

@@ -363,10 +363,24 @@ def main() -> None:
 
     # Save metrics JSON next to the mp4.
     metrics_path = args.out.with_suffix(".json")
+    # `mixed_control_rescue` does not aggregate controller_distribution into
+    # its return dict (only the multi-episode eval wrapper does), so derive it
+    # here from per-step `controller` entries — otherwise the field stays
+    # empty `{}` and a recorder can't answer "how much was planner vs rescue
+    # vs learner".
+    controller_distribution = dict(metrics.get("controller_distribution", {}))
+    if not controller_distribution:
+        derived: dict[str, int] = {}
+        for entry in local_trace:
+            origin = entry.get("controller")
+            if origin is None:
+                continue
+            derived[str(origin)] = derived.get(str(origin), 0) + 1
+        controller_distribution = dict(sorted(derived.items()))
     serialisable = {
         "episode_steps": int(metrics.get("episode_steps", 0)),
         "death_cause": metrics.get("death_cause"),
-        "controller_distribution": dict(metrics.get("controller_distribution", {})),
+        "controller_distribution": controller_distribution,
         "n_rescue_events": len(rescue_trace),
         "rescue_trace": rescue_trace,
         "local_trace": local_trace,
