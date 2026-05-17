@@ -333,22 +333,76 @@ class GoalSelector:
                 for mat, qty in (r.get("requires", {}) or {}).items():
                     material_chain_cost[mat] = material_chain_cost.get(mat, 0) + int(qty)
 
+        # Survival-priority ordering: rules targeting `dangerous: true` entities
+        # (zombie/skeleton/arrow per textbook vocabulary) processed first so
+        # their weapons (e.g. wood_sword) earn earlier craft/gather threats
+        # than rules targeting passive resources (do stone → wood_pickaxe).
+        # Without this, wood_pickaxe wins the threat queue and the agent
+        # crafts a pickaxe before any weapon, leaving itself defenseless.
+        dangerous_concepts: set[str] = {
+            v.get("id")
+            for v in getattr(textbook, "vocabulary", [])
+            if isinstance(v, dict) and v.get("dangerous")
+        }
+
+        def _is_combat_rule(rule: dict) -> bool:
+            return rule.get("target") in dangerous_concepts
+
+        fight_rules = sorted(
+            fight_rules,
+            key=lambda r: 0 if _is_combat_rule(r) else 1,
+        )
+
+        # Interleave craft + gather threats per weapon so the agent crafts
+        # weapon W1 as soon as its materials are on hand, before starting to
+        # gather materials for the *next* weapon W2 in the chain.
+        #
+        # Pre-Phase-2A the layer emitted ALL gather threats first, then ALL
+        # craft threats. For Crafter that ordering produces a trap: once
+        # `gather_wood` (for wood_sword) deactivates at wood>=5, the next
+        # active threat is `gather_stone_item` (needed for stone_pickaxe),
+        # which stays active forever because the agent never picks up
+        # stone. `craft_wood_sword` therefore never fires from this layer
+        # even though wood>=1 makes it feasible — it sits AFTER all gather
+        # threats in the list. Seed 17 ep 0 Phase 2A recording exposed this:
+        # 220 steps, never crafted, died to a zombie at the end because
+        # `_dynamic_entity_goal` (the parallel path that also emits
+        # craft_<weapon>) happened not to fire — no skeleton spawned on the
+        # divergent trajectory.
+        weapon_seen: set[str] = set()
         for fight_rule in fight_rules:
             fight_req = fight_rule.get("requires", {}) or {}
             weapon = next(iter(fight_req), None)
-            if weapon is None:
+            if weapon is None or weapon in weapon_seen:
                 continue
-            # Find make rule for this weapon
+            weapon_seen.add(weapon)
+
             for make_rule in make_rules:
                 if make_rule.get("result") != weapon:
                     continue
-                make_req = make_rule.get("requires", {}) or {}
+                make_req = {k: int(v) for k, v in (make_rule.get("requires", {}) or {}).items()}
+                if not make_req:
+                    continue
+
+                # 1. craft threat FIRST. Active iff materials are ready
+                #    and the weapon is missing. Sits ahead of this weapon's
+                #    gather threats so wood=1 immediately triggers craft.
+                result.append(_Threat(
+                    active_fn=lambda s, _w=weapon, _r=make_req: (
+                        s.inventory.get(_w, 0) < 1
+                        and all(s.inventory.get(m, 0) >= q for m, q in _r.items())
+                    ),
+                    response_fn=lambda s, _w=weapon: Goal(f"craft_{_w}"),
+                ))
+
+                # 2. gather threats for this weapon's materials. Active when
+                #    weapon missing and material count below chain cost so
+                #    the agent stockpiles enough for the full crafting line.
                 for material in make_req:
                     key = (weapon, material)
                     if key in seen:
                         continue
                     seen.add(key)
-                    # Gather until we have enough for the full chain
                     need = material_chain_cost.get(material, 1)
                     result.append(_Threat(
                         active_fn=lambda s, _w=weapon, _m=material, _n=need: (
@@ -357,35 +411,6 @@ class GoalSelector:
                         ),
                         response_fn=lambda s, _m=material: Goal(f"gather_{_m}"),
                     ))
-
-        # Proactive craft threat: when all materials for a weapon's `make`
-        # rule are on hand and the weapon is missing, switch goal to
-        # craft_<weapon>. Without this the agent stockpiles wood (gather
-        # goal active) but never converts it into a sword — `do tree` keeps
-        # winning on inventory_delta while crafting plans get zero goal
-        # progress. The proactive craft threat is added at the END of the
-        # threat list so dynamic-entity and vital-deficit threats still take
-        # priority.
-        proactive_craft_seen: set[str] = set()
-        for fight_rule in fight_rules:
-            fight_req = fight_rule.get("requires", {}) or {}
-            weapon = next(iter(fight_req), None)
-            if weapon is None or weapon in proactive_craft_seen:
-                continue
-            proactive_craft_seen.add(weapon)
-            for make_rule in make_rules:
-                if make_rule.get("result") != weapon:
-                    continue
-                make_req = {k: int(v) for k, v in (make_rule.get("requires", {}) or {}).items()}
-                if not make_req:
-                    continue
-                result.append(_Threat(
-                    active_fn=lambda s, _w=weapon, _r=make_req: (
-                        s.inventory.get(_w, 0) < 1
-                        and all(s.inventory.get(m, 0) >= q for m, q in _r.items())
-                    ),
-                    response_fn=lambda s, _w=weapon: Goal(f"craft_{_w}"),
-                ))
                 break
 
         return result

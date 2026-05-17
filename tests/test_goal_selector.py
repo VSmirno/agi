@@ -309,32 +309,46 @@ class TestGoalSelectorTextbookDerivation:
         goal = selector.select(state)
         assert goal.id == "gather_wood"
 
-    def test_proactive_crafting_inactive_when_has_sword(self, selector):
-        """Current textbook-derived priorities still keep a proactive gather goal active."""
+    def test_after_sword_crafted_pickaxe_gather_phase_starts(self, selector):
+        """With wood_sword in inventory and no wood, next chain step is
+        gathering wood for wood_pickaxe (not back to gather_wood for sword)."""
         state = make_state(
             body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
             inventory={"wood_sword": 1},
         )
         goal = selector.select(state)
-        assert goal.id == "gather_wood"
+        assert goal.id == "gather_wood"  # for wood_pickaxe now
 
-    def test_proactive_crafting_inactive_when_has_enough_wood(self, selector):
-        """With enough wood, selector currently falls through to another proactive gather goal."""
+    def test_craft_wood_sword_fires_when_wood_available(self, selector):
+        """Phase-2A.1 ordering fix: as soon as wood>=1 and no sword,
+        craft_wood_sword fires (combat weapon has priority over
+        pickaxe per dangerous-target sort)."""
         state = make_state(
             body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
             inventory={"wood": 5, "wood_sword": 0},
         )
         goal = selector.select(state)
-        assert goal.id == "gather_stone_item"
+        assert goal.id == "craft_wood_sword"
 
-    def test_proactive_crafting_still_active_with_partial_wood(self, selector):
-        """Has wood=2 (< chain_cost=5) → still gathering needed."""
+    def test_partial_wood_still_gathers_for_sword(self, selector):
+        """Has wood=0 (< 1 needed for sword) → gather_wood for sword first.
+        Combat weapon comes before pickaxe in the threat queue."""
         state = make_state(
             body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
-            inventory={"wood": 2, "wood_sword": 0},
+            inventory={"wood": 0, "wood_sword": 0},
         )
         goal = selector.select(state)
         assert goal.id == "gather_wood"
+
+    def test_after_sword_at_wood_one_craft_pickaxe(self, selector):
+        """Sword done, wood=1 → craft_wood_pickaxe (next combat-irrelevant
+        weapon in chain, since wood is sufficient for its make rule)."""
+        state = make_state(
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            inventory={"wood": 1, "wood_sword": 1},
+        )
+        goal = selector.select(state)
+        assert goal.id == "craft_wood_pickaxe"
 
     def test_goals_block_loaded(self, textbook):
         assert textbook.goals_block.get("primary") == "survive"
