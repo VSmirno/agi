@@ -105,6 +105,12 @@ class _Threat:
     response_fn: Callable  # (VectorState) -> Goal
 
 
+def _has_negative_health_effect(effect: dict) -> bool:
+    body_effect = effect.get("body", {}) or {}
+    health_delta = body_effect.get("health")
+    return isinstance(health_delta, (int, float)) and health_delta < 0
+
+
 class GoalSelector:
     def __init__(
         self,
@@ -117,7 +123,15 @@ class GoalSelector:
         # Used by _dynamic_entity_goal to switch fight_X → craft_<weapon>
         # when the required weapon is missing from inventory.
         self._entity_weapons: dict[str, str] = {}
+        self._harmful_entity_ranges: dict[str, int] = {}
         for rule in textbook.rules:
+            if (
+                rule.get("passive") == "spatial"
+                and _has_negative_health_effect(rule.get("effect", {}) or {})
+            ):
+                entity = rule.get("entity")
+                if entity:
+                    self._harmful_entity_ranges[str(entity)] = int(rule.get("range", 1))
             if rule.get("action") != "do":
                 continue
             target = rule.get("target")
@@ -186,6 +200,10 @@ class GoalSelector:
 
     def select(self, state: "VectorState") -> Goal:
         """Pure function: current state → active goal. Called every step."""
+        if self._allow_dynamic_entity_goals:
+            immediate_goal = self._dynamic_entity_goal(state, immediate_only=True)
+            if immediate_goal is not None:
+                return self._attach_target(immediate_goal)
         vital_goal = self._vital_goal(state)
         if vital_goal is not None:
             return self._attach_target(vital_goal)
@@ -198,7 +216,12 @@ class GoalSelector:
                 return self._attach_target(threat.response_fn(state))
         return self._attach_target(Goal("explore"))
 
-    def _dynamic_entity_goal(self, state: "VectorState") -> Goal | None:
+    def _dynamic_entity_goal(
+        self,
+        state: "VectorState",
+        *,
+        immediate_only: bool = False,
+    ) -> Goal | None:
         """Promote live dynamic threats into goal selection.
 
         Stage 89b: threat geometry already lives in `dynamic_entities`, so the
@@ -235,6 +258,12 @@ class GoalSelector:
             if cid not in self._entity_weapons:
                 continue
             dist = abs(ent.position[0] - px) + abs(ent.position[1] - py)
+            if immediate_only:
+                damage_range = self._harmful_entity_ranges.get(ent.concept_id)
+                if damage_range is None:
+                    damage_range = self._harmful_entity_ranges.get(cid)
+                if damage_range is None or dist > damage_range:
+                    continue
             hostiles.append((dist, cid))
 
         if not hostiles:

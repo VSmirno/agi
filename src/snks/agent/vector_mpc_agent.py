@@ -280,6 +280,181 @@ def _adjacent_concepts(
     return out
 
 
+def _remove_entity_target_from_textbook(
+    textbook: Any | None,
+    *,
+    action: str,
+    target: str | None,
+) -> str | None:
+    """Return expected removed entity for an action/target fact, if declared."""
+    if textbook is None or target is None:
+        return None
+    for rule in getattr(textbook, "rules", []):
+        if rule.get("action") != action or rule.get("target") != target:
+            continue
+        effect = rule.get("effect", {}) or {}
+        remove_entity = effect.get("remove_entity")
+        if remove_entity:
+            return str(remove_entity)
+    return None
+
+
+def _positive_body_effect_from_textbook(
+    textbook: Any | None,
+    *,
+    action: str,
+    target: str | None,
+) -> dict[str, float]:
+    """Return textbook body gains for an action/target fact."""
+    if textbook is None or target is None:
+        return {}
+    effects: dict[str, float] = {}
+    for rule in getattr(textbook, "rules", []):
+        if rule.get("action") != action or rule.get("target") != target:
+            continue
+        effect = rule.get("effect", {}) or {}
+        body = effect.get("body", {}) or {}
+        for key, value in body.items():
+            gain = float(value)
+            if gain > 0:
+                effects[str(key)] = max(gain, effects.get(str(key), 0.0))
+    return effects
+
+
+def _has_immediate_emergency_threat(
+    *,
+    nearest_threat_distances: dict[str, int | None],
+    emergency_facts: EmergencyWorldFacts,
+) -> bool:
+    for concept_id, distance in nearest_threat_distances.items():
+        if distance is None:
+            continue
+        if int(distance) <= emergency_facts.emergency_range(str(concept_id)):
+            return True
+    return False
+
+
+def _opportunistic_survival_plan(
+    *,
+    textbook: Any | None,
+    model: VectorWorldModel,
+    inventory: dict[str, int],
+    body: dict[str, float],
+    near_concept: str | None,
+    player_pos: tuple[int, int],
+    spatial_map: CrafterSpatialMap,
+    nearest_threat_distances: dict[str, int | None],
+    emergency_facts: EmergencyWorldFacts,
+) -> VectorPlan | None:
+    """Take adjacent survival resources before vitals become critical."""
+    if _has_immediate_emergency_threat(
+        nearest_threat_distances=nearest_threat_distances,
+        emergency_facts=emergency_facts,
+    ):
+        return None
+
+    px, py = int(player_pos[0]), int(player_pos[1])
+    local_targets: set[str] = set()
+    if near_concept:
+        local_targets.add(str(near_concept))
+    if hasattr(spatial_map, "concept_at"):
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            concept = spatial_map.concept_at((px + dx, py + dy))
+            if concept:
+                local_targets.add(str(concept))
+
+    candidates: list[tuple[float, str]] = []
+    for target in sorted(local_targets):
+        if target in {"empty", "unknown", "None"}:
+            continue
+        if not model.requirements_met(target, "do", inventory):
+            continue
+        gains = _positive_body_effect_from_textbook(
+            textbook,
+            action="do",
+            target=target,
+        )
+        depleted_vitals = [
+            float(body.get(vital, 9.0))
+            for vital, gain in gains.items()
+            if gain > 0 and float(body.get(vital, 9.0)) < 9.0
+        ]
+        if depleted_vitals:
+            candidates.append((min(depleted_vitals), target))
+
+    if not candidates:
+        return None
+    _vital_level, target = min(candidates)
+    return VectorPlan(
+        steps=[VectorPlanStep(action="do", target=target)],
+        origin=f"opportunistic:{target}:do_survival_buffer",
+    )
+
+
+def _is_interaction_target_present(
+    *,
+    target: str,
+    near_concept: str | None,
+    dynamic_entities: list[DynamicEntityState],
+) -> bool:
+    if near_concept == target:
+        return True
+    return any(entity.concept_id == target for entity in dynamic_entities)
+
+
+def _should_continue_interaction(
+    *,
+    interaction_intent: dict[str, Any] | None,
+    current_goal: Goal | None,
+    near_concept: str | None,
+    inventory: dict[str, int],
+    model: VectorWorldModel,
+) -> str | None:
+    """Return target to keep interacting with until its declared outcome lands."""
+    if interaction_intent is None:
+        return None
+    target = str(interaction_intent.get("target"))
+    action = str(interaction_intent.get("action"))
+    if (
+        current_goal is not None
+        and current_goal.id == f"fight_{target}"
+        and action == "do"
+        and model.requirements_met(target, "do", inventory)
+    ):
+        return target
+    return None
+
+
+def _interaction_intent_from_plan(
+    *,
+    textbook: Any | None,
+    plan: VectorPlan,
+    existing_intent: dict[str, Any] | None,
+    step: int,
+) -> dict[str, Any] | None:
+    if not plan.steps:
+        return None
+    first_step = plan.steps[0]
+    expected_remove = _remove_entity_target_from_textbook(
+        textbook,
+        action=first_step.action,
+        target=first_step.target,
+    )
+    if expected_remove is None:
+        return None
+    return {
+        "action": first_step.action,
+        "target": first_step.target,
+        "expected_outcome": {"remove_entity": expected_remove},
+        "started_step": (
+            existing_intent.get("started_step")
+            if existing_intent is not None
+            else step
+        ),
+        "status": "continuing",
+    }
+
+
 def generate_candidate_plans(
     model: VectorWorldModel,
     state: VectorState,
@@ -760,6 +935,22 @@ def expand_to_primitive(
                 key=lambda p: abs(p[0] - player_pos[0]) + abs(p[1] - player_pos[1]),
             )
 
+    if (
+        plan_step.action == "do"
+        and near_concept == plan_step.target
+        and target_pos is not None
+        and abs(target_pos[0] - player_pos[0]) + abs(target_pos[1] - player_pos[1]) <= 1
+        and (plan_step.target, "do") in getattr(model, "action_requirements", {})
+    ):
+        dx = int(target_pos[0] - player_pos[0])
+        dy = int(target_pos[1] - player_pos[1])
+        facing = _facing_delta(last_action)
+        if facing == (0, 0):
+            facing = (0, 1)
+        if (dx, dy) == facing:
+            return "do"
+        return _step_toward(player_pos, target_pos, model, rng)
+
     if target_pos is None and plan_step.action not in ("sleep",):
         # near_concept == target: resource is at the player's center tile —
         # find_nearest skipped it (Bug 5 guard for stale perception entries).
@@ -1072,6 +1263,7 @@ def run_vector_mpc_episode(
     )
     local_belief_tracker = BeliefStateEncoder()
     actor_non_progress_streak = 0
+    interaction_intent: dict[str, Any] | None = None
 
     for step in range(max_steps):
         steps_taken = step + 1
@@ -1235,6 +1427,20 @@ def run_vector_mpc_episode(
         # generation can emit goal-conditioned plans (e.g. frontier
         # exploration toward an unseen goal target).
         current_goal = goal_selector.select(state) if goal_selector else Goal("explore")
+
+        if interaction_intent is not None:
+            target = str(interaction_intent.get("target"))
+            goal_matches = (
+                current_goal is not None
+                and current_goal.id == f"fight_{target}"
+            )
+            target_present = _is_interaction_target_present(
+                target=target,
+                near_concept=vf.near_concept,
+                dynamic_entities=observed_dynamic_entities,
+            )
+            if not goal_matches or not target_present:
+                interaction_intent = None
 
         # --- Generate + simulate + score ---
         candidates = generate_candidate_plans(
@@ -1444,18 +1650,84 @@ def run_vector_mpc_episode(
                 move_actions = [a for a in model.actions if a.startswith("move_")]
                 planner_primitive = str(rng.choice(move_actions)) if move_actions else "move_right"
 
-        primitive = planner_primitive
-        control_origin = "planner_bootstrap"
-        learner_action: str | None = None
-        learner_action_index: int | None = None
-        rescue_trigger: str | None = None
-        rescue_pending: dict[str, Any] | None = None
         nearest_threats_now = _nearest_emergency_threat_distances(
             emergency_facts,
             player_pos,
             spatial_map,
             observed_dynamic_entities,
         )
+
+        continued_target = _should_continue_interaction(
+            interaction_intent=interaction_intent,
+            current_goal=current_goal,
+            near_concept=vf.near_concept,
+            inventory=inv,
+            model=model,
+        )
+        if continued_target is not None:
+            target = continued_target
+            best_plan = VectorPlan(
+                steps=[VectorPlanStep(action="do", target=target)],
+                origin=f"continue:{target}:do_until_remove_entity",
+            )
+            selected_target = target
+            selected_action = "do"
+            target_pos_before = spatial_map.find_nearest(target, player_pos)
+            target_dist_before = (
+                abs(target_pos_before[0] - player_pos[0]) + abs(target_pos_before[1] - player_pos[1])
+                if target_pos_before is not None
+                else None
+            )
+            planner_primitive = expand_to_primitive(
+                best_plan.steps[0],
+                player_pos,
+                spatial_map,
+                model,
+                rng,
+                last_action=prev_move,
+                near_concept=vf.near_concept,
+                dynamic_entities=observed_dynamic_entities,
+            )
+
+        if continued_target is None:
+            opportunistic_plan = _opportunistic_survival_plan(
+                textbook=textbook,
+                model=model,
+                inventory=inv,
+                body=body,
+                near_concept=vf.near_concept,
+                player_pos=player_pos,
+                spatial_map=spatial_map,
+                nearest_threat_distances=nearest_threats_now,
+                emergency_facts=emergency_facts,
+            )
+            if opportunistic_plan is not None:
+                best_plan = opportunistic_plan
+                selected_target = best_plan.steps[0].target
+                selected_action = best_plan.steps[0].action
+                target_pos_before = spatial_map.find_nearest(selected_target, player_pos)
+                target_dist_before = (
+                    abs(target_pos_before[0] - player_pos[0]) + abs(target_pos_before[1] - player_pos[1])
+                    if target_pos_before is not None
+                    else None
+                )
+                planner_primitive = expand_to_primitive(
+                    best_plan.steps[0],
+                    player_pos,
+                    spatial_map,
+                    model,
+                    rng,
+                    last_action=prev_move,
+                    near_concept=vf.near_concept,
+                    dynamic_entities=observed_dynamic_entities,
+                )
+
+        primitive = planner_primitive
+        control_origin = "planner_bootstrap"
+        learner_action: str | None = None
+        learner_action_index: int | None = None
+        rescue_trigger: str | None = None
+        rescue_pending: dict[str, Any] | None = None
         actor_observation = build_local_observation_package(
             vf,
             body,
@@ -1666,6 +1938,14 @@ def run_vector_mpc_episode(
             prev_plan_target = best_plan.steps[0].target
         else:
             prev_plan_target = None
+        next_interaction_intent = _interaction_intent_from_plan(
+            textbook=textbook,
+            plan=best_plan,
+            existing_intent=interaction_intent,
+            step=step,
+        )
+        if next_interaction_intent is not None:
+            interaction_intent = next_interaction_intent
         prev_player_pos = player_pos
 
         # Outcome-recorder: snapshot the chosen plan's (concept, action) at
@@ -1868,6 +2148,7 @@ def run_vector_mpc_episode(
                 ),
             }
             local_entry["goal"] = current_goal.to_trace() if current_goal is not None else None
+            local_entry["interaction_intent"] = dict(interaction_intent) if interaction_intent is not None else None
             local_entry["capability_state"] = capability_state.to_trace()
             local_entry["capability_state_after"] = capability_state_after.to_trace()
             local_entry["capability_delta"] = {

@@ -264,13 +264,27 @@ class TestGoalSelectorSelect:
         assert goal.blocked_by == "missing:wood_sword"
         assert goal.reason == "required_weapon_missing"
 
-    def test_low_drink_overrides_dynamic_zombie(self, selector):
+    def test_low_drink_does_not_override_immediate_dynamic_zombie(self, selector):
         state = make_state(
             body={"health": 9.0, "food": 9.0, "drink": 2.0, "energy": 9.0},
             inventory={"wood": 5, "wood_sword": 1},
         )
         state.dynamic_entities = [
             DynamicEntityState(concept_id="zombie", position=(11, 10), velocity=(-1, 0))
+        ]
+
+        goal = selector.select(state)
+
+        assert goal.id == "fight_zombie"
+        assert goal.reason == "dynamic_threat_present"
+
+    def test_low_drink_overrides_distant_dynamic_zombie(self, selector):
+        state = make_state(
+            body={"health": 9.0, "food": 9.0, "drink": 2.0, "energy": 9.0},
+            inventory={"wood": 5, "wood_sword": 1},
+        )
+        state.dynamic_entities = [
+            DynamicEntityState(concept_id="zombie", position=(14, 10), velocity=(-1, 0))
         ]
 
         goal = selector.select(state)

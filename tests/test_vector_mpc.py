@@ -27,6 +27,11 @@ from snks.agent.vector_mpc_agent import (
     build_prediction_cache,
     generate_candidate_plans,
     expand_to_primitive,
+    _opportunistic_survival_plan,
+    _positive_body_effect_from_textbook,
+    _remove_entity_target_from_textbook,
+    _should_continue_interaction,
+    _interaction_intent_from_plan,
     _generate_motion_chains,
     _generate_chains,
     _has_positive_effect,
@@ -34,6 +39,7 @@ from snks.agent.vector_mpc_agent import (
 )
 from snks.agent.perception import VisualField
 from snks.agent.crafter_spatial_map import CrafterSpatialMap
+from snks.agent.stage90r_emergency_controller import EmergencyWorldFacts
 from snks.agent.vector_bootstrap import load_from_textbook
 from pathlib import Path
 
@@ -45,6 +51,12 @@ def seeded_model():
     model = VectorWorldModel(dim=8192, n_locations=5000, seed=42)
     load_from_textbook(model, TEXTBOOK_PATH)
     return model
+
+
+@pytest.fixture
+def textbook():
+    from snks.agent.crafter_textbook import CrafterTextbook
+    return CrafterTextbook(TEXTBOOK_PATH)
 
 
 @pytest.fixture
@@ -66,6 +78,18 @@ def spatial_map_with_tree():
 
 
 class TestGenerateCandidatePlans:
+    def test_textbook_declares_positive_body_effects(self, textbook):
+        assert _positive_body_effect_from_textbook(
+            textbook,
+            action="do",
+            target="water",
+        ) == {"drink": 5.0}
+        assert _positive_body_effect_from_textbook(
+            textbook,
+            action="do",
+            target="cow",
+        ) == {"food": 5.0}
+
     def test_generates_plans_for_visible_concepts(self, seeded_model, base_state,
                                                    spatial_map_with_tree):
         candidates = generate_candidate_plans(
@@ -171,6 +195,128 @@ class TestGenerateCandidatePlans:
 
         assert seeded_model.action_requirements[("zombie", "do")] == {"wood_sword": 1}
         assert "single:zombie:do" in origins
+
+    def test_textbook_declares_combat_remove_entity_outcome(self, textbook):
+        assert _remove_entity_target_from_textbook(
+            textbook,
+            action="do",
+            target="zombie",
+        ) == "zombie"
+
+    def test_interaction_continuation_is_not_stopped_by_low_health(self, seeded_model):
+        target = _should_continue_interaction(
+            interaction_intent={
+                "action": "do",
+                "target": "zombie",
+                "expected_outcome": {"remove_entity": "zombie"},
+                "started_step": 148,
+                "status": "continuing",
+            },
+            current_goal=Goal("fight_zombie"),
+            near_concept="zombie",
+            inventory={"wood_sword": 1},
+            model=seeded_model,
+        )
+
+        assert target == "zombie"
+
+    def test_interaction_continuation_can_navigate_when_target_not_currently_near(
+        self, seeded_model
+    ):
+        target = _should_continue_interaction(
+            interaction_intent={
+                "action": "do",
+                "target": "zombie",
+                "expected_outcome": {"remove_entity": "zombie"},
+                "started_step": 156,
+                "status": "continuing",
+            },
+            current_goal=Goal("fight_zombie"),
+            near_concept="empty",
+            inventory={"wood_sword": 1},
+            model=seeded_model,
+        )
+
+        assert target == "zombie"
+
+    def test_interaction_intent_starts_from_abstract_remove_plan(self, textbook):
+        intent = _interaction_intent_from_plan(
+            textbook=textbook,
+            plan=VectorPlan(
+                steps=[VectorPlanStep(action="do", target="zombie")],
+                origin="single:zombie:do",
+            ),
+            existing_intent=None,
+            step=156,
+        )
+
+        assert intent == {
+            "action": "do",
+            "target": "zombie",
+            "expected_outcome": {"remove_entity": "zombie"},
+            "started_step": 156,
+            "status": "continuing",
+        }
+
+    def test_opportunistic_survival_takes_adjacent_resource_before_critical(
+        self, seeded_model, textbook
+    ):
+        spatial_map = CrafterSpatialMap()
+        spatial_map.update((10, 11), "water", 1.0)
+
+        plan = _opportunistic_survival_plan(
+            textbook=textbook,
+            model=seeded_model,
+            inventory={},
+            body={"health": 9.0, "food": 9.0, "drink": 7.5, "energy": 9.0},
+            near_concept="water",
+            player_pos=(10, 10),
+            spatial_map=spatial_map,
+            nearest_threat_distances={"zombie": None, "skeleton": None, "arrow": None},
+            emergency_facts=EmergencyWorldFacts.from_textbook(textbook),
+        )
+
+        assert plan is not None
+        assert plan.origin == "opportunistic:water:do_survival_buffer"
+        assert plan.steps == [VectorPlanStep(action="do", target="water")]
+
+    def test_opportunistic_survival_skips_full_vitals(self, seeded_model, textbook):
+        spatial_map = CrafterSpatialMap()
+        spatial_map.update((10, 11), "water", 1.0)
+
+        plan = _opportunistic_survival_plan(
+            textbook=textbook,
+            model=seeded_model,
+            inventory={},
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            near_concept="water",
+            player_pos=(10, 10),
+            spatial_map=spatial_map,
+            nearest_threat_distances={"zombie": None, "skeleton": None, "arrow": None},
+            emergency_facts=EmergencyWorldFacts.from_textbook(textbook),
+        )
+
+        assert plan is None
+
+    def test_opportunistic_survival_yields_to_immediate_threat(
+        self, seeded_model, textbook
+    ):
+        spatial_map = CrafterSpatialMap()
+        spatial_map.update((10, 11), "water", 1.0)
+
+        plan = _opportunistic_survival_plan(
+            textbook=textbook,
+            model=seeded_model,
+            inventory={},
+            body={"health": 9.0, "food": 9.0, "drink": 7.5, "energy": 9.0},
+            near_concept="water",
+            player_pos=(10, 10),
+            spatial_map=spatial_map,
+            nearest_threat_distances={"zombie": 1, "skeleton": None, "arrow": None},
+            emergency_facts=EmergencyWorldFacts.from_textbook(textbook),
+        )
+
+        assert plan is None
 
     def test_includes_body_recovery_plan_when_vital_depleted(self, seeded_model):
         state = VectorState(
@@ -719,3 +865,47 @@ class TestExpandPrimitiveDynamicFallback:
         )
         # No cow anywhere → falls back to random move
         assert primitive.startswith("move_")
+
+    def test_expand_adjacent_required_do_turns_when_not_facing_target(
+        self, seeded_model
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((11, 10), "zombie", 1.0)
+        rng = np.random.RandomState(0)
+
+        primitive = expand_to_primitive(
+            VectorPlanStep(action="do", target="zombie"),
+            player_pos=(10, 10),
+            spatial_map=sm,
+            model=seeded_model,
+            rng=rng,
+            last_action="move_down",
+            near_concept="zombie",
+            dynamic_entities=[
+                DynamicEntityState(concept_id="zombie", position=(11, 10))
+            ],
+        )
+
+        assert primitive == "move_right"
+
+    def test_expand_adjacent_required_do_uses_interaction_when_facing_target(
+        self, seeded_model
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((11, 10), "zombie", 1.0)
+        rng = np.random.RandomState(0)
+
+        primitive = expand_to_primitive(
+            VectorPlanStep(action="do", target="zombie"),
+            player_pos=(10, 10),
+            spatial_map=sm,
+            model=seeded_model,
+            rng=rng,
+            last_action="move_right",
+            near_concept="zombie",
+            dynamic_entities=[
+                DynamicEntityState(concept_id="zombie", position=(11, 10))
+            ],
+        )
+
+        assert primitive == "do"
