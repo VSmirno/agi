@@ -532,7 +532,7 @@ Determinism: два независимых run'а одного и того же 
 - **Замена lex-tuple scoring на substrate decode** — PCCS step 3.
 - **Kuramoto phase coupling вместо XOR-binding** — PCCS step 4.
 
-### Новый gap (обнаружен 2026-05-12 при forensic gen2 seed-17): exploration of unknown vs navigation to known
+### Gap update (2026-05-21): unknown-target exploration and local survival affordances
 
 После outcome-role landing seed-17 gen2 умер от dehydration на step 220 (MAX). Forensic трейса выявил **новый класс failure**, не связанный с outcome learning:
 
@@ -550,9 +550,28 @@ Determinism: два независимых run'а одного и того же 
 - **(B)** `expand_to_primitive` для `find_<thing>` goal'а с unknown target → step toward nearest unvisited frontier (через `spatial_map.unvisited_neighbors`). Минимально инвазивно.
 - **(C)** Полноценный goal-conditioned outcome substrate (PCCS step 1.5) — отдельный канал per goal в SDM, чтобы `(c, a)` recall зависел от текущего goal.
 
-(B) — самое прямое решение на 1-2 часа. (A) — quick hack. (C) — большая архитектурная работа.
+(B) было реализовано в Stage9X branch как goal-conditioned frontier
+exploration: `Goal.target_concept` выводится из textbook, planner emits
+`frontier:<target>` when the target is not in the cognitive map, and
+`expand_to_primitive` walks toward unvisited cells rather than uniform random
+fallback. Это закрывает конкретный "unknown target -> blind RNG" gap.
 
-Зафиксирован как **next-priority gap после TextbookPromoter** (или параллельно, не блокирует друг друга).
+Дополнительно в commit `b89e462` добавлен локальный survival-affordance
+механизм: если рядом/локально есть concept, действие над которым по textbook
+даёт положительную body-delta для неполной базовой витали, агент может взять
+его до критической срочности. Факты (`do water -> drink +5`,
+`do cow -> food +5`) остаются в textbook; механизм читает generic positive
+body effect и не содержит `water/cow` branches.
+
+Seed17 check after `b89e462`:
+- `episode_steps=253`
+- `death_cause=zombie`
+- `opportunistic:water:do_survival_buffer` executed on steps 20-21
+- final body: `{health: 0, food: 0, drink: 0, energy: 1}`
+
+То есть dehydration symptom from the inspected video is no longer the active
+failure in this slice. The remaining wall moved to multi-threat
+combat/survival arbitration under depleted vitals.
 
 ### Файлы, затронутые outcome-role работой
 

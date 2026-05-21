@@ -4,6 +4,30 @@
 
 ---
 
+## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
+**Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
+commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
+frontier exploration для unknown goal targets, dynamic hostile targetability,
+outcome-conditioned interaction continuation, и opportunistic local survival
+affordances для textbook-declared positive body effects.
+
+**Идеологическая граница:** правило не формулируется как `if water then drink`
+или `hit exactly N times`. Факты остаются в `configs/crafter_textbook.yaml`
+(`do <target> -> body +...`, `do <entity> -> remove_entity`), механизм
+обобщённо применяет их к локально доступным действиям и уступает immediate
+emergency threats.
+
+**Проверка:** Focused pytest на minipc: 8/8. Seed17 planner-only 350-step
+forensic run on `b89e462`: `episode_steps=253`, `death_cause=zombie`,
+`opportunistic:water:do_survival_buffer` сработал на steps 20-21. Предыдущая
+видимая dehydration-смерть в этом inspected window снята, но episode всё ещё
+заканчивается hostile-pressure failure with depleted vitals
+(`final_body={health:0, food:0, drink:0, energy:1}`).
+
+**Ограничение:** это не Stage/phase PASS claim. Следующий bottleneck —
+multi-threat combat/survival arbitration under depleted vitals, а не
+resource discovery/execution.
+
 ## 2026-05-02 — Stage 90R Emergency Safety Controller
 **Что сделано:** введён first-class emergency safety controller, который
 активируется по explicit danger/vitals/outcome features, а не главным образом по

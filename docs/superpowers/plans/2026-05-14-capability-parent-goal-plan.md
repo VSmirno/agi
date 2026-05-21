@@ -1,5 +1,36 @@
 # Stage9X Capability and Parent-Goal Reactivation Plan
 
+## Status Update — 2026-05-21
+
+Partially implemented on branch `feature/stage9x-capability-goal-handoff`
+through commit `b89e462`.
+
+Closed from this plan:
+
+- `CapabilityState` extraction exists and is trace-visible enough to explain
+  basic inventory-derived affordances such as melee arming.
+- Dynamic hostile goals can be selected ahead of non-immediate vitals when the
+  textbook says the hostile is in harmful range.
+- Combat interaction continuation is now outcome-conditioned: if textbook
+  declares `do <entity> -> remove_entity`, the agent continues while the fight
+  goal and target remain active. This replaces the rejected fixed-count
+  "hit three times" rule.
+- Critical/local survival resource handling has been extended with
+  opportunistic local survival affordances: any locally actionable concept
+  whose textbook `do` rule gives a positive body delta can be taken before the
+  vital becomes critical, unless an immediate emergency threat is active.
+
+Still open:
+
+- Full parent-goal relation (`parent_goal`, `blocked_by`,
+  `requested_capability`) is not implemented as a lifecycle object.
+- There is no complete Capability Stimulus yet; the current branch uses
+  targeted planner/goal mechanisms plus trace-visible capability state.
+- Seed17 after `b89e462` no longer reproduces the inspected dehydration
+  failure, but still dies from hostile pressure at step 253. The remaining
+  boundary is multi-threat combat/survival arbitration under depleted vitals,
+  not the earlier "made sword but ignored water" symptom.
+
 ## Goal
 
 Close the AGI-level gap exposed by the seed17 gen2 trace: the agent can create a tool (`wood_sword`) but does not reliably convert the acquired capability into situated action, goal reactivation, or survival arbitration.

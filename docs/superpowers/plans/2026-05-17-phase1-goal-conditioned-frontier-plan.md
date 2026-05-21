@@ -1,4 +1,31 @@
-# Stage 9X Phase 1 — Goal-Conditioned Frontier Exploration
+# Stage 9X — Goal-Conditioned Frontier Exploration and Local Survival Affordances
+
+## Status
+
+Implemented on branch `feature/stage9x-capability-goal-handoff` through
+commit `b89e462`:
+
+- Phase 1 goal-conditioned frontier exploration landed. Unknown goal targets
+  now produce `frontier:<target>` plans instead of falling through to blind
+  baseline RNG.
+- Phase 2A dynamic-entity targetability and distance-aware fight planning
+  landed. Dynamic hostiles can enter candidate generation and goal arbitration.
+- Phase 2A.1 craft/gather interleaving and survival-priority weapon ordering
+  landed. The planner no longer treats weapon crafting as a detached one-shot
+  chain.
+- Interaction continuation landed. If textbook declares that `do <target>`
+  should remove an entity, the agent continues that interaction while the
+  corresponding fight goal and target are still active.
+- Local survival affordances landed. If a locally actionable concept has a
+  textbook-declared positive body effect for a non-full vital, the planner can
+  opportunistically take it before the vital becomes critical.
+
+The latest seed17 check after `b89e462` changed the visible failure mode:
+the agent no longer dies from dehydration in the inspected window, and it
+does execute `opportunistic:water:do_survival_buffer`. The episode still
+dies from hostile pressure (`death_cause=zombie`, step 253), so the next
+work item is not "find water" but multi-threat combat/survival arbitration
+near depleted vitals.
 
 ## Problem
 
@@ -167,14 +194,28 @@ as today — frontier plans don't spuriously win under `goal=explore`.
 
 ## What this fix does NOT solve
 
-- `fight_<entity>` with visible target but no `single:<entity>:do` plan
-  because of `non_targetable = {"empty", "self", "zombie", "skeleton"}` in
-  `generate_candidate_plans`. Phase 2 dochinit.
-- Baseline-RNG choosing `make_wood_sword` redundantly when armed_melee=True
-  (no capability-redundancy gate). Phase 3.
-- Goal-selector preferring `fight_skeleton` over `fight_zombie` when both
-  present. Phase 2 dochinit.
-- `controller_distribution` already fixed in commit `10d8bca`.
+- Hostile-pressure collapse when `food/drink` are already near zero and
+  multiple threats are present. In the `b89e462` seed17 check, the agent
+  reached steps 249-252, continued zombie interaction, then died with
+  `final_body={health: 0, food: 0, drink: 0, energy: 1}`.
+- Perfectly grounded combat geometry. Interaction continuation is
+  outcome-conditioned, not "hit three times", but the final trace still shows
+  transitions from `continue:zombie:do_until_remove_entity` to a skeleton plan
+  under multi-threat pressure.
+- Broader multiseed proof. The latest check is a focused seed17 forensic
+  validation, not an architectural PASS claim.
+- Full parent-goal machinery from
+  `docs/superpowers/plans/2026-05-14-capability-parent-goal-plan.md`. The
+  current branch implements capability extraction and trace visibility, but
+  does not yet provide a complete parent-goal lifecycle.
+
+Already closed by this branch:
+
+- Unknown target under active `find_<vital>` goal falls through to blind RNG.
+- Visible dynamic hostile cannot become a targetable `do` plan.
+- Fixed-count combat continuation.
+- Adjacent/basic survival resource ignored until critical urgency.
+- `controller_distribution` trace accounting gap (`10d8bca`).
 
 ## Estimate
 
