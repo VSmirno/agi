@@ -74,6 +74,57 @@ from snks.agent.stage90r_local_policy import (
 )
 
 
+@dataclass(frozen=True)
+class StrategyOption:
+    """Trace-visible strategy abstraction over existing planner mechanisms."""
+
+    kind: str
+    target: str | None = None
+
+    @property
+    def option_id(self) -> str:
+        if self.target:
+            return f"{self.kind}:{self.target}"
+        return self.kind
+
+    def to_trace(self) -> dict[str, str | None]:
+        return {
+            "id": self.option_id,
+            "kind": self.kind,
+            "target": self.target,
+        }
+
+
+@dataclass(frozen=True)
+class OptionContext:
+    """Compact conflict context for learned option-outcome memory."""
+
+    health_bucket: str
+    food_bucket: str
+    drink_bucket: str
+    energy_bucket: str
+    threat_pressure: str
+    local_restore: str
+    capability_state: str
+    intent_state: str
+    progress_state: str
+    goal_family: str
+
+    def to_trace(self) -> dict[str, str]:
+        return {
+            "health_bucket": self.health_bucket,
+            "food_bucket": self.food_bucket,
+            "drink_bucket": self.drink_bucket,
+            "energy_bucket": self.energy_bucket,
+            "threat_pressure": self.threat_pressure,
+            "local_restore": self.local_restore,
+            "capability_state": self.capability_state,
+            "intent_state": self.intent_state,
+            "progress_state": self.progress_state,
+            "goal_family": self.goal_family,
+        }
+
+
 # ---------------------------------------------------------------------------
 # Dynamic entity tracker (lightweight, from mpc_agent)
 # ---------------------------------------------------------------------------
@@ -453,6 +504,171 @@ def _interaction_intent_from_plan(
         ),
         "status": "continuing",
     }
+
+
+def _derive_strategy_option(plan: VectorPlan) -> StrategyOption:
+    """Classify an existing plan into a stable strategy option id.
+
+    This is trace-only in Phase 1. It does not change plan ranking or action
+    selection; it gives the later learned option-outcome role a stable key.
+    """
+    if not plan.steps:
+        return StrategyOption("baseline_motion")
+
+    origin = str(plan.origin)
+    first = plan.steps[0]
+    if origin.startswith("continue:"):
+        return StrategyOption("continue_interaction", first.target)
+    if origin.startswith("opportunistic:"):
+        return StrategyOption("take_local_survival", first.target)
+    if first.action == "frontier_seek":
+        return StrategyOption("seek_frontier", first.target)
+    if first.action in {"make", "place"}:
+        return StrategyOption("craft_capability", first.target)
+    if first.action == "sleep":
+        return StrategyOption("recover_self", "sleep")
+    if first.action == "do" and first.target not in {None, "self"}:
+        return StrategyOption("engage_target", first.target)
+    if first.target not in {None, "self"}:
+        return StrategyOption("seek_known", first.target)
+    return StrategyOption("baseline_motion")
+
+
+def _vital_bucket(value: float | int | None) -> str:
+    if value is None:
+        return "unknown"
+    v = float(value)
+    if v <= 2.0:
+        return "critical"
+    if v <= 4.0:
+        return "low"
+    return "ok"
+
+
+def _goal_family(goal: Goal | None) -> str:
+    if goal is None:
+        return "none"
+    goal_id = str(goal.id)
+    if "_" not in goal_id:
+        return goal_id
+    return goal_id.split("_", 1)[0]
+
+
+def _threat_pressure(
+    nearest_threat_distances: dict[str, int | None],
+    emergency_facts: EmergencyWorldFacts,
+) -> str:
+    active = 0
+    contact = False
+    near = False
+    for concept_id, distance in nearest_threat_distances.items():
+        if distance is None:
+            continue
+        d = int(distance)
+        if d <= emergency_facts.emergency_range(str(concept_id)):
+            active += 1
+            near = True
+        if d <= 1:
+            contact = True
+    if active >= 2:
+        return "multi"
+    if contact:
+        return "contact"
+    if near:
+        return "near"
+    return "none"
+
+
+def _local_restore_context(
+    *,
+    textbook: Any | None,
+    model: VectorWorldModel,
+    inventory: dict[str, int],
+    body: dict[str, float],
+    near_concept: str | None,
+    player_pos: tuple[int, int],
+    spatial_map: CrafterSpatialMap,
+) -> str:
+    px, py = int(player_pos[0]), int(player_pos[1])
+    local_targets: set[str] = set()
+    if near_concept:
+        local_targets.add(str(near_concept))
+    if hasattr(spatial_map, "concept_at"):
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            concept = spatial_map.concept_at((px + dx, py + dy))
+            if concept:
+                local_targets.add(str(concept))
+
+    vitals: set[str] = set()
+    for target in sorted(local_targets):
+        if target in {"empty", "unknown", "None"}:
+            continue
+        if not model.requirements_met(target, "do", inventory):
+            continue
+        for vital, gain in _positive_body_effect_from_textbook(
+            textbook,
+            action="do",
+            target=target,
+        ).items():
+            if gain > 0 and float(body.get(vital, 9.0)) < 9.0:
+                vitals.add(str(vital))
+    if not vitals:
+        return "none"
+    if len(vitals) > 1:
+        return "multi"
+    return next(iter(vitals))
+
+
+def _build_option_context(
+    *,
+    body: dict[str, float],
+    inventory: dict[str, int],
+    capability_state: Any,
+    current_goal: Goal | None,
+    interaction_intent: dict[str, Any] | None,
+    best_plan: VectorPlan,
+    nearest_threat_distances: dict[str, int | None],
+    emergency_facts: EmergencyWorldFacts,
+    textbook: Any | None,
+    model: VectorWorldModel,
+    near_concept: str | None,
+    player_pos: tuple[int, int],
+    spatial_map: CrafterSpatialMap,
+) -> OptionContext:
+    """Build compact trace context for later option-outcome learning."""
+    if interaction_intent is not None:
+        intent_state = "continuing_interaction"
+    elif best_plan.steps and best_plan.steps[0].action == "frontier_seek":
+        intent_state = "seeking_resource"
+    elif best_plan.steps and best_plan.steps[0].action in {"make", "place"}:
+        intent_state = "crafting_capability"
+    else:
+        intent_state = "none"
+
+    return OptionContext(
+        health_bucket=_vital_bucket(body.get("health")),
+        food_bucket=_vital_bucket(body.get("food")),
+        drink_bucket=_vital_bucket(body.get("drink")),
+        energy_bucket=_vital_bucket(body.get("energy")),
+        threat_pressure=_threat_pressure(nearest_threat_distances, emergency_facts),
+        local_restore=_local_restore_context(
+            textbook=textbook,
+            model=model,
+            inventory=inventory,
+            body=body,
+            near_concept=near_concept,
+            player_pos=player_pos,
+            spatial_map=spatial_map,
+        ),
+        capability_state=(
+            "armed_melee"
+            if bool(getattr(capability_state, "armed_melee", False))
+            else "unarmed"
+        ),
+        intent_state=intent_state,
+        progress_state="normal",
+        goal_family=_goal_family(current_goal),
+    )
 
 
 def generate_candidate_plans(
@@ -2090,6 +2306,22 @@ def run_vector_mpc_episode(
             })
         if record_local_trace:
             capability_state_after = extract_capability_state(inv_after, textbook)
+            strategy_option = _derive_strategy_option(best_plan)
+            option_context = _build_option_context(
+                body=body,
+                inventory=inv,
+                capability_state=capability_state,
+                current_goal=current_goal,
+                interaction_intent=interaction_intent,
+                best_plan=best_plan,
+                nearest_threat_distances=nearest_threats_now,
+                emergency_facts=emergency_facts,
+                textbook=textbook,
+                model=model,
+                near_concept=str(vf.near_concept),
+                player_pos=player_pos,
+                spatial_map=spatial_map,
+            )
             counterfactual_outcomes = (
                 _build_local_counterfactual_outcomes(
                     model=model,
@@ -2149,6 +2381,8 @@ def run_vector_mpc_episode(
             }
             local_entry["goal"] = current_goal.to_trace() if current_goal is not None else None
             local_entry["interaction_intent"] = dict(interaction_intent) if interaction_intent is not None else None
+            local_entry["strategy_option"] = strategy_option.to_trace()
+            local_entry["option_context"] = option_context.to_trace()
             local_entry["capability_state"] = capability_state.to_trace()
             local_entry["capability_state_after"] = capability_state_after.to_trace()
             local_entry["capability_delta"] = {

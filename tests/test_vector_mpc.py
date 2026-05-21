@@ -32,6 +32,8 @@ from snks.agent.vector_mpc_agent import (
     _remove_entity_target_from_textbook,
     _should_continue_interaction,
     _interaction_intent_from_plan,
+    _build_option_context,
+    _derive_strategy_option,
     _generate_motion_chains,
     _generate_chains,
     _has_positive_effect,
@@ -257,6 +259,87 @@ class TestGenerateCandidatePlans:
             "started_step": 156,
             "status": "continuing",
         }
+
+    def test_strategy_option_maps_existing_plan_shapes(self):
+        assert _derive_strategy_option(
+            VectorPlan(steps=[], origin="baseline")
+        ).to_trace() == {
+            "id": "baseline_motion",
+            "kind": "baseline_motion",
+            "target": None,
+        }
+        assert _derive_strategy_option(
+            VectorPlan(
+                steps=[VectorPlanStep(action="frontier_seek", target="water")],
+                origin="frontier:water",
+            )
+        ).option_id == "seek_frontier:water"
+        assert _derive_strategy_option(
+            VectorPlan(
+                steps=[VectorPlanStep(action="do", target="zombie")],
+                origin="continue:zombie:do_until_remove_entity",
+            )
+        ).option_id == "continue_interaction:zombie"
+        assert _derive_strategy_option(
+            VectorPlan(
+                steps=[VectorPlanStep(action="do", target="water")],
+                origin="opportunistic:water:do_survival_buffer",
+            )
+        ).option_id == "take_local_survival:water"
+        assert _derive_strategy_option(
+            VectorPlan(
+                steps=[VectorPlanStep(action="make", target="wood_sword")],
+                origin="single:wood_sword:make",
+            )
+        ).option_id == "craft_capability:wood_sword"
+
+    def test_option_context_buckets_compound_conflict(
+        self, seeded_model, textbook
+    ):
+        spatial_map = CrafterSpatialMap()
+        spatial_map.update((11, 10), "water", 1.0)
+        capability_state = type(
+            "Capability",
+            (),
+            {"armed_melee": True},
+        )()
+
+        context = _build_option_context(
+            body={"health": 2.0, "food": 3.0, "drink": 1.0, "energy": 7.0},
+            inventory={"wood_sword": 1},
+            capability_state=capability_state,
+            current_goal=Goal("fight_zombie"),
+            interaction_intent={
+                "action": "do",
+                "target": "zombie",
+                "status": "continuing",
+            },
+            best_plan=VectorPlan(
+                steps=[VectorPlanStep(action="do", target="zombie")],
+                origin="continue:zombie:do_until_remove_entity",
+            ),
+            nearest_threat_distances={
+                "zombie": 1,
+                "skeleton": 3,
+                "arrow": None,
+            },
+            emergency_facts=EmergencyWorldFacts.from_textbook(textbook),
+            textbook=textbook,
+            model=seeded_model,
+            near_concept="empty",
+            player_pos=(10, 10),
+            spatial_map=spatial_map,
+        ).to_trace()
+
+        assert context["health_bucket"] == "critical"
+        assert context["food_bucket"] == "low"
+        assert context["drink_bucket"] == "critical"
+        assert context["energy_bucket"] == "ok"
+        assert context["threat_pressure"] == "multi"
+        assert context["local_restore"] == "drink"
+        assert context["capability_state"] == "armed_melee"
+        assert context["intent_state"] == "continuing_interaction"
+        assert context["goal_family"] == "fight"
 
     def test_opportunistic_survival_takes_adjacent_resource_before_critical(
         self, seeded_model, textbook
