@@ -247,6 +247,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--world-model-dir", type=Path, default=None)
     parser.add_argument("--outcome-horizon", type=int, default=5)
     parser.add_argument("--outcome-weight", type=float, default=1.0)
+    parser.add_argument("--enable-option-outcome-learning", action="store_true")
+    parser.add_argument("--option-outcome-horizon", type=int, default=5)
+    parser.add_argument("--enable-option-outcome-stimulus", action="store_true")
+    parser.add_argument("--option-outcome-weight", type=float, default=1.0)
+    parser.add_argument("--option-outcome-confidence-floor", type=float, default=0.25)
     return parser
 
 
@@ -557,6 +562,11 @@ def _run_planner_advisory_analysis(args: argparse.Namespace) -> tuple[dict[str, 
             world_model_path=_world_model_path_for_seed(args.world_model_dir, env_seed),
             outcome_horizon=int(args.outcome_horizon),
             outcome_stimulus_weight=float(args.outcome_weight),
+            enable_option_outcome_learning=bool(args.enable_option_outcome_learning),
+            option_outcome_horizon=int(args.option_outcome_horizon),
+            enable_option_outcome_stimulus=bool(args.enable_option_outcome_stimulus),
+            option_outcome_stimulus_weight=float(args.option_outcome_weight),
+            option_outcome_confidence_floor=float(args.option_outcome_confidence_floor),
         )
 
         attribution = analyzer.attribute(metrics.get("damage_log", []), metrics.get("episode_steps", 0))
@@ -610,6 +620,8 @@ def _run_planner_advisory_analysis(args: argparse.Namespace) -> tuple[dict[str, 
             "smoke_lite": bool(args.smoke_lite),
             "top_k": args.top_k,
             "enable_outcome_learning": bool(args.enable_outcome_learning),
+            "enable_option_outcome_learning": bool(args.enable_option_outcome_learning),
+            "enable_option_outcome_stimulus": bool(args.enable_option_outcome_stimulus),
             "world_model_dir": str(args.world_model_dir) if args.world_model_dir else None,
         },
         "summary": {
@@ -702,6 +714,11 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
             world_model_path=_world_model_path_for_seed(args.world_model_dir, env_seed),
             outcome_horizon=int(args.outcome_horizon),
             outcome_stimulus_weight=float(args.outcome_weight),
+            enable_option_outcome_learning=bool(args.enable_option_outcome_learning),
+            option_outcome_horizon=int(args.option_outcome_horizon),
+            enable_option_outcome_stimulus=bool(args.enable_option_outcome_stimulus),
+            option_outcome_stimulus_weight=float(args.option_outcome_weight),
+            option_outcome_confidence_floor=float(args.option_outcome_confidence_floor),
             rng=_eval_episode_rng(base_seed=args.seed, episode_index=ep),
         )
         attribution = analyzer.attribute(metrics.get("damage_log", []), metrics.get("episode_steps", 0))
@@ -798,6 +815,8 @@ def _run_mixed_control_rescue_eval(args: argparse.Namespace) -> tuple[dict[str, 
             "terminal_trace_steps": int(args.terminal_trace_steps),
             "record_death_bundle": bool(args.record_death_bundle),
             "enable_outcome_learning": bool(args.enable_outcome_learning),
+            "enable_option_outcome_learning": bool(args.enable_option_outcome_learning),
+            "enable_option_outcome_stimulus": bool(args.enable_option_outcome_stimulus),
             "world_model_dir": str(args.world_model_dir) if args.world_model_dir else None,
         },
         "summary": {

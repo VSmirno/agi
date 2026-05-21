@@ -247,6 +247,16 @@ def main() -> None:
                         help="Env steps after each decision before its outcome is written back to the world model.")
     parser.add_argument("--outcome-weight", type=float, default=1.0,
                         help="OutcomeStimulus weight in score_trajectory.base.")
+    parser.add_argument("--enable-option-outcome-learning", action="store_true",
+                        help="Write selected strategy-option outcomes into the shared world model.")
+    parser.add_argument("--option-outcome-horizon", type=int, default=5,
+                        help="Env steps after each option decision before its outcome is written.")
+    parser.add_argument("--enable-option-outcome-stimulus", action="store_true",
+                        help="Score candidates with learned strategy-option death recall.")
+    parser.add_argument("--option-outcome-weight", type=float, default=1.0,
+                        help="OptionOutcomeStimulus weight in score_trajectory.base.")
+    parser.add_argument("--option-outcome-confidence-floor", type=float, default=0.25,
+                        help="Minimum option-outcome recall confidence used for scoring.")
     args = parser.parse_args()
 
     from snks.agent.crafter_pixel_env import CrafterPixelEnv
@@ -313,6 +323,11 @@ def main() -> None:
         world_model_path=args.world_model_path,
         outcome_horizon=int(args.outcome_horizon),
         outcome_stimulus_weight=float(args.outcome_weight),
+        enable_option_outcome_learning=bool(args.enable_option_outcome_learning),
+        option_outcome_horizon=int(args.option_outcome_horizon),
+        enable_option_outcome_stimulus=bool(args.enable_option_outcome_stimulus),
+        option_outcome_stimulus_weight=float(args.option_outcome_weight),
+        option_outcome_confidence_floor=float(args.option_outcome_confidence_floor),
         record_death_bundle=True,
         record_local_trace=True,
         record_local_counterfactuals="salient_only",
