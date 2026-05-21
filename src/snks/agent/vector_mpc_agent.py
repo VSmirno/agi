@@ -1325,6 +1325,68 @@ class _OutcomeRecorder:
         return flushed
 
 
+class _OptionOutcomeRecorder:
+    """Pending-ring buffer for selected strategy-option outcome writes."""
+
+    def __init__(self, model: VectorWorldModel, horizon: int) -> None:
+        self.model = model
+        self.horizon = max(1, int(horizon))
+        self._pending: list[dict[str, Any]] = []
+
+    def push(
+        self,
+        *,
+        step: int,
+        context: OptionContext,
+        option: StrategyOption,
+        health_now: float,
+    ) -> None:
+        self._pending.append({
+            "due": int(step) + self.horizon,
+            "context": context.to_trace(),
+            "option_id": option.option_id,
+            "health_start": float(health_now),
+        })
+
+    def flush_due(self, *, current_step: int, health_now: float) -> int:
+        kept: list[dict[str, Any]] = []
+        flushed = 0
+        for snap in self._pending:
+            if int(snap["due"]) <= int(current_step):
+                self._write_snapshot(snap, health_now=health_now, died_to=None)
+                flushed += 1
+            else:
+                kept.append(snap)
+        self._pending = kept
+        return flushed
+
+    def flush_on_death(self, *, health_now: float, died_to: str | None) -> int:
+        flushed = 0
+        for snap in self._pending:
+            self._write_snapshot(snap, health_now=health_now, died_to=died_to)
+            flushed += 1
+        self._pending = []
+        return flushed
+
+    def _write_snapshot(
+        self,
+        snap: dict[str, Any],
+        *,
+        health_now: float,
+        died_to: str | None,
+    ) -> None:
+        damage = max(0, int(round(float(snap["health_start"]) - health_now)))
+        self.model.learn_option_outcome(
+            snap["context"],
+            str(snap["option_id"]),
+            {
+                "survived_h": died_to is None,
+                "damage_h": damage,
+                "died_to": died_to,
+            },
+        )
+
+
 def run_vector_mpc_episode(
     env: Any,
     segmenter: Any,
@@ -1367,6 +1429,8 @@ def run_vector_mpc_episode(
     world_model_path: "str | Path | None" = None,
     outcome_horizon: int = 5,
     outcome_stimulus_weight: float = 1.0,
+    enable_option_outcome_learning: bool = False,
+    option_outcome_horizon: int = 5,
 ) -> dict:
     """Run one episode with vector MPC planning.
 
@@ -1394,6 +1458,11 @@ def run_vector_mpc_episode(
     # via the existing VectorWorldModel.save/load (one .pt per seed contains
     # physics-role + requirement dicts + outcome-role writes together).
     outcome_recorder = None
+    option_outcome_recorder = (
+        _OptionOutcomeRecorder(model=model, horizon=int(option_outcome_horizon))
+        if enable_option_outcome_learning
+        else None
+    )
     _outcome_near_holder: dict[str, "str | None"] = {"value": None}
     promoter = TextbookPromoter()
     promoted_path = _promoted_nodes_path(world_model_path)
@@ -2163,6 +2232,22 @@ def run_vector_mpc_episode(
         if next_interaction_intent is not None:
             interaction_intent = next_interaction_intent
         prev_player_pos = player_pos
+        strategy_option = _derive_strategy_option(best_plan)
+        option_context = _build_option_context(
+            body=body,
+            inventory=inv,
+            capability_state=capability_state,
+            current_goal=current_goal,
+            interaction_intent=interaction_intent,
+            best_plan=best_plan,
+            nearest_threat_distances=nearest_threats_now,
+            emergency_facts=emergency_facts,
+            textbook=textbook,
+            model=model,
+            near_concept=str(vf.near_concept),
+            player_pos=player_pos,
+            spatial_map=spatial_map,
+        )
 
         # Outcome-recorder: snapshot the chosen plan's (concept, action) at
         # decision time so that after `outcome_horizon` env steps we can
@@ -2172,6 +2257,13 @@ def run_vector_mpc_episode(
                 step=step,
                 plan_steps=best_plan.steps,
                 near=str(vf.near_concept) if vf.near_concept else None,
+                health_now=float(body.get("health", 9.0)),
+            )
+        if option_outcome_recorder is not None:
+            option_outcome_recorder.push(
+                step=step,
+                context=option_context,
+                option=strategy_option,
                 health_now=float(body.get("health", 9.0)),
             )
 
@@ -2306,22 +2398,6 @@ def run_vector_mpc_episode(
             })
         if record_local_trace:
             capability_state_after = extract_capability_state(inv_after, textbook)
-            strategy_option = _derive_strategy_option(best_plan)
-            option_context = _build_option_context(
-                body=body,
-                inventory=inv,
-                capability_state=capability_state,
-                current_goal=current_goal,
-                interaction_intent=interaction_intent,
-                best_plan=best_plan,
-                nearest_threat_distances=nearest_threats_now,
-                emergency_facts=emergency_facts,
-                textbook=textbook,
-                model=model,
-                near_concept=str(vf.near_concept),
-                player_pos=player_pos,
-                spatial_map=spatial_map,
-            )
             counterfactual_outcomes = (
                 _build_local_counterfactual_outcomes(
                     model=model,
@@ -2594,12 +2670,22 @@ def run_vector_mpc_episode(
                     health_now=float(body_at_end.get("health", 0.0)),
                     died_to=cause_of_death,
                 )
+            if option_outcome_recorder is not None:
+                option_outcome_recorder.flush_on_death(
+                    health_now=float(body_at_end.get("health", 0.0)),
+                    died_to=cause_of_death,
+                )
             break
 
         # Non-done branch: flush any outcome snapshots whose horizon ended
         # at this step. body_after is defined right after env.step above.
         if enable_outcome_learning and outcome_recorder is not None:
             outcome_recorder.flush_due(
+                current_step=step,
+                health_now=float(body_after.get("health", 9.0)),
+            )
+        if option_outcome_recorder is not None:
+            option_outcome_recorder.flush_due(
                 current_step=step,
                 health_now=float(body_after.get("health", 9.0)),
             )

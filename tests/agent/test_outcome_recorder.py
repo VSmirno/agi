@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from snks.agent.stimuli import resolve_outcome_pair
-from snks.agent.vector_mpc_agent import _OutcomeRecorder
+from snks.agent.vector_mpc_agent import (
+    OptionContext,
+    StrategyOption,
+    _OptionOutcomeRecorder,
+    _OutcomeRecorder,
+)
 from snks.agent.vector_world_model import VectorWorldModel
 
 
@@ -87,3 +92,55 @@ def test_unresolvable_plan_is_skipped() -> None:
              near=None, health_now=9.0)
     # Nothing pushed; flush_due returns 0.
     assert rec.flush_due(current_step=1, health_now=9.0) == 0
+
+
+def _option_context() -> OptionContext:
+    return OptionContext(
+        health_bucket="critical",
+        food_bucket="low",
+        drink_bucket="critical",
+        energy_bucket="ok",
+        threat_pressure="multi",
+        local_restore="drink",
+        capability_state="armed_melee",
+        intent_state="continuing_interaction",
+        progress_state="normal",
+        goal_family="fight",
+    )
+
+
+def test_option_outcome_recorder_flush_due_writes_option_memory() -> None:
+    model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=73)
+    rec = _OptionOutcomeRecorder(model=model, horizon=2)
+    context = _option_context()
+    option = StrategyOption("continue_interaction", "zombie")
+
+    rec.push(step=0, context=context, option=option, health_now=9.0)
+    assert rec.flush_due(current_step=1, health_now=8.0) == 0
+    assert rec.flush_due(current_step=2, health_now=7.0) == 1
+
+    decoded, conf = model.predict_option_outcome(
+        context.to_trace(),
+        "continue_interaction:zombie",
+    )
+    assert decoded is not None, conf
+    assert decoded["survived_h"] is True
+    assert decoded["damage_h"] >= 1
+
+
+def test_option_outcome_recorder_flush_on_death_writes_death() -> None:
+    model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=79)
+    rec = _OptionOutcomeRecorder(model=model, horizon=5)
+    context = _option_context()
+    option = StrategyOption("take_local_survival", "water")
+
+    rec.push(step=10, context=context, option=option, health_now=5.0)
+    assert rec.flush_on_death(health_now=0.0, died_to="zombie") == 1
+
+    decoded, conf = model.predict_option_outcome(
+        context.to_trace(),
+        "take_local_survival:water",
+    )
+    assert decoded is not None, conf
+    assert decoded["survived_h"] is False
+    assert decoded["died_to"] == "zombie"
