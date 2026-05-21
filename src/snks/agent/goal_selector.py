@@ -93,9 +93,55 @@ class Goal:
         if not plan.steps:
             return 0.0
         first = plan.steps[0]
+        if first.action == "navigate_known" and first.target == self.target_concept:
+            return _known_target_distance_progress(trajectory, self.target_concept)
         if first.action == "frontier_seek" and first.target == self.target_concept:
             return FRONTIER_PROGRESS_EPSILON
         return 0.0
+
+
+def _known_target_distance_progress(
+    trajectory: "VectorTrajectory",
+    target_concept: str,
+) -> float:
+    """Goal progress from reducing distance to a mapped/tracked target."""
+    if len(trajectory.states) < 2:
+        return 0.0
+    start_state = trajectory.states[0]
+    end_state = trajectory.states[-1]
+    target_pos = _nearest_known_target_position(
+        target_concept,
+        start_state.player_pos,
+        start_state,
+    )
+    if target_pos is None:
+        return 0.0
+    before = _manhattan(start_state.player_pos, target_pos)
+    after = _manhattan(end_state.player_pos, target_pos)
+    return float(max(0, before - after))
+
+
+def _nearest_known_target_position(
+    target_concept: str,
+    player_pos: tuple[int, int],
+    state: "VectorState",
+) -> tuple[int, int] | None:
+    candidates: list[tuple[int, int]] = []
+    spatial_map = getattr(state, "spatial_map", None)
+    if spatial_map is not None and hasattr(spatial_map, "find_nearest"):
+        pos = spatial_map.find_nearest(target_concept, player_pos)
+        if pos is not None:
+            candidates.append(tuple(pos))
+    for entity in getattr(state, "dynamic_entities", []) or []:
+        if getattr(entity, "concept_id", None) == target_concept:
+            candidates.append(tuple(entity.position))
+    if not candidates:
+        return None
+    return min(candidates, key=lambda pos: _manhattan(player_pos, pos))
+
+
+def _manhattan(a: tuple[int, int], b: tuple[int, int]) -> int:
+    return abs(int(a[0]) - int(b[0])) + abs(int(a[1]) - int(b[1]))
 
 
 @dataclass

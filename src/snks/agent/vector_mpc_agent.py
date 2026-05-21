@@ -521,6 +521,8 @@ def _derive_strategy_option(plan: VectorPlan) -> StrategyOption:
         return StrategyOption("continue_interaction", first.target)
     if origin.startswith("opportunistic:"):
         return StrategyOption("take_local_survival", first.target)
+    if first.action == "navigate_known":
+        return StrategyOption("seek_known", first.target)
     if first.action == "frontier_seek":
         return StrategyOption("seek_frontier", first.target)
     if first.action in {"make", "place"}:
@@ -638,7 +640,10 @@ def _build_option_context(
     """Build compact trace context for later option-outcome learning."""
     if interaction_intent is not None:
         intent_state = "continuing_interaction"
-    elif best_plan.steps and best_plan.steps[0].action == "frontier_seek":
+    elif best_plan.steps and best_plan.steps[0].action in {
+        "frontier_seek",
+        "navigate_known",
+    }:
         intent_state = "seeking_resource"
     elif best_plan.steps and best_plan.steps[0].action in {"make", "place"}:
         intent_state = "crafting_capability"
@@ -671,6 +676,137 @@ def _build_option_context(
     )
 
 
+_MOVE_DELTAS: dict[str, tuple[int, int]] = {
+    "move_left": (-1, 0),
+    "move_right": (1, 0),
+    "move_up": (0, -1),
+    "move_down": (0, 1),
+}
+
+
+def _nearest_known_target_position(
+    target: str | None,
+    player_pos: tuple[int, int],
+    spatial_map: CrafterSpatialMap,
+    dynamic_entities: list[DynamicEntityState] | None = None,
+) -> tuple[int, int] | None:
+    """Resolve the closest mapped or tracked instance of a target concept."""
+    if target in (None, "self"):
+        return None
+    candidates: list[tuple[int, int]] = []
+    spatial_pos = spatial_map.find_nearest(str(target), player_pos)
+    if spatial_pos is not None:
+        candidates.append(spatial_pos)
+    if dynamic_entities:
+        candidates.extend(
+            tuple(entity.position)
+            for entity in dynamic_entities
+            if entity.concept_id == target
+        )
+    if not candidates:
+        return None
+    px, py = int(player_pos[0]), int(player_pos[1])
+    return min(candidates, key=lambda p: abs(int(p[0]) - px) + abs(int(p[1]) - py))
+
+
+def _known_move_blocked(
+    next_pos: tuple[int, int],
+    spatial_map: CrafterSpatialMap,
+    dynamic_entities: list[DynamicEntityState] | None,
+) -> bool:
+    """Return True when local experience says the move target is blocked."""
+    if hasattr(spatial_map, "is_blocked") and spatial_map.is_blocked(next_pos):
+        return True
+    if dynamic_entities:
+        return any(tuple(entity.position) == tuple(next_pos) for entity in dynamic_entities)
+    return False
+
+
+def _known_target_move_candidates(
+    *,
+    target: str | None,
+    player_pos: tuple[int, int],
+    target_pos: tuple[int, int] | None,
+    spatial_map: CrafterSpatialMap,
+    model: VectorWorldModel,
+    dynamic_entities: list[DynamicEntityState] | None,
+) -> list[dict[str, Any]]:
+    """Rank one-step movement primitives by target-distance improvement."""
+    if target_pos is None:
+        return []
+    px, py = int(player_pos[0]), int(player_pos[1])
+    tx, ty = int(target_pos[0]), int(target_pos[1])
+    dist_before = abs(tx - px) + abs(ty - py)
+    preferred_order = ("move_right", "move_left", "move_down", "move_up")
+    move_actions = [action for action in preferred_order if action in model.actions]
+    move_actions.extend(
+        sorted(
+            action
+            for action in model.actions
+            if action.startswith("move_") and action not in move_actions
+        )
+    )
+
+    candidates: list[dict[str, Any]] = []
+    for action in move_actions:
+        delta = _MOVE_DELTAS.get(action)
+        if delta is None:
+            continue
+        nx, ny = px + delta[0], py + delta[1]
+        dist_after = abs(tx - nx) + abs(ty - ny)
+        blocked = _known_move_blocked(
+            (nx, ny),
+            spatial_map=spatial_map,
+            dynamic_entities=dynamic_entities,
+        )
+        candidates.append({
+            "action": action,
+            "target": target,
+            "next_pos": [int(nx), int(ny)],
+            "blocked": bool(blocked),
+            "dist_before": int(dist_before),
+            "dist_after": int(dist_after),
+            "reduces_distance": bool(dist_after < dist_before),
+        })
+
+    candidates.sort(
+        key=lambda c: (
+            bool(c["blocked"]),
+            not bool(c["reduces_distance"]),
+            int(c["dist_after"]),
+            str(c["action"]),
+        )
+    )
+    return candidates
+
+
+def _select_known_target_move(
+    *,
+    target: str | None,
+    player_pos: tuple[int, int],
+    spatial_map: CrafterSpatialMap,
+    model: VectorWorldModel,
+    dynamic_entities: list[DynamicEntityState] | None,
+) -> tuple[str | None, tuple[int, int] | None, list[dict[str, Any]]]:
+    target_pos = _nearest_known_target_position(
+        target,
+        player_pos,
+        spatial_map,
+        dynamic_entities,
+    )
+    candidates = _known_target_move_candidates(
+        target=target,
+        player_pos=player_pos,
+        target_pos=target_pos,
+        spatial_map=spatial_map,
+        model=model,
+        dynamic_entities=dynamic_entities,
+    )
+    if not candidates:
+        return None, target_pos, candidates
+    return str(candidates[0]["action"]), target_pos, candidates
+
+
 def generate_candidate_plans(
     model: VectorWorldModel,
     state: VectorState,
@@ -693,6 +829,10 @@ def generate_candidate_plans(
     concept that is not yet on the cognitive map, emit a single
     `frontier:<concept>` plan so the planner can score directed exploration
     against the baseline plan instead of falling through to uniform RNG.
+
+    Stage9X addition: if that target is already known but not adjacent,
+    emit `navigate_known:<concept>` so goal progress can reward a concrete
+    distance-reducing approach step instead of relying on baseline motion.
     """
     candidates: list[VectorPlan] = []
 
@@ -888,13 +1028,35 @@ def generate_candidate_plans(
     # vitals decay (see Phase 0b audit, seed 17 ep 0).
     if active_goal is not None and active_goal.target_concept:
         target = active_goal.target_concept
+        if player_pos is not None:
+            known_target_pos = _nearest_known_target_position(
+                target,
+                player_pos,
+                spatial_map,
+                state.dynamic_entities,
+            )
+            if known_target_pos is not None:
+                known_dist = (
+                    abs(int(known_target_pos[0]) - int(player_pos[0]))
+                    + abs(int(known_target_pos[1]) - int(player_pos[1]))
+                )
+                if known_dist > 1:
+                    candidates.append(VectorPlan(
+                        steps=[VectorPlanStep(action="navigate_known", target=target)],
+                        origin=f"navigate_known:{target}",
+                    ))
+                target_is_known = True
+            else:
+                target_is_known = target in known
+        else:
+            target_is_known = target in known
         if target not in known and player_pos is not None:
             # Only emit when target is genuinely unknown — once the concept
             # appears on the map, a real `single:<target>:do` plan will be
             # generated by the loop above and the frontier plan is no
             # longer needed.
             existing = spatial_map.find_nearest(target, player_pos)
-            if existing is None:
+            if existing is None and not target_is_known:
                 candidates.append(VectorPlan(
                     steps=[VectorPlanStep(action="frontier_seek", target=target)],
                     origin=f"frontier:{target}",
@@ -1105,6 +1267,7 @@ def expand_to_primitive(
     last_action: str | None = None,
     near_concept: str | None = None,
     dynamic_entities: "list[DynamicEntityState] | None" = None,
+    navigation_debug: dict[str, Any] | None = None,
 ) -> str:
     """Expand a plan step to a single env primitive.
 
@@ -1133,6 +1296,40 @@ def expand_to_primitive(
             return _step_toward(player_pos, closest, model, rng)
         move_actions = [a for a in model.actions if a.startswith("move_")]
         return str(rng.choice(move_actions)) if move_actions else "move_right"
+
+    if plan_step.action == "navigate_known":
+        chosen_move, target_pos, move_candidates = _select_known_target_move(
+            target=plan_step.target,
+            player_pos=player_pos,
+            spatial_map=spatial_map,
+            model=model,
+            dynamic_entities=dynamic_entities,
+        )
+        if navigation_debug is not None:
+            px, py = int(player_pos[0]), int(player_pos[1])
+            navigation_debug.update({
+                "target_concept": plan_step.target,
+                "target_pos": (
+                    [int(target_pos[0]), int(target_pos[1])]
+                    if target_pos is not None
+                    else None
+                ),
+                "dist_before": (
+                    int(abs(int(target_pos[0]) - px) + abs(int(target_pos[1]) - py))
+                    if target_pos is not None
+                    else None
+                ),
+                "chosen_move": chosen_move,
+                "candidate_moves": move_candidates,
+            })
+        if chosen_move is not None:
+            return chosen_move
+        move_actions = [a for a in model.actions if a.startswith("move_")]
+        fallback = str(rng.choice(move_actions)) if move_actions else "move_right"
+        if navigation_debug is not None:
+            navigation_debug["chosen_move"] = fallback
+            navigation_debug["fallback"] = "random_move_no_known_target"
+        return fallback
 
     target_pos = spatial_map.find_nearest(plan_step.target, player_pos)
 
@@ -1903,7 +2100,12 @@ def run_vector_mpc_episode(
         selected_target = best_plan.steps[0].target if best_plan.steps else None
         selected_action = best_plan.steps[0].action if best_plan.steps else None
         target_pos_before = (
-            spatial_map.find_nearest(selected_target, player_pos)
+            _nearest_known_target_position(
+                selected_target,
+                player_pos,
+                spatial_map,
+                observed_dynamic_entities,
+            )
             if selected_target not in (None, "self")
             else None
         )
@@ -1940,12 +2142,16 @@ def run_vector_mpc_episode(
         predicted_baseline_loss = max(0.0, health_now - predicted_baseline_health)
 
         # --- Choose planner / actor primitive, then let emergency controller arbitrate ---
+        navigation_debug: dict[str, Any] | None = None
         if best_plan.steps:
+            if best_plan.steps[0].action == "navigate_known":
+                navigation_debug = {}
             planner_primitive = expand_to_primitive(
                 best_plan.steps[0], player_pos, spatial_map, model, rng,
                 last_action=prev_move,
                 near_concept=vf.near_concept,
                 dynamic_entities=observed_dynamic_entities,
+                navigation_debug=navigation_debug,
             )
         else:
             # Baseline plan (empty) won the ranking. RNG fallback now
@@ -2026,6 +2232,7 @@ def run_vector_mpc_episode(
                 near_concept=vf.near_concept,
                 dynamic_entities=observed_dynamic_entities,
             )
+            navigation_debug = None
 
         if continued_target is None:
             opportunistic_plan = _opportunistic_survival_plan(
@@ -2059,6 +2266,7 @@ def run_vector_mpc_episode(
                     near_concept=vf.near_concept,
                     dynamic_entities=observed_dynamic_entities,
                 )
+                navigation_debug = None
 
         primitive = planner_primitive
         control_origin = "planner_bootstrap"
@@ -2338,6 +2546,17 @@ def run_vector_mpc_episode(
 
         pixels, _reward, done, info = env.step(primitive)
         player_pos_after = tuple(info.get("player_pos", player_pos))
+        if navigation_debug is not None:
+            target_pos_for_debug = navigation_debug.get("target_pos")
+            if target_pos_for_debug is not None:
+                tx, ty = int(target_pos_for_debug[0]), int(target_pos_for_debug[1])
+                navigation_debug["dist_after"] = int(
+                    abs(tx - int(player_pos_after[0]))
+                    + abs(ty - int(player_pos_after[1]))
+                )
+            else:
+                navigation_debug["dist_after"] = None
+            navigation_debug["actual_primitive"] = primitive
         raw_inv_after = dict(info.get("inventory", {}))
         body_after = {v: float(raw_inv_after.get(v, body.get(v, 0.0))) for v in vitals}
         inv_after = {
@@ -2528,6 +2747,8 @@ def run_vector_mpc_episode(
             local_entry["interaction_intent"] = dict(interaction_intent) if interaction_intent is not None else None
             local_entry["strategy_option"] = strategy_option.to_trace()
             local_entry["option_context"] = option_context.to_trace()
+            if navigation_debug is not None:
+                local_entry["navigation_debug"] = navigation_debug
             if option_outcome_recall is not None:
                 local_entry["option_outcome_recall"] = option_outcome_recall
             local_entry["capability_state"] = capability_state.to_trace()

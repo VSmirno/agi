@@ -276,6 +276,12 @@ class TestGenerateCandidatePlans:
         ).option_id == "seek_frontier:water"
         assert _derive_strategy_option(
             VectorPlan(
+                steps=[VectorPlanStep(action="navigate_known", target="tree")],
+                origin="navigate_known:tree",
+            )
+        ).option_id == "seek_known:tree"
+        assert _derive_strategy_option(
+            VectorPlan(
                 steps=[VectorPlanStep(action="do", target="zombie")],
                 origin="continue:zombie:do_until_remove_entity",
             )
@@ -740,6 +746,54 @@ class TestDynamicEntityTracker:
 # ---------------------------------------------------------------------------
 
 class TestFrontierPlanGeneration:
+    def test_known_active_goal_target_emits_navigate_known(
+        self, seeded_model, base_state
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((14, 10), "tree", 0.9)
+        goal = Goal("gather_wood", target_concept="tree")
+
+        candidates = generate_candidate_plans(
+            seeded_model,
+            base_state,
+            sm,
+            visible_concepts=set(),
+            player_pos=(10, 10),
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+            active_goal=goal,
+        )
+
+        origins = {p.origin for p in candidates}
+        assert "navigate_known:tree" in origins
+
+    def test_dynamic_active_goal_target_emits_navigate_known(
+        self, seeded_model
+    ):
+        state = VectorState(
+            inventory={"wood_sword": 1},
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(concept_id="zombie", position=(14, 10))
+            ],
+        )
+        goal = Goal("fight_zombie", target_concept="zombie")
+
+        candidates = generate_candidate_plans(
+            seeded_model,
+            state,
+            CrafterSpatialMap(),
+            visible_concepts=set(),
+            player_pos=(10, 10),
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+            active_goal=goal,
+        )
+
+        origins = {p.origin for p in candidates}
+        assert "navigate_known:zombie" in origins
+
     def test_frontier_water_emitted_when_target_unknown_and_goal_active(
         self, seeded_model, base_state, spatial_map_with_tree
     ):
@@ -755,6 +809,7 @@ class TestFrontierPlanGeneration:
         )
         origins = {p.origin for p in candidates}
         assert "frontier:water" in origins
+        assert "navigate_known:water" not in origins
 
     def test_frontier_water_NOT_emitted_when_water_already_on_map(
         self, seeded_model, base_state
@@ -773,6 +828,28 @@ class TestFrontierPlanGeneration:
         )
         origins = {p.origin for p in candidates}
         assert "frontier:water" not in origins
+        assert "navigate_known:water" in origins
+
+    def test_adjacent_active_goal_target_does_not_emit_navigate_known(
+        self, seeded_model, base_state
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((11, 10), "water", 0.9)
+        goal = Goal("find_water", target_concept="water")
+
+        candidates = generate_candidate_plans(
+            seeded_model,
+            base_state,
+            sm,
+            visible_concepts=set(),
+            player_pos=(10, 10),
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+            active_goal=goal,
+        )
+
+        origins = {p.origin for p in candidates}
+        assert "navigate_known:water" not in origins
 
     def test_no_frontier_emitted_when_goal_has_no_target_concept(
         self, seeded_model, base_state, spatial_map_with_tree
@@ -833,6 +910,93 @@ class TestFrontierExpandPrimitive:
             near_concept="empty",
         )
         assert primitive.startswith("move_")
+
+
+class TestKnownTargetNavigation:
+    def test_expand_navigate_known_reduces_distance_and_records_debug(
+        self, seeded_model
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((13, 10), "tree", 1.0)
+        rng = np.random.RandomState(0)
+        debug: dict = {}
+
+        primitive = expand_to_primitive(
+            VectorPlanStep(action="navigate_known", target="tree"),
+            player_pos=(10, 10),
+            spatial_map=sm,
+            model=seeded_model,
+            rng=rng,
+            last_action=None,
+            near_concept="empty",
+            navigation_debug=debug,
+        )
+
+        assert primitive == "move_right"
+        assert debug["target_concept"] == "tree"
+        assert debug["target_pos"] == [13, 10]
+        assert debug["dist_before"] == 3
+        assert debug["chosen_move"] == "move_right"
+        assert debug["candidate_moves"][0]["dist_after"] == 2
+        assert debug["candidate_moves"][0]["reduces_distance"] is True
+
+    def test_expand_navigate_known_chooses_unblocked_alternative(
+        self, seeded_model
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((13, 10), "tree", 1.0)
+        sm.mark_blocked((11, 10))
+        rng = np.random.RandomState(0)
+        debug: dict = {}
+
+        primitive = expand_to_primitive(
+            VectorPlanStep(action="navigate_known", target="tree"),
+            player_pos=(10, 10),
+            spatial_map=sm,
+            model=seeded_model,
+            rng=rng,
+            last_action=None,
+            near_concept="empty",
+            navigation_debug=debug,
+        )
+
+        assert primitive != "move_right"
+        assert debug["candidate_moves"][0]["blocked"] is False
+        assert any(
+            move["action"] == "move_right" and move["blocked"]
+            for move in debug["candidate_moves"]
+        )
+
+    def test_navigate_known_goal_progress_beats_baseline(self, seeded_model):
+        sm = CrafterSpatialMap()
+        sm.update((13, 10), "tree", 1.0)
+        state = VectorState(
+            inventory={"wood": 0},
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            spatial_map=sm,
+        )
+        goal = Goal("gather_wood", target_concept="tree")
+
+        nav_traj = simulate_forward(
+            seeded_model,
+            VectorPlan(
+                steps=[VectorPlanStep(action="navigate_known", target="tree")],
+                origin="navigate_known:tree",
+            ),
+            state,
+        )
+        baseline_traj = simulate_forward(
+            seeded_model,
+            VectorPlan(steps=[], origin="baseline"),
+            state,
+        )
+
+        assert nav_traj.states[-1].player_pos == (11, 10)
+        assert score_trajectory(nav_traj, goal=goal) > score_trajectory(
+            baseline_traj,
+            goal=goal,
+        )
 
 
 # ---------------------------------------------------------------------------

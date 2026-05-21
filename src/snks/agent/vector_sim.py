@@ -369,6 +369,12 @@ def _materialize_plan_step(
     distant resource plans look immediately rewarding in imagination while the
     real agent only takes a movement step.
     """
+    if step.action == "navigate_known":
+        target_pos = _nearest_known_target_position(step.target, state)
+        if target_pos is None:
+            return "wait", False
+        return _step_toward_known_target_sim(state, target_pos), False
+
     if step.action != "do" or step.target == "self" or state.spatial_map is None:
         return step.action, True
 
@@ -406,6 +412,51 @@ def _step_toward_sim(
     if dx != 0:
         return "move_right" if dx > 0 else "move_left"
     return "wait"
+
+
+def _nearest_known_target_position(
+    target: str,
+    state: VectorState,
+) -> tuple[int, int] | None:
+    candidates: list[tuple[int, int]] = []
+    if state.spatial_map is not None:
+        pos = state.spatial_map.find_nearest(target, state.player_pos)
+        if pos is not None:
+            candidates.append(pos)
+    candidates.extend(
+        entity.position
+        for entity in state.dynamic_entities
+        if entity.concept_id == target
+    )
+    if not candidates:
+        return None
+    px, py = state.player_pos
+    return min(candidates, key=lambda p: abs(p[0] - px) + abs(p[1] - py))
+
+
+def _step_toward_known_target_sim(
+    state: VectorState,
+    target_pos: tuple[int, int],
+) -> str:
+    """Choose a one-step local move that reduces target distance if possible."""
+    px, py = state.player_pos
+    tx, ty = target_pos
+    dist_before = abs(tx - px) + abs(ty - py)
+    deltas = {
+        "move_right": (1, 0),
+        "move_left": (-1, 0),
+        "move_down": (0, 1),
+        "move_up": (0, -1),
+    }
+    candidates: list[tuple[bool, bool, int, str]] = []
+    for action, (dx, dy) in deltas.items():
+        target = (px + dx, py + dy)
+        dist_after = abs(tx - target[0]) + abs(ty - target[1])
+        blocked = state._move_target_blocked(target)
+        reduces = dist_after < dist_before
+        candidates.append((blocked, not reduces, dist_after, action))
+    candidates.sort()
+    return candidates[0][3] if candidates else "wait"
 
 
 def _is_facing_target(last_action: str | None, delta: tuple[int, int]) -> bool:
