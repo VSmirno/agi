@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from snks.agent.stimuli import OutcomeStimulus
+from snks.agent.stimuli import OptionOutcomeStimulus, OutcomeStimulus
 from snks.agent.vector_world_model import VectorWorldModel
 
 
@@ -36,6 +36,22 @@ def _train(model: VectorWorldModel, concept: str, action: str,
            survived: bool, damage: int, died_to: str | None) -> None:
     for _ in range(5):
         model.learn_outcome(concept, action, {
+            "survived_h": survived,
+            "damage_h": damage,
+            "died_to": died_to,
+        })
+
+
+def _train_option(
+    model: VectorWorldModel,
+    context: dict[str, str],
+    option_id: str,
+    survived: bool,
+    damage: int,
+    died_to: str | None,
+) -> None:
+    for _ in range(5):
+        model.learn_option_outcome(context, option_id, {
             "survived_h": survived,
             "damage_h": damage,
             "died_to": died_to,
@@ -166,3 +182,90 @@ def test_weight_scales_signal_linearly() -> None:
     assert abs(doubled - 2.0 * base) < 1e-5, (
         f"weight should scale signal linearly: base={base:.4f}, doubled={doubled:.4f}"
     )
+
+
+def test_option_outcome_no_model_or_provider_returns_zero() -> None:
+    stim = OptionOutcomeStimulus(model=None)
+    assert stim.evaluate(_traj("do", "zombie")) == 0.0
+
+    model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=53)
+    stim = OptionOutcomeStimulus(
+        model=model,
+        context_provider=lambda _traj: {"health_bucket": "ok"},
+        option_id_provider=None,
+    )
+    assert stim.evaluate(_traj("do", "zombie")) == 0.0
+
+
+def test_option_outcome_survived_recall_contributes_zero() -> None:
+    model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=59)
+    context = {
+        "health_bucket": "ok",
+        "food_bucket": "ok",
+        "drink_bucket": "low",
+        "energy_bucket": "ok",
+        "threat_pressure": "near",
+        "local_restore": "drink",
+        "capability_state": "armed_melee",
+        "intent_state": "none",
+        "progress_state": "normal",
+        "goal_family": "find",
+    }
+    _train_option(model, context, "seek_known:water", True, 0, None)
+    stim = OptionOutcomeStimulus(
+        model=model,
+        context_provider=lambda _traj: context,
+        option_id_provider=lambda _traj: "seek_known:water",
+    )
+    assert stim.evaluate(_traj("move_left", "self")) == 0.0
+
+
+def test_option_outcome_death_recall_penalizes_option() -> None:
+    model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=61)
+    context = {
+        "health_bucket": "low",
+        "food_bucket": "critical",
+        "drink_bucket": "critical",
+        "energy_bucket": "low",
+        "threat_pressure": "multi",
+        "local_restore": "multi",
+        "capability_state": "unarmed",
+        "intent_state": "seeking_resource",
+        "progress_state": "normal",
+        "goal_family": "find",
+    }
+    _train_option(model, context, "baseline_motion", False, 6, "zombie")
+    stim = OptionOutcomeStimulus(
+        model=model,
+        context_provider=lambda _traj: context,
+        option_id_provider=lambda _traj: "baseline_motion",
+    )
+    assert stim.evaluate(_Traj(plan=_Plan(steps=[]))) < -1.0
+
+
+def test_option_outcome_differentiates_options_in_same_context() -> None:
+    model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=67)
+    context = {
+        "health_bucket": "low",
+        "food_bucket": "low",
+        "drink_bucket": "critical",
+        "energy_bucket": "ok",
+        "threat_pressure": "contact",
+        "local_restore": "drink",
+        "capability_state": "armed_melee",
+        "intent_state": "none",
+        "progress_state": "normal",
+        "goal_family": "find",
+    }
+    _train_option(model, context, "seek_known:water", True, 0, None)
+    _train_option(model, context, "engage_target:zombie", False, 9, "zombie")
+
+    option_holder = {"id": "seek_known:water"}
+    stim = OptionOutcomeStimulus(
+        model=model,
+        context_provider=lambda _traj: context,
+        option_id_provider=lambda _traj: option_holder["id"],
+    )
+    assert stim.evaluate(_traj("move_left", "self")) == 0.0
+    option_holder["id"] = "engage_target:zombie"
+    assert stim.evaluate(_traj("do", "zombie")) < -1.0

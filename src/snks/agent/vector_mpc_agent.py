@@ -1431,6 +1431,9 @@ def run_vector_mpc_episode(
     outcome_stimulus_weight: float = 1.0,
     enable_option_outcome_learning: bool = False,
     option_outcome_horizon: int = 5,
+    enable_option_outcome_stimulus: bool = False,
+    option_outcome_stimulus_weight: float = 1.0,
+    option_outcome_confidence_floor: float = 0.25,
 ) -> dict:
     """Run one episode with vector MPC planning.
 
@@ -1464,14 +1467,19 @@ def run_vector_mpc_episode(
         else None
     )
     _outcome_near_holder: dict[str, "str | None"] = {"value": None}
+    _option_eval_holder: dict[str, Any] = {}
     promoter = TextbookPromoter()
     promoted_path = _promoted_nodes_path(world_model_path)
     promoted_nodes_prior: list[dict[str, Any]] = []
+    should_use_persistent_world_model = (
+        enable_outcome_learning
+        or enable_option_outcome_learning
+        or enable_option_outcome_stimulus
+    )
+    if should_use_persistent_world_model and world_model_path is not None:
+        model.load(Path(world_model_path))
     if enable_outcome_learning:
         from snks.agent.stimuli import OutcomeStimulus, resolve_outcome_pair
-        if world_model_path is not None:
-            from pathlib import Path as _Path
-            model.load(_Path(world_model_path))
         stimuli.stimuli.append(OutcomeStimulus(
             model=model,
             weight=outcome_stimulus_weight,
@@ -1498,6 +1506,40 @@ def run_vector_mpc_episode(
         hostile_distance_threshold=int(rescue_hostile_distance_threshold),
         stall_streak_threshold=int(rescue_stall_streak_threshold),
     )
+    if enable_option_outcome_stimulus:
+        from snks.agent.stimuli import OptionOutcomeStimulus
+
+        def _option_context_for_trajectory(
+            trajectory: VectorTrajectory,
+        ) -> dict[str, str] | None:
+            if not _option_eval_holder:
+                return None
+            return _build_option_context(
+                body=_option_eval_holder["body"],
+                inventory=_option_eval_holder["inventory"],
+                capability_state=_option_eval_holder["capability_state"],
+                current_goal=_option_eval_holder["current_goal"],
+                interaction_intent=_option_eval_holder["interaction_intent"],
+                best_plan=trajectory.plan,
+                nearest_threat_distances=_option_eval_holder["nearest_threat_distances"],
+                emergency_facts=emergency_facts,
+                textbook=textbook,
+                model=model,
+                near_concept=_option_eval_holder["near_concept"],
+                player_pos=_option_eval_holder["player_pos"],
+                spatial_map=spatial_map,
+            ).to_trace()
+
+        def _option_id_for_trajectory(trajectory: VectorTrajectory) -> str:
+            return _derive_strategy_option(trajectory.plan).option_id
+
+        stimuli.stimuli.append(OptionOutcomeStimulus(
+            model=model,
+            weight=float(option_outcome_stimulus_weight),
+            confidence_floor=float(option_outcome_confidence_floor),
+            context_provider=_option_context_for_trajectory,
+            option_id_provider=_option_id_for_trajectory,
+        ))
 
     entity_tracker = DynamicEntityTracker()
     # Register known dynamic concepts
@@ -1801,11 +1843,29 @@ def run_vector_mpc_episode(
         candidates.sort(key=_plan_distance)
 
         capability_state = extract_capability_state(inv, textbook)
+        nearest_threats_now = _nearest_emergency_threat_distances(
+            emergency_facts,
+            player_pos,
+            spatial_map,
+            observed_dynamic_entities,
+        )
 
         # Refresh outcome-stimulus near-concept holder so motion/baseline
         # plans query the substrate conditioned on the current facing tile.
         if enable_outcome_learning:
             _outcome_near_holder["value"] = str(vf.near_concept) if vf.near_concept else None
+        if enable_option_outcome_stimulus:
+            _option_eval_holder.clear()
+            _option_eval_holder.update({
+                "body": body,
+                "inventory": inv,
+                "capability_state": capability_state,
+                "current_goal": current_goal,
+                "interaction_intent": interaction_intent,
+                "nearest_threat_distances": nearest_threats_now,
+                "near_concept": str(vf.near_concept) if vf.near_concept else None,
+                "player_pos": player_pos,
+            })
 
         scored: list[tuple[tuple, VectorPlan, VectorTrajectory]] = []
         for plan in candidates:
@@ -1934,13 +1994,6 @@ def run_vector_mpc_episode(
             else:
                 move_actions = [a for a in model.actions if a.startswith("move_")]
                 planner_primitive = str(rng.choice(move_actions)) if move_actions else "move_right"
-
-        nearest_threats_now = _nearest_emergency_threat_distances(
-            emergency_facts,
-            player_pos,
-            spatial_map,
-            observed_dynamic_entities,
-        )
 
         continued_target = _should_continue_interaction(
             interaction_intent=interaction_intent,
@@ -2248,6 +2301,22 @@ def run_vector_mpc_episode(
             player_pos=player_pos,
             spatial_map=spatial_map,
         )
+        option_outcome_recall = None
+        if enable_option_outcome_stimulus:
+            decoded, confidence = model.predict_option_outcome(
+                option_context.to_trace(),
+                strategy_option.option_id,
+            )
+            option_outcome_recall = {
+                "option_id": strategy_option.option_id,
+                "confidence": float(confidence),
+                "decoded": decoded,
+                "used_for_scoring": bool(
+                    decoded is not None
+                    and float(confidence) >= float(option_outcome_confidence_floor)
+                    and not bool(decoded.get("survived_h", True))
+                ),
+            }
 
         # Outcome-recorder: snapshot the chosen plan's (concept, action) at
         # decision time so that after `outcome_horizon` env steps we can
@@ -2459,6 +2528,8 @@ def run_vector_mpc_episode(
             local_entry["interaction_intent"] = dict(interaction_intent) if interaction_intent is not None else None
             local_entry["strategy_option"] = strategy_option.to_trace()
             local_entry["option_context"] = option_context.to_trace()
+            if option_outcome_recall is not None:
+                local_entry["option_outcome_recall"] = option_outcome_recall
             local_entry["capability_state"] = capability_state.to_trace()
             local_entry["capability_state_after"] = capability_state_after.to_trace()
             local_entry["capability_delta"] = {
@@ -2707,9 +2778,8 @@ def run_vector_mpc_episode(
     # requirements) so the next episode of this seed starts with all
     # accumulated experience. Save BEFORE building the death-trace bundle
     # so a crash during death-trace doesn't lose state.
-    if enable_outcome_learning and world_model_path is not None:
-        from pathlib import Path as _Path
-        model.save(_Path(world_model_path))
+    if should_use_persistent_world_model and world_model_path is not None:
+        model.save(Path(world_model_path))
     if promoted_path is not None:
         promoted_nodes_new = promoter.collect_entity_observations(
             spatial_map,

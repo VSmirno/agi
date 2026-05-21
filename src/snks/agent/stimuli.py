@@ -218,6 +218,53 @@ class OutcomeStimulus(Stimulus):
 
 
 @dataclass
+class OptionOutcomeStimulus(Stimulus):
+    """Learned conflict-resolution signal over strategy options.
+
+    The world-model address is `(compact_context, strategy_option_id)` rather
+    than primitive `(concept, action)`. Callers provide both through callbacks
+    because option derivation and context construction live in the planner
+    layer, not in the generic stimuli module.
+    """
+
+    model: "VectorWorldModel | None" = None
+    weight: float = 1.0
+    confidence_floor: float = 0.25
+    died_penalty: float = 3.0
+    damage_unit_penalty: float = 0.25
+    death_cause_penalty: float = 5.0
+    context_provider: "Callable[[VectorTrajectory], dict[str, str] | None] | None" = None
+    option_id_provider: "Callable[[VectorTrajectory], str | None] | None" = None
+
+    def evaluate(self, trajectory: "VectorTrajectory") -> float:
+        if (
+            self.model is None
+            or self.context_provider is None
+            or self.option_id_provider is None
+        ):
+            return 0.0
+        context = self.context_provider(trajectory)
+        option_id = self.option_id_provider(trajectory)
+        if context is None or option_id is None:
+            return 0.0
+        decoded, confidence = self.model.predict_option_outcome(context, option_id)
+        if decoded is None or confidence < self.confidence_floor:
+            return 0.0
+        # Same conservative rule as primitive OutcomeStimulus: only negative
+        # recall contributes. Positive recall is evidence, not a command to
+        # repeat a strategy forever.
+        if decoded.get("survived_h", True):
+            return 0.0
+        signal = (
+            -self.died_penalty
+            - self.damage_unit_penalty * float(decoded.get("damage_h", 0))
+        )
+        if decoded.get("died_to") not in (None, "none"):
+            signal -= self.death_cause_penalty
+        return self.weight * confidence * signal
+
+
+@dataclass
 class StimuliLayer:
     """Aggregates multiple stimuli into a single score.
 
