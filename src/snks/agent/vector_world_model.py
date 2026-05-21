@@ -536,6 +536,64 @@ class VectorWorldModel:
             return None, confidence
         return self.decode_outcome(outcome_vec), confidence
 
+    # ------------------------------------------------------------------ #
+    # Option-outcome role: cross-episode outcomes per (context, strategy option)
+    # ------------------------------------------------------------------ #
+    #
+    # This is deliberately separate from the primitive outcome role above:
+    # primitive outcome answers "what happened after (near_concept, action)?",
+    # option outcome answers "what happened after choosing this strategy in
+    # this compact conflict context?" Both live in the same SDM under distinct
+    # role-bound addresses.
+
+    def encode_option_context(self, context: dict[str, str]) -> torch.Tensor:
+        """Encode a compact option context as an HDC bundle.
+
+        Context values are symbolic buckets, e.g. {"health_bucket": "low"}.
+        Deterministic key ordering keeps equivalent dicts address-identical.
+        """
+        if not context:
+            return self._ensure_concept("__EMPTY_OPTION_CONTEXT__")
+        parts: list[torch.Tensor] = []
+        for key in sorted(context):
+            role = self._ensure_role(f"option_ctx:{key}")
+            value = self._ensure_concept(f"option_ctx:{key}={context[key]}")
+            parts.append(bind(role, value))
+        return bundle(parts)
+
+    def _option_outcome_address(
+        self,
+        context: dict[str, str],
+        option_id: str,
+    ) -> torch.Tensor:
+        context_vec = self.encode_option_context(context)
+        option_vec = self._ensure_concept(f"strategy_option:{option_id}")
+        role_vec = self._ensure_role("__OPTION_OUTCOME_H__")
+        return bind(bind(context_vec, option_vec), role_vec)
+
+    def learn_option_outcome(
+        self,
+        context: dict[str, str],
+        option_id: str,
+        outcome: dict,
+    ) -> None:
+        """Record an observed horizon outcome for a strategy option in context."""
+        address = self._option_outcome_address(context, option_id)
+        outcome_vec = self.encode_outcome(outcome)
+        self.memory.write(address, outcome_vec)
+
+    def predict_option_outcome(
+        self,
+        context: dict[str, str],
+        option_id: str,
+    ) -> tuple[dict | None, float]:
+        """Retrieve learned outcome for a strategy option in compact context."""
+        address = self._option_outcome_address(context, option_id)
+        outcome_vec, confidence = self.memory.read(address)
+        if confidence < 0.2:
+            return None, confidence
+        return self.decode_outcome(outcome_vec), confidence
+
     def requirements_met(
         self, concept_id: str, action: str, inventory: dict[str, int],
     ) -> bool:
