@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import torch
 import numpy as np
+import yaml
 from pathlib import Path
 
 
 EFFECT_ADDRESS_VERSION = 1
+EFFECT_INTEGRITY_VERSION = 1
 EFFECT_ROLE_NAME = "__EFFECT__"
 NON_EFFECT_DECODE_ROLES = {
     "__NEG__",
@@ -28,6 +30,11 @@ NON_EFFECT_DECODE_ROLES = {
     "died_to",
 }
 DEFAULT_TEXTBOOK_PATH = Path(__file__).resolve().parents[3] / "configs" / "crafter_textbook.yaml"
+CORE_EFFECT_REPAIR_PAIRS = {
+    ("table", "place"),
+    ("wood_sword", "make"),
+    ("wood_pickaxe", "make"),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +338,9 @@ class VectorWorldModel:
         # Role vectors for effect encoding/decoding
         self.roles: dict[str, torch.Tensor] = {}
         self.effect_address_version = EFFECT_ADDRESS_VERSION
+        self.effect_integrity_version = 0
+        self.effect_repair_verified = False
+        self.last_effect_repair_stats: dict | None = None
 
         # Associative memory
         self.memory = CausalSDM(
@@ -379,6 +389,15 @@ class VectorWorldModel:
                 self.dim, self.device, self._rng,
             )
         return self.roles[role_name]
+
+    def _advance_rng_past_loaded_vectors(self, seed: int, n_vectors: int) -> None:
+        """Avoid reusing loaded vector slots for roles added during repair."""
+        self._rng.manual_seed(int(seed))
+        for _ in range(max(0, int(n_vectors))):
+            torch.randint(
+                0, 2, (self.dim,), dtype=torch.float32,
+                generator=self._rng, device="cpu",
+            )
 
     def encode_effect(self, deltas: dict[str, float]) -> torch.Tensor:
         """Encode effect dict as single binary vector.
@@ -714,6 +733,10 @@ class VectorWorldModel:
             "dim": self.dim,
             "max_scalar": self.max_scalar,
             "effect_address_version": self.effect_address_version,
+            "effect_integrity_version": (
+                self.effect_integrity_version if self.effect_repair_verified else 0
+            ),
+            "effect_repair_verified": bool(self.effect_repair_verified),
             "concepts": {k: v.cpu() for k, v in self.concepts.items()},
             "actions": {k: v.cpu() for k, v in self.actions.items()},
             "roles": {k: v.cpu() for k, v in self.roles.items()},
@@ -752,6 +775,7 @@ class VectorWorldModel:
         self.concepts = {k: v.to(self.device) for k, v in data["concepts"].items()}
         self.actions  = {k: v.to(self.device) for k, v in data["actions"].items()}
         self.roles    = {k: v.to(self.device) for k, v in data["roles"].items()}
+        loaded_vector_count = len(self.concepts) + len(self.actions) + len(self.roles)
         self.action_requirements = data.get("action_requirements", {})
         self.near_requirements = data.get("near_requirements", {})
         self.proximity_ranges = data.get("proximity_ranges", {})
@@ -779,13 +803,27 @@ class VectorWorldModel:
         self.memory.activation_radius = mem["activation_radius"]
         self.memory.content = mem["content"].to(self.device).clone()
         self.memory.n_writes = mem["n_writes"]
+        self._advance_rng_past_loaded_vectors(self.memory.seed, loaded_vector_count)
         self.effect_address_version = int(data.get("effect_address_version", 0) or 0)
-        if self.effect_address_version < EFFECT_ADDRESS_VERSION:
+        self.effect_integrity_version = int(data.get("effect_integrity_version", 0) or 0)
+        self.effect_repair_verified = bool(data.get("effect_repair_verified", False))
+
+        integrity = self.verify_effect_rules_from_textbook()
+        needs_repair = (
+            self.effect_address_version < EFFECT_ADDRESS_VERSION
+            or self.effect_integrity_version < EFFECT_INTEGRITY_VERSION
+            or not self.effect_repair_verified
+            or not integrity["verified"]
+        )
+        if needs_repair:
             self.repair_effect_rules_from_textbook()
-            self.effect_address_version = EFFECT_ADDRESS_VERSION
         return True
 
-    def repair_effect_rules_from_textbook(self, yaml_path: str | Path | None = None) -> dict:
+    def repair_effect_rules_from_textbook(
+        self,
+        yaml_path: str | Path | None = None,
+        max_batches: int = 10,
+    ) -> dict:
         """Seed textbook physics rules into the effect-role channel.
 
         Legacy snapshots wrote action effects at the raw
@@ -794,8 +832,135 @@ class VectorWorldModel:
         `bind(bind(concept, action), __EFFECT__)` on load. Existing SDM
         content is preserved; the repair only adds deterministic textbook
         effect writes and fact dictionaries.
+
+        Repair is verified before the snapshot is trusted. Legacy SDM content
+        can create strong crosstalk at the new role-bound addresses, so one
+        textbook batch is not always enough to overpower old counters.
         """
         from snks.agent.vector_bootstrap import load_from_textbook
 
         path = Path(yaml_path) if yaml_path is not None else DEFAULT_TEXTBOOK_PATH
-        return load_from_textbook(self, path)
+        before = self.verify_effect_rules_from_textbook(path)
+        stats = {
+            "batches": 0,
+            "max_batches": int(max_batches),
+            "verified_before": bool(before["verified"]),
+            "verified": bool(before["verified"]),
+            "failed_pairs": before["failed_pairs"],
+            "last_textbook_stats": None,
+        }
+
+        current = before
+        while not current["verified"] and stats["batches"] < max_batches:
+            textbook_stats = load_from_textbook(self, path)
+            stats["batches"] += 1
+            stats["last_textbook_stats"] = textbook_stats
+            current = self.verify_effect_rules_from_textbook(path)
+            stats["verified"] = bool(current["verified"])
+            stats["failed_pairs"] = current["failed_pairs"]
+
+        if current["verified"]:
+            self.effect_address_version = EFFECT_ADDRESS_VERSION
+            self.effect_integrity_version = EFFECT_INTEGRITY_VERSION
+            self.effect_repair_verified = True
+        else:
+            self.effect_integrity_version = 0
+            self.effect_repair_verified = False
+
+        self.last_effect_repair_stats = stats
+        return stats
+
+    def mark_effect_integrity_if_verified(
+        self,
+        yaml_path: str | Path | None = None,
+    ) -> dict:
+        """Set the persisted effect-integrity marker only after verification."""
+        path = Path(yaml_path) if yaml_path is not None else DEFAULT_TEXTBOOK_PATH
+        verification = self.verify_effect_rules_from_textbook(path)
+        if verification["verified"]:
+            self.effect_address_version = EFFECT_ADDRESS_VERSION
+            self.effect_integrity_version = EFFECT_INTEGRITY_VERSION
+            self.effect_repair_verified = True
+        return verification
+
+    def verify_effect_rules_from_textbook(
+        self,
+        yaml_path: str | Path | None = None,
+    ) -> dict:
+        """Verify core textbook physics effects in the role-bound channel."""
+        path = Path(yaml_path) if yaml_path is not None else DEFAULT_TEXTBOOK_PATH
+        expectations = self._core_effect_expectations(path)
+        failed: list[dict] = []
+        for target, action in sorted(CORE_EFFECT_REPAIR_PAIRS - set(expectations)):
+            failed.append({
+                "target": target,
+                "action": action,
+                "confidence": 0.0,
+                "decoded": {},
+                "missing": {"__textbook_rule__": {"expected_sign": 1, "actual": None}},
+                "unexpected": {},
+            })
+
+        for (target, action), expected in expectations.items():
+            effect_vec, confidence = self.predict(target, action)
+            decoded = self.decode_effect(effect_vec) if confidence >= 0.2 else {}
+            missing: dict[str, dict[str, int | None]] = {}
+            for role_name, expected_delta in expected.items():
+                actual = decoded.get(role_name)
+                if not self._effect_delta_sign_matches(actual, expected_delta):
+                    missing[role_name] = {
+                        "expected_sign": 1 if expected_delta > 0 else -1,
+                        "actual": actual,
+                    }
+            unexpected = {
+                role_name: value
+                for role_name, value in decoded.items()
+                if role_name not in expected
+            }
+            if missing or unexpected:
+                failed.append({
+                    "target": target,
+                    "action": action,
+                    "confidence": round(float(confidence), 6),
+                    "decoded": decoded,
+                    "missing": missing,
+                    "unexpected": unexpected,
+                })
+
+        return {
+            "verified": not failed,
+            "checked": len(expectations),
+            "failed_pairs": failed,
+        }
+
+    @staticmethod
+    def _effect_delta_sign_matches(actual: int | None, expected: int) -> bool:
+        if actual is None:
+            return False
+        if expected > 0:
+            return actual > 0
+        if expected < 0:
+            return actual < 0
+        return actual == 0
+
+    @staticmethod
+    def _core_effect_expectations(yaml_path: Path) -> dict[tuple[str, str], dict[str, int]]:
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+
+        expectations: dict[tuple[str, str], dict[str, int]] = {}
+        for rule in data.get("rules", []):
+            action = rule.get("action")
+            target = rule.get("target") or rule.get("result") or rule.get("item")
+            if (target, action) not in CORE_EFFECT_REPAIR_PAIRS:
+                continue
+            effect: dict[str, int] = {}
+            rule_effect = rule.get("effect", {})
+            for item, delta in rule_effect.get("inventory", {}).items():
+                effect[item] = int(delta)
+            for var, delta in rule_effect.get("body", {}).items():
+                effect[var] = int(delta)
+            if effect:
+                expectations[(str(target), str(action))] = effect
+
+        return expectations

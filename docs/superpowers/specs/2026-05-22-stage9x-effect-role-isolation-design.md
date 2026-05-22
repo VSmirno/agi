@@ -65,3 +65,32 @@ Local validation covers:
 
 The next required gate is a HyperPC seed17 episode-0 video validation. That is
 outside this local implementation task.
+
+## Addendum: Repair Strength and Integrity
+
+HyperPC validation of commit `ca55f54` failed before behavioral evaluation
+because the legacy repair path was too weak. `VectorWorldModel.load()` detected
+the missing `effect_address_version` and called the repair hook, but that hook
+only seeded one textbook batch. The canonical legacy SDM had enough old content
+that one batch did not overpower the new role-bound `__EFFECT__` addresses:
+`table/place`, `wood_sword/make`, and `wood_pickaxe/make` still decoded as empty
+or wrong effects after load.
+
+The repair contract is therefore stronger than "version marker exists":
+
+- load must verify core textbook physics effects after repair;
+- repair must repeat deterministic textbook seeding up to a bounded maximum
+  before trusting the snapshot;
+- `effect_address_version` and the integrity marker are only trusted when core
+  verification passes;
+- snapshots with `effect_address_version=1` but no verified integrity marker, or
+  with failed core verification, are repaired again instead of being accepted.
+
+The core invariant currently checks the exact Stage9X failure class:
+`table/place` must decode negative wood, `wood_sword/make` must decode positive
+`wood_sword` and negative wood, and `wood_pickaxe/make` must decode positive
+`wood_pickaxe` and negative wood. Those core decodes must also avoid unexpected
+extra roles, because a sign-correct craft effect that still decodes a legacy
+`health` or outcome-like role can distort forward simulation. This preserves old
+outcome memories and raw legacy content while making the physics-effect channel
+demonstrably usable by planner scoring.

@@ -18,7 +18,10 @@ import pytest
 import torch
 
 from snks.agent.vector_bootstrap import load_from_textbook
-from snks.agent.vector_world_model import VectorWorldModel, bind
+from snks.agent.vector_world_model import (
+    EFFECT_ADDRESS_VERSION,
+    VectorWorldModel,
+)
 
 
 TEXTBOOK_PATH = Path(__file__).resolve().parents[2] / "configs" / "crafter_textbook.yaml"
@@ -28,6 +31,8 @@ TEXTBOOK_PATH = Path(__file__).resolve().parents[2] / "configs" / "crafter_textb
 # stays meaningful (smaller dim means higher crosstalk floor).
 SMOKE_DIM = 8192
 SMOKE_LOC = 10000
+REPAIR_DIM = 2048
+REPAIR_LOC = 1000
 
 
 def _alive_outcome(damage: int = 0) -> dict:
@@ -53,38 +58,62 @@ def _conflict_context() -> dict[str, str]:
     }
 
 
-def _write_legacy_raw_effect(
-    model: VectorWorldModel,
-    concept: str,
-    action: str,
-    effect_vec: torch.Tensor,
-    repeats: int = 5,
-) -> None:
-    """Write to the pre-repair unrole address used by legacy snapshots."""
-    address = bind(model._ensure_concept(concept), model._ensure_action(action))
-    for _ in range(repeats):
-        model.memory.write(address, effect_vec)
-
-
 def _save_legacy_payload_without_effect_marker(
     model: VectorWorldModel,
     path: Path,
+    *,
+    effect_address_version: int | None = None,
+    effect_repair_verified: bool | None = None,
 ) -> None:
-    torch.save(
-        {
-            "dim": model.dim,
-            "max_scalar": model.max_scalar,
-            "concepts": {k: v.cpu() for k, v in model.concepts.items()},
-            "actions": {k: v.cpu() for k, v in model.actions.items()},
-            "roles": {k: v.cpu() for k, v in model.roles.items()},
-            "memory": model.memory.state_dict(),
-            "action_requirements": model.action_requirements,
-            "near_requirements": model.near_requirements,
-            "proximity_ranges": model.proximity_ranges,
-            "movement_behaviors": model.movement_behaviors,
-        },
-        path,
-    )
+    payload = {
+        "dim": model.dim,
+        "max_scalar": model.max_scalar,
+        "concepts": {k: v.cpu() for k, v in model.concepts.items()},
+        "actions": {k: v.cpu() for k, v in model.actions.items()},
+        "roles": {k: v.cpu() for k, v in model.roles.items()},
+        "memory": model.memory.state_dict(),
+        "action_requirements": model.action_requirements,
+        "near_requirements": model.near_requirements,
+        "proximity_ranges": model.proximity_ranges,
+        "movement_behaviors": model.movement_behaviors,
+    }
+    if effect_address_version is not None:
+        payload["effect_address_version"] = effect_address_version
+    if effect_repair_verified is not None:
+        payload["effect_repair_verified"] = effect_repair_verified
+        payload["effect_integrity_version"] = 1 if effect_repair_verified else 0
+    torch.save(payload, path)
+
+
+def _write_wrong_effect_at_role_address(
+    model: VectorWorldModel,
+    concept: str,
+    action: str,
+    repeats: int = 20,
+) -> None:
+    wrong_vec = model.encode_effect({"health": -5})
+    address = model._effect_address(concept, action)
+    for _ in range(repeats):
+        model.memory.write(address, wrong_vec)
+
+
+def _assert_core_crafting_effects_verified(model: VectorWorldModel) -> None:
+    verification = model.verify_effect_rules_from_textbook(TEXTBOOK_PATH)
+    assert verification["verified"], verification
+
+    table_vec, _ = model.predict("table", "place")
+    table = model.decode_effect(table_vec)
+    assert table.get("wood", 0) < 0, table
+
+    sword_vec, _ = model.predict("wood_sword", "make")
+    sword = model.decode_effect(sword_vec)
+    assert sword.get("wood_sword", 0) > 0, sword
+    assert sword.get("wood", 0) < 0, sword
+
+    pickaxe_vec, _ = model.predict("wood_pickaxe", "make")
+    pickaxe = model.decode_effect(pickaxe_vec)
+    assert pickaxe.get("wood_pickaxe", 0) > 0, pickaxe
+    assert pickaxe.get("wood", 0) < 0, pickaxe
 
 
 def test_encode_decode_roundtrip() -> None:
@@ -209,28 +238,48 @@ def test_load_missing_file_returns_false() -> None:
 
 
 def test_legacy_polluted_effect_address_repairs_from_textbook(tmp_path: Path) -> None:
-    """Legacy raw-address outcome content must not be read as physics effect."""
-    legacy = VectorWorldModel(n_locations=5000, dim=SMOKE_DIM, seed=97)
-    polluted_outcome_vec = legacy.encode_outcome(_alive_outcome(damage=2))
-    _write_legacy_raw_effect(
-        legacy,
-        "wood_sword",
-        "make",
-        polluted_outcome_vec,
-        repeats=8,
-    )
+    """Legacy pollution that needs repeated batches loads with verified effects."""
+    legacy = VectorWorldModel(n_locations=REPAIR_LOC, dim=REPAIR_DIM, seed=97)
+    load_from_textbook(legacy, TEXTBOOK_PATH)
+    for concept, action in [
+        ("table", "place"),
+        ("wood_sword", "make"),
+        ("wood_pickaxe", "make"),
+    ]:
+        _write_wrong_effect_at_role_address(legacy, concept, action, repeats=12)
 
     path = tmp_path / "legacy_polluted_wm.pt"
     _save_legacy_payload_without_effect_marker(legacy, path)
 
-    repaired = VectorWorldModel(n_locations=5000, dim=SMOKE_DIM, seed=97)
+    repaired = VectorWorldModel(n_locations=REPAIR_LOC, dim=REPAIR_DIM, seed=97)
     assert repaired.load(path)
 
-    effect_vec, confidence = repaired.predict("wood_sword", "make")
-    decoded = repaired.decode_effect(effect_vec)
-    assert confidence >= 0.2
-    assert "wood_sword" in decoded, decoded
-    assert "damage_h" not in decoded, decoded
+    assert repaired.last_effect_repair_stats is not None
+    assert repaired.last_effect_repair_stats["batches"] > 1
+    assert repaired.effect_repair_verified is True
+    _assert_core_crafting_effects_verified(repaired)
+
+
+def test_partial_versioned_snapshot_without_integrity_marker_is_repaired(
+    tmp_path: Path,
+) -> None:
+    """effect_address_version=1 alone is not enough to trust a snapshot."""
+    partial = VectorWorldModel(n_locations=REPAIR_LOC, dim=REPAIR_DIM, seed=101)
+    path = tmp_path / "partial_versioned_wm.pt"
+    _save_legacy_payload_without_effect_marker(
+        partial,
+        path,
+        effect_address_version=EFFECT_ADDRESS_VERSION,
+    )
+
+    repaired = VectorWorldModel(n_locations=REPAIR_LOC, dim=REPAIR_DIM, seed=101)
+    assert repaired.load(path)
+
+    assert repaired.last_effect_repair_stats is not None
+    assert repaired.last_effect_repair_stats["batches"] >= 1
+    assert repaired.effect_address_version == EFFECT_ADDRESS_VERSION
+    assert repaired.effect_repair_verified is True
+    _assert_core_crafting_effects_verified(repaired)
 
 
 def test_option_outcome_roundtrip() -> None:

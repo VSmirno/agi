@@ -174,4 +174,7 @@ def load_from_textbook(model: "VectorWorldModel", yaml_path: str | Path) -> dict
                     model.learn("background", "tick", effect)
                 stats["passive_rules"] += 1
 
+    if hasattr(model, "mark_effect_integrity_if_verified"):
+        model.mark_effect_integrity_if_verified(yaml_path)
+
     return stats
