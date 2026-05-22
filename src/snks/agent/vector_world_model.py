@@ -16,6 +16,20 @@ import numpy as np
 from pathlib import Path
 
 
+EFFECT_ADDRESS_VERSION = 1
+EFFECT_ROLE_NAME = "__EFFECT__"
+NON_EFFECT_DECODE_ROLES = {
+    "__NEG__",
+    EFFECT_ROLE_NAME,
+    "__OUTCOME_H__",
+    "__OPTION_OUTCOME_H__",
+    "survived_h",
+    "damage_h",
+    "died_to",
+}
+DEFAULT_TEXTBOOK_PATH = Path(__file__).resolve().parents[3] / "configs" / "crafter_textbook.yaml"
+
+
 # ---------------------------------------------------------------------------
 # BitVector operations (binary XOR algebra)
 # ---------------------------------------------------------------------------
@@ -316,6 +330,7 @@ class VectorWorldModel:
         self.actions: dict[str, torch.Tensor] = {}
         # Role vectors for effect encoding/decoding
         self.roles: dict[str, torch.Tensor] = {}
+        self.effect_address_version = EFFECT_ADDRESS_VERSION
 
         # Associative memory
         self.memory = CausalSDM(
@@ -402,7 +417,7 @@ class VectorWorldModel:
         neg_role = self._ensure_role("__NEG__")
 
         for role_name, role_vec in self.roles.items():
-            if role_name == "__NEG__":
+            if role_name in NON_EFFECT_DECODE_ROLES or role_name.startswith("option_ctx:"):
                 continue
 
             # Try positive
@@ -431,10 +446,15 @@ class VectorWorldModel:
 
         Returns (effect_vector, confidence). Confidence 0 = no knowledge.
         """
+        address = self._effect_address(concept_id, action)
+        return self.memory.read(address)
+
+    def _effect_address(self, concept_id: str, action: str) -> torch.Tensor:
+        """Role-isolated physics-effect address for a (concept, action) pair."""
         v_concept = self._ensure_concept(concept_id)
         v_action = self._ensure_action(action)
-        address = bind(v_concept, v_action)
-        return self.memory.read(address)
+        v_role = self._ensure_role(EFFECT_ROLE_NAME)
+        return bind(bind(v_concept, v_action), v_role)
 
     # ------------------------------------------------------------------ #
     # Outcome-role: cross-episode trajectory outcomes per (concept, action)
@@ -442,9 +462,8 @@ class VectorWorldModel:
     #
     # Stored in the SAME `self.memory` SDM as physics-effect predictions
     # but at a parallel address `bind(bind(concept, action), role_outcome_h)`.
-    # XOR-binding makes the outcome address orthogonal to the effect address
-    # for the same pair, so outcome writes do not pollute physics reads and
-    # vice versa.
+    # Physics effects use their own `role__EFFECT__` address, so both payload
+    # types share one substrate while remaining role-isolated.
     #
     # outcome_dict shape: {"survived_h": bool, "damage_h": int, "died_to": str | None}
 
@@ -623,9 +642,7 @@ class VectorWorldModel:
 
         addresses = []
         for concept_id, action in pairs:
-            v_concept = self._ensure_concept(concept_id)
-            v_action = self._ensure_action(action)
-            addresses.append(bind(v_concept, v_action))
+            addresses.append(self._effect_address(concept_id, action))
 
         addr_tensor = torch.stack(addresses)
         predictions, confidences = self.memory.batch_read(addr_tensor)
@@ -653,9 +670,7 @@ class VectorWorldModel:
         observed_vec = self.encode_effect(observed_effect)
 
         # Write association
-        v_concept = self._ensure_concept(concept_id)
-        v_action = self._ensure_action(action)
-        address = bind(v_concept, v_action)
+        address = self._effect_address(concept_id, action)
         self.memory.write(address, observed_vec)
 
         # Compute surprise
@@ -666,6 +681,7 @@ class VectorWorldModel:
 
         # Update concept embedding with context
         if context_vectors and surprise > 0.1:
+            v_concept = self._ensure_concept(concept_id)
             ctx = bundle(context_vectors)
             weight = min(surprise, 0.3)  # Cap context influence
             self.concepts[concept_id] = bundle(
@@ -697,6 +713,7 @@ class VectorWorldModel:
         torch.save({
             "dim": self.dim,
             "max_scalar": self.max_scalar,
+            "effect_address_version": self.effect_address_version,
             "concepts": {k: v.cpu() for k, v in self.concepts.items()},
             "actions": {k: v.cpu() for k, v in self.actions.items()},
             "roles": {k: v.cpu() for k, v in self.roles.items()},
@@ -762,4 +779,23 @@ class VectorWorldModel:
         self.memory.activation_radius = mem["activation_radius"]
         self.memory.content = mem["content"].to(self.device).clone()
         self.memory.n_writes = mem["n_writes"]
+        self.effect_address_version = int(data.get("effect_address_version", 0) or 0)
+        if self.effect_address_version < EFFECT_ADDRESS_VERSION:
+            self.repair_effect_rules_from_textbook()
+            self.effect_address_version = EFFECT_ADDRESS_VERSION
         return True
+
+    def repair_effect_rules_from_textbook(self, yaml_path: str | Path | None = None) -> dict:
+        """Seed textbook physics rules into the effect-role channel.
+
+        Legacy snapshots wrote action effects at the raw
+        `bind(concept, action)` address. New physics reads ignore that
+        address, so legacy models need textbook facts copied into
+        `bind(bind(concept, action), __EFFECT__)` on load. Existing SDM
+        content is preserved; the repair only adds deterministic textbook
+        effect writes and fact dictionaries.
+        """
+        from snks.agent.vector_bootstrap import load_from_textbook
+
+        path = Path(yaml_path) if yaml_path is not None else DEFAULT_TEXTBOOK_PATH
+        return load_from_textbook(self, path)

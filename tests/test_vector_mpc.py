@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import torch
 import pytest
 import numpy as np
 
-from snks.agent.vector_world_model import VectorWorldModel
+from snks.agent.vector_world_model import VectorWorldModel, bind
 from snks.agent.stimuli import (
     HomeostasisStimulus,
     StimuliLayer,
@@ -541,6 +542,74 @@ class TestScorePreference:
         move_score = score_trajectory(simulate_forward(seeded_model, move_plan, state), stimuli=stimuli)
 
         assert move_score > sleep_score
+
+    def test_repaired_legacy_model_scores_wood_sword_chain_above_baseline(
+        self,
+        tmp_path,
+    ):
+        legacy = VectorWorldModel(dim=8192, n_locations=5000, seed=109)
+        polluted = legacy.encode_outcome({
+            "survived_h": True,
+            "damage_h": 2,
+            "died_to": None,
+        })
+        raw_address = bind(
+            legacy._ensure_concept("wood_sword"),
+            legacy._ensure_action("make"),
+        )
+        for _ in range(8):
+            legacy.memory.write(raw_address, polluted)
+
+        path = tmp_path / "legacy_polluted_wm.pt"
+        torch.save(
+            {
+                "dim": legacy.dim,
+                "max_scalar": legacy.max_scalar,
+                "concepts": {k: v.cpu() for k, v in legacy.concepts.items()},
+                "actions": {k: v.cpu() for k, v in legacy.actions.items()},
+                "roles": {k: v.cpu() for k, v in legacy.roles.items()},
+                "memory": legacy.memory.state_dict(),
+                "action_requirements": legacy.action_requirements,
+                "near_requirements": legacy.near_requirements,
+                "proximity_ranges": legacy.proximity_ranges,
+                "movement_behaviors": legacy.movement_behaviors,
+            },
+            path,
+        )
+
+        repaired = VectorWorldModel(dim=8192, n_locations=5000, seed=109)
+        assert repaired.load(path)
+        state = VectorState(
+            inventory={"wood": 3, "wood_sword": 0},
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            spatial_map=CrafterSpatialMap(),
+        )
+        candidates = generate_candidate_plans(
+            repaired,
+            state,
+            state.spatial_map,
+            visible_concepts=set(),
+            player_pos=state.player_pos,
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+        )
+        chain = next(
+            plan for plan in candidates
+            if plan.origin == "chain:place_table+make_wood_sword"
+        )
+        baseline = next(plan for plan in candidates if plan.origin == "baseline")
+
+        goal = Goal("craft_wood_sword")
+        chain_traj = simulate_forward(repaired, chain, state)
+        baseline_traj = simulate_forward(repaired, baseline, state)
+        chain_score = score_trajectory(chain_traj, goal=goal)
+        baseline_score = score_trajectory(baseline_traj, goal=goal)
+
+        assert chain_traj.final_state is not None
+        assert chain_traj.final_state.inventory.get("wood_sword", 0) > 0
+        assert goal.progress(chain_traj) > 0.0
+        assert chain_score > baseline_score
 
 
 class TestViewportMapping:

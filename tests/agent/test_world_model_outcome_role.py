@@ -17,7 +17,11 @@ from pathlib import Path
 import pytest
 import torch
 
-from snks.agent.vector_world_model import VectorWorldModel
+from snks.agent.vector_bootstrap import load_from_textbook
+from snks.agent.vector_world_model import VectorWorldModel, bind
+
+
+TEXTBOOK_PATH = Path(__file__).resolve().parents[2] / "configs" / "crafter_textbook.yaml"
 
 
 # Smoke profile: same dim as world model real config so XOR-orthogonality
@@ -47,6 +51,40 @@ def _conflict_context() -> dict[str, str]:
         "progress_state": "normal",
         "goal_family": "fight",
     }
+
+
+def _write_legacy_raw_effect(
+    model: VectorWorldModel,
+    concept: str,
+    action: str,
+    effect_vec: torch.Tensor,
+    repeats: int = 5,
+) -> None:
+    """Write to the pre-repair unrole address used by legacy snapshots."""
+    address = bind(model._ensure_concept(concept), model._ensure_action(action))
+    for _ in range(repeats):
+        model.memory.write(address, effect_vec)
+
+
+def _save_legacy_payload_without_effect_marker(
+    model: VectorWorldModel,
+    path: Path,
+) -> None:
+    torch.save(
+        {
+            "dim": model.dim,
+            "max_scalar": model.max_scalar,
+            "concepts": {k: v.cpu() for k, v in model.concepts.items()},
+            "actions": {k: v.cpu() for k, v in model.actions.items()},
+            "roles": {k: v.cpu() for k, v in model.roles.items()},
+            "memory": model.memory.state_dict(),
+            "action_requirements": model.action_requirements,
+            "near_requirements": model.near_requirements,
+            "proximity_ranges": model.proximity_ranges,
+            "movement_behaviors": model.movement_behaviors,
+        },
+        path,
+    )
 
 
 def test_encode_decode_roundtrip() -> None:
@@ -107,6 +145,27 @@ def test_outcome_role_does_not_pollute_physics_predict() -> None:
     )
 
 
+def test_outcome_writes_do_not_change_wood_sword_make_effect() -> None:
+    """Outcome role writes must not alter the repaired physics-effect channel."""
+    m = VectorWorldModel(n_locations=5000, dim=SMOKE_DIM, seed=83)
+    load_from_textbook(m, TEXTBOOK_PATH)
+
+    before_vec, before_conf = m.predict("wood_sword", "make")
+    before = m.decode_effect(before_vec)
+    assert before_conf >= 0.2
+    assert "wood_sword" in before
+    assert "damage_h" not in before
+
+    for _ in range(20):
+        m.learn_outcome("wood_sword", "make", _alive_outcome(damage=7))
+
+    after_vec, after_conf = m.predict("wood_sword", "make")
+    after = m.decode_effect(after_vec)
+    assert after_conf >= 0.2
+    assert after == before
+    assert "damage_h" not in after
+
+
 def test_per_pair_outcomes_are_independent() -> None:
     """Different (concept, action) pairs retain distinct outcomes."""
     m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=13)
@@ -147,6 +206,31 @@ def test_save_load_roundtrip_preserves_outcome_writes() -> None:
 def test_load_missing_file_returns_false() -> None:
     m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=19)
     assert m.load("/tmp/does-not-exist-vector-world-model.pt") is False
+
+
+def test_legacy_polluted_effect_address_repairs_from_textbook(tmp_path: Path) -> None:
+    """Legacy raw-address outcome content must not be read as physics effect."""
+    legacy = VectorWorldModel(n_locations=5000, dim=SMOKE_DIM, seed=97)
+    polluted_outcome_vec = legacy.encode_outcome(_alive_outcome(damage=2))
+    _write_legacy_raw_effect(
+        legacy,
+        "wood_sword",
+        "make",
+        polluted_outcome_vec,
+        repeats=8,
+    )
+
+    path = tmp_path / "legacy_polluted_wm.pt"
+    _save_legacy_payload_without_effect_marker(legacy, path)
+
+    repaired = VectorWorldModel(n_locations=5000, dim=SMOKE_DIM, seed=97)
+    assert repaired.load(path)
+
+    effect_vec, confidence = repaired.predict("wood_sword", "make")
+    decoded = repaired.decode_effect(effect_vec)
+    assert confidence >= 0.2
+    assert "wood_sword" in decoded, decoded
+    assert "damage_h" not in decoded, decoded
 
 
 def test_option_outcome_roundtrip() -> None:
