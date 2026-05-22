@@ -32,6 +32,9 @@ from snks.agent.vector_mpc_agent import (
     _remove_entity_target_from_textbook,
     _should_continue_interaction,
     _interaction_intent_from_plan,
+    _interaction_intent_from_goal_target,
+    _select_interaction_completion_plan,
+    _update_interaction_completion_after_step,
     _build_option_context,
     _derive_strategy_option,
     _generate_motion_chains,
@@ -280,6 +283,12 @@ class TestGenerateCandidatePlans:
                 origin="navigate_known:tree",
             )
         ).option_id == "seek_known:tree"
+        assert _derive_strategy_option(
+            VectorPlan(
+                steps=[VectorPlanStep(action="do", target="tree")],
+                origin="align_interaction:tree:do",
+            )
+        ).option_id == "complete_interaction:tree:do"
         assert _derive_strategy_option(
             VectorPlan(
                 steps=[VectorPlanStep(action="do", target="zombie")],
@@ -997,6 +1006,203 @@ class TestKnownTargetNavigation:
             baseline_traj,
             goal=goal,
         )
+
+
+class TestInteractionCompletion:
+    def test_reached_not_facing_target_emits_alignment_not_baseline(
+        self, seeded_model
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((11, 10), "tree", 1.0)
+        state = VectorState(
+            inventory={},
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+        )
+        intent = _interaction_intent_from_goal_target(
+            model=seeded_model,
+            state=state,
+            active_goal=Goal("gather_wood", target_concept="tree"),
+            spatial_map=sm,
+            dynamic_entities=[],
+            player_pos=(10, 10),
+            existing_intent=None,
+            step=4,
+        )
+
+        plan, trace = _select_interaction_completion_plan(
+            interaction_intent=intent,
+            player_pos=(10, 10),
+            spatial_map=sm,
+            dynamic_entities=[],
+            last_move="move_down",
+        )
+
+        assert plan is not None
+        assert plan.origin == "align_interaction:tree:do"
+        assert trace["selected_phase"] == "align"
+        assert trace["is_adjacent"] is True
+        assert trace["is_facing_target"] is False
+        assert expand_to_primitive(
+            plan.steps[0],
+            player_pos=(10, 10),
+            spatial_map=sm,
+            model=seeded_model,
+            rng=np.random.RandomState(0),
+            last_action="move_down",
+            near_concept="tree",
+        ) == "move_right"
+
+    def test_facing_target_emits_intended_action(self, seeded_model):
+        sm = CrafterSpatialMap()
+        sm.update((11, 10), "tree", 1.0)
+        intent = {
+            "action": "do",
+            "target": "tree",
+            "expected_effect": {"wood": 1},
+            "started_step": 4,
+            "attempts": 0,
+            "status": "active",
+        }
+
+        plan, trace = _select_interaction_completion_plan(
+            interaction_intent=intent,
+            player_pos=(10, 10),
+            spatial_map=sm,
+            dynamic_entities=[],
+            last_move="move_right",
+        )
+
+        assert plan is not None
+        assert plan.origin == "complete_interaction:tree:do"
+        assert trace["selected_phase"] == "act"
+        assert trace["is_facing_target"] is True
+        assert expand_to_primitive(
+            plan.steps[0],
+            player_pos=(10, 10),
+            spatial_map=sm,
+            model=seeded_model,
+            rng=np.random.RandomState(0),
+            last_action="move_right",
+            near_concept="tree",
+        ) == "do"
+
+    def test_expected_effect_closes_verified_intent(self):
+        intent = {
+            "action": "do",
+            "target": "tree",
+            "expected_effect": {"wood": 1},
+            "attempts": 0,
+            "status": "acting",
+        }
+        trace = {
+            "status": "acting",
+            "action": "do",
+            "target_concept": "tree",
+            "target_pos": [11, 10],
+            "expected_effect": {"wood": 1},
+            "relation": "facing",
+            "is_adjacent": True,
+            "is_facing_target": True,
+            "attempts": 0,
+            "selected_phase": "act",
+            "reason": "relation_satisfied",
+        }
+
+        updated, updated_trace, close = _update_interaction_completion_after_step(
+            interaction_intent=intent,
+            interaction_trace=trace,
+            primitive="do",
+            control_origin="planner_bootstrap",
+            rescue_trigger=None,
+            inventory_delta={"wood": 1},
+            body_delta={},
+        )
+
+        assert close is True
+        assert updated["status"] == "verified"
+        assert updated_trace["status"] == "verified"
+        assert updated_trace["expected_effect_achieved"] is True
+        assert updated_trace["selected_phase"] == "verify"
+
+    def test_failed_attempts_are_bounded_and_trace_visible(self):
+        intent = {
+            "action": "do",
+            "target": "tree",
+            "expected_effect": {"wood": 1},
+            "attempts": 2,
+            "status": "acting",
+        }
+        trace = {
+            "status": "acting",
+            "action": "do",
+            "target_concept": "tree",
+            "target_pos": [11, 10],
+            "expected_effect": {"wood": 1},
+            "relation": "facing",
+            "is_adjacent": True,
+            "is_facing_target": True,
+            "attempts": 2,
+            "selected_phase": "act",
+            "reason": "relation_satisfied",
+        }
+
+        updated, updated_trace, close = _update_interaction_completion_after_step(
+            interaction_intent=intent,
+            interaction_trace=trace,
+            primitive="do",
+            control_origin="planner_bootstrap",
+            rescue_trigger=None,
+            inventory_delta={},
+            body_delta={},
+        )
+
+        assert close is True
+        assert updated["status"] == "failed"
+        assert updated["attempts"] == 3
+        assert updated_trace["status"] == "failed"
+        assert updated_trace["attempts"] == 3
+        assert updated_trace["reason"] == "max_attempts_exceeded"
+
+    @pytest.mark.parametrize(
+        ("target", "goal_id", "expected"),
+        [
+            ("tree", "gather_wood", {"wood": 1}),
+            ("water", "find_water", {"drink": 5}),
+        ],
+    )
+    def test_same_do_geometry_applies_to_multiple_targets(
+        self, seeded_model, target, goal_id, expected
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((11, 10), target, 1.0)
+        state = VectorState(
+            inventory={},
+            body={"health": 9.0, "food": 9.0, "drink": 2.0, "energy": 9.0},
+            player_pos=(10, 10),
+        )
+
+        intent = _interaction_intent_from_goal_target(
+            model=seeded_model,
+            state=state,
+            active_goal=Goal(goal_id, target_concept=target),
+            spatial_map=sm,
+            dynamic_entities=[],
+            player_pos=(10, 10),
+            existing_intent=None,
+            step=9,
+        )
+        plan, trace = _select_interaction_completion_plan(
+            interaction_intent=intent,
+            player_pos=(10, 10),
+            spatial_map=sm,
+            dynamic_entities=[],
+            last_move="move_right",
+        )
+
+        assert intent["expected_effect"] == expected
+        assert trace["relation"] == "facing"
+        assert plan.origin == f"complete_interaction:{target}:do"
 
 
 # ---------------------------------------------------------------------------

@@ -476,6 +476,343 @@ def _should_continue_interaction(
     return None
 
 
+_INTERACTION_COMPLETION_MAX_ATTEMPTS = 3
+
+
+def _action_geometry(action: str) -> dict[str, Any]:
+    """Small generic action-geometry bridge for embodied interactions.
+
+    Crafter declares this in the textbook (`do.dispatch=facing_tile`). The
+    vector planner does not yet carry the full textbook schema, so keep the
+    bridge action-scoped rather than target-scoped: `do` requires the target
+    on the facing tile, regardless of whether the target is tree, water, cow,
+    or an enemy.
+    """
+    if action == "do":
+        return {
+            "operates_on": "facing_tile",
+            "requires_relation": "facing",
+            "range": 1,
+        }
+    return {
+        "operates_on": "self",
+        "requires_relation": "none",
+        "range": 0,
+    }
+
+
+def _positive_expected_effect(
+    *,
+    model: VectorWorldModel,
+    state: VectorState,
+    target: str,
+    action: str,
+) -> dict[str, int] | None:
+    if not model.requirements_met(target, action, state.inventory):
+        return None
+    effect_vec, confidence = model.predict(target, action)
+    if confidence < 0.2:
+        return None
+    decoded = model.decode_effect(effect_vec)
+    expected: dict[str, int] = {}
+    for var, delta in decoded.items():
+        if int(delta) <= 0:
+            continue
+        if var in state.body and float(state.body.get(var, 0.0)) >= 9.0:
+            continue
+        expected[var] = int(delta)
+    return expected or None
+
+
+def _interaction_relation_state(
+    *,
+    action: str,
+    player_pos: tuple[int, int],
+    target_pos: tuple[int, int] | None,
+    last_move: str | None,
+) -> dict[str, Any]:
+    geometry = _action_geometry(action)
+    relation = str(geometry["requires_relation"])
+    if target_pos is None:
+        return {
+            "relation": relation,
+            "distance": None,
+            "is_adjacent": False,
+            "is_facing_target": False,
+        }
+    px, py = int(player_pos[0]), int(player_pos[1])
+    tx, ty = int(target_pos[0]), int(target_pos[1])
+    dx, dy = tx - px, ty - py
+    distance = abs(dx) + abs(dy)
+    is_adjacent = distance <= int(geometry["range"])
+    if relation == "facing" and distance == 1:
+        facing = _facing_delta(last_move)
+        if facing == (0, 0):
+            facing = (0, 1)
+        is_facing = (dx, dy) == facing
+    else:
+        is_facing = relation in ("none", "")
+    return {
+        "relation": relation,
+        "distance": int(distance),
+        "is_adjacent": bool(is_adjacent),
+        "is_facing_target": bool(is_facing),
+    }
+
+
+def _interaction_intent_from_goal_target(
+    *,
+    model: VectorWorldModel,
+    state: VectorState,
+    active_goal: Goal | None,
+    spatial_map: CrafterSpatialMap,
+    dynamic_entities: list[DynamicEntityState],
+    player_pos: tuple[int, int],
+    existing_intent: dict[str, Any] | None,
+    step: int,
+) -> dict[str, Any] | None:
+    """Create or refresh a generic completion intent for the active goal target."""
+    if active_goal is None or not active_goal.target_concept:
+        return existing_intent
+    target = str(active_goal.target_concept)
+    action = "do"
+    expected_effect = _positive_expected_effect(
+        model=model,
+        state=state,
+        target=target,
+        action=action,
+    )
+    if expected_effect is None:
+        return existing_intent
+    target_pos = _nearest_known_target_position(
+        target,
+        player_pos,
+        spatial_map,
+        dynamic_entities,
+    )
+    if target_pos is None:
+        return existing_intent
+
+    if (
+        existing_intent is not None
+        and existing_intent.get("action") == action
+        and existing_intent.get("target") == target
+        and existing_intent.get("expected_effect") == expected_effect
+    ):
+        refreshed = dict(existing_intent)
+        refreshed["target_pos"] = [int(target_pos[0]), int(target_pos[1])]
+        return refreshed
+
+    return {
+        "action": action,
+        "target": target,
+        "expected_effect": expected_effect,
+        "target_pos": [int(target_pos[0]), int(target_pos[1])],
+        "started_step": int(step),
+        "attempts": 0,
+        "status": "active",
+    }
+
+
+def _select_interaction_completion_plan(
+    *,
+    interaction_intent: dict[str, Any] | None,
+    player_pos: tuple[int, int],
+    spatial_map: CrafterSpatialMap,
+    dynamic_entities: list[DynamicEntityState],
+    last_move: str | None,
+) -> tuple[VectorPlan | None, dict[str, Any] | None]:
+    """Select the next approach/align/act plan for an active interaction intent."""
+    if interaction_intent is None:
+        return None, None
+
+    action = str(interaction_intent.get("action"))
+    target = str(interaction_intent.get("target"))
+    expected_effect = dict(interaction_intent.get("expected_effect") or {})
+    attempts = int(interaction_intent.get("attempts", 0))
+    target_pos = _nearest_known_target_position(
+        target,
+        player_pos,
+        spatial_map,
+        dynamic_entities,
+    )
+    relation_state = _interaction_relation_state(
+        action=action,
+        player_pos=player_pos,
+        target_pos=target_pos,
+        last_move=last_move,
+    )
+    trace = {
+        "status": str(interaction_intent.get("status", "active")),
+        "action": action,
+        "target_concept": target,
+        "target_pos": (
+            [int(target_pos[0]), int(target_pos[1])]
+            if target_pos is not None
+            else None
+        ),
+        "expected_effect": expected_effect,
+        "relation": relation_state["relation"],
+        "is_adjacent": bool(relation_state["is_adjacent"]),
+        "is_facing_target": bool(relation_state["is_facing_target"]),
+        "attempts": attempts,
+        "selected_phase": None,
+        "reason": None,
+        "expected_effect_achieved": None,
+    }
+
+    if attempts >= _INTERACTION_COMPLETION_MAX_ATTEMPTS:
+        trace.update({
+            "status": "failed",
+            "selected_phase": "failed",
+            "reason": "max_attempts_exceeded",
+        })
+        return None, trace
+    if target_pos is None:
+        trace.update({
+            "status": "failed",
+            "selected_phase": "failed",
+            "reason": "target_lost",
+        })
+        return None, trace
+
+    distance = relation_state["distance"]
+    if distance is not None and int(distance) > int(_action_geometry(action)["range"]):
+        trace.update({
+            "status": "approaching",
+            "selected_phase": "approach",
+            "reason": "target_not_reached",
+        })
+        return (
+            VectorPlan(
+                steps=[VectorPlanStep(action="navigate_known", target=target)],
+                origin=f"navigate_known:{target}",
+            ),
+            trace,
+        )
+
+    if not bool(relation_state["is_facing_target"]):
+        trace.update({
+            "status": "aligning",
+            "selected_phase": "align",
+            "reason": "relation_not_satisfied",
+        })
+        return (
+            VectorPlan(
+                steps=[VectorPlanStep(action=action, target=target)],
+                origin=f"align_interaction:{target}:{action}",
+            ),
+            trace,
+        )
+
+    trace.update({
+        "status": "acting",
+        "selected_phase": "act",
+        "reason": "relation_satisfied",
+    })
+    return (
+        VectorPlan(
+            steps=[VectorPlanStep(action=action, target=target)],
+            origin=f"complete_interaction:{target}:{action}",
+        ),
+        trace,
+    )
+
+
+def _expected_effect_achieved(
+    expected_effect: dict[str, int],
+    *,
+    inventory_delta: dict[str, int],
+    body_delta: dict[str, float],
+) -> bool:
+    if not expected_effect:
+        return False
+    for key, expected_delta in expected_effect.items():
+        if int(expected_delta) <= 0:
+            continue
+        actual = float(body_delta.get(key, inventory_delta.get(key, 0)))
+        # Body variables are capped by the environment, so a declared +5
+        # drink effect may realise as +2 when the body is near max. The
+        # completion question is whether the expected positive effect
+        # occurred, not whether the uncapped textbook magnitude landed.
+        if actual <= 0:
+            return False
+    return True
+
+
+def _update_interaction_completion_after_step(
+    *,
+    interaction_intent: dict[str, Any] | None,
+    interaction_trace: dict[str, Any] | None,
+    primitive: str,
+    control_origin: str,
+    rescue_trigger: str | None,
+    inventory_delta: dict[str, int],
+    body_delta: dict[str, float],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, bool]:
+    """Verify or fail an interaction completion attempt after env feedback."""
+    if interaction_intent is None or interaction_trace is None:
+        return interaction_intent, interaction_trace, False
+
+    updated_intent = dict(interaction_intent)
+    updated_trace = dict(interaction_trace)
+    updated_trace["actual_primitive"] = primitive
+
+    if control_origin == "emergency_safety":
+        reason = f"emergency_override:{rescue_trigger or 'emergency_safety'}"
+        updated_intent["status"] = "interrupted"
+        updated_trace.update({
+            "status": "interrupted",
+            "selected_phase": "interrupted",
+            "reason": reason,
+            "expected_effect_achieved": False,
+        })
+        return updated_intent, updated_trace, True
+
+    achieved = _expected_effect_achieved(
+        dict(updated_intent.get("expected_effect") or {}),
+        inventory_delta=inventory_delta,
+        body_delta=body_delta,
+    )
+    updated_trace["expected_effect_achieved"] = bool(achieved)
+
+    selected_phase = str(updated_trace.get("selected_phase"))
+    if selected_phase == "failed":
+        updated_intent["status"] = "failed"
+        return updated_intent, updated_trace, True
+
+    if achieved:
+        updated_intent["status"] = "verified"
+        updated_trace.update({
+            "status": "verified",
+            "selected_phase": "verify",
+            "reason": "expected_effect_achieved",
+        })
+        return updated_intent, updated_trace, True
+
+    if selected_phase == "act" and primitive == str(updated_intent.get("action")):
+        attempts = int(updated_intent.get("attempts", 0)) + 1
+        updated_intent["attempts"] = attempts
+        updated_trace["attempts"] = attempts
+        if attempts >= _INTERACTION_COMPLETION_MAX_ATTEMPTS:
+            updated_intent["status"] = "failed"
+            updated_trace.update({
+                "status": "failed",
+                "selected_phase": "failed",
+                "reason": "max_attempts_exceeded",
+            })
+            return updated_intent, updated_trace, True
+        updated_intent["status"] = "acting"
+        updated_trace.update({
+            "status": "acting",
+            "reason": "expected_effect_not_observed",
+        })
+        return updated_intent, updated_trace, False
+
+    updated_intent["status"] = str(updated_trace.get("status", "active"))
+    return updated_intent, updated_trace, False
+
+
 def _interaction_intent_from_plan(
     *,
     textbook: Any | None,
@@ -517,6 +854,8 @@ def _derive_strategy_option(plan: VectorPlan) -> StrategyOption:
 
     origin = str(plan.origin)
     first = plan.steps[0]
+    if origin.startswith(("align_interaction:", "complete_interaction:")):
+        return StrategyOption("complete_interaction", f"{first.target}:{first.action}")
     if origin.startswith("continue:"):
         return StrategyOption("continue_interaction", first.target)
     if origin.startswith("opportunistic:"):
@@ -1956,15 +2295,35 @@ def run_vector_mpc_episode(
             target = str(interaction_intent.get("target"))
             goal_matches = (
                 current_goal is not None
-                and current_goal.id == f"fight_{target}"
+                and (
+                    current_goal.id == f"fight_{target}"
+                    or current_goal.target_concept == target
+                )
             )
-            target_present = _is_interaction_target_present(
+            target_pos = _nearest_known_target_position(
+                target,
+                player_pos,
+                spatial_map,
+                observed_dynamic_entities,
+            )
+            target_present = target_pos is not None or _is_interaction_target_present(
                 target=target,
                 near_concept=vf.near_concept,
                 dynamic_entities=observed_dynamic_entities,
             )
             if not goal_matches or not target_present:
                 interaction_intent = None
+
+        interaction_intent = _interaction_intent_from_goal_target(
+            model=model,
+            state=state,
+            active_goal=current_goal,
+            spatial_map=spatial_map,
+            dynamic_entities=observed_dynamic_entities,
+            player_pos=player_pos,
+            existing_intent=interaction_intent,
+            step=step,
+        )
 
         # --- Generate + simulate + score ---
         candidates = generate_candidate_plans(
@@ -2097,6 +2456,30 @@ def run_vector_mpc_episode(
             None,
         )
         best_score, best_plan, best_traj = scored[0]
+        interaction_completion_trace: dict[str, Any] | None = None
+        interaction_completion_plan, interaction_completion_trace = (
+            _select_interaction_completion_plan(
+                interaction_intent=interaction_intent,
+                player_pos=player_pos,
+                spatial_map=spatial_map,
+                dynamic_entities=observed_dynamic_entities,
+                last_move=prev_move,
+            )
+        )
+        if interaction_completion_plan is not None:
+            best_plan = interaction_completion_plan
+            best_traj = simulate_forward(
+                model,
+                best_plan,
+                state,
+                horizon,
+                vitals,
+                cache=step_cache,
+                enable_post_plan_passive_rollout=enable_post_plan_passive_rollout,
+            )
+            sim_score = score_trajectory(best_traj, stimuli=stimuli, goal=current_goal)
+            dist = _plan_distance(best_plan)
+            best_score = (sim_score[0], sim_score[1], 1 if dist < 9999 else 0, sim_score[2])
         selected_target = best_plan.steps[0].target if best_plan.steps else None
         selected_action = best_plan.steps[0].action if best_plan.steps else None
         target_pos_before = (
@@ -2379,6 +2762,18 @@ def run_vector_mpc_episode(
                     "post_rescue_outcome": {},
                 }
 
+        if (
+            interaction_completion_trace is not None
+            and control_origin == "emergency_safety"
+        ):
+            interaction_completion_trace.update({
+                "status": "interrupted",
+                "selected_phase": "interrupted",
+                "reason": f"emergency_override:{rescue_trigger or 'emergency_safety'}",
+                "expected_effect_achieved": False,
+                "actual_primitive": primitive,
+            })
+
         arrow_threat_now = any(entity.concept_id == "arrow" for entity in observed_dynamic_entities)
         # Stage 89 telemetry fix:
         # visible projectile != imminent threat. Many steps contain an arrow in
@@ -2576,6 +2971,26 @@ def run_vector_mpc_episode(
             for key in set(raw_inv_after.keys()) | set(raw_inv.keys())
             if key not in _vital_set and raw_inv_after.get(key, 0) - raw_inv.get(key, 0) != 0
         }
+        body_delta_after = {
+            key: float(body_after.get(key, 0.0)) - float(body.get(key, 0.0))
+            for key in vitals
+            if abs(float(body_after.get(key, 0.0)) - float(body.get(key, 0.0))) > 0.01
+        }
+        close_interaction_after_trace = False
+        if interaction_completion_trace is not None:
+            (
+                interaction_intent,
+                interaction_completion_trace,
+                close_interaction_after_trace,
+            ) = _update_interaction_completion_after_step(
+                interaction_intent=interaction_intent,
+                interaction_trace=interaction_completion_trace,
+                primitive=primitive,
+                control_origin=control_origin,
+                rescue_trigger=rescue_trigger,
+                inventory_delta=item_delta_after,
+                body_delta=body_delta_after,
+            )
         if record_death_bundle:
             chosen_predicted_loss = (
                 float(candidate_summaries[0].get("predicted_loss", predicted_best_loss))
@@ -2745,6 +3160,8 @@ def run_vector_mpc_episode(
             }
             local_entry["goal"] = current_goal.to_trace() if current_goal is not None else None
             local_entry["interaction_intent"] = dict(interaction_intent) if interaction_intent is not None else None
+            if interaction_completion_trace is not None:
+                local_entry["interaction_completion"] = dict(interaction_completion_trace)
             local_entry["strategy_option"] = strategy_option.to_trace()
             local_entry["option_context"] = option_context.to_trace()
             if navigation_debug is not None:
@@ -2759,6 +3176,8 @@ def run_vector_mpc_episode(
                 if capability_state_after.to_trace()[key] != capability_state.to_trace()[key]
             }
             local_trace.append(local_entry)
+        if close_interaction_after_trace:
+            interaction_intent = None
         if record_local_advisory_trace and local_action_advisor is not None:
             from snks.agent.crafter_pixel_env import ACTION_TO_IDX
 
