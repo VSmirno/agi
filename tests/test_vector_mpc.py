@@ -36,6 +36,8 @@ from snks.agent.vector_mpc_agent import (
     _interaction_intent_from_goal_target,
     _select_interaction_completion_plan,
     _update_interaction_completion_after_step,
+    _combat_alignment_for_emergency_do,
+    _build_local_counterfactual_outcomes,
     _build_option_context,
     _derive_strategy_option,
     _generate_motion_chains,
@@ -1272,6 +1274,162 @@ class TestInteractionCompletion:
         assert intent["expected_effect"] == expected
         assert trace["relation"] == "facing"
         assert plan.origin == f"complete_interaction:{target}:do"
+
+    def test_armed_adjacent_zombie_not_facing_emits_alignment_move(
+        self, seeded_model, textbook
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((11, 10), "zombie", 1.0)
+        state = VectorState(
+            inventory={"wood_sword": 1},
+            body={"health": 5.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(concept_id="zombie", position=(11, 10))
+            ],
+        )
+
+        intent = _interaction_intent_from_goal_target(
+            textbook=textbook,
+            model=seeded_model,
+            state=state,
+            active_goal=Goal("fight_zombie", target_concept="zombie"),
+            spatial_map=sm,
+            dynamic_entities=state.dynamic_entities,
+            player_pos=state.player_pos,
+            existing_intent=None,
+            step=87,
+        )
+        plan, trace = _select_interaction_completion_plan(
+            interaction_intent=intent,
+            player_pos=state.player_pos,
+            spatial_map=sm,
+            dynamic_entities=state.dynamic_entities,
+            last_move="move_down",
+        )
+
+        assert intent["expected_outcome"] == {"remove_entity": "zombie"}
+        assert plan.origin == "align_interaction:zombie:do"
+        assert trace["selected_phase"] == "align"
+        assert trace["is_adjacent"] is True
+        assert trace["is_facing_target"] is False
+        primitive = expand_to_primitive(
+            plan.steps[0],
+            player_pos=state.player_pos,
+            spatial_map=sm,
+            model=seeded_model,
+            rng=np.random.RandomState(0),
+            last_action="move_down",
+            near_concept="zombie",
+            dynamic_entities=state.dynamic_entities,
+        )
+        assert primitive == "move_right"
+
+    def test_armed_adjacent_zombie_facing_emits_do(
+        self, seeded_model, textbook
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((11, 10), "zombie", 1.0)
+        state = VectorState(
+            inventory={"wood_sword": 1},
+            body={"health": 5.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(concept_id="zombie", position=(11, 10))
+            ],
+        )
+
+        intent = _interaction_intent_from_goal_target(
+            textbook=textbook,
+            model=seeded_model,
+            state=state,
+            active_goal=Goal("fight_zombie", target_concept="zombie"),
+            spatial_map=sm,
+            dynamic_entities=state.dynamic_entities,
+            player_pos=state.player_pos,
+            existing_intent=None,
+            step=88,
+        )
+        plan, trace = _select_interaction_completion_plan(
+            interaction_intent=intent,
+            player_pos=state.player_pos,
+            spatial_map=sm,
+            dynamic_entities=state.dynamic_entities,
+            last_move="move_right",
+        )
+
+        assert plan.origin == "complete_interaction:zombie:do"
+        assert trace["selected_phase"] == "act"
+        assert trace["is_facing_target"] is True
+        primitive = expand_to_primitive(
+            plan.steps[0],
+            player_pos=state.player_pos,
+            spatial_map=sm,
+            model=seeded_model,
+            rng=np.random.RandomState(0),
+            last_action="move_right",
+            near_concept="zombie",
+            dynamic_entities=state.dynamic_entities,
+        )
+        assert primitive == "do"
+
+    def test_emergency_do_preserves_required_hostile_alignment(
+        self, seeded_model, textbook
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((11, 10), "zombie", 1.0)
+
+        override = _combat_alignment_for_emergency_do(
+            textbook=textbook,
+            model=seeded_model,
+            inventory={"wood_sword": 1},
+            player_pos=(10, 10),
+            spatial_map=sm,
+            dynamic_entities=[
+                DynamicEntityState(concept_id="zombie", position=(11, 10))
+            ],
+            last_move="move_down",
+            near_concept="zombie",
+            rng=np.random.RandomState(0),
+            target_hint="zombie",
+        )
+
+        assert override is not None
+        primitive, plan, trace = override
+        assert primitive == "move_right"
+        assert plan.origin == "align_interaction:zombie:do"
+        assert trace["reason"] == "emergency_alignment_required"
+        assert trace["emergency_alignment_preserved"] is True
+
+    def test_counterfactual_includes_adjacent_hostile_do_when_near_empty(
+        self, seeded_model
+    ):
+        sm = CrafterSpatialMap()
+        sm.update((11, 10), "zombie", 1.0)
+        state = VectorState(
+            inventory={"wood_sword": 1},
+            body={"health": 5.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            last_action="move_right",
+            spatial_map=sm,
+            dynamic_entities=[
+                DynamicEntityState(concept_id="zombie", position=(11, 10))
+            ],
+        )
+
+        outcomes = _build_local_counterfactual_outcomes(
+            model=seeded_model,
+            state=state,
+            vf=VisualField(detections=[], near_concept="empty"),
+            cache=None,
+            vitals=["health", "food", "drink", "energy"],
+            horizon=2,
+            enable_post_plan_passive_rollout=True,
+        )
+
+        do_rows = [outcome for outcome in outcomes if outcome["action"] == "do"]
+        assert do_rows
+        assert do_rows[0]["target"] == "zombie"
 
 
 # ---------------------------------------------------------------------------

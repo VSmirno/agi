@@ -524,6 +524,27 @@ def _positive_expected_effect(
     return expected or None
 
 
+def _expected_remove_entity_outcome(
+    *,
+    textbook: Any | None,
+    model: VectorWorldModel,
+    inventory: dict[str, int],
+    target: str,
+    action: str,
+) -> dict[str, str] | None:
+    """Return a declared remove-entity outcome when the action is feasible."""
+    expected_remove = _remove_entity_target_from_textbook(
+        textbook,
+        action=action,
+        target=target,
+    )
+    if expected_remove is None:
+        return None
+    if not model.requirements_met(target, action, inventory):
+        return None
+    return {"remove_entity": expected_remove}
+
+
 def _interaction_relation_state(
     *,
     action: str,
@@ -570,19 +591,29 @@ def _interaction_intent_from_goal_target(
     player_pos: tuple[int, int],
     existing_intent: dict[str, Any] | None,
     step: int,
+    textbook: Any | None = None,
 ) -> dict[str, Any] | None:
     """Create or refresh a generic completion intent for the active goal target."""
     if active_goal is None or not active_goal.target_concept:
         return existing_intent
     target = str(active_goal.target_concept)
     action = "do"
-    expected_effect = _positive_expected_effect(
+    expected_outcome = _expected_remove_entity_outcome(
+        textbook=textbook,
         model=model,
-        state=state,
+        inventory=state.inventory,
         target=target,
         action=action,
     )
-    if expected_effect is None:
+    expected_effect = None
+    if expected_outcome is None:
+        expected_effect = _positive_expected_effect(
+            model=model,
+            state=state,
+            target=target,
+            action=action,
+        )
+    if expected_effect is None and expected_outcome is None:
         return existing_intent
     target_pos = _nearest_known_target_position(
         target,
@@ -597,7 +628,8 @@ def _interaction_intent_from_goal_target(
         existing_intent is not None
         and existing_intent.get("action") == action
         and existing_intent.get("target") == target
-        and existing_intent.get("expected_effect") == expected_effect
+        and existing_intent.get("expected_effect") == (expected_effect or {})
+        and existing_intent.get("expected_outcome") == (expected_outcome or {})
     ):
         refreshed = dict(existing_intent)
         refreshed["target_pos"] = [int(target_pos[0]), int(target_pos[1])]
@@ -606,7 +638,8 @@ def _interaction_intent_from_goal_target(
     return {
         "action": action,
         "target": target,
-        "expected_effect": expected_effect,
+        "expected_effect": expected_effect or {},
+        "expected_outcome": expected_outcome or {},
         "target_pos": [int(target_pos[0]), int(target_pos[1])],
         "started_step": int(step),
         "attempts": 0,
@@ -629,6 +662,7 @@ def _select_interaction_completion_plan(
     action = str(interaction_intent.get("action"))
     target = str(interaction_intent.get("target"))
     expected_effect = dict(interaction_intent.get("expected_effect") or {})
+    expected_outcome = dict(interaction_intent.get("expected_outcome") or {})
     attempts = int(interaction_intent.get("attempts", 0))
     target_pos = _nearest_known_target_position(
         target,
@@ -652,6 +686,7 @@ def _select_interaction_completion_plan(
             else None
         ),
         "expected_effect": expected_effect,
+        "expected_outcome": expected_outcome,
         "relation": relation_state["relation"],
         "is_adjacent": bool(relation_state["is_adjacent"]),
         "is_facing_target": bool(relation_state["is_facing_target"]),
@@ -758,7 +793,10 @@ def _update_interaction_completion_after_step(
     updated_trace = dict(interaction_trace)
     updated_trace["actual_primitive"] = primitive
 
-    if control_origin == "emergency_safety":
+    if (
+        control_origin == "emergency_safety"
+        and not bool(updated_trace.get("emergency_alignment_preserved", False))
+    ):
         reason = f"emergency_override:{rescue_trigger or 'emergency_safety'}"
         updated_intent["status"] = "interrupted"
         updated_trace.update({
@@ -768,6 +806,19 @@ def _update_interaction_completion_after_step(
             "expected_effect_achieved": False,
         })
         return updated_intent, updated_trace, True
+
+    if (
+        control_origin == "emergency_safety"
+        and bool(updated_trace.get("emergency_alignment_preserved", False))
+    ):
+        updated_intent["status"] = "aligning"
+        updated_trace.update({
+            "status": "aligning",
+            "selected_phase": "align",
+            "reason": "emergency_alignment_required",
+            "expected_effect_achieved": False,
+        })
+        return updated_intent, updated_trace, False
 
     achieved = _expected_effect_achieved(
         dict(updated_intent.get("expected_effect") or {}),
@@ -833,6 +884,7 @@ def _interaction_intent_from_plan(
     return {
         "action": first_step.action,
         "target": first_step.target,
+        "expected_effect": {},
         "expected_outcome": {"remove_entity": expected_remove},
         "started_step": (
             existing_intent.get("started_step")
@@ -841,6 +893,101 @@ def _interaction_intent_from_plan(
         ),
         "status": "continuing",
     }
+
+
+def _combat_alignment_for_emergency_do(
+    *,
+    textbook: Any | None,
+    model: VectorWorldModel,
+    inventory: dict[str, int],
+    player_pos: tuple[int, int],
+    spatial_map: CrafterSpatialMap,
+    dynamic_entities: list[DynamicEntityState],
+    last_move: str | None,
+    near_concept: str | None,
+    rng: np.random.RandomState,
+    target_hint: str | None = None,
+) -> tuple[str, VectorPlan, dict[str, Any]] | None:
+    """Convert an emergency `do` into required hostile alignment if needed."""
+
+    def _candidate_targets() -> list[str]:
+        ordered: list[str] = []
+        if target_hint:
+            ordered.append(str(target_hint))
+        px, py = int(player_pos[0]), int(player_pos[1])
+        dynamic_adjacent = sorted(
+            (
+                int(abs(int(entity.position[0]) - px) + abs(int(entity.position[1]) - py)),
+                str(entity.concept_id),
+            )
+            for entity in dynamic_entities
+        )
+        ordered.extend(cid for dist, cid in dynamic_adjacent if dist <= 1)
+        if hasattr(spatial_map, "concept_at"):
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                concept = spatial_map.concept_at((px + dx, py + dy))
+                if concept:
+                    ordered.append(str(concept))
+        seen: set[str] = set()
+        out: list[str] = []
+        for target in ordered:
+            if target in seen:
+                continue
+            seen.add(target)
+            out.append(target)
+        return out
+
+    for target in _candidate_targets():
+        expected_outcome = _expected_remove_entity_outcome(
+            textbook=textbook,
+            model=model,
+            inventory=inventory,
+            target=target,
+            action="do",
+        )
+        if expected_outcome is None:
+            continue
+        intent = {
+            "action": "do",
+            "target": target,
+            "expected_effect": {},
+            "expected_outcome": expected_outcome,
+            "started_step": 0,
+            "attempts": 0,
+            "status": "active",
+        }
+        plan, trace = _select_interaction_completion_plan(
+            interaction_intent=intent,
+            player_pos=player_pos,
+            spatial_map=spatial_map,
+            dynamic_entities=dynamic_entities,
+            last_move=last_move,
+        )
+        if plan is None or trace is None:
+            continue
+        if trace.get("selected_phase") != "align":
+            continue
+        primitive = expand_to_primitive(
+            plan.steps[0],
+            player_pos,
+            spatial_map,
+            model,
+            rng,
+            last_action=last_move,
+            near_concept=near_concept,
+            dynamic_entities=dynamic_entities,
+        )
+        if primitive == "do":
+            continue
+        trace.update({
+            "status": "aligning",
+            "selected_phase": "align",
+            "reason": "emergency_alignment_required",
+            "actual_primitive": primitive,
+            "emergency_alignment_preserved": True,
+        })
+        return primitive, plan, trace
+    return None
 
 
 def _derive_strategy_option(plan: VectorPlan) -> StrategyOption:
@@ -2315,6 +2462,7 @@ def run_vector_mpc_episode(
                 interaction_intent = None
 
         interaction_intent = _interaction_intent_from_goal_target(
+            textbook=textbook,
             model=model,
             state=state,
             active_goal=current_goal,
@@ -2591,7 +2739,7 @@ def run_vector_mpc_episode(
             inventory=inv,
             model=model,
         )
-        if continued_target is not None:
+        if continued_target is not None and interaction_completion_plan is None:
             target = continued_target
             best_plan = VectorPlan(
                 steps=[VectorPlanStep(action="do", target=target)],
@@ -2729,6 +2877,38 @@ def run_vector_mpc_episode(
                 primitive = emergency_selection.action
                 control_origin = "emergency_safety"
                 rescue_trigger = emergency_features.primary_reason or "emergency_score"
+                if primitive == "do":
+                    alignment_override = _combat_alignment_for_emergency_do(
+                        textbook=textbook,
+                        model=model,
+                        inventory=inv,
+                        player_pos=player_pos,
+                        spatial_map=spatial_map,
+                        dynamic_entities=observed_dynamic_entities,
+                        last_move=prev_move,
+                        near_concept=vf.near_concept,
+                        rng=rng,
+                        target_hint=selected_target,
+                    )
+                    if alignment_override is not None:
+                        primitive, alignment_plan, alignment_trace = alignment_override
+                        best_plan = alignment_plan
+                        selected_target = alignment_plan.steps[0].target
+                        selected_action = alignment_plan.steps[0].action
+                        target_pos_before = _nearest_known_target_position(
+                            selected_target,
+                            player_pos,
+                            spatial_map,
+                            observed_dynamic_entities,
+                        )
+                        target_dist_before = (
+                            abs(target_pos_before[0] - player_pos[0])
+                            + abs(target_pos_before[1] - player_pos[1])
+                            if target_pos_before is not None
+                            else None
+                        )
+                        planner_primitive = primitive
+                        interaction_completion_trace = alignment_trace
                 _regime_labels, primary_regime = infer_local_regime(actor_observation, nearest_threats_now)
                 rescue_pending = {
                     "step": int(step),
@@ -2742,6 +2922,7 @@ def run_vector_mpc_episode(
                     "pre_emergency_action": pre_emergency_action,
                     "rescue_action": emergency_selection.action,
                     "emergency_action": emergency_selection.action,
+                    "executed_action": primitive,
                     "rescue_policy": emergency_selection.override_source,
                     "override_source": emergency_selection.override_source,
                     "action_selection_reason": emergency_selection.reason,
@@ -2761,10 +2942,23 @@ def run_vector_mpc_episode(
                     "candidate_outcome_excerpt": emergency_candidate_outcomes[:4],
                     "post_rescue_outcome": {},
                 }
+                if (
+                    interaction_completion_trace is not None
+                    and interaction_completion_trace.get("reason") == "emergency_alignment_required"
+                ):
+                    rescue_pending["combat_alignment_override"] = {
+                        "target": interaction_completion_trace.get("target_concept"),
+                        "original_action": emergency_selection.action,
+                        "executed_action": primitive,
+                        "reason": "hostile_do_requires_facing",
+                        "is_adjacent": interaction_completion_trace.get("is_adjacent"),
+                        "is_facing_target": interaction_completion_trace.get("is_facing_target"),
+                    }
 
         if (
             interaction_completion_trace is not None
             and control_origin == "emergency_safety"
+            and not bool(interaction_completion_trace.get("emergency_alignment_preserved", False))
         ):
             interaction_completion_trace.update({
                 "status": "interrupted",
@@ -3588,6 +3782,31 @@ def _build_local_counterfactual_outcomes(
 ) -> list[dict[str, Any]]:
     from snks.agent.crafter_pixel_env import ACTION_TO_IDX
 
+    def _counterfactual_do_target() -> str | None:
+        near_concept = str(vf.near_concept)
+        if near_concept not in {"None", "empty", "unknown"}:
+            return near_concept
+        px, py = int(state.player_pos[0]), int(state.player_pos[1])
+        candidates: list[tuple[int, str]] = []
+        for (target, action), _reqs in getattr(model, "action_requirements", {}).items():
+            if action != "do" or not model.requirements_met(target, action, state.inventory):
+                continue
+            target_pos = _nearest_known_target_position(
+                target,
+                state.player_pos,
+                state.spatial_map,
+                state.dynamic_entities,
+            )
+            if target_pos is None:
+                continue
+            dist = abs(int(target_pos[0]) - px) + abs(int(target_pos[1]) - py)
+            if dist <= 1:
+                candidates.append((dist, str(target)))
+        if not candidates:
+            return None
+        candidates.sort()
+        return candidates[0][1]
+
     allowed_actions = ["move_left", "move_right", "move_up", "move_down", "do", "sleep"]
     start_threats = {
         "zombie": _nearest_hostile_distance("zombie", state.player_pos, state.spatial_map, state.dynamic_entities),
@@ -3602,10 +3821,10 @@ def _build_local_counterfactual_outcomes(
     for primitive in allowed_actions:
         target = "self"
         if primitive == "do":
-            near_concept = str(vf.near_concept)
-            if near_concept in {"None", "empty", "unknown"}:
+            do_target = _counterfactual_do_target()
+            if do_target is None:
                 continue
-            target = near_concept
+            target = do_target
         plan = VectorPlan(
             steps=[VectorPlanStep(action=primitive, target=target)],
             origin=f"stage90r_counterfactual:{primitive}",
