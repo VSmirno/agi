@@ -196,11 +196,14 @@ def _run_one(
         rng=np.random.RandomState(seed),
     )
     trace = list(metrics.get("local_trace", []))
+    last_trace_row = trace[-1] if trace else {}
     result = {
         "label": label,
         "metrics": {
             "episode_steps": metrics.get("episode_steps"),
             "death_cause": metrics.get("death_cause"),
+            "terminated_done": bool(last_trace_row.get("done_after_step", False)),
+            "final_body": dict(last_trace_row.get("body_after") or {}),
             "action_counts": metrics.get("action_counts"),
             "controller_distribution": metrics.get("controller_distribution"),
         },
