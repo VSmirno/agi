@@ -261,6 +261,7 @@ class TestGenerateCandidatePlans:
         assert intent == {
             "action": "do",
             "target": "zombie",
+            "expected_effect": {},
             "expected_outcome": {"remove_entity": "zombie"},
             "started_step": 156,
             "status": "continuing",
