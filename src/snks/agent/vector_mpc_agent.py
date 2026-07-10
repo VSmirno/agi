@@ -2725,19 +2725,31 @@ def run_vector_mpc_episode(
             )
         )
         if interaction_completion_plan is not None:
-            best_plan = interaction_completion_plan
-            best_traj = simulate_forward(
+            completion_traj = simulate_forward(
                 model,
-                best_plan,
+                interaction_completion_plan,
                 state,
                 horizon,
                 vitals,
                 cache=step_cache,
                 enable_post_plan_passive_rollout=enable_post_plan_passive_rollout,
             )
-            sim_score = score_trajectory(best_traj, stimuli=stimuli, goal=current_goal)
-            dist = _plan_distance(best_plan)
-            best_score = (sim_score[0], sim_score[1], 1 if dist < 9999 else 0, sim_score[2])
+            sim_score = score_trajectory(completion_traj, stimuli=stimuli, goal=current_goal)
+            dist = _plan_distance(interaction_completion_plan)
+            completion_score = (sim_score[0], sim_score[1], 1 if dist < 9999 else 0, sim_score[2])
+            if completion_score >= best_score:
+                best_plan = interaction_completion_plan
+                best_traj = completion_traj
+                best_score = completion_score
+            elif interaction_completion_trace is not None:
+                interaction_completion_trace.update({
+                    "status": "suppressed",
+                    "selected_phase": "suppressed",
+                    "reason": "ranked_candidate_score_higher",
+                    "completion_score": [float(x) for x in completion_score],
+                    "ranked_best_score": [float(x) for x in best_score],
+                    "ranked_best_origin": str(best_plan.origin),
+                })
         selected_target = best_plan.steps[0].target if best_plan.steps else None
         selected_action = best_plan.steps[0].action if best_plan.steps else None
         target_pos_before = (
