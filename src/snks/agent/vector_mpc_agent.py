@@ -2658,6 +2658,52 @@ def run_vector_mpc_episode(
             scored.append((score, plan, traj))
 
         scored.sort(key=lambda x: x[0], reverse=True)
+        option_candidate_score_debug: list[dict[str, Any]] = []
+        if enable_option_outcome_stimulus and record_local_trace:
+            for candidate_score, candidate_plan, _candidate_traj in scored[:8]:
+                candidate_option = _derive_strategy_option(candidate_plan)
+                candidate_context = _build_option_context(
+                    body=body,
+                    inventory=inv,
+                    capability_state=capability_state,
+                    current_goal=current_goal,
+                    interaction_intent=interaction_intent,
+                    best_plan=candidate_plan,
+                    nearest_threat_distances=nearest_threats_now,
+                    emergency_facts=emergency_facts,
+                    textbook=textbook,
+                    model=model,
+                    near_concept=str(vf.near_concept) if vf.near_concept else None,
+                    player_pos=player_pos,
+                    spatial_map=spatial_map,
+                )
+                candidate_decoded, candidate_confidence = model.predict_option_outcome(
+                    candidate_context.to_trace(),
+                    candidate_option.option_id,
+                )
+                option_candidate_score_debug.append({
+                    "score": [float(x) for x in candidate_score],
+                    "plan_origin": str(candidate_plan.origin),
+                    "first_step": (
+                        {
+                            "action": str(candidate_plan.steps[0].action),
+                            "target": str(candidate_plan.steps[0].target),
+                        }
+                        if candidate_plan.steps
+                        else None
+                    ),
+                    "strategy_option": candidate_option.to_trace(),
+                    "option_context": candidate_context.to_trace(),
+                    "option_outcome_recall": {
+                        "confidence": float(candidate_confidence),
+                        "decoded": candidate_decoded,
+                        "used_for_scoring": bool(
+                            candidate_decoded is not None
+                            and float(candidate_confidence) >= float(option_outcome_confidence_floor)
+                            and not bool(candidate_decoded.get("survived_h", True))
+                        ),
+                    },
+                })
         candidate_summaries = (
             summarize_scored_candidates(scored, body)
             if record_death_bundle
@@ -3437,6 +3483,8 @@ def run_vector_mpc_episode(
                 local_entry["navigation_debug"] = navigation_debug
             if option_outcome_recall is not None:
                 local_entry["option_outcome_recall"] = option_outcome_recall
+            if option_candidate_score_debug:
+                local_entry["option_candidate_score_debug"] = option_candidate_score_debug
             local_entry["capability_state"] = capability_state.to_trace()
             local_entry["capability_state_after"] = capability_state_after.to_trace()
             local_entry["capability_delta"] = {
