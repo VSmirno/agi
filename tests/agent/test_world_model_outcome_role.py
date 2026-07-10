@@ -368,6 +368,38 @@ def test_option_outcomes_differentiate_contexts_for_same_option() -> None:
     assert safe_dec["survived_h"] is True
 
 
+def test_option_failure_role_preserves_sparse_negative_amid_survivals() -> None:
+    """A rare option failure must not be averaged away by many survived writes.
+
+    OptionOutcomeStimulus is intentionally death-only. If the read side only
+    sees the aggregate option-outcome bundle, a common safe horizon can mask a
+    rare but critical failure in the same coarse context/option bucket. The
+    failure role is a sparse hazard channel in the same SDM substrate.
+    """
+    m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=41)
+    context = _conflict_context()
+    for _ in range(20):
+        m.learn_option_outcome(
+            context,
+            "continue_interaction:zombie",
+            _alive_outcome(damage=0),
+        )
+    m.learn_option_outcome(
+        context,
+        "continue_interaction:zombie",
+        _dead_outcome("drink_critical", damage=8),
+    )
+
+    decoded, conf = m.predict_option_outcome(
+        context,
+        "continue_interaction:zombie",
+    )
+
+    assert decoded is not None, conf
+    assert decoded["survived_h"] is False
+    assert decoded["died_to"] == "drink_critical"
+
+
 def test_option_outcome_role_does_not_pollute_primitive_outcome_or_physics() -> None:
     """Option outcome writes are role-separated from existing reads."""
     m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=37)

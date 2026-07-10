@@ -628,6 +628,25 @@ class VectorWorldModel:
         role_vec = self._ensure_role("__OPTION_OUTCOME_H__")
         return bind(bind(context_vec, option_vec), role_vec)
 
+    def _option_failure_address(
+        self,
+        context: dict[str, str],
+        option_id: str,
+    ) -> torch.Tensor:
+        """Sparse negative-outcome address for a strategy option in context.
+
+        The normal option-outcome role stores the aggregate observed horizon
+        outcome. That aggregate is intentionally useful for reconstructing
+        "what usually happened", but it can wash out rare failures when many
+        survived writes share the same coarse context/option key. The planner's
+        read-side stimulus is a death-warning, not a value function, so sparse
+        failures need a role-isolated hazard channel in the same SDM substrate.
+        """
+        context_vec = self.encode_option_context(context)
+        option_vec = self._ensure_concept(f"strategy_option:{option_id}")
+        role_vec = self._ensure_role("__OPTION_FAILURE_H__")
+        return bind(bind(context_vec, option_vec), role_vec)
+
     def learn_option_outcome(
         self,
         context: dict[str, str],
@@ -638,6 +657,9 @@ class VectorWorldModel:
         address = self._option_outcome_address(context, option_id)
         outcome_vec = self.encode_outcome(outcome)
         self.memory.write(address, outcome_vec)
+        if not bool(outcome.get("survived_h", True)):
+            failure_address = self._option_failure_address(context, option_id)
+            self.memory.write(failure_address, outcome_vec)
 
     def predict_option_outcome(
         self,
@@ -645,6 +667,13 @@ class VectorWorldModel:
         option_id: str,
     ) -> tuple[dict | None, float]:
         """Retrieve learned outcome for a strategy option in compact context."""
+        failure_address = self._option_failure_address(context, option_id)
+        failure_vec, failure_confidence = self.memory.read(failure_address)
+        if failure_confidence >= 0.2:
+            failure_decoded = self.decode_outcome(failure_vec)
+            if not bool(failure_decoded.get("survived_h", True)):
+                return failure_decoded, failure_confidence
+
         address = self._option_outcome_address(context, option_id)
         outcome_vec, confidence = self.memory.read(address)
         if confidence < 0.2:

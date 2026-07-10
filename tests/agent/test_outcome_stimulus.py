@@ -243,6 +243,41 @@ def test_option_outcome_death_recall_penalizes_option() -> None:
     assert stim.evaluate(_Traj(plan=_Plan(steps=[]))) < -1.0
 
 
+def test_option_outcome_sparse_failure_penalizes_despite_many_survivals() -> None:
+    model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=64)
+    context = {
+        "health_bucket": "low",
+        "food_bucket": "ok",
+        "drink_bucket": "critical",
+        "energy_bucket": "ok",
+        "threat_pressure": "multi",
+        "local_restore": "drink",
+        "capability_state": "armed_melee",
+        "intent_state": "continuing_interaction",
+        "progress_state": "normal",
+        "goal_family": "fight",
+    }
+    option_id = "continue_interaction:zombie"
+    for _ in range(20):
+        model.learn_option_outcome(context, option_id, {
+            "survived_h": True,
+            "damage_h": 0,
+            "died_to": None,
+        })
+    model.learn_option_outcome(context, option_id, {
+        "survived_h": False,
+        "damage_h": 8,
+        "died_to": "drink_critical",
+    })
+    stim = OptionOutcomeStimulus(
+        model=model,
+        context_provider=lambda _traj: context,
+        option_id_provider=lambda _traj: option_id,
+    )
+
+    assert stim.evaluate(_traj("do", "zombie")) < -1.0
+
+
 def test_option_outcome_differentiates_options_in_same_context() -> None:
     model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=67)
     context = {
