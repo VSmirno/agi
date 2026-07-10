@@ -15,6 +15,7 @@ exercises the planner/world-model/option-outcome path through
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import shutil
 import sys
@@ -23,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "experiments") not in sys.path:
@@ -177,7 +179,11 @@ def _run_one(
         enable_post_plan_passive_rollout=bool(profile["enable_post_plan_passive_rollout"]),
         perception_mode="symbolic",
         record_local_trace=True,
-        record_local_counterfactuals="salient_only",
+        # The causal question here is option recall/scoring/divergence, not
+        # local counterfactual inspection. Full-profile counterfactual payloads
+        # materially increase memory pressure and have killed HyperPC runs with
+        # exit 137, so this probe keeps the trace focused.
+        record_local_counterfactuals=False,
         local_counterfactual_horizon=1,
         record_death_bundle=True,
         death_capture_steps=20,
@@ -190,7 +196,7 @@ def _run_one(
         rng=np.random.RandomState(seed),
     )
     trace = list(metrics.get("local_trace", []))
-    return {
+    result = {
         "label": label,
         "metrics": {
             "episode_steps": metrics.get("episode_steps"),
@@ -202,6 +208,11 @@ def _run_one(
         "local_trace": trace,
         "death_trace_bundle": metrics.get("death_trace_bundle"),
     }
+    del metrics, model, segmenter, tracker
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return result
 
 
 def main() -> None:
@@ -234,6 +245,9 @@ def main() -> None:
         option_outcome_weight=float(args.option_outcome_weight),
         option_outcome_confidence_floor=float(args.option_outcome_confidence_floor),
     )
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     gen2 = _run_one(
         label="gen2_reader_writer",
         seed=int(args.seed),
