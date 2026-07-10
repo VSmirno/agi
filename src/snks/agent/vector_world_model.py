@@ -523,7 +523,26 @@ class VectorWorldModel:
         # to keep the comparison bounded.
         death_candidates = tuple(
             name for name in self.concepts
-            if name in ("none", "zombie", "skeleton", "arrow", "lava", "health", "done", "drink", "food", "energy")
+            if name in (
+                "none",
+                "zombie",
+                "skeleton",
+                "arrow",
+                "lava",
+                "health",
+                "done",
+                "drink",
+                "food",
+                "energy",
+                "health_critical",
+                "food_critical",
+                "drink_critical",
+                "energy_critical",
+                "interrupted",
+                "failed",
+                "target_lost",
+                "max_attempts_exceeded",
+            )
         )
         if not death_candidates:
             death_candidates = ("none",)

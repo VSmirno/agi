@@ -144,3 +144,66 @@ def test_option_outcome_recorder_flush_on_death_writes_death() -> None:
     assert decoded is not None, conf
     assert decoded["survived_h"] is False
     assert decoded["died_to"] == "zombie"
+
+
+def test_option_outcome_recorder_flush_due_marks_critical_vital_failure() -> None:
+    """A horizon outcome that leaves a vital critical is negative evidence.
+
+    This is not a hand-written crisis policy. It labels that the selected
+    option failed to resolve the compact option context before actual death,
+    giving gen2 a pre-terminal signal to avoid repeating it.
+    """
+    model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=83)
+    rec = _OptionOutcomeRecorder(model=model, horizon=2)
+    context = _option_context()
+    option = StrategyOption("continue_interaction", "zombie")
+
+    rec.push(
+        step=0,
+        context=context,
+        option=option,
+        health_now=5.0,
+        body_now={"health": 5.0, "food": 4.0, "drink": 1.0, "energy": 4.0},
+    )
+    assert rec.flush_due(
+        current_step=2,
+        health_now=4.0,
+        body_now={"health": 4.0, "food": 4.0, "drink": 0.0, "energy": 4.0},
+    ) == 1
+
+    decoded, conf = model.predict_option_outcome(
+        context.to_trace(),
+        "continue_interaction:zombie",
+    )
+    assert decoded is not None, conf
+    assert decoded["survived_h"] is False
+    assert decoded["died_to"] == "drink_critical"
+
+
+def test_option_outcome_recorder_mark_latest_failed_writes_interruption() -> None:
+    model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=89)
+    rec = _OptionOutcomeRecorder(model=model, horizon=5)
+    context = _option_context()
+    option = StrategyOption("complete_interaction", "zombie")
+
+    rec.push(
+        step=3,
+        context=context,
+        option=option,
+        health_now=6.0,
+        body_now={"health": 6.0, "food": 6.0, "drink": 6.0, "energy": 6.0},
+    )
+    assert rec.mark_latest_failed(
+        health_now=5.0,
+        body_now={"health": 5.0, "food": 6.0, "drink": 6.0, "energy": 6.0},
+        reason="emergency_override:emergency_safety",
+    ) == 1
+    assert rec.flush_due(current_step=8, health_now=5.0) == 0
+
+    decoded, conf = model.predict_option_outcome(
+        context.to_trace(),
+        "complete_interaction:zombie",
+    )
+    assert decoded is not None, conf
+    assert decoded["survived_h"] is False
+    assert decoded["died_to"] == "interrupted"

@@ -2011,10 +2011,43 @@ class _OutcomeRecorder:
 class _OptionOutcomeRecorder:
     """Pending-ring buffer for selected strategy-option outcome writes."""
 
+    _FAILURE_REASON_LABELS = frozenset({
+        "health_critical",
+        "food_critical",
+        "drink_critical",
+        "energy_critical",
+        "interrupted",
+        "failed",
+        "target_lost",
+        "max_attempts_exceeded",
+    })
+
     def __init__(self, model: VectorWorldModel, horizon: int) -> None:
         self.model = model
         self.horizon = max(1, int(horizon))
         self._pending: list[dict[str, Any]] = []
+
+    @staticmethod
+    def _critical_vital_reason(body_now: dict[str, float] | None) -> str | None:
+        if not body_now:
+            return None
+        for key in ("health", "food", "drink", "energy"):
+            try:
+                value = float(body_now.get(key, 9.0))
+            except (TypeError, ValueError):
+                continue
+            if value <= 1.0:
+                return f"{key}_critical"
+        return None
+
+    @classmethod
+    def _normalise_failure_reason(cls, reason: str | None) -> str:
+        label = str(reason or "").strip()
+        if label.startswith("emergency_override"):
+            return "interrupted"
+        if label in cls._FAILURE_REASON_LABELS:
+            return label
+        return "failed"
 
     def push(
         self,
@@ -2023,25 +2056,56 @@ class _OptionOutcomeRecorder:
         context: OptionContext,
         option: StrategyOption,
         health_now: float,
+        body_now: dict[str, float] | None = None,
     ) -> None:
         self._pending.append({
             "due": int(step) + self.horizon,
             "context": context.to_trace(),
             "option_id": option.option_id,
             "health_start": float(health_now),
+            "body_start": dict(body_now or {}),
         })
 
-    def flush_due(self, *, current_step: int, health_now: float) -> int:
+    def flush_due(
+        self,
+        *,
+        current_step: int,
+        health_now: float,
+        body_now: dict[str, float] | None = None,
+    ) -> int:
         kept: list[dict[str, Any]] = []
         flushed = 0
         for snap in self._pending:
             if int(snap["due"]) <= int(current_step):
-                self._write_snapshot(snap, health_now=health_now, died_to=None)
+                self._write_snapshot(
+                    snap,
+                    health_now=health_now,
+                    died_to=self._critical_vital_reason(body_now),
+                )
                 flushed += 1
             else:
                 kept.append(snap)
         self._pending = kept
         return flushed
+
+    def mark_latest_failed(
+        self,
+        *,
+        health_now: float,
+        reason: str,
+        body_now: dict[str, float] | None = None,
+    ) -> int:
+        if not self._pending:
+            return 0
+        snap = self._pending.pop()
+        self._write_snapshot(
+            snap,
+            health_now=health_now,
+            died_to=self._normalise_failure_reason(
+                reason or self._critical_vital_reason(body_now)
+            ),
+        )
+        return 1
 
     def flush_on_death(self, *, health_now: float, died_to: str | None) -> int:
         flushed = 0
@@ -3131,6 +3195,7 @@ def run_vector_mpc_episode(
                 context=option_context,
                 option=strategy_option,
                 health_now=float(body.get("health", 9.0)),
+                body_now={key: float(body.get(key, 9.0)) for key in vitals},
             )
 
         pixels, _reward, done, info = env.step(primitive)
@@ -3185,6 +3250,16 @@ def run_vector_mpc_episode(
                 inventory_delta=item_delta_after,
                 body_delta=body_delta_after,
             )
+            if (
+                option_outcome_recorder is not None
+                and interaction_completion_trace is not None
+                and str(interaction_completion_trace.get("status")) in ("interrupted", "failed")
+            ):
+                option_outcome_recorder.mark_latest_failed(
+                    health_now=float(body_after.get("health", 9.0)),
+                    body_now={key: float(body_after.get(key, 9.0)) for key in vitals},
+                    reason=str(interaction_completion_trace.get("reason") or "failed"),
+                )
         if record_death_bundle:
             chosen_predicted_loss = (
                 float(candidate_summaries[0].get("predicted_loss", predicted_best_loss))
@@ -3593,6 +3668,7 @@ def run_vector_mpc_episode(
             option_outcome_recorder.flush_due(
                 current_step=step,
                 health_now=float(body_after.get("health", 9.0)),
+                body_now={key: float(body_after.get(key, 9.0)) for key in vitals},
             )
 
     # --- Metrics ---
