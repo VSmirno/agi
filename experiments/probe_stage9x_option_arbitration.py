@@ -222,6 +222,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--max-steps", type=int, default=220)
+    parser.add_argument("--gen1-max-steps", type=int, default=None)
+    parser.add_argument("--gen2-max-steps", type=int, default=None)
     parser.add_argument("--smoke-lite", action="store_true")
     parser.add_argument("--out", type=Path, default=ROOT / "output_to_user" / "stage9x_option_arbitration_probe" / "paired_seed17.json")
     parser.add_argument("--world-model-dir", type=Path, default=None)
@@ -240,7 +242,7 @@ def main() -> None:
     gen1 = _run_one(
         label="gen1_writer_only",
         seed=int(args.seed),
-        max_steps=int(args.max_steps),
+        max_steps=int(args.gen1_max_steps or args.max_steps),
         smoke_lite=bool(args.smoke_lite),
         world_model_dir=world_model_dir,
         enable_stimulus=False,
@@ -254,7 +256,7 @@ def main() -> None:
     gen2 = _run_one(
         label="gen2_reader_writer",
         seed=int(args.seed),
-        max_steps=int(args.max_steps),
+        max_steps=int(args.gen2_max_steps or args.max_steps),
         smoke_lite=bool(args.smoke_lite),
         world_model_dir=world_model_dir,
         enable_stimulus=True,
@@ -268,6 +270,8 @@ def main() -> None:
         "config": {
             "seed": int(args.seed),
             "max_steps": int(args.max_steps),
+            "gen1_max_steps": int(args.gen1_max_steps or args.max_steps),
+            "gen2_max_steps": int(args.gen2_max_steps or args.max_steps),
             "smoke_lite": bool(args.smoke_lite),
             "world_model_dir": str(world_model_dir),
             "option_outcome_horizon": int(args.option_outcome_horizon),
