@@ -39,6 +39,7 @@ from snks.agent.vector_mpc_agent import (
     _combat_alignment_for_emergency_do,
     _build_local_counterfactual_outcomes,
     _build_option_context,
+    _candidate_debug_include_reasons,
     _derive_strategy_option,
     _generate_motion_chains,
     _generate_chains,
@@ -286,6 +287,51 @@ class TestGenerateCandidatePlans:
             action="do",
             target="zombie",
         ) == "zombie"
+
+    def test_candidate_debug_keeps_negative_scored_candidate_below_top_k(self):
+        plan = VectorPlan(
+            steps=[VectorPlanStep(action="do", target="cow")],
+            origin="single:cow:do",
+        )
+
+        reasons = _candidate_debug_include_reasons(
+            rank=12,
+            plan=plan,
+            active_goal=Goal("fight_skeleton", target_concept="skeleton"),
+            used_for_scoring=True,
+        )
+
+        assert reasons == ["used_for_scoring"]
+
+    def test_candidate_debug_keeps_active_goal_target_below_top_k(self):
+        plan = VectorPlan(
+            steps=[VectorPlanStep(action="frontier_seek", target="skeleton")],
+            origin="frontier:skeleton",
+        )
+
+        reasons = _candidate_debug_include_reasons(
+            rank=12,
+            plan=plan,
+            active_goal=Goal("fight_skeleton", target_concept="skeleton"),
+            used_for_scoring=False,
+        )
+
+        assert reasons == ["active_goal_target"]
+
+    def test_candidate_debug_keeps_top_k_candidate(self):
+        plan = VectorPlan(
+            steps=[VectorPlanStep(action="do", target="cow")],
+            origin="single:cow:do",
+        )
+
+        reasons = _candidate_debug_include_reasons(
+            rank=3,
+            plan=plan,
+            active_goal=Goal("fight_skeleton", target_concept="skeleton"),
+            used_for_scoring=False,
+        )
+
+        assert reasons == ["top_k"]
 
     def test_interaction_continuation_is_not_stopped_by_low_health(self, seeded_model):
         target = _should_continue_interaction(

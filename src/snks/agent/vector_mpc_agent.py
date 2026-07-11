@@ -1022,6 +1022,41 @@ def _derive_strategy_option(plan: VectorPlan) -> StrategyOption:
     return StrategyOption("baseline_motion")
 
 
+def _candidate_debug_include_reasons(
+    *,
+    rank: int,
+    plan: VectorPlan,
+    active_goal: "Goal | None",
+    used_for_scoring: bool,
+    top_k: int = 8,
+) -> list[str]:
+    """Reasons to retain a candidate in local trace diagnostics.
+
+    The planner ranks all candidates but trace historically persisted only the
+    top-k rows. That hides exactly the candidates we need for systematic
+    debugging when a goal-directed plan is pushed below the zero-score band by
+    a learned failure warning. This helper is diagnostic only; it does not
+    affect selection or scoring.
+    """
+    reasons: list[str] = []
+    if rank < top_k:
+        reasons.append("top_k")
+    if used_for_scoring:
+        reasons.append("used_for_scoring")
+
+    target = active_goal.target_concept if active_goal is not None else None
+    if target and plan.steps:
+        first = plan.steps[0]
+        if first.target == target and first.action in {
+            "frontier_seek",
+            "navigate_known",
+            "do",
+        }:
+            reasons.append("active_goal_target")
+
+    return reasons
+
+
 def _vital_bucket(value: float | int | None) -> str:
     if value is None:
         return "unknown"
@@ -2717,7 +2752,7 @@ def run_vector_mpc_episode(
         scored.sort(key=lambda x: x[0], reverse=True)
         option_candidate_score_debug: list[dict[str, Any]] = []
         if enable_option_outcome_stimulus and record_local_trace:
-            for candidate_score, candidate_plan, _candidate_traj in scored[:8]:
+            for candidate_rank, (candidate_score, candidate_plan, _candidate_traj) in enumerate(scored):
                 candidate_option = _derive_strategy_option(candidate_plan)
                 candidate_context = _build_option_context(
                     body=body,
@@ -2745,7 +2780,22 @@ def run_vector_mpc_episode(
                         candidate_option.option_id,
                     )
                     candidate_read_tier = "aggregate"
+                candidate_used_for_scoring = bool(
+                    candidate_decoded is not None
+                    and float(candidate_confidence) >= float(option_outcome_confidence_floor)
+                    and not bool(candidate_decoded.get("survived_h", True))
+                )
+                include_reasons = _candidate_debug_include_reasons(
+                    rank=candidate_rank,
+                    plan=candidate_plan,
+                    active_goal=current_goal,
+                    used_for_scoring=candidate_used_for_scoring,
+                )
+                if not include_reasons:
+                    continue
                 option_candidate_score_debug.append({
+                    "rank": int(candidate_rank),
+                    "include_reasons": include_reasons,
                     "score": [float(x) for x in candidate_score],
                     "plan_origin": str(candidate_plan.origin),
                     "first_step": (
@@ -2762,11 +2812,7 @@ def run_vector_mpc_episode(
                         "confidence": float(candidate_confidence),
                         "decoded": candidate_decoded,
                         "read_tier": candidate_read_tier,
-                        "used_for_scoring": bool(
-                            candidate_decoded is not None
-                            and float(candidate_confidence) >= float(option_outcome_confidence_floor)
-                            and not bool(candidate_decoded.get("survived_h", True))
-                        ),
+                        "used_for_scoring": candidate_used_for_scoring,
                     },
                 })
         candidate_summaries = (
