@@ -1426,8 +1426,15 @@ def generate_candidate_plans(
     # concept isn't adjacent, prepend `place_X` if feasible. "empty" near is
     # treated as always satisfied (the env finds an open tile).
     adj_concepts = _adjacent_concepts(spatial_map, player_pos)
+    requested_capability_satisfied = _requested_capability_satisfied(
+        model=model,
+        active_goal=active_goal,
+        inventory=state.inventory,
+    )
     for (target, action), _reqs in model.action_requirements.items():
         if action not in ("make", "place"):
+            continue
+        if requested_capability_satisfied:
             continue
         if not _is_declared_crafting_rule(model, target, action):
             continue
@@ -1619,6 +1626,35 @@ def _is_declared_crafting_rule(model: VectorWorldModel, target: str, action: str
     if action not in ("make", "place"):
         return False
     return (target, action) in model.near_requirements
+
+
+def _requested_capability_satisfied(
+    *,
+    model: VectorWorldModel,
+    active_goal: "Goal | None",
+    inventory: dict[str, int],
+) -> bool:
+    """Return whether the active goal's requested capability is already present.
+
+    Capability requests are goal-layer facts. Candidate generation should not
+    emit capability-acquisition plans for a parent goal whose requested
+    capability is already satisfied; otherwise stale positive craft memories can
+    displace the actual parent-goal behavior in equal-score ties.
+    """
+    if active_goal is None or active_goal.requested_capability is None:
+        return False
+
+    if active_goal.requested_capability == "armed_melee":
+        # Textbook-derived: armed melee is satisfied by any item required by a
+        # declared combat `do` rule. This avoids hard-coding wood_sword while
+        # keeping the guard tied to the actual capability contract.
+        for (_target, action), reqs in model.action_requirements.items():
+            if action != "do":
+                continue
+            if any(int(inventory.get(item, 0)) >= int(count) for item, count in reqs.items()):
+                return True
+
+    return False
 
 
 def _generate_chains(

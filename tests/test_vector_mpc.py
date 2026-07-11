@@ -204,6 +204,82 @@ class TestGenerateCandidatePlans:
         assert seeded_model.action_requirements[("zombie", "do")] == {"wood_sword": 1}
         assert "single:zombie:do" in origins
 
+    def test_satisfied_fight_capability_suppresses_redundant_craft_candidates(
+        self,
+        seeded_model,
+    ):
+        state = VectorState(
+            inventory={
+                "wood": 5,
+                "wood_pickaxe": 1,
+                "wood_sword": 1,
+            },
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(concept_id="arrow", position=(10, 11)),
+            ],
+        )
+        spatial_map = CrafterSpatialMap()
+        spatial_map.update((11, 10), "table", 1.0)
+        goal = Goal(
+            "fight_skeleton",
+            requested_capability="armed_melee",
+            reason="dynamic_threat_present",
+            target_concept="skeleton",
+        )
+
+        candidates = generate_candidate_plans(
+            seeded_model,
+            state,
+            spatial_map,
+            visible_concepts={"arrow", "table"},
+            player_pos=state.player_pos,
+            active_goal=goal,
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+        )
+        origins = {p.origin for p in candidates}
+
+        assert "frontier:skeleton" in origins
+        assert "single:wood_pickaxe:make" not in origins
+        assert "single:wood_sword:make" not in origins
+
+    def test_missing_fight_capability_keeps_craft_candidate(
+        self,
+        seeded_model,
+    ):
+        state = VectorState(
+            inventory={"wood": 5},
+            body={"health": 9.0, "food": 9.0, "drink": 9.0, "energy": 9.0},
+            player_pos=(10, 10),
+            dynamic_entities=[
+                DynamicEntityState(concept_id="arrow", position=(10, 11)),
+            ],
+        )
+        spatial_map = CrafterSpatialMap()
+        spatial_map.update((11, 10), "table", 1.0)
+        goal = Goal(
+            "fight_skeleton",
+            requested_capability="armed_melee",
+            reason="required_weapon_missing",
+            target_concept="skeleton",
+        )
+
+        candidates = generate_candidate_plans(
+            seeded_model,
+            state,
+            spatial_map,
+            visible_concepts={"arrow", "table"},
+            player_pos=state.player_pos,
+            active_goal=goal,
+            enable_motion_plans=False,
+            enable_motion_chains=False,
+        )
+        origins = {p.origin for p in candidates}
+
+        assert "single:wood_sword:make" in origins
+
     def test_textbook_declares_combat_remove_entity_outcome(self, textbook):
         assert _remove_entity_target_from_textbook(
             textbook,
