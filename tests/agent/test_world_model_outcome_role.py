@@ -520,8 +520,14 @@ def test_cause_projected_failure_precedes_survived_exact_aggregate() -> None:
     current["progress_state"] = "stalled"
     m.learn_option_outcome(current, "engage_target:skeleton", _alive_outcome())
 
+    warning, warning_conf = m.predict_option_failure_warning(
+        current, "engage_target:skeleton"
+    )
     decoded, conf = m.predict_option_outcome(current, "engage_target:skeleton")
 
+    assert warning is not None, warning_conf
+    assert warning["survived_h"] is False
+    assert (warning.get("_retrieval") or {})["role"] == "__OPTION_FAILURE_CAUSE_H__"
     assert decoded is not None, conf
     assert decoded["survived_h"] is False
     assert (decoded.get("_retrieval") or {})["role"] == "__OPTION_FAILURE_CAUSE_H__"

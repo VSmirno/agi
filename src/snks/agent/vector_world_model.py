@@ -934,6 +934,36 @@ class VectorWorldModel:
         option_id: str,
     ) -> tuple[dict | None, float]:
         """Retrieve learned outcome for a strategy option in compact context."""
+        warning_decoded, warning_confidence = self.predict_option_failure_warning(
+            context, option_id
+        )
+        if warning_decoded is not None:
+            return warning_decoded, warning_confidence
+
+        address = self._option_outcome_address(context, option_id)
+        outcome_vec, confidence = self.memory.read(address)
+        if confidence < 0.2:
+            return None, confidence
+        return self._with_option_retrieval_metadata(
+            self.decode_outcome(outcome_vec),
+            context_level="full",
+            option_level="exact",
+            context_weight=1.0,
+            option_weight=1.0,
+            role="__OPTION_OUTCOME_H__",
+        ), confidence
+
+    def predict_option_failure_warning(
+        self,
+        context: dict[str, str],
+        option_id: str,
+    ) -> tuple[dict | None, float]:
+        """Retrieve sparse negative option evidence without aggregate fallback.
+
+        This is the read path used by decision scoring and debug. It exposes
+        hazard evidence even when the aggregate option-outcome role has a
+        short-horizon survived recall for the same context/option.
+        """
         exact_failure_address = self._option_failure_address(
             context,
             str(option_id),
@@ -952,10 +982,6 @@ class VectorWorldModel:
                     option_weight=1.0,
                     role="__OPTION_FAILURE_H__",
                 ), exact_failure_confidence
-
-        address = self._option_outcome_address(context, option_id)
-        outcome_vec, confidence = self.memory.read(address)
-        aggregate_decoded = self.decode_outcome(outcome_vec) if confidence >= 0.2 else None
 
         context_levels = self.abstract_option_contexts(context)
         option_levels = self.abstract_strategy_options(option_id)
@@ -1009,16 +1035,7 @@ class VectorWorldModel:
                                 credit_type=credit_type,
                             ), cause_confidence
 
-        if confidence < 0.2:
-            return None, confidence
-        return self._with_option_retrieval_metadata(
-            aggregate_decoded if aggregate_decoded is not None else self.decode_outcome(outcome_vec),
-            context_level="full",
-            option_level="exact",
-            context_weight=1.0,
-            option_weight=1.0,
-            role="__OPTION_OUTCOME_H__",
-        ), confidence
+        return None, 0.0
 
     def requirements_met(
         self, concept_id: str, action: str, inventory: dict[str, int],

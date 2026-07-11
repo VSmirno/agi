@@ -2698,10 +2698,17 @@ def run_vector_mpc_episode(
                     player_pos=player_pos,
                     spatial_map=spatial_map,
                 )
-                candidate_decoded, candidate_confidence = model.predict_option_outcome(
+                candidate_decoded, candidate_confidence = model.predict_option_failure_warning(
                     candidate_context.to_trace(),
                     candidate_option.option_id,
                 )
+                candidate_read_tier = "failure_warning"
+                if candidate_decoded is None:
+                    candidate_decoded, candidate_confidence = model.predict_option_outcome(
+                        candidate_context.to_trace(),
+                        candidate_option.option_id,
+                    )
+                    candidate_read_tier = "aggregate"
                 option_candidate_score_debug.append({
                     "score": [float(x) for x in candidate_score],
                     "plan_origin": str(candidate_plan.origin),
@@ -2718,6 +2725,7 @@ def run_vector_mpc_episode(
                     "option_outcome_recall": {
                         "confidence": float(candidate_confidence),
                         "decoded": candidate_decoded,
+                        "read_tier": candidate_read_tier,
                         "used_for_scoring": bool(
                             candidate_decoded is not None
                             and float(candidate_confidence) >= float(option_outcome_confidence_floor)
@@ -3243,14 +3251,22 @@ def run_vector_mpc_episode(
         )
         option_outcome_recall = None
         if enable_option_outcome_stimulus:
-            decoded, confidence = model.predict_option_outcome(
+            decoded, confidence = model.predict_option_failure_warning(
                 option_context.to_trace(),
                 strategy_option.option_id,
             )
+            read_tier = "failure_warning"
+            if decoded is None:
+                decoded, confidence = model.predict_option_outcome(
+                    option_context.to_trace(),
+                    strategy_option.option_id,
+                )
+                read_tier = "aggregate"
             option_outcome_recall = {
                 "option_id": strategy_option.option_id,
                 "confidence": float(confidence),
                 "decoded": decoded,
+                "read_tier": read_tier,
                 "used_for_scoring": bool(
                     decoded is not None
                     and float(confidence) >= float(option_outcome_confidence_floor)

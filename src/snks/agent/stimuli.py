@@ -247,7 +247,7 @@ class OptionOutcomeStimulus(Stimulus):
         option_id = self.option_id_provider(trajectory)
         if context is None or option_id is None:
             return 0.0
-        decoded, confidence = self.model.predict_option_outcome(context, option_id)
+        decoded, confidence = self.model.predict_option_failure_warning(context, option_id)
         if decoded is None or confidence < self.confidence_floor:
             return 0.0
         # Same conservative rule as primitive OutcomeStimulus: only negative

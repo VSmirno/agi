@@ -250,6 +250,10 @@ def main() -> None:
         option_outcome_weight=float(args.option_outcome_weight),
         option_outcome_confidence_floor=float(args.option_outcome_confidence_floor),
     )
+    gen1_world_model_path = world_model_dir / f"seed{int(args.seed)}.pt"
+    gen1_snapshot_path = world_model_dir / f"seed{int(args.seed)}_gen1.pt"
+    if gen1_world_model_path.exists():
+        shutil.copy2(gen1_world_model_path, gen1_snapshot_path)
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -274,6 +278,7 @@ def main() -> None:
             "gen2_max_steps": int(args.gen2_max_steps or args.max_steps),
             "smoke_lite": bool(args.smoke_lite),
             "world_model_dir": str(world_model_dir),
+            "gen1_world_model_path": str(gen1_snapshot_path),
             "option_outcome_horizon": int(args.option_outcome_horizon),
             "option_outcome_weight": float(args.option_outcome_weight),
             "option_outcome_confidence_floor": float(args.option_outcome_confidence_floor),
