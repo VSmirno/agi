@@ -400,6 +400,78 @@ def test_option_failure_role_preserves_sparse_negative_amid_survivals() -> None:
     assert decoded["died_to"] == "drink_critical"
 
 
+def test_option_context_abstractions_are_deterministic_and_named() -> None:
+    m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=42)
+    context = _conflict_context()
+
+    levels = m.abstract_option_contexts(dict(reversed(list(context.items()))))
+
+    assert [name for name, _ctx, _weight in levels] == [
+        "full",
+        "drop_progress",
+        "drop_intent",
+        "need_threat_capability",
+        "need_threat",
+        "vitals_only",
+    ]
+    full = levels[0][1]
+    assert full == context
+    drop_intent = dict(levels[2][1])
+    assert "intent_state" not in drop_intent
+    assert "progress_state" not in drop_intent
+    assert "goal_family" in drop_intent
+
+
+def test_option_failure_retrieves_neighboring_context_by_abstraction() -> None:
+    m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=43)
+    failed_context = _conflict_context()
+    neighboring_context = dict(failed_context)
+    neighboring_context["intent_state"] = "none"
+    neighboring_context["progress_state"] = "stalled"
+
+    m.learn_option_outcome(
+        failed_context,
+        "continue_interaction:zombie",
+        _dead_outcome("zombie", damage=8),
+    )
+
+    decoded, conf = m.predict_option_outcome(
+        neighboring_context,
+        "continue_interaction:zombie",
+    )
+
+    assert decoded is not None, conf
+    assert decoded["survived_h"] is False
+    assert decoded["died_to"] == "zombie"
+    retrieval = decoded.get("_retrieval") or {}
+    assert retrieval["context_level"] == "drop_intent"
+    assert retrieval["option_level"] == "exact"
+    assert 0.0 < retrieval["abstraction_weight"] < 1.0
+
+
+def test_option_failure_retrieves_neighboring_option_kind() -> None:
+    m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=44)
+    context = _conflict_context()
+
+    m.learn_option_outcome(
+        context,
+        "seek_known:skeleton",
+        _dead_outcome("zombie", damage=8),
+    )
+
+    decoded, conf = m.predict_option_outcome(
+        context,
+        "seek_known:zombie",
+    )
+
+    assert decoded is not None, conf
+    assert decoded["survived_h"] is False
+    assert decoded["died_to"] == "zombie"
+    retrieval = decoded.get("_retrieval") or {}
+    assert retrieval["context_level"] == "full"
+    assert retrieval["option_level"] == "kind"
+
+
 def test_option_outcome_role_does_not_pollute_primitive_outcome_or_physics() -> None:
     """Option outcome writes are role-separated from existing reads."""
     m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=37)

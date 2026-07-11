@@ -368,6 +368,9 @@ class VectorWorldModel:
         # Passive movement behavior facts from textbook.
         # Dict: concept_id -> behavior string, e.g. "chase_player".
         self.movement_behaviors: dict[str, str] = {}
+        self._option_failure_write_cache: set[
+            tuple[str, tuple[tuple[str, str], ...], str, str, str]
+        ] = set()
 
     def _ensure_concept(self, concept_id: str) -> torch.Tensor:
         if concept_id not in self.concepts:
@@ -612,11 +615,148 @@ class VectorWorldModel:
         if not context:
             return self._ensure_concept("__EMPTY_OPTION_CONTEXT__")
         parts: list[torch.Tensor] = []
+        signature = "|".join(
+            f"{key}={context[key]}"
+            for key in sorted(context)
+        )
+        parts.append(
+            bind(
+                self._ensure_role("option_ctx:signature"),
+                self._ensure_concept(f"option_ctx:signature:{signature}"),
+            )
+        )
         for key in sorted(context):
             role = self._ensure_role(f"option_ctx:{key}")
             value = self._ensure_concept(f"option_ctx:{key}={context[key]}")
             parts.append(bind(role, value))
         return bundle(parts)
+
+    _OPTION_CONTEXT_FIELDS: tuple[str, ...] = (
+        "health_bucket",
+        "food_bucket",
+        "drink_bucket",
+        "energy_bucket",
+        "threat_pressure",
+        "local_restore",
+        "capability_state",
+        "intent_state",
+        "progress_state",
+        "goal_family",
+    )
+    _OPTION_CONTEXT_LEVEL_FIELDS: tuple[tuple[str, tuple[str, ...], float], ...] = (
+        ("full", _OPTION_CONTEXT_FIELDS, 1.0),
+        (
+            "drop_progress",
+            tuple(field for field in _OPTION_CONTEXT_FIELDS if field != "progress_state"),
+            0.85,
+        ),
+        (
+            "drop_intent",
+            tuple(
+                field for field in _OPTION_CONTEXT_FIELDS
+                if field not in {"intent_state", "progress_state"}
+            ),
+            0.70,
+        ),
+        (
+            "need_threat_capability",
+            (
+                "health_bucket",
+                "food_bucket",
+                "drink_bucket",
+                "energy_bucket",
+                "threat_pressure",
+                "local_restore",
+                "capability_state",
+            ),
+            0.55,
+        ),
+        (
+            "need_threat",
+            (
+                "health_bucket",
+                "food_bucket",
+                "drink_bucket",
+                "energy_bucket",
+                "threat_pressure",
+            ),
+            0.40,
+        ),
+        (
+            "vitals_only",
+            (
+                "health_bucket",
+                "food_bucket",
+                "drink_bucket",
+                "energy_bucket",
+            ),
+            0.25,
+        ),
+    )
+
+    def abstract_option_contexts(
+        self,
+        context: dict[str, str],
+    ) -> list[tuple[str, dict[str, str], float]]:
+        """Return deterministic context abstractions for option-failure recall."""
+        levels: list[tuple[str, dict[str, str], float]] = []
+        seen: set[tuple[tuple[str, str], ...]] = set()
+        for name, fields, weight in self._OPTION_CONTEXT_LEVEL_FIELDS:
+            abstracted = {
+                field: str(context[field])
+                for field in fields
+                if field in context
+            }
+            key = tuple(sorted(abstracted.items()))
+            if key in seen:
+                continue
+            seen.add(key)
+            levels.append((name, abstracted, float(weight)))
+        return levels
+
+    def abstract_strategy_options(
+        self,
+        option_id: str,
+    ) -> list[tuple[str, str, float]]:
+        """Return deterministic option abstractions for option-failure recall."""
+        exact = str(option_id)
+        kind = exact.split(":", 1)[0] if ":" in exact else exact
+        levels = [("exact", exact, 1.0)]
+        if kind != exact:
+            levels.append(("kind", kind, 0.70))
+        return levels
+
+    def _option_failure_write_keys(
+        self,
+        context: dict[str, str],
+        option_id: str,
+    ) -> list[tuple[str, dict[str, str], str, str]]:
+        """Bounded initial fan-out for sparse option-failure writes.
+
+        Full six-level context × option-level writes created excessive SDM
+        crosstalk in smoke profiles. B3 starts with the two abstraction axes
+        needed by the observed failures: neighboring intent/progress context
+        and same-kind option transfer.
+        """
+        context_by_level = {
+            level: abstracted
+            for level, abstracted, _weight in self.abstract_option_contexts(context)
+        }
+        keys: list[tuple[str, dict[str, str], str, str]] = [
+            ("full", context_by_level["full"], "exact", str(option_id)),
+        ]
+        if "drop_intent" in context_by_level:
+            keys.append(("drop_intent", context_by_level["drop_intent"], "exact", str(option_id)))
+        option_levels = self.abstract_strategy_options(option_id)
+        if len(option_levels) > 1:
+            _option_level, option_key, _option_weight = option_levels[1]
+            keys.append(("full", context_by_level["full"], "kind", option_key))
+        return keys
+
+    def _option_abstraction_vec(self, option_level: str, option_key: str) -> torch.Tensor:
+        if option_level == "exact":
+            return self._ensure_concept(f"strategy_option:{option_key}")
+        return self._ensure_concept(f"strategy_option_{option_level}:{option_key}")
 
     def _option_outcome_address(
         self,
@@ -631,7 +771,10 @@ class VectorWorldModel:
     def _option_failure_address(
         self,
         context: dict[str, str],
-        option_id: str,
+        option_key: str,
+        *,
+        context_level: str = "full",
+        option_level: str = "exact",
     ) -> torch.Tensor:
         """Sparse negative-outcome address for a strategy option in context.
 
@@ -643,9 +786,30 @@ class VectorWorldModel:
         failures need a role-isolated hazard channel in the same SDM substrate.
         """
         context_vec = self.encode_option_context(context)
-        option_vec = self._ensure_concept(f"strategy_option:{option_id}")
-        role_vec = self._ensure_role("__OPTION_FAILURE_H__")
+        option_vec = self._option_abstraction_vec(option_level, option_key)
+        role_vec = self._ensure_role(
+            f"__OPTION_FAILURE_H__:{context_level}:{option_level}"
+        )
         return bind(bind(context_vec, option_vec), role_vec)
+
+    @staticmethod
+    def _with_option_retrieval_metadata(
+        decoded: dict,
+        *,
+        context_level: str,
+        option_level: str,
+        context_weight: float,
+        option_weight: float,
+        role: str,
+    ) -> dict:
+        out = dict(decoded)
+        out["_retrieval"] = {
+            "context_level": str(context_level),
+            "option_level": str(option_level),
+            "abstraction_weight": float(context_weight) * float(option_weight),
+            "role": str(role),
+        }
+        return out
 
     def learn_option_outcome(
         self,
@@ -658,8 +822,26 @@ class VectorWorldModel:
         outcome_vec = self.encode_outcome(outcome)
         self.memory.write(address, outcome_vec)
         if not bool(outcome.get("survived_h", True)):
-            failure_address = self._option_failure_address(context, option_id)
-            self.memory.write(failure_address, outcome_vec)
+            for context_level, context_key, option_level, option_key in self._option_failure_write_keys(
+                context, option_id
+            ):
+                cache_key = (
+                    str(context_level),
+                    tuple(sorted((str(k), str(v)) for k, v in context_key.items())),
+                    str(option_level),
+                    str(option_key),
+                    str(outcome.get("died_to") or "unknown"),
+                )
+                if cache_key in self._option_failure_write_cache:
+                    continue
+                self._option_failure_write_cache.add(cache_key)
+                failure_address = self._option_failure_address(
+                    context_key,
+                    option_key,
+                    context_level=context_level,
+                    option_level=option_level,
+                )
+                self.memory.write(failure_address, outcome_vec)
 
     def predict_option_outcome(
         self,
@@ -667,18 +849,78 @@ class VectorWorldModel:
         option_id: str,
     ) -> tuple[dict | None, float]:
         """Retrieve learned outcome for a strategy option in compact context."""
-        failure_address = self._option_failure_address(context, option_id)
-        failure_vec, failure_confidence = self.memory.read(failure_address)
-        if failure_confidence >= 0.2:
-            failure_decoded = self.decode_outcome(failure_vec)
-            if not bool(failure_decoded.get("survived_h", True)):
-                return failure_decoded, failure_confidence
+        exact_failure_address = self._option_failure_address(
+            context,
+            str(option_id),
+            context_level="full",
+            option_level="exact",
+        )
+        exact_failure_vec, exact_failure_confidence = self.memory.read(exact_failure_address)
+        if exact_failure_confidence >= 0.9:
+            exact_failure_decoded = self.decode_outcome(exact_failure_vec)
+            if not bool(exact_failure_decoded.get("survived_h", True)):
+                return self._with_option_retrieval_metadata(
+                    exact_failure_decoded,
+                    context_level="full",
+                    option_level="exact",
+                    context_weight=1.0,
+                    option_weight=1.0,
+                    role="__OPTION_FAILURE_H__",
+                ), exact_failure_confidence
 
         address = self._option_outcome_address(context, option_id)
         outcome_vec, confidence = self.memory.read(address)
+        if confidence >= 0.2:
+            aggregate_decoded = self.decode_outcome(outcome_vec)
+            # Exact aggregate evidence for this context/option is stronger than
+            # broad abstract failure recall. This prevents one neighboring
+            # failure from suppressing a context with directly observed safe
+            # outcome, while exact failures above still remain dominant.
+            if bool(aggregate_decoded.get("survived_h", True)):
+                return self._with_option_retrieval_metadata(
+                    aggregate_decoded,
+                    context_level="full",
+                    option_level="exact",
+                    context_weight=1.0,
+                    option_weight=1.0,
+                    role="__OPTION_OUTCOME_H__",
+                ), confidence
+
+        context_levels = self.abstract_option_contexts(context)
+        option_levels = self.abstract_strategy_options(option_id)
+        for context_level, context_key, context_weight in context_levels:
+            for option_level, option_key, option_weight in option_levels:
+                if context_level == "full" and option_level == "exact":
+                    continue
+                failure_address = self._option_failure_address(
+                    context_key,
+                    option_key,
+                    context_level=context_level,
+                    option_level=option_level,
+                )
+                failure_vec, failure_confidence = self.memory.read(failure_address)
+                if failure_confidence >= 0.9:
+                    failure_decoded = self.decode_outcome(failure_vec)
+                    if not bool(failure_decoded.get("survived_h", True)):
+                        return self._with_option_retrieval_metadata(
+                            failure_decoded,
+                            context_level=context_level,
+                            option_level=option_level,
+                            context_weight=context_weight,
+                            option_weight=option_weight,
+                            role="__OPTION_FAILURE_H__",
+                        ), failure_confidence
+
         if confidence < 0.2:
             return None, confidence
-        return self.decode_outcome(outcome_vec), confidence
+        return self._with_option_retrieval_metadata(
+            self.decode_outcome(outcome_vec),
+            context_level="full",
+            option_level="exact",
+            context_weight=1.0,
+            option_weight=1.0,
+            role="__OPTION_OUTCOME_H__",
+        ), confidence
 
     def requirements_met(
         self, concept_id: str, action: str, inventory: dict[str, int],

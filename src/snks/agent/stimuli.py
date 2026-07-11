@@ -261,7 +261,9 @@ class OptionOutcomeStimulus(Stimulus):
         )
         if decoded.get("died_to") not in (None, "none"):
             signal -= self.death_cause_penalty
-        return self.weight * confidence * signal
+        retrieval = decoded.get("_retrieval") or {}
+        abstraction_weight = float(retrieval.get("abstraction_weight", 1.0))
+        return self.weight * confidence * abstraction_weight * signal
 
 
 @dataclass

@@ -278,6 +278,48 @@ def test_option_outcome_sparse_failure_penalizes_despite_many_survivals() -> Non
     assert stim.evaluate(_traj("do", "zombie")) < -1.0
 
 
+def test_option_outcome_abstract_failure_is_scaled_negative() -> None:
+    model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=65)
+    failed_context = {
+        "health_bucket": "low",
+        "food_bucket": "ok",
+        "drink_bucket": "critical",
+        "energy_bucket": "ok",
+        "threat_pressure": "multi",
+        "local_restore": "drink",
+        "capability_state": "armed_melee",
+        "intent_state": "continuing_interaction",
+        "progress_state": "normal",
+        "goal_family": "fight",
+    }
+    neighboring_context = dict(failed_context)
+    neighboring_context["intent_state"] = "none"
+    neighboring_context["progress_state"] = "stalled"
+    option_id = "continue_interaction:zombie"
+    model.learn_option_outcome(failed_context, option_id, {
+        "survived_h": False,
+        "damage_h": 8,
+        "died_to": "drink_critical",
+    })
+    exact_stim = OptionOutcomeStimulus(
+        model=model,
+        context_provider=lambda _traj: failed_context,
+        option_id_provider=lambda _traj: option_id,
+    )
+    abstract_stim = OptionOutcomeStimulus(
+        model=model,
+        context_provider=lambda _traj: neighboring_context,
+        option_id_provider=lambda _traj: option_id,
+    )
+
+    exact_score = exact_stim.evaluate(_traj("do", "zombie"))
+    abstract_score = abstract_stim.evaluate(_traj("do", "zombie"))
+
+    assert exact_score < -1.0
+    assert abstract_score < -1.0
+    assert abs(abstract_score) < abs(exact_score)
+
+
 def test_option_outcome_differentiates_options_in_same_context() -> None:
     model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=67)
     context = {
