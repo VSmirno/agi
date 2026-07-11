@@ -146,6 +146,24 @@ def test_option_outcome_recorder_flush_on_death_writes_death() -> None:
     assert decoded["died_to"] == "zombie"
 
 
+def test_hostile_death_credits_earlier_fight_precursor() -> None:
+    model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=80)
+    rec = _OptionOutcomeRecorder(model=model, horizon=2)
+    early = _option_context()
+    early = OptionContext(**{**early.to_trace(), "health_bucket": "low", "threat_pressure": "near"})
+    rec.push(step=0, context=early, option=StrategyOption("engage_target", "zombie"), health_now=5.0)
+    rec.flush_due(current_step=2, health_now=4.0)
+    rec.push(step=3, context=_option_context(), option=StrategyOption("complete_interaction", "zombie"), health_now=4.0)
+    rec.flush_on_death(health_now=0.0, died_to="skeleton")
+
+    query = dict(early.to_trace())
+    query.update({"food_bucket": "ok", "drink_bucket": "ok", "energy_bucket": "ok"})
+    decoded, conf = model.predict_option_outcome(query, "engage_target:skeleton")
+    assert decoded is not None, conf
+    assert decoded["survived_h"] is False
+    assert (decoded.get("_retrieval") or {})["credit_type"] == "precursor"
+
+
 def test_option_outcome_recorder_flush_due_marks_critical_vital_failure() -> None:
     """A horizon outcome that leaves a vital critical is negative evidence.
 

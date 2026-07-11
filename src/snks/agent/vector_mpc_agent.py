@@ -2026,6 +2026,8 @@ class _OptionOutcomeRecorder:
         self.model = model
         self.horizon = max(1, int(horizon))
         self._pending: list[dict[str, Any]] = []
+        self._recent: list[dict[str, Any]] = []
+        self._recent_limit = max(8, self.horizon + 6)
 
     @staticmethod
     def _critical_vital_reason(body_now: dict[str, float] | None) -> str | None:
@@ -2058,13 +2060,16 @@ class _OptionOutcomeRecorder:
         health_now: float,
         body_now: dict[str, float] | None = None,
     ) -> None:
-        self._pending.append({
+        snap = {
             "due": int(step) + self.horizon,
             "context": context.to_trace(),
             "option_id": option.option_id,
             "health_start": float(health_now),
             "body_start": dict(body_now or {}),
-        })
+        }
+        self._pending.append(snap)
+        self._recent.append(snap)
+        del self._recent[:-self._recent_limit]
 
     def flush_due(
         self,
@@ -2108,12 +2113,28 @@ class _OptionOutcomeRecorder:
         return 1
 
     def flush_on_death(self, *, health_now: float, died_to: str | None) -> int:
+        self._credit_precursors(health_now=health_now, died_to=died_to)
         flushed = 0
         for snap in self._pending:
             self._write_snapshot(snap, health_now=health_now, died_to=died_to)
             flushed += 1
         self._pending = []
         return flushed
+
+    def _credit_precursors(self, *, health_now: float, died_to: str | None) -> None:
+        cause = self.model.normalize_option_failure_cause({"died_to": died_to, "damage_h": 1})
+        if cause != "hostile_damage":
+            return
+        # A small deterministic window retains pre-terminal hostile-risk
+        # choices after their normal horizon write has already flushed.
+        for snap in self._recent[-self._recent_limit:]:
+            context = snap["context"]
+            if (context.get("goal_family") == "fight" or
+                    context.get("threat_pressure") not in {None, "none"}):
+                damage = max(0, int(round(float(snap["health_start"]) - health_now)))
+                self.model.learn_option_failure_credit(context, str(snap["option_id"]), {
+                    "survived_h": False, "damage_h": damage, "died_to": died_to,
+                }, credit_type="precursor")
 
     def _write_snapshot(
         self,

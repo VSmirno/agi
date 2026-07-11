@@ -320,6 +320,27 @@ def test_option_outcome_abstract_failure_is_scaled_negative() -> None:
     assert abs(abstract_score) < abs(exact_score)
 
 
+def test_option_outcome_cause_projected_failure_is_scaled_negative() -> None:
+    model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=66)
+    failed_context = {
+        "health_bucket": "low", "food_bucket": "critical", "drink_bucket": "critical",
+        "energy_bucket": "ok", "threat_pressure": "multi", "local_restore": "drink",
+        "capability_state": "armed_melee", "intent_state": "continuing_interaction",
+        "progress_state": "normal", "goal_family": "fight",
+    }
+    model.learn_option_failure_credit(failed_context, "continue_interaction:zombie", {
+        "survived_h": False, "damage_h": 8, "died_to": "zombie",
+    }, credit_type="precursor")
+    neighboring = dict(failed_context)
+    neighboring.update({"food_bucket": "ok", "drink_bucket": "ok", "energy_bucket": "ok"})
+    exact = OptionOutcomeStimulus(model=model, context_provider=lambda _t: failed_context,
+                                  option_id_provider=lambda _t: "continue_interaction:zombie")
+    projected = OptionOutcomeStimulus(model=model, context_provider=lambda _t: neighboring,
+                                      option_id_provider=lambda _t: "engage_target:skeleton")
+    assert projected.evaluate(_traj("do", "zombie")) < -1.0
+    assert abs(projected.evaluate(_traj("do", "zombie"))) < abs(exact.evaluate(_traj("do", "zombie")))
+
+
 def test_option_outcome_differentiates_options_in_same_context() -> None:
     model = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=67)
     context = {

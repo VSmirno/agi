@@ -793,6 +793,58 @@ class VectorWorldModel:
         return bind(bind(context_vec, option_vec), role_vec)
 
     @staticmethod
+    def normalize_option_failure_cause(outcome: dict) -> str:
+        """Map terminal labels onto a small, transferable failure family."""
+        label = str(outcome.get("died_to") or "").lower()
+        damage = float(outcome.get("damage_h") or 0)
+        hostile_tokens = ("zombie", "skeleton", "arrow", "hostile", "health")
+        vital_tokens = ("food_critical", "drink_critical", "energy_critical", "vital")
+        if any(token in label for token in hostile_tokens) or (damage > 0 and "health" in label):
+            return "hostile_damage"
+        if any(token in label for token in vital_tokens):
+            return "vital_depletion"
+        return "unknown"
+
+    @staticmethod
+    def _cause_projected_context(context: dict[str, str], cause_family: str) -> dict[str, str]:
+        if cause_family == "hostile_damage":
+            pressure = str(context.get("threat_pressure", "none"))
+            return {
+                "health_bucket": str(context.get("health_bucket", "unknown")),
+                "capability_state": str(context.get("capability_state", "unknown")),
+                "goal_family": str(context.get("goal_family", "unknown")),
+                "threat_present": "yes" if pressure not in {"none", "unknown"} else "no",
+            }
+        if cause_family == "vital_depletion":
+            return {
+                field: str(context.get(field, "unknown"))
+                for field in ("health_bucket", "food_bucket", "drink_bucket", "energy_bucket")
+            }
+        return {"health_bucket": str(context.get("health_bucket", "unknown"))}
+
+    @staticmethod
+    def _cause_option_families(option_id: str, cause_family: str) -> list[str]:
+        if cause_family != "hostile_damage":
+            return ["option_kind:" + str(option_id).split(":", 1)[0]]
+        # These are outcome abstractions, not action selection: they group
+        # observed hostile engagements across entity identities while keeping
+        # fight-positioning failures separable from direct engagement failures.
+        text = str(option_id).lower()
+        kind = text.split(":", 1)[0]
+        if any(token in text for token in ("zombie", "skeleton", "arrow", "hostile")):
+            if kind in {
+                "complete_interaction",
+                "continue_interaction",
+                "engage_target",
+                "seek_frontier",
+                "seek_known",
+            }:
+                return ["hostile_engagement"]
+        if kind == "baseline_motion":
+            return ["fight_positioning"]
+        return ["option_kind:" + kind]
+
+    @staticmethod
     def _with_option_retrieval_metadata(
         decoded: dict,
         *,
@@ -801,6 +853,8 @@ class VectorWorldModel:
         context_weight: float,
         option_weight: float,
         role: str,
+        cause_family: str | None = None,
+        credit_type: str | None = None,
     ) -> dict:
         out = dict(decoded)
         out["_retrieval"] = {
@@ -809,7 +863,57 @@ class VectorWorldModel:
             "abstraction_weight": float(context_weight) * float(option_weight),
             "role": str(role),
         }
+        if cause_family is not None:
+            out["_retrieval"]["cause_family"] = str(cause_family)
+        if credit_type is not None:
+            out["_retrieval"]["credit_type"] = str(credit_type)
         return out
+
+    def learn_option_failure_credit(
+        self,
+        context: dict[str, str],
+        option_id: str,
+        outcome: dict,
+        *,
+        credit_type: str = "terminal",
+    ) -> None:
+        """Write only sparse negative evidence, including a cause projection."""
+        outcome_vec = self.encode_outcome(outcome)
+        cause_family = self.normalize_option_failure_cause(outcome)
+        for context_level, context_key, option_level, option_key in self._option_failure_write_keys(
+            context, option_id
+        ):
+            cache_key = (
+                str(context_level),
+                tuple(sorted((str(k), str(v)) for k, v in context_key.items())),
+                str(option_level),
+                str(option_key),
+                str(outcome.get("died_to") or "unknown"),
+                str(credit_type),
+            )
+            if cache_key in self._option_failure_write_cache:
+                continue
+            self._option_failure_write_cache.add(cache_key)
+            self.memory.write(
+                self._option_failure_address(
+                    context_key,
+                    option_key,
+                    context_level=context_level,
+                    option_level=option_level,
+                ),
+                outcome_vec,
+            )
+        projected = self._cause_projected_context(context, cause_family)
+        for family in self._cause_option_families(option_id, cause_family):
+            self.memory.write(
+                self._option_failure_address(
+                    projected,
+                    family,
+                    context_level=f"cause:{cause_family}:{credit_type}",
+                    option_level="family",
+                ),
+                outcome_vec,
+            )
 
     def learn_option_outcome(
         self,
@@ -822,26 +926,7 @@ class VectorWorldModel:
         outcome_vec = self.encode_outcome(outcome)
         self.memory.write(address, outcome_vec)
         if not bool(outcome.get("survived_h", True)):
-            for context_level, context_key, option_level, option_key in self._option_failure_write_keys(
-                context, option_id
-            ):
-                cache_key = (
-                    str(context_level),
-                    tuple(sorted((str(k), str(v)) for k, v in context_key.items())),
-                    str(option_level),
-                    str(option_key),
-                    str(outcome.get("died_to") or "unknown"),
-                )
-                if cache_key in self._option_failure_write_cache:
-                    continue
-                self._option_failure_write_cache.add(cache_key)
-                failure_address = self._option_failure_address(
-                    context_key,
-                    option_key,
-                    context_level=context_level,
-                    option_level=option_level,
-                )
-                self.memory.write(failure_address, outcome_vec)
+            self.learn_option_failure_credit(context, option_id, outcome)
 
     def predict_option_outcome(
         self,
@@ -870,21 +955,7 @@ class VectorWorldModel:
 
         address = self._option_outcome_address(context, option_id)
         outcome_vec, confidence = self.memory.read(address)
-        if confidence >= 0.2:
-            aggregate_decoded = self.decode_outcome(outcome_vec)
-            # Exact aggregate evidence for this context/option is stronger than
-            # broad abstract failure recall. This prevents one neighboring
-            # failure from suppressing a context with directly observed safe
-            # outcome, while exact failures above still remain dominant.
-            if bool(aggregate_decoded.get("survived_h", True)):
-                return self._with_option_retrieval_metadata(
-                    aggregate_decoded,
-                    context_level="full",
-                    option_level="exact",
-                    context_weight=1.0,
-                    option_weight=1.0,
-                    role="__OPTION_OUTCOME_H__",
-                ), confidence
+        aggregate_decoded = self.decode_outcome(outcome_vec) if confidence >= 0.2 else None
 
         context_levels = self.abstract_option_contexts(context)
         option_levels = self.abstract_strategy_options(option_id)
@@ -911,10 +982,37 @@ class VectorWorldModel:
                             role="__OPTION_FAILURE_H__",
                         ), failure_confidence
 
+        # Cause-projected warnings come after more specific B3 sparse failures
+        # but before returning survived aggregate evidence.
+        for cause_family in ("hostile_damage", "vital_depletion"):
+            projected = self._cause_projected_context(context, cause_family)
+            for credit_type in ("precursor", "terminal"):
+                for family in self._cause_option_families(option_id, cause_family):
+                    address = self._option_failure_address(
+                        projected,
+                        family,
+                        context_level=f"cause:{cause_family}:{credit_type}",
+                        option_level="family",
+                    )
+                    vec, cause_confidence = self.memory.read(address)
+                    if cause_confidence >= 0.9:
+                        decoded = self.decode_outcome(vec)
+                        if not bool(decoded.get("survived_h", True)):
+                            return self._with_option_retrieval_metadata(
+                                decoded,
+                                context_level="cause_projected",
+                                option_level="family",
+                                context_weight=0.55,
+                                option_weight=0.70,
+                                role="__OPTION_FAILURE_CAUSE_H__",
+                                cause_family=cause_family,
+                                credit_type=credit_type,
+                            ), cause_confidence
+
         if confidence < 0.2:
             return None, confidence
         return self._with_option_retrieval_metadata(
-            self.decode_outcome(outcome_vec),
+            aggregate_decoded if aggregate_decoded is not None else self.decode_outcome(outcome_vec),
             context_level="full",
             option_level="exact",
             context_weight=1.0,

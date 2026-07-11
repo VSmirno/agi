@@ -472,6 +472,61 @@ def test_option_failure_retrieves_neighboring_option_kind() -> None:
     assert retrieval["option_level"] == "kind"
 
 
+def test_hostile_failure_projects_to_precursor_despite_vital_differences() -> None:
+    m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=145)
+    failed = _conflict_context()
+    failed["food_bucket"] = "critical"
+    failed["drink_bucket"] = "critical"
+    m.learn_option_failure_credit(
+        failed, "continue_interaction:zombie", _dead_outcome("zombie", damage=8),
+        credit_type="precursor",
+    )
+    precursor = dict(failed)
+    precursor.update({"food_bucket": "ok", "drink_bucket": "ok", "energy_bucket": "low",
+                      "goal_family": "fight", "threat_pressure": "near"})
+
+    decoded, conf = m.predict_option_outcome(precursor, "engage_target:skeleton")
+
+    assert decoded is not None, conf
+    assert decoded["survived_h"] is False
+    assert (decoded.get("_retrieval") or {})["cause_family"] == "hostile_damage"
+    assert (decoded.get("_retrieval") or {})["credit_type"] == "precursor"
+
+
+def test_vital_failure_does_not_transfer_to_hostile_projection() -> None:
+    m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=146)
+    failed = _conflict_context()
+    m.learn_option_failure_credit(
+        failed, "continue_interaction:zombie", _dead_outcome("drink_critical", damage=1),
+        credit_type="precursor",
+    )
+    hostile = dict(failed)
+    hostile.update({"food_bucket": "ok", "drink_bucket": "ok", "energy_bucket": "ok"})
+
+    decoded, _ = m.predict_option_outcome(hostile, "engage_target:skeleton")
+
+    assert decoded is None or decoded.get("survived_h", True)
+
+
+def test_cause_projected_failure_precedes_survived_exact_aggregate() -> None:
+    m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=147)
+    failed = _conflict_context()
+    m.learn_option_failure_credit(
+        failed, "continue_interaction:zombie", _dead_outcome("zombie", damage=8),
+        credit_type="precursor",
+    )
+    current = dict(failed)
+    current["intent_state"] = "none"
+    current["progress_state"] = "stalled"
+    m.learn_option_outcome(current, "engage_target:skeleton", _alive_outcome())
+
+    decoded, conf = m.predict_option_outcome(current, "engage_target:skeleton")
+
+    assert decoded is not None, conf
+    assert decoded["survived_h"] is False
+    assert (decoded.get("_retrieval") or {})["role"] == "__OPTION_FAILURE_CAUSE_H__"
+
+
 def test_option_outcome_role_does_not_pollute_primitive_outcome_or_physics() -> None:
     """Option outcome writes are role-separated from existing reads."""
     m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=37)
