@@ -493,6 +493,35 @@ def test_hostile_failure_projects_to_precursor_despite_vital_differences() -> No
     assert (decoded.get("_retrieval") or {})["credit_type"] == "precursor"
 
 
+def test_hostile_precursor_credits_fight_positioning_option_family() -> None:
+    m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=148)
+    failed = _conflict_context()
+    failed.update({
+        "health_bucket": "ok",
+        "food_bucket": "ok",
+        "drink_bucket": "ok",
+        "energy_bucket": "ok",
+        "threat_pressure": "contact",
+        "capability_state": "armed_melee",
+        "goal_family": "fight",
+    })
+    m.learn_option_failure_credit(
+        failed,
+        "seek_frontier:skeleton",
+        _dead_outcome("health", damage=4),
+        credit_type="precursor",
+    )
+
+    decoded, conf = m.predict_option_failure_warning(failed, "baseline_motion")
+
+    assert decoded is not None, conf
+    assert decoded["survived_h"] is False
+    retrieval = decoded.get("_retrieval") or {}
+    assert retrieval["role"] == "__OPTION_FAILURE_CAUSE_H__"
+    assert retrieval["cause_family"] == "hostile_damage"
+    assert retrieval["credit_type"] == "precursor"
+
+
 def test_vital_failure_does_not_transfer_to_hostile_projection() -> None:
     m = VectorWorldModel(n_locations=SMOKE_LOC, dim=SMOKE_DIM, seed=146)
     failed = _conflict_context()

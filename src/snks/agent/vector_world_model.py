@@ -823,9 +823,16 @@ class VectorWorldModel:
         return {"health_bucket": str(context.get("health_bucket", "unknown"))}
 
     @staticmethod
-    def _cause_option_families(option_id: str, cause_family: str) -> list[str]:
+    def _cause_option_families(
+        option_id: str,
+        cause_family: str,
+        *,
+        credit_type: str = "terminal",
+    ) -> list[str]:
         if cause_family != "hostile_damage":
             return ["option_kind:" + str(option_id).split(":", 1)[0]]
+        if credit_type == "precursor":
+            return ["hostile_engagement", "fight_positioning"]
         # These are outcome abstractions, not action selection: they group
         # observed hostile engagements across entity identities while keeping
         # fight-positioning failures separable from direct engagement failures.
@@ -904,7 +911,11 @@ class VectorWorldModel:
                 outcome_vec,
             )
         projected = self._cause_projected_context(context, cause_family)
-        for family in self._cause_option_families(option_id, cause_family):
+        for family in self._cause_option_families(
+            option_id,
+            cause_family,
+            credit_type=credit_type,
+        ):
             self.memory.write(
                 self._option_failure_address(
                     projected,
