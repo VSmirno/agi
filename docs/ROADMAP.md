@@ -109,8 +109,26 @@ label-objective mismatch; это не отсутствие turn recognition и �
 transfer failure. Controller остаётся reactive и сбрасывает representation после
 каждого observation.
 
-Следующий bounded direction — existing action-conditioned dynamics + beam planner,
-source-only H3 против H1/shuffled/raw, до любого Push-2 запуска.
+Этот bounded direction проверен в exp146. Predictive dynamics loss снизился
+**1.35259→0.58296**, а ordered temporal probe на held-out real pairs получил
+balanced accuracy **0.7140** против **0.4914** shuffled. Но ordered H3, ordered
+H1, shuffled H3 и raw H3 получили **0/24** каждый; Push-2 не запускался.
+Ordered/raw H3 после правильного первого turn семь раз выбирали заблокированный
+`forward`. Search выполнил полные `55` model calls, termination была
+нейтрализована, поэтому лимит planner и terminal handling не объясняют failure.
+
+Late-prefix exhaustive fork на `east_row4_left/seed=20000` отделил endpoint
+score от rollout. Единственная успешная трёхшаговая последовательность
+`interact,forward,interact` была rank **1/125** у actual ordered и actual raw,
+но rank **54/125** и **42/125** на predicted endpoints. Лучшие predicted планы
+были неуспешны; exhaustive ranking тоже неверен, поэтому расширение beam не
+лечит основной дефект. На этом fork подтверждён learned rollout error, но не
+общая неспособность representation.
+
+Следующий bounded diagnostic использует сохранённый checkpoint без retraining:
+teacher-forced one-step против autoregressive rollout и persistence baseline на
+трёх canonical переходах. До этой локализации не менять planner и не запускать
+Push-2.
 
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**

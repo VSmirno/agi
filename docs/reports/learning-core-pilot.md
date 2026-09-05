@@ -415,9 +415,45 @@ it isolates a reactive-composition failure / label-objective mismatch, not a lac
 of turn recognition and not a physics-transfer failure.
 
 Physics transfer поэтому не опровергнут: target нельзя оценивать, пока source
-mechanism не переносится на новые long-distance layouts. Следующий bounded
-comparison — existing action-conditioned dynamics + beam planner, source-only
-H3 против H1/shuffled/raw, до любого Push-2 запуска.
+mechanism не переносится на новые long-distance layouts.
+
+`exp146_temporal_mpc_physics.py` провёл следующий source-only comparison на
+том же fixed corpus. Predictive dynamics loss снизился **1.35259→0.58296**;
+ordered temporal probe на held-out real source pairs получил balanced accuracy
+**0.7140** против **0.4914** у shuffled endpoint. Однако ordered H3, ordered
+H1, shuffled H3 и raw H3 дали **0/24** каждый; Push-2 снова не запускался.
+Ordered H3 и raw H3 во всех seeds выбрали правильный первый turn, затем семь
+раз повторили заблокированный `forward`, не сдвинув agent или box. Search
+использовал все ожидаемые `5+25+25=55` model calls; termination была
+нейтрализована. Следовательно, это не action-ID mismatch, premature terminal
+или исчерпание search budget.
+
+Трассы показали imagined progress, исчезающий после re-observation. Например,
+после правильного turn на west/north ordered cost для заблокированных
+`[forward]`, `[forward,forward]`, `[forward,forward,forward]` менялся
+**0.7854→0.1901→-0.2943**, хотя реальное состояние не менялось. Raw MSE в том
+же состоянии также предпочитал фиктивный rollout. Полезный prefix
+`[interact,forward]` занимал лишь 6--11 место на depth 2 и вылетал из beam=5,
+но widening beam не является достаточным объяснением: exhaustive candidates,
+включая правильные полные rollouts, уже получали худший predicted score.
+
+Late-prefix exhaustive fork отделил dynamics от endpoint score. После реального
+prefix `[turn_left, interact, forward, interact, forward]` на
+`east_row4_left/seed=20000` все **125** трёхшаговых продолжений были оценены как
+по реальным, так и по imagined endpoints. Единственная успешная последовательность
+`[interact,forward,interact]` получила rank **1/125** у actual ordered score и
+rank **1/125** у actual raw score, но только **54/125** и **42/125** соответственно
+на learned rollout. Лучшие predicted ordered/raw последовательности были
+неуспешны. Canonical ветка вылетела из beam на depth 2, но exhaustive predicted
+ranking тоже был неверным. Это изолирует rollout error в одном deterministic
+fork; оно не доказывает общую неспособность representation и не оправдывает
+planner tuning.
+
+Следующий минимальный вопрос — является ли ошибка уже one-step action-conditioned
+prediction в реальном canonical state или возникает преимущественно при
+autoregressive compounding. Его можно проверить без повторного 22-минутного
+обучения по сохранённому checkpoint, сравнив teacher-forced one-step и
+autoregressive ошибки с persistence baseline на трёх canonical переходах.
 
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
@@ -425,7 +461,8 @@ H3 против H1/shuffled/raw, до любого Push-2 запуска.
 `exp144-layout-generalization-001..006`, `exp144-hindsight-001`,
 `exp144-terminal-hindsight-001..003`, `exp144-random-encoder-001..003`.
 Predictive ablation: `exp144-predictive-encoder-001..003`.
-Physics transfer: `exp145-physics-transfer-003`.
+Physics transfer: `exp145-physics-transfer-003`. Temporal MPC и late fork:
+`exp146-temporal-mpc-source-001`, `exp146-temporal-mpc-fork-001`.
 
 ## Stage Review
 

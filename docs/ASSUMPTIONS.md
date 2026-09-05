@@ -137,8 +137,26 @@ label-objective mismatch, а не на отсутствие turn recognition и�
 transfer failure. Controller остаётся reactive и сбрасывает representation после
 каждого observation.
 
-Следующее ограниченное направление: existing action-conditioned dynamics + beam
-planner, source-only H3 против H1/shuffled/raw, до любого Push-2 запуска.
+Exp146 проверил existing action-conditioned dynamics + beam planner на том же
+source-only protocol. Dynamics loss был **1.35259→0.58296**, held-out ordered
+probe balanced accuracy **0.7140** против shuffled **0.4914**, но ordered H3,
+ordered H1, shuffled H3 и raw H3 получили **0/24** каждый. Ordered/raw H3 во
+всех cases правильно поворачивались, затем семь раз выбирали заблокированный
+`forward`; полный `55`-candidate search и neutral termination исключают
+budget/terminal объяснение.
+
+Один заранее локализованный late fork после canonical prefix проверил все
+**125** трёхшаговых продолжений. Единственный success
+`[interact,forward,interact]` был rank **1/125** по actual ordered/raw endpoint,
+но rank **54/125** и **42/125** по predicted endpoint. Лучшие predicted планы
+неуспешны, а exhaustive predicted ranking уже неверен; pruning вторичен. Это
+evidence learned rollout error только для одного deterministic fork, не
+доказательство общей неспособности encoder или world-model class.
+
+Сохранённый checkpoint позволяет следующим дешёвым diagnostic разделить
+one-step action prediction и autoregressive compounding без повторного обучения.
+До этого не менять planner и не интерпретировать result как physics-transfer
+failure; Push-2 не запускался.
 
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
