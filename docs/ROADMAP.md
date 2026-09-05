@@ -174,8 +174,21 @@ rank ухудшился до **95/125** (raw **104/125**), все четыре M
 
 Значит, sparse frequency — частичный фактор contact/blocked error, но ни она,
 ни residual parameterization не объясняют и не снимают корневой rollout
-failure. Следующий bounded diagnostic — separability frozen-encoder
-representation по event и free-vs-blocked labels до изменения архитектуры.
+failure.
+
+Exp152 закрыл следующий bounded diagnostic на exact corpus **130676**
+transitions и checkpoint `afdf53e`. Episode-disjoint linear probes по
+frozen current `z + action` разделили both preregistered signals:
+`interact` change/no-change дал ordered balanced accuracy **0.88372185**
+против **0.56801987** shuffled, а `forward` blocked/moving —
+**0.94262883** против **0.31591830**. Для обоих tasks balanced
+accuracy, per-class recall и ordered-minus-shuffled margin прошли пороги
+**0.8 / 0.7 / 0.2**; outcome — `representation_signal_evidence`.
+
+Это снимает encoder availability как текущий root bottleneck, но не
+доказывает AGI, JEPA или transfer. Следующий минимальный experiment-only
+gate — transition-state conditioning/gating на current `z + action` при uniform
+replay, без event labels и без изменения objective или planner.
 
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**

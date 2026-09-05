@@ -241,6 +241,36 @@ event и free-vs-blocked labels.
 Observability: **577** progress records, maximum gap **2.793 s**; полны
 `run.log`, manifest, results, checkpoint, rows и traces; elapsed **134.097 s**.
 
+Exp152 выполнил preregistered frozen-encoder separability diagnostic на
+HyperPC. Артефакт `output_to_user/core/exp152-representation-separability-001`
+завершён с `exact_protocol=true`, exit 0, точным corpus **130676**
+transitions и checkpoint head `afdf53e`; protocol и checkpoint gates — `true`.
+
+Для `interact` train counts равны **18160 no-change / 1425 change**,
+held-out counts — **6040 / 500**. Ordered probe получил balanced accuracy
+**0.88372185**, recalls **0.7834437 / 0.984** и confusion
+`tn=4732, fp=1308, fn=8, tp=492`; shuffled balanced accuracy —
+**0.56801987**. Для `forward` train counts равны **7036 blocked/no-change /
+12590 moving/change**, held-out counts — **2322 / 4174**. Ordered probe дал
+balanced accuracy **0.94262883**, recalls **0.916882 / 0.968376** и confusion
+`tn=2129, fp=193, fn=132, tp=4042`; shuffled balanced accuracy —
+**0.31591830**. Оба preregistered signals прошли пороги balanced accuracy
+**≥0.8**, each-class recall **≥0.7** и ordered-minus-shuffled margin **≥0.2**.
+Outcome: `representation_signal_evidence`.
+
+Границы claim: after-RGB используется только для target, а не как
+encoder input; probe episode-disjoint, но frozen encoder ранее видел
+весь corpus при self-supervised training. Проверены один linear-probe
+protocol и один seed. Результат не доказывает AGI, JEPA или
+transfer; он лишь показывает, что availability нужного signal в
+encoder не является текущим root bottleneck. Следующий минимальный
+experiment-only gate должен напрямую обусловить transition state
+текущими `z + action`, сохранив uniform replay и не добавляя
+event labels, новый objective или planner changes.
+
+Observability: **324** progress records, maximum gap **1.313 s**, elapsed
+**81.453 s**; manifest, results и `run.log` полны.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

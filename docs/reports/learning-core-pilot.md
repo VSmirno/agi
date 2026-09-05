@@ -579,8 +579,44 @@ Canonical late-fork audit дал successful sequence predicted ordered rank
 
 Run оставил **577** progress records с maximum gap **2.793 s** и elapsed
 **134.097 s**. `run.log`, manifest, results, checkpoint, rows и traces полны.
-Следующий bounded diagnostic перед архитектурным изменением — separability
-frozen-encoder representation по event и free-vs-blocked labels.
+
+Exp152 закрыл этот diagnostic на frozen checkpoint head `afdf53e`.
+Full HyperPC run `exp152-representation-separability-001` завершился с
+`exact_protocol=true`, exit 0 и точным corpus **130676** transitions;
+protocol/checkpoint gates прошли. Probe features состояли только из
+frozen current `z` и action; after-RGB использовался для target,
+но не подавался encoder или probe.
+
+`interact` task имел train counts **18160 no-change / 1425 change** и
+episode-disjoint held-out counts **6040 / 500**. Ordered linear probe дал
+balanced accuracy **0.88372185**, recall no-change/change
+**0.7834437 / 0.984** и confusion `tn=4732, fp=1308, fn=8, tp=492`;
+shuffled-label control дал **0.56801987** balanced accuracy.
+
+`forward` task имел train counts **7036 blocked/no-change / 12590
+moving/change** и held-out counts **2322 / 4174**. Ordered probe дал balanced
+accuracy **0.94262883**, recall blocked/moving **0.916882 / 0.968376** и
+confusion `tn=2129, fp=193, fn=132, tp=4042`; shuffled-label control дал
+**0.31591830**. Оба preregistered signals прошли все три порога:
+balanced accuracy **≥0.8**, each-class recall **≥0.7** и
+ordered-minus-shuffled margin **≥0.2**. Outcome —
+`representation_signal_evidence`.
+
+Результат снимает encoder availability как текущий root bottleneck:
+representation содержит линейно доступный signal для обоих
+failure classes, тогда как текущая dynamics его не использует. Но probe
+проверен на одном seed, а frozen encoder до split видел весь corpus
+в self-supervised training; episode-disjoint только supervised probe split.
+Это signal evidence, а не доказательство AGI, JEPA или transfer.
+
+Следующий минимальный experiment-only gate — напрямую обусловить
+transition state текущими `z + action`, сохранив uniform replay и не
+добавляя event labels, новый objective или planner changes. Такой
+matched gate проверит, может ли dynamics использовать уже доступный
+signal без смены других causal factors.
+
+Observability: **324** progress records, maximum gap **1.313 s**, elapsed
+**81.453 s**; manifest, results и `run.log` полны.
 
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
@@ -595,6 +631,7 @@ Source/unseen split: `exp148-source-target-one-step-002`.
 Replay coverage: `exp149-replay-coverage-003`.
 Residual dynamics: `exp150-residual-dynamics-001`.
 Event-balanced residual dynamics: `exp151-event-balanced-dynamics-001`.
+Representation separability: `exp152-representation-separability-001`.
 
 ## Stage Review
 
@@ -610,8 +647,9 @@ bounded planner и frozen evaluation с контрольными условия�
 **Evidence of improvement:** residual source dynamics стала action-sensitive;
 planner исправлен двумя причинными регрессиями; source replay + salient windows
 дали B2/4 с A4/4; learned temporal goal score дал paired closed-loop 4/6 против
-0/6 raw и 0/6 shuffled на одном Push fixture. Стабильного transfer improvement
-всё ещё нет.
+0/6 raw и 0/6 shuffled на одном Push fixture. Exp152 показал линейно
+доступный event/blocked signal в frozen representation, но стабильного
+transfer improvement всё ещё нет.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил
