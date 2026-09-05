@@ -598,6 +598,34 @@ Observability: persistent `run.log`, `results.json`, `manifest.json` и
 `progress.jsonl` с **2654** records, maximum gap **1.2763 s**, сохраняют exact
 command, Git commit и финальный статус.
 
+Exp163 реализован RED commit `718c52e` и implementation `6546387`. Fresh
+HyperPC verification: **6 passed** за **0.99 s**, smoke — **4.308 s**. Full run
+завершился с `exact_protocol=true`, status `completed`, exit 0 и runtime
+**121.037 s**; artifact verifier — PASS. Frozen backbone не менялся, а
+calibration split имеет zero source leakage.
+
+Per-action thresholds:
+`[0.67221558,0.56983912,0.25142145,0.03797820,0.02714755]`. Held-out latent
+MSE изменилась с **0.04614048** до **0.04605277**, то есть примерно на
+**0.19%**. Native exp162 source имел contact/blocked failures **1/4 и 4/4**,
+medians free **0.262579**, interact **0.911038**; calibrated source — **3/4 и
+2/4**, **0.262579**, **1.0**. Native unseen — **0/4 и 4/4**, **0.304037**,
+**0.959895**; calibrated unseen — **4/4 и 1/4**, **0.304037**, **1.0**.
+
+Action 3 threshold подавил **99.82%** held-out zero targets, но сохранил только
+**6.99%** positive targets. То есть scalar score не ранжирует zero и positive
+contexts совместимо с contact effect: улучшение blocked counts куплено
+уничтожением contact. Gate — `false`.
+
+Узкий вывод: это score overlap/ranking-state failure, а не недостаточная длина
+calibration или training. Следующий минимальный шаг — evaluator-only relational
+object-state diagnostic, не новый долгий training arm. Это не AGI, JEPA,
+composition или transfer claim.
+
+Observability: persistent `run.log`, `results.json`, `manifest.json`, checkpoint,
+rows и `progress.jsonl` с **1092** records и maximum gap **1.303 s** сохраняют
+exact command, Git commit и финальный status.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

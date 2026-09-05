@@ -961,6 +961,35 @@ Persistent `run.log`, `results.json`, `manifest.json` и `progress.jsonl`
 содержат **2654** progress records с maximum gap **1.2763 s**, exact command,
 Git commit и финальный status.
 
+Exp163 проверил пост-hoc calibration frozen exp162 amplitude MLP: можно ли
+восстановить zero atom одним per-action threshold без retraining. Контракт задан
+RED commit `718c52e`, implementation — `6546387`. Fresh HyperPC verification
+дала **6 passed** за **0.99 s**, smoke завершился за **4.308 s**. Full run
+завершён с `exact_protocol=true`, status `completed`, exit 0 и runtime
+**121.037 s**; artifact verifier — PASS. Frozen backbone сохранён, source
+leakage в calibration отсутствует.
+
+Пороги по actions:
+`[0.67221558,0.56983912,0.25142145,0.03797820,0.02714755]`. Held-out latent
+MSE почти не изменилась: **0.04614048→0.04605277**, около **0.19%**. Native
+source имел contact/blocked failures **1/4 и 4/4**, medians free-forward
+**0.262579**, interact **0.911038**; calibrated source — **3/4 и 2/4**,
+**0.262579**, **1.0**. Native unseen — **0/4 и 4/4**, **0.304037**,
+**0.959895**; calibrated unseen — **4/4 и 1/4**, **0.304037**, **1.0**.
+
+Action 3 threshold подавляет **99.82%** held-out zero targets, но сохраняет
+только **6.99%** positive. Calibration частично снижает blocked failures, но
+уничтожает contact behavior; gate остаётся `false`. Это локализует score
+overlap/ranking-state failure, а не недостаточную длину calibration/training.
+
+Следующий минимальный diagnostic — evaluator-only relational object-state
+проверка до любого нового training arm. Composition/transfer не проверены;
+AGI/JEPA claim отсутствует.
+
+Persistent `run.log`, `results.json`, `manifest.json`, checkpoint, rows и
+`progress.jsonl` содержат **1092** progress records с maximum gap **1.303 s**,
+exact command, Git commit и финальный status.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -985,6 +1014,7 @@ Independent amplitude oracle: `exp159-independent-amplitude-oracle-001`.
 Analytic amplitude supervised gate: `exp160-amplitude-supervised-gate-001`.
 Amplitude input probe: exp161 HyperPC run at `419fe00`.
 Nonlinear amplitude probe: exp162 HyperPC run at `8edec06`.
+Frozen amplitude calibration: exp163 HyperPC run at `6546387`.
 
 ## Stage Review
 
@@ -1018,7 +1048,8 @@ deltas; exp160 показал, что текущие gate features не выуч
 поведенческого порога даже при прямой supervision. Exp161 подтвердил ценность
 hidden state для aggregate regression, но обе linear input модели провалили
 critical one-step gate. Exp162 подтвердил nonlinear decodability contact effect,
-но blocked-noop physics осталась нерешённой.
+но blocked-noop physics осталась нерешённой. Exp163 показал, что per-action
+threshold tradeoff не разделяет contact и no-op contexts.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил

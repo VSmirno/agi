@@ -365,6 +365,20 @@ free ratios — **0.2626/0.3040**. Gate — `false`.
 object-centric state/target; более долгое обучение этого MLP не обосновано.
 Composition, transfer и AGI не доказаны.
 
+Exp163 проверил, можно ли исправить zero atom простой per-action calibration
+frozen exp162 MLP. Пороги равны
+`[0.672216,0.569839,0.251421,0.037978,0.027148]`; source leakage отсутствует.
+Held-out latent MSE изменилась лишь **0.046140→0.046053** (около **0.19%**).
+При этом native source/unseen contact/blocked failures **1/4,4/4** и
+**0/4,4/4** после calibration стали **3/4,2/4** и **4/4,1/4**; interact ratio
+стал **1.0** на обоих splits, free ratios остались **0.2626/0.3040**.
+
+Для action 3 threshold подавляет **99.82%** zero targets, но сохраняет только
+**6.99%** positive: contact effect уничтожен. Gate — `false`. Это score-overlap/
+ranking-state failure, а не недостаточная длина calibration. Следующий
+минимальный шаг — evaluator-only relational object-state diagnostic; новое
+обучение до него не обосновано. AGI/composition claim отсутствует.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 
