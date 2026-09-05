@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
+from pathlib import Path
+import sys
+
+sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
 
 from snks.env.core_types import Observation
 from experiments.exp149_replay_coverage import _observation_changes
