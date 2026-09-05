@@ -127,8 +127,16 @@ score от rollout. Единственная успешная трёхшагов
 
 Следующий bounded diagnostic использует сохранённый checkpoint без retraining:
 teacher-forced one-step против autoregressive rollout и persistence baseline на
-трёх canonical переходах. До этой локализации не менять planner и не запускать
-Push-2.
+трёх canonical переходах. Exp147 закрыл его: contact `interact` one-step MSE
+хуже persistence в **63.7x** и **130.2x**, а заблокированный `forward` имеет
+prediction MSE **0.43084** при нулевой persistence error и rank **5/5**.
+Свободный `forward` лучше persistence (`0.13401 vs 0.42547`). Autoregressive
+ошибка растёт `0.14325→0.15883→0.23801`, но основной failure уже one-step.
+
+Следующий bounded split по сохранённому checkpoint — те же one-step contact/no-op
+метрики на source против unseen layouts. Source failure направляет к
+coverage/objective; unseen-only failure — к generalization. До этой локализации
+не менять planner и не запускать Push-2.
 
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**

@@ -155,8 +155,17 @@ evidence learned rollout error только для одного deterministic fo
 
 Сохранённый checkpoint позволяет следующим дешёвым diagnostic разделить
 one-step action prediction и autoregressive compounding без повторного обучения.
-До этого не менять planner и не интерпретировать result как physics-transfer
-failure; Push-2 не запускался.
+Exp147 показал one-step failure: два canonical `interact` хуже persistence в
+**63.7x/130.2x**, а blocked `forward` даёт MSE **0.43084** при нулевой
+persistence error. Свободный `forward` лучше persistence. Autoregressive MSE
+растёт **0.14325→0.15883→0.23801**, но это не чистый compounding failure,
+поскольку one-step prerequisite уже нарушен.
+
+Проверен один deterministic unseen-layout fork. Пока неизвестно, является ли
+contact error следствием sparse source coverage/objective или проявляется только
+при layout generalization. Следующий checkpoint-only source-vs-unseen split
+должен ответить на это до изменения model/loss. Result не является
+physics-transfer failure; Push-2 не запускался.
 
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до

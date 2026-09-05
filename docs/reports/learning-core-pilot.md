@@ -455,6 +455,25 @@ autoregressive compounding. Его можно проверить без повт
 обучения по сохранённому checkpoint, сравнив teacher-forced one-step и
 autoregressive ошибки с persistence baseline на трёх canonical переходах.
 
+`exp147_rollout_localization.py` выполнил эту checkpoint-only проверку за
+**0.62 s**. На canonical continuation `[interact,forward,interact]` teacher-forced
+one-step MSE против persistence составили соответственно
+**0.14325 vs 0.00225**, **0.13401 vs 0.42547** и
+**0.15274 vs 0.00117**. То есть свободный `forward` предсказывается полезнее
+persistence, но оба contact `interact` хуже неё в **63.7x** и **130.2x**.
+Заблокированный `forward` в первом состоянии реально не меняет RGB и имеет
+нулевую persistence error, однако learned prediction даёт MSE **0.43084** —
+худший rank **5/5** среди действий этого fork.
+
+Autoregressive canonical MSE растёт **0.14325→0.15883→0.23801** (`1.66x` от
+H1 к H3), но это вторично: prerequisite «changed one-step predictions лучше
+persistence» уже нарушен на обоих push-переходах. Результат классифицирован как
+`one_step_failure_evidence`, не как чистый compounding failure. Следующий
+диагностический split должен повторить one-step проверку на source layouts и
+unseen layouts из того же checkpoint. Если source contact transitions также
+плохи, проверять coverage/objective; если source хороши, а unseen плохи —
+локализовать representation/dynamics generalization.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -462,7 +481,8 @@ autoregressive ошибки с persistence baseline на трёх canonical пе
 `exp144-terminal-hindsight-001..003`, `exp144-random-encoder-001..003`.
 Predictive ablation: `exp144-predictive-encoder-001..003`.
 Physics transfer: `exp145-physics-transfer-003`. Temporal MPC и late fork:
-`exp146-temporal-mpc-source-001`, `exp146-temporal-mpc-fork-001`.
+`exp146-temporal-mpc-source-001`, `exp146-temporal-mpc-fork-001`. Rollout
+localization: `exp147-rollout-localization-002`.
 
 ## Stage Review
 
