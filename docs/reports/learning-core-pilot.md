@@ -760,6 +760,47 @@ Run сохранил два файла по **120** diagnostic rows и **250** p
 maximum gap **0.290957 s**; `run.log`, manifest и results полны, exact command,
 Git commit и exit status зафиксированы.
 
+Exp157 проверил, можно ли выучить oracle-expressive raw directions exp153,
+заморозив весь backbone и обучая лишь action-specific gates по latent
+predictive MSE. Контракт задан RED commit `769d86d`, implementation `6cc2156`,
+scalar-output shape исправлен commit
+`1bd15b56a0fcbebe7c765dfac9d0532b8cfdeabd`. HyperPC verification дала
+**14 passed, 1 skipped** за **1.07 s**, smoke завершился за **4.88 s**. Full run
+`exp157-action-specific-frozen-gate-001` завершился с `exact_protocol=true`,
+exit 0 и runtime **1302.761 s**.
+
+Все **1,403,398** frozen parameters остались неизменными (`true`); trainable
+были только **3,855** gate parameters. Uniform latent predictive MSE снизилась
+**0.232270→0.104996**. Frozen exp153 probe воспроизвёл ordered balanced
+accuracy **0.713612** против **0.471875** shuffled.
+
+Baseline source имел contact/blocked failures **0/4 и 4/4**, medians
+free-forward **0.202104**, interact **0.979424**, blocked MSE **0.262021**;
+unseen — **0/4 и 4/4**, **0.177488**, **0.985134**, **0.239985**. Candidate
+source ухудшился до **4/4 и 4/4**, medians **0.249516**, **1.436134**,
+**0.162705**; unseen — до **4/4 и 4/4**, **0.212795**, **2.380314**,
+**0.150267**.
+
+На action 2 source gate значения равны **0.5564** blocked, **0.6379** changed
+и **0.8679** blocked: второй blocked context ошибочно получает наибольшую
+amplitude. Action 3 changed contexts дают **0.0927/0.1540**, no-change —
+**0.0947**, без устойчивого разделения. Все MPC arms получили **0/24**;
+canonical ordered/raw ranks **24/26**, endpoint MSE **0.191819**, winner
+неуспешен. One-step/source-compositional/composition gates — `false`, physics
+gate — `null`.
+
+Вывод: action-specific boundary при uniform latent MSE недостаточна, хотя
+exp156 показал, что frozen raw directions выразительны. Следующий matched arm
+оставляет тот же frozen backbone, raw deltas и action-specific gates, но
+балансирует latent predictive error внутри `(action, RGB-change/no-change)`.
+RGB применяется только для weighting наблюдённого transition, latent target
+остаётся next `z`; BCE, новая architecture, task labels и planner changes не
+добавляются. Это не AGI/JEPA/transfer claim.
+
+Observability: **730** progress records, maximum gap **30.021144 s**; полны
+`run.log`, manifest, results, checkpoint, rows и traces, exact command, Git
+commit и exit status.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -778,6 +819,7 @@ Change-gated residual dynamics: `exp153-change-gated-dynamics-001`.
 Auxiliary change-gated dynamics: `exp154-auxiliary-change-gate-001`.
 Frozen residual scalar oracle: `exp155-oracle-residual-gate-001`.
 Pre-gate delta oracle audit: `exp156-gated-delta-oracle-001`.
+Frozen action-specific gate training: `exp157-action-specific-frozen-gate-001`.
 
 ## Stage Review
 
@@ -802,7 +844,9 @@ improvement всё ещё нет. Exp155 дополнительно исключ
 exp150 delta как достаточное локальное исправление: oracle возвращается к
 persistence на contact вместо моделирования effect. Exp156 показал, что
 pre-gate deltas exp153/154 всё же выразительны на source, а exp153 — также на
-unseen: текущий wall теперь локализован в обучении/выразительности gate.
+unseen: текущий wall теперь локализован в обучении/выразительности gate. Exp157
+показал, что action-specific parameterization с uniform latent MSE эту
+learnability проблему не снимает.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил

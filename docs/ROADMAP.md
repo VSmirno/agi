@@ -267,6 +267,26 @@ directions дополнительно проходят unseen и являютс�
 action-specific gates, обучаемые только latent predictive objective — без RGB/
 task labels и без изменения planner.
 
+Exp157 выполнил этот arm: **1,403,398** параметров backbone остались frozen и
+неизменными, обучались только **3,855** параметров action-specific gates по
+uniform latent predictive MSE. Loss снизился **0.23227→0.10500**, frozen
+ordered probe сохранил balanced accuracy **0.7136** против **0.4719** shuffled.
+Но candidate ухудшил source с baseline contact/blocked **0/4 и 4/4** до
+**4/4 и 4/4** (interact ratio **1.4361**, blocked MSE **0.1627**, free ratio
+**0.2495**); unseen также стал **4/4 и 4/4** с **2.3803**, **0.1503** и
+**0.2128**. Gate не выучил нужную границу: action 2 дал **0.5564/0.6379/
+0.8679** на blocked/changed/blocked contexts, action 3 — почти одинаковые
+**0.0927/0.1540** changed против **0.0947** no-change.
+
+Все MPC arms остались **0/24**; canonical ordered/raw ranks **24/26**,
+endpoint MSE **0.1918**, winner неуспешен. Gates — `false`, physics — `null`.
+Значит, action-specific boundary при uniform latent MSE недостаточна, хотя
+exp156 доказал expressivity frozen raw directions. Следующий minimal arm
+сохраняет тот же frozen backbone/gates, но балансирует latent prediction error
+внутри `(action, RGB-change/no-change)`; RGB используется только как вес
+наблюдённого transition, без BCE, новой architecture, task labels или planner
+changes.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

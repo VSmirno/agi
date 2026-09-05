@@ -403,6 +403,42 @@ Observability: **250** progress records, maximum gap **0.290957 s**; сохра�
 `run.log`, manifest, results и два файла по **120** rows вместе с exact command,
 Git commit и exit status.
 
+Exp157 реализован RED commit `769d86d`, implementation `6cc2156` и shape fix
+`1bd15b56a0fcbebe7c765dfac9d0532b8cfdeabd`. HyperPC verification:
+**14 passed, 1 skipped** за **1.07 s**, smoke — **4.88 s**. Full artifact
+`output_to_user/core/exp157-action-specific-frozen-gate-001` завершился с
+`exact_protocol=true`, exit 0 и runtime **1302.761 s**. Все **1,403,398**
+frozen parameters exp153 остались неизменными; обучались только **3,855** gate
+parameters, objective — uniform latent predictive MSE. Frozen probes повторены:
+ordered balanced accuracy **0.713612** против **0.471875** shuffled. Training
+loss снизился **0.232270→0.104996**.
+
+Baseline exp153 source дал contact/blocked failures **0/4 и 4/4**, medians free
+**0.202104**, interact **0.979424**, blocked MSE **0.262021**; unseen —
+**0/4 и 4/4**, **0.177488**, **0.985134**, **0.239985**. Candidate source
+ухудшился до **4/4 и 4/4**, **0.249516**, **1.436134**, **0.162705**;
+unseen — до **4/4 и 4/4**, **0.212795**, **2.380314**, **0.150267**.
+
+Action 2 gate на source canonical contexts равен **0.5564** blocked,
+**0.6379** changed и **0.8679** blocked: второй blocked context получает
+наибольшую amplitude. Action 3 changed contexts дают **0.0927/0.1540** против
+**0.0947** no-change, то есть устойчивой within-action границы нет. Все MPC
+arms получили **0/24**. Canonical late fork дал ordered/raw ranks **24/26**,
+endpoint MSE **0.191819**; winner неуспешен. One-step, source-compositional и
+composition gates — `false`, physics — `null`.
+
+Ограниченный вывод: action-specific gate boundary сама по себе при uniform
+latent MSE недостаточна, несмотря на oracle expressivity из exp156. Следующий
+минимальный causal arm сохраняет frozen exp153 backbone, raw deltas и
+action-specific gates, но балансирует latent predictive error внутри
+`(action, RGB-change/no-change)`. RGB только взвешивает observed transition;
+target остаётся next latent `z`. Не добавляются BCE, новая architecture,
+task-success labels или planner changes. Результат не доказывает AGI/JEPA.
+
+Observability: **730** progress records, maximum gap **30.021144 s**; полны
+`run.log`, manifest, results, checkpoint, rows и traces с exact command, Git
+commit и exit status.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
