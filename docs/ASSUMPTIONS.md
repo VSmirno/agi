@@ -503,6 +503,42 @@ Observability: **127** progress records, maximum gap **0.31937 s**; полны
 `run.log`, manifest, results и diagnostic rows с exact command, Git commit и
 exit status.
 
+Exp160 реализован RED commit `d1860a0` и implementation
+`17abd216a5934752e109c2ac170bb850862f846c`. Focused HyperPC verification:
+**8 passed** за **1.09 s**, smoke — **86.94 s**. Full artifact
+`output_to_user/core/exp160-amplitude-supervised-gate-001` завершился с
+`exact_protocol=true`, exit 0 и runtime **1258.398 s**. Все **1,403,398**
+frozen parameters остались неизменными; обучались только **3,855** gate
+parameters.
+
+Amplitude regression loss снизился **0.156594→0.051361**. Среди **144000**
+sampled analytic targets было **47724 zero**, **16458 one** и **79818
+interior**, mean **0.506558**. Однако lower target loss не перенёсся в
+preregistered behavior. Exp153 baseline source сохранил contact/blocked
+failures **0/4 и 4/4**, medians free **0.202104**, interact **0.979424**,
+blocked MSE **0.262021**; unseen — **0/4 и 4/4**, **0.177488**, **0.985134**,
+**0.239985**. Candidate source получил **4/4 и 4/4**, **0.221825**,
+**1.644737**, **0.202125**; unseen — **4/4 и 4/4**, **0.184195**,
+**2.243522**, **0.189394**.
+
+Action 2 source gate дал **0.6050** blocked, **0.6909** moving и **0.8353**
+blocked; action 3 — **0.1149/0.1406** changed против **0.1237** no-change.
+Все MPC arms получили **0/24**. Canonical late fork: ordered/raw ranks
+**23/24**, endpoint MSE **0.180957**, winner `[1,4,4]` неуспешен. One-step,
+source-compositional/composition gates — `false`, physics — `null`.
+
+Узкий вывод: direct analytic amplitude supervision при текущих features и gate
+не решает within-action context discrimination. Это не опровергает target
+exp159; оно локализует следующий вопрос в feature sufficiency/decodability.
+Перед новым architecture training нужен дешёвый episode-disjoint,
+teacher-forced probe: `z`-linear против `z+hidden`-linear для analytic target;
+`z`-MLP допустим только как минимальный дополнительный probe, если линейное
+сравнение не разрешит вопрос. Результат не доказывает AGI/JEPA/transfer.
+
+Observability: **730** progress records, maximum gap **30.022755 s**; полны
+`run.log`, manifest, results, checkpoint, rows и traces с exact command, Git
+commit и exit status.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

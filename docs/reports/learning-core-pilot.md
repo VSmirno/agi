@@ -866,6 +866,41 @@ Observability: **127** progress records, maximum gap **0.31937 s**; `run.log`,
 manifest, results и diagnostic rows полны, exact command, Git commit и exit
 status зафиксированы.
 
+Exp160 проверил learnability licensed independent analytic amplitude target при
+той же frozen exp153/action-specific architecture. Контракт задан RED commit
+`d1860a0`, implementation — `17abd216a5934752e109c2ac170bb850862f846c`.
+Focused HyperPC verification дала **8 passed** за **1.09 s**, smoke завершился
+за **86.94 s**. Full run `exp160-amplitude-supervised-gate-001` завершился с
+`exact_protocol=true`, exit 0 и runtime **1258.398 s**.
+
+Все **1,403,398** backbone parameters остались frozen/неизменными; trainable
+были только **3,855** gate parameters. Amplitude loss снизился
+**0.156594→0.051361**. Из **144000** sampled targets **47724** были zero,
+**16458** one и **79818** interior; mean target **0.506558**.
+
+Exp153 baseline source имел contact/blocked failures **0/4 и 4/4**, medians
+free-forward **0.202104**, interact **0.979424**, blocked MSE **0.262021**;
+unseen — **0/4 и 4/4**, **0.177488**, **0.985134**, **0.239985**. Candidate
+source получил **4/4 и 4/4**, medians **0.221825**, **1.644737**,
+**0.202125**; unseen — **4/4 и 4/4**, **0.184195**, **2.243522**,
+**0.189394**.
+
+Action 2 source gate values — **0.6050** blocked, **0.6909** moving,
+**0.8353** blocked; action 3 — **0.1149/0.1406** changed против **0.1237**
+no-change. Все MPC arms дали **0/24**. Canonical late-fork ordered/raw ranks —
+**23/24**, endpoint MSE **0.180957**, winner `[1,4,4]` неуспешен.
+One-step/source-compositional/composition gates — `false`, physics — `null`.
+
+Снижение amplitude loss не решило rare-context behavior. Следующий bounded
+diagnostic — episode-disjoint teacher-forced probe, сравнивающий `z`-linear с
+`z+hidden`-linear decoding analytic amplitude; `z`-MLP добавляется только если
+нужен минимальный tie-break. До этого architecture training не запускается.
+Это не AGI/JEPA/transfer claim.
+
+Observability: **730** progress records, maximum gap **30.022755 s**; полны
+`run.log`, manifest, results, checkpoint, rows и traces, exact command, Git
+commit и exit status.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -887,6 +922,7 @@ Pre-gate delta oracle audit: `exp156-gated-delta-oracle-001`.
 Frozen action-specific gate training: `exp157-action-specific-frozen-gate-001`.
 Balanced latent gate training: `exp158-balanced-latent-gate-001`.
 Independent amplitude oracle: `exp159-independent-amplitude-oracle-001`.
+Analytic amplitude supervised gate: `exp160-amplitude-supervised-gate-001`.
 
 ## Stage Review
 
@@ -916,7 +952,8 @@ unseen: текущий wall теперь локализован в обучен�
 learnability проблему не снимает. Exp158 показал, что fixed balancing по
 action/change classes также недостаточен и не оправдывает coefficient sweep.
 Exp159 подтвердил, что independent analytic target совместим с audited raw
-deltas; его learnability остаётся отдельной гипотезой exp160.
+deltas; exp160 показал, что текущие gate features не выучивают этот target до
+поведенческого порога даже при прямой supervision.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил

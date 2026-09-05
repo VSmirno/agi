@@ -319,6 +319,23 @@ amplitude target совместим с требуемой one-step геомет�
 action/change weights, но прямо регрессирует эти analytic targets; raw deltas и
 planner не меняются. Это не AGI/transfer evidence.
 
+Exp160 напрямую обучил licensed analytic targets, оставив **1,403,398**
+backbone parameters frozen/неизменными и **3,855** trainable gate parameters.
+Amplitude loss снизился **0.15659→0.05136** на **144000** sampled targets
+(**47724 zero / 16458 one / 79818 interior**, mean **0.506558**), но one-step
+поведение не исправилось. Candidate source/unseen получил contact/blocked
+failures **4/4 и 4/4**: source medians free/interact/blocked
+**0.2218/1.6447/0.2021**, unseen **0.1842/2.2435/0.1894**.
+
+Gate снова не разделил contexts: action 2 source **0.6050** blocked,
+**0.6909** moving, **0.8353** blocked; action 3 **0.1149/0.1406** changed
+против **0.1237** no-change. Все MPC arms — **0/24**; late-fork ordered/raw
+ranks **23/24**, endpoint MSE **0.1810**, winner `[1,4,4]` неуспешен. Gates —
+`false`, physics — `null`. Следующий шаг — дешёвый episode-disjoint,
+teacher-forced probe analytic amplitude: `z`-linear против `z+hidden`-linear;
+`z`-MLP только при необходимости минимального tie-break. До этого новый
+architecture training не обоснован; AGI claim отсутствует.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 
