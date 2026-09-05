@@ -654,6 +654,33 @@ Observability: persistent `run.log`, `results.json`, `manifest.json`, checkpoint
 rows и `progress.jsonl` с **4706** records и maximum gap **1.713 s** сохраняют
 exact command, Git commit и финальный status.
 
+Exp165 реализован RED commit `73efd9a`, implementation `e349778` и test fix
+`001505f`. Fresh HyperPC verification: **8 passed** за **1.06 s**, smoke —
+**3.564 s**. Full run завершился с `exact_protocol=true`, status `completed`,
+exit 0 и runtime **324.739 s**; artifact verifier — PASS.
+
+Pose sidecar содержит **130676** rows с valid one-hot orientation и совпадающим
+alignment digest. Frozen backbone не изменился, canonical **120** signatures
+совпали. Probe loss снизился **0.221014→0.00126149**, но held-out MSE составила
+**0.00414342** против exp164 **0.00401893**, то есть на **3.10% хуже**.
+
+Exact source exp165 получил contact/blocked failures **1/4 и 4/4**, medians
+free **0.272260**, interact **0.907236**, blocked MSE **0.045784**; exp164 —
+**1/4 и 4/4**, **0.247198**, **0.907779**, **0.050738**. Unseen exp165 —
+**0/4 и 4/4**, **0.314310**, **0.957243**, **0.012235**; exp164 — **0/4 и
+4/4**, **0.286226**, **0.957583**, **0.009072**. Gate — `false`; outcome —
+`pose_categorical_failures_unchanged`.
+
+Узкий вывод: complete position+orientation object input недостаточен именно под
+текущим independent-amplitude MSE target; categorical no-op failure не снят.
+Следующий bounded diagnostic должен разделить transition target на zero atom и
+conditional amplitude. Longer training и coefficient tuning не обоснованы.
+Это не falsification object-centric modeling и не AGI/JEPA/transfer claim.
+
+Observability: persistent `run.log`, `results.json`, `manifest.json`, checkpoint,
+rows и `progress.jsonl` с **4707** records и maximum gap **1.691 s** сохраняют
+exact command, Git commit и финальный status.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

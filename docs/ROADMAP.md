@@ -393,6 +393,21 @@ pose, хотя PushGrid transition зависит от `agent_dir`. Поэтом
 Следующий минимальный evaluator-only diagnostic добавляет pose/orientation до
 любого такого claim. AGI/composition/transfer не доказаны.
 
+Exp165 добавил orientation/pose к position relations. Sidecar содержит
+**130676** digest-aligned rows с valid one-hot orientation; frozen backbone и
+canonical **120** signatures сохранены. Held-out MSE стала **0.004143** против
+exp164 **0.004019**, то есть на **3.10% хуже**. Source categorical result не
+изменился: contact/blocked **1/4 и 4/4**, medians free/interact/blocked
+**0.2723/0.9072/0.0458**; unseen — **0/4 и 4/4**,
+**0.3143/0.9572/0.0122**. Gate — `false`, outcome —
+`pose_categorical_failures_unchanged`.
+
+Полный position+orientation object input недостаточен при текущем independent-
+amplitude MSE target. Это лицензирует проверку более богатого transition target
+с отдельными zero atom и conditional amplitude, а не longer training или
+coefficient tuning. Более широкая object-centric гипотеза и AGI не опровергнуты
+и не доказаны.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

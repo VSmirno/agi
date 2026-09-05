@@ -1020,6 +1020,36 @@ Persistent `run.log`, `results.json`, `manifest.json`, checkpoint, rows и
 `progress.jsonl` содержат **4706** progress records с maximum gap **1.713 s**,
 alignment evidence, exact command, Git commit и финальный status.
 
+Exp165 закрыл обязательный pose/orientation control для relational input.
+Контракт задан RED commit `73efd9a`, implementation `e349778`, floating pose
+fixture исправлен test commit `001505f`. Fresh HyperPC verification дала
+**8 passed** за **1.06 s**, smoke завершился за **3.564 s**. Full run завершён
+с `exact_protocol=true`, status `completed`, exit 0 и runtime **324.739 s**;
+artifact verifier — PASS.
+
+Sidecar содержит **130676** digest-aligned rows; orientation one-hot validation
+и canonical **120** signature match прошли. Frozen backbone не менялся.
+Training loss снизился **0.221014→0.00126149**, но held-out MSE равна
+**0.00414342** против exp164 **0.00401893** — **3.10% хуже**.
+
+Exact source exp165 имеет contact/blocked failures **1/4 и 4/4**, medians
+free-forward **0.272260**, interact **0.907236**, blocked MSE **0.045784**;
+exp164 reference — **1/4 и 4/4**, **0.247198**, **0.907779**, **0.050738**.
+Unseen exp165 — **0/4 и 4/4**, **0.314310**, **0.957243**, **0.012235**;
+exp164 — **0/4 и 4/4**, **0.286226**, **0.957583**, **0.009072**. Gate —
+`false`; outcome — `pose_categorical_failures_unchanged`.
+
+Таким образом, full position+orientation object input не снимает categorical
+failure при текущем independent-amplitude MSE. Следующий минимальный diagnostic
+проверяет richer transition target: отдельный zero atom плюс conditional
+amplitude. Longer training и coefficient tuning не запускаются. Результат не
+опровергает object-centric modeling в целом и не является AGI/JEPA/transfer
+claim.
+
+Persistent `run.log`, `results.json`, `manifest.json`, checkpoint, rows и
+`progress.jsonl` содержат **4707** progress records с maximum gap **1.691 s**,
+alignment evidence, exact command, Git commit и финальный status.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -1046,6 +1076,7 @@ Amplitude input probe: exp161 HyperPC run at `419fe00`.
 Nonlinear amplitude probe: exp162 HyperPC run at `8edec06`.
 Frozen amplitude calibration: exp163 HyperPC run at `6546387`.
 Relational slot probe: exp164 HyperPC run at `7a6a6ca`.
+Relational pose probe: exp165 HyperPC run at `e349778`.
 
 ## Stage Review
 
@@ -1082,7 +1113,8 @@ critical one-step gate. Exp162 подтвердил nonlinear decodability conta
 но blocked-noop physics осталась нерешённой. Exp163 показал, что per-action
 threshold tradeoff не разделяет contact и no-op contexts. Exp164 дал небольшое
 continuous improvement от position-only relations, но categorical no-op wall
-остался и pose ещё не включён.
+остался. Exp165 добавил pose/orientation и не изменил categorical failures;
+следующий вопрос перенесён с input completeness на transition target.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил
