@@ -41,6 +41,12 @@ gate и prediction хуже persistence. Это первый development-сиг�
 механизма, но proof obligations 1–5 остаются открыты; следующий барьер —
 разделение real/shuffled на более информативном соседнем случае и transfer.
 
+Штатный residual pilot затем подтвердил real<shuffled prediction error на всех
+H1/H3/H5/H10, real<persistence до H5 и source success4/4. A skill сохранился
+после B updates, но door/push B оказались floor/ceiling без transfer contrast.
+Таким образом obligations 1 и 5 получили development evidence только в одном
+controlled source case; obligations 3–4 и confirmatory повторяемость не закрыты.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

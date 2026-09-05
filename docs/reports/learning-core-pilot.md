@@ -247,6 +247,32 @@ generalization, JEPA validation или AGI.
 
 Артефакты: `output_to_user/core/paired-sensor-delta-002/`.
 
+### Штатный residual pilot и первый retention
+
+После commit `b0d0928` штатный `exp138 --stage pilot` с отдельным
+`core_sensor_delta.yaml` завершился за 19.40 s: source success **4/4**.
+Fixed-E real/shuffled/initial также 4/4, поэтому бинарный success остаётся слабым.
+
+| Horizon | Initial | Real actions | Shuffled actions | Persistence |
+|---|---:|---:|---:|---:|
+| 1 | 0.02422 | **0.02298** | 0.02415 | 0.02419 |
+| 3 | 0.07204 | **0.06614** | 0.07325 | 0.07069 |
+| 5 | 0.12045 | **0.11155** | 0.13018 | 0.11667 |
+| 10 | 0.27065 | **0.24467** | 0.31390 | 0.23864 |
+
+Real-actions лучше shuffled на всех горизонтах и лучше persistence на H1/H3/H5;
+на H10 persistence ещё лучше. После дополнительных fixed-E updates real получает
+первый wood на step2, shuffled — step3. Source checkpoint:
+`output_to_user/core/pilot-sensor-delta-001/`. Все 21 source/config hashes из
+manifest совпадают с tracked files `b0d0928`.
+
+Transfer этого checkpoint (`transfer-sensor-delta-001`, 20 updates/arm) впервые
+имеет ненулевой A baseline. WEIGHTS и WEIGHTS_REPLAY сохраняют A success 2/2
+после обеих B-задач; FRESH имеет A=0. Это механическая retention learned weights,
+но не преимущество replay: WEIGHTS сохраняет A так же. На B transfer benefit не
+измерился: door у всех 0/2 до/после, push у всех 2/2 до/после. Следовательно,
+текущий B catalog даёт floor/ceiling и непригоден для вывода о переносе.
+
 ## Stage Review
 
 **Ideological debt addressed:** отсутствие обучаемой динамики и переносимого

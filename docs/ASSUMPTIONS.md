@@ -55,6 +55,12 @@ wood-events против rank5 shuffled. Real получает wood2 на step2,
 на step5. Но shuffled тоже 4/4, prediction всё ещё хуже persistence, только
 3held-out wood events/1seed/fixed fixture. Это не перенос и не stage/concept PASS.
 
+Штатный delta pilot воспроизвёл source 4/4; real-actions sensor MSE ниже shuffled
+на H1/H3/H5/H10 и ниже persistence до H5, но не на H10. Delta checkpoint после
+B updates сохраняет A2/2 в WEIGHTS и WEIGHTS_REPLAY. Это retention весов, не
+доказанный transfer: door остаётся0/2, push уже2/2 у FRESH. Следующий B probe
+должен избежать floor/ceiling; сначала используем существующий push_1 ruleset.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
