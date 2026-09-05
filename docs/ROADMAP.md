@@ -26,6 +26,13 @@
 
 ### Последний подтверждённый статус
 
+**2026-09-05 — Learning-core development pilot: PARTIAL (реализация), без
+подтверждённого выигрыша.** Добавлен отдельный обучаемый цикл опыта/динамики/
+планирования. Первый HyperPC pilot: success 0/4, sensor prediction хуже
+persistence, real/shuffled actions практически равны. Это не закрывает ни одну
+proof obligation ниже; следующий шаг — локализация отсутствия полезного
+action-conditioned прогноза. [Результаты и ограничения](reports/learning-core-pilot.md).
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

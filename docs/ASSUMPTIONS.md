@@ -20,8 +20,23 @@ replay реальных эпизодов, updates между эпизодами,
 масштабная статистическая кампания и исчерпывающая проверка форматов отложены.
 
 Разработка локально, тесты и эксперименты на HyperPC. Доступны две RTX 3090;
-существующие чужие процессы не останавливаются. Результаты будут записаны после
-фактических запусков, без вывода PASS из одной лишь готовности кода.
+существующие чужие процессы не останавливаются.
+
+Первый [pilot](reports/learning-core-pilot.md), код `a096de0`: 100 source updates,
+end-to-end success 0/4. Fixed-E sensor MSE на horizon 1: real 3.56337,
+shuffled 3.56328, persistence 0.02419. Полезное action-conditioned знание не
+показано; падение loss не считается прогрессом к AGI. Crafter — controlled
+local-source fixture; B — фиксированная геометрия, не held-out maps. Полный
+roadmap и доказательство переноса остаются открытыми.
+
+Найденные обзором дефекты исправлены в `8e51eae`: transfer-only burn-in=0 сохраняет supervision
+одношаговых успехов ценой отсутствия предыстории до replay window; одинаково для
+всех веток. Present corrupt inventory теперь ошибка, не missing sensor; FRESH
+не наследует source training cost. Первый transfer-001 с прежним burn-in=1
+сохранён, но не используется как доказательство корректной B adaptation.
+Исправленный transfer-002: fresh/weights/weights+replay одинаковы — door 0/2,
+push 2/2 до и после. Push уже решается без обучения; A skill исходно отсутствует.
+Текущий короткий фиксированный probe не измеряет полезный transfer/retention.
 
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
