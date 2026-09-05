@@ -700,6 +700,34 @@ Observability сохранена: **737** progress records, maximum gap **30.021
 полны `run.log`, manifest, results, checkpoint, one-step, gate, fork и eval
 artifacts, а также exact command, Git commit и exit status.
 
+Exp155 выполнил checkpoint-only oracle audit frozen exp150 residual delta:
+может ли оптимальная scalar amplitude устранить one-step failures без нового
+обучения. Контракт задан RED commit `fa4db01`, implementation —
+`1ec81c420907c0bcb51ed63b8f4d16f659f3c11f`. HyperPC verification дала
+**15 passed, 1 skipped** за **1.83 s**, artifact check — PASS. Full run
+`exp155-oracle-residual-gate-001` завершился с `exact_protocol=true`, exit 0 и
+runtime **1.719312 s**.
+
+Persistence baseline на source/unseen имеет contact/blocked failures **4/4 и
+0/4**, free-forward ratio **1**, interact ratio **1** и blocked MSE **0**.
+Ungated exp150 на source воспроизвёл **4/4 и 4/4**, medians free-forward
+**0.103175**, interact **34.05918**, blocked MSE **0.365026**; unseen —
+**4/4 и 4/4**, **0.094417**, **54.62809**, **0.416880**. Shared и per-member
+scalar oracles совпали по агрегатам: source **4/4 и 0/4**, medians **0.103175**,
+**1**, **0**; unseen **3/4 и 0/4**, **0.094417**, **1**, **0**. Gate — `false`.
+
+Oracle сохраняет полезную free-motion delta, но на contact выбирает фактически
+persistence-level prediction и потому не проходит критерий. Значит,
+hindsight-optimal scalar amplitudes не исправляют направления frozen exp150
+residual deltas. Этот результат не отвергает другие или jointly learned delta
+directions и не разрешает action-specific scalar training. Следующий
+минимальный diagnostic — checkpoint-only raw-delta oracle audit exp153/154 до
+любого следующего training arm.
+
+Run сохранил **120** diagnostic rows и **127** progress records с maximum gap
+**0.315408 s**; `run.log`, manifest и results полны, exact command, Git commit
+и exit status зафиксированы.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -716,6 +744,7 @@ Event-balanced residual dynamics: `exp151-event-balanced-dynamics-001`.
 Representation separability: `exp152-representation-separability-001`.
 Change-gated residual dynamics: `exp153-change-gated-dynamics-001`.
 Auxiliary change-gated dynamics: `exp154-auxiliary-change-gate-001`.
+Frozen residual scalar oracle: `exp155-oracle-residual-gate-001`.
 
 ## Stage Review
 
@@ -736,7 +765,9 @@ planner исправлен двумя причинными регрессиям�
 interact hallucination на source/unseen, но blocked-forward и composition
 остались нерешёнными. Exp154 показал, что raw RGB-change auxiliary не снимает
 этот wall и ухудшает contact/free-motion dynamics. Стабильного transfer
-improvement всё ещё нет.
+improvement всё ещё нет. Exp155 дополнительно исключил scalar amplitude frozen
+exp150 delta как достаточное локальное исправление: oracle возвращается к
+persistence на contact вместо моделирования effect.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил

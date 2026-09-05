@@ -233,6 +233,23 @@ dynamics. Следующий минимальный вопрос — learned sta
 representation либо factorized object-centric delta target; дальнейшая
 настройка этого gate objective данными не обоснована.
 
+Exp155 выполнил дешёвую checkpoint-only проверку более узкого вопроса: может ли
+вообще оптимальная scalar amplitude спасти frozen residual delta exp150.
+На source/unseen persistence имеет contact failures **4/4**, blocked failures
+**0/4**, interact ratio **1**, blocked MSE **0** и free-forward ratio **1**.
+Ungated exp150 воспроизвёл source **4/4 и 4/4** с medians **34.0592**,
+**0.3650**, **0.1032**, а unseen — **4/4 и 4/4** с **54.6281**, **0.4169**,
+**0.0944**. Shared и per-member scalar oracles сняли blocked failures до
+**0/4**, не ухудшив free-forward ratio exp150, но contact остался persistence-
+level: source **4/4**, unseen **3/4**, interact ratio **1**. Gate — `false`.
+
+Следовательно, даже hindsight-optimal scalar amplitudes не исправляют
+направления frozen exp150 residual deltas; oracle лишь возвращает
+persistence-level contact result. Это не отвергает другие или jointly learned
+delta directions и не разрешает action-specific scalar training. Следующий
+минимальный шаг —
+checkpoint-only raw-delta oracle audit exp153/154 до нового обучения.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

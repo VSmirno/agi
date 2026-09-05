@@ -345,6 +345,32 @@ Observability: **737** progress records, maximum gap **30.0214 s**; полный
 `run.log`, manifest, results, checkpoint, one-step, gate, fork и eval artifacts
 сохранены вместе с exact command, Git commit и exit status.
 
+Exp155 проверил без retraining, допускает ли frozen exp150 residual direction
+хотя бы oracle scalar amplitude. Protocol задан RED commit `fa4db01` и
+реализован в `1ec81c420907c0bcb51ed63b8f4d16f659f3c11f`. HyperPC verification:
+**15 passed, 1 skipped** за **1.83 s**, artifact check — PASS. Full artifact
+`output_to_user/core/exp155-oracle-residual-gate-001` завершился с
+`exact_protocol=true`, exit 0 и runtime **1.719312 s**; сохранены **120** rows.
+
+На source и unseen persistence baseline дал contact/blocked failures **4/4 и
+0/4**, free-forward ratio **1**, interact ratio **1**, blocked MSE **0**.
+Ungated exp150 на source воспроизвёл **4/4 и 4/4**, medians free **0.103175**,
+interact **34.05918**, blocked MSE **0.365026**; unseen — **4/4 и 4/4**,
+**0.094417**, **54.62809**, **0.416880**. Shared и per-member oracle дали
+одинаковый агрегированный результат: source contact/blocked **4/4 и 0/4**,
+free **0.103175**, interact **1**, blocked MSE **0**; unseen — **3/4 и 0/4**,
+**0.094417**, **1**, **0**. Preregistered gate — `false`.
+
+Узкий вывод: optimal scalar amplitude получает persistence-level contact
+prediction, но не может исправить frozen
+exp150 residual delta directions. Это не falsification других либо jointly
+learned delta directions и не основание обучать action-specific scalar gates.
+Перед новым training arm нужен checkpoint-only raw-delta oracle audit exp153 и
+exp154: он отделит ошибочное направление delta от неудачной амплитуды.
+
+Observability: **127** progress records, maximum gap **0.315408 s**; `run.log`,
+manifest, results и rows сохранены с exact command, Git commit и exit status.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
