@@ -7,9 +7,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import sys
 
 import pytest
 import torch
+
+sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
 
 from snks.agent.core_world_model import CoreWorldModel, LatentState
 from snks.encoder.core_encoder import CoreEncoder
