@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+import time
 from types import SimpleNamespace
 
 import torch
@@ -12,6 +13,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
 from experiments.exp146_temporal_mpc_physics import (
     ProgressJournal,
     TerminationNeutralModel,
+    _late_fork_audit,
     _rank_fork_rows,
     _reconstruct_model_root,
     build_parser,
@@ -169,3 +171,69 @@ def test_fork_ranks_use_lower_cost_then_lexicographic_actions():
     _rank_fork_rows(rows, ("actual_ordered_cost",))
 
     assert [row["actual_ordered_rank"] for row in rows] == [2, 3, 1]
+
+
+class _AuditModel:
+    schemas = {"grid-v1": (5, 1)}
+
+    def initial(self, observation):
+        z = torch.tensor(
+            [[float(torch.as_tensor(observation.rgb).float().mean())]]
+        )
+        return LatentState(
+            z=z,
+            sensors=torch.as_tensor(observation.sensors)[None],
+            sensor_mask=torch.as_tensor(observation.sensor_mask)[None],
+            hidden=torch.zeros((1, 1)),
+            schema=observation.schema,
+        )
+
+    def step(self, state, actions):
+        delta = actions[:, None].float() / 10.0
+        next_state = LatentState(
+            z=state.z + delta,
+            sensors=state.sensors,
+            sensor_mask=state.sensor_mask,
+            hidden=state.hidden + delta,
+            schema=state.schema,
+        )
+        return Prediction(
+            next_state=next_state,
+            terminated_prob=torch.ones(len(actions)),
+            uncertainty=torch.zeros(len(actions)),
+            member_z=next_state.z[None],
+        )
+
+
+class _AuditProbe:
+    def __call__(self, anchor, target, _horizon):
+        return -(anchor - target).square().mean(-1)
+
+
+def test_late_fork_audit_writes_all_ranked_rows(tmp_path):
+    rows_path = tmp_path / "forks.jsonl"
+    with ProgressJournal(tmp_path / "progress.jsonl") as journal:
+        summary = _late_fork_audit(
+            _AuditModel(),
+            _AuditProbe(),
+            SimpleNamespace(max_model_calls=128),
+            time.monotonic() + 30,
+            journal,
+            rows_path,
+        )
+
+    rows = [json.loads(line) for line in rows_path.read_text().splitlines()]
+    assert len(rows) == 125
+    assert all(
+        set(row) >= {
+            "actions",
+            "actual_ordered_rank",
+            "predicted_ordered_rank",
+            "actual_raw_rank",
+            "predicted_raw_rank",
+        }
+        for row in rows
+    )
+    assert summary["protocol"]["prefix"] == [0, 3, 2, 3, 2]
+    assert summary["protocol"]["fork_count"] == 125
+    assert set(summary["beam"]) == {"ordered", "raw"}
