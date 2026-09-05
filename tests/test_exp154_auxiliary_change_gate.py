@@ -104,6 +104,28 @@ def test_auxiliary_forward_preserves_exp153_initialization_and_predictions():
                        baseline.step(state, batch.actions[:, 0]).member_z)
 
 
+def test_auxiliary_repeats_predictive_recurrent_inputs_after_real_burn_in():
+    # Dropped burn-in hidden or teacher-forced future state changes these inputs.
+    exp, model, batch = _experiment(), _model(), _batch()
+    with torch.no_grad():
+        for delta in model.latent_heads:
+            delta.weight.normal_(0, 0.1)
+    inputs = []
+    hook = model.recurrent.register_forward_pre_hook(
+        lambda _module, args: inputs.append(tuple(value.detach().clone() for value in args)))
+    try:
+        CoreTrainer(model, _config()).compute_loss(batch)
+        predictive_inputs = list(inputs)
+        inputs.clear()
+        exp.auxiliary_gate_examples(model, batch, train_horizon=2)
+    finally:
+        hook.remove()
+    assert len(inputs) == len(predictive_inputs) == 3
+    for actual, expected in zip(inputs, predictive_inputs):
+        for tensor, reference in zip(actual, expected):
+            torch.testing.assert_close(tensor, reference, rtol=1e-6, atol=1e-7)
+
+
 def test_total_loss_keeps_base_predictive_objective_and_backpropagates_auxiliary():
     exp, model, batch, config = _experiment(), _model(), _batch(), _config()
     weights = torch.ones(5, 2)
