@@ -15,6 +15,16 @@ pip install -e ".[dev]"
 ```
 Run the full suite with `pytest tests/ -x -q`. Run a focused regression with `pytest tests/test_stage59_lockedroom.py -v` or `pytest tests/learning/test_rule_nursery.py -v`. For local package imports, prefer `python -m pytest` if your shell environment is inconsistent.
 
+## Experiment Observability
+Never launch a silent experiment. Every smoke, training run, and behavioral
+campaign must leave a persistent log or expose a periodic progress indicator
+that identifies the current stage, completed/total work, and elapsed time. Prefer
+native heartbeats written both to stdout and the run output directory; an external
+PID/elapsed/GPU monitor is only a fallback for an already-running legacy command.
+Before launch, verify that progress can be inspected while the process is running.
+Preserve the exact command, Git commit, exit status, and final log with the run
+artifacts.
+
 ## Coding Style & Naming Conventions
 Use Python 3.11+ with 4-space indentation and PEP 8–style naming: `snake_case` for functions and modules, `PascalCase` for classes, `UPPER_SNAKE_CASE` for constants. Match the existing code style in neighboring files; this repository does not expose a mandatory formatter or linter config in `pyproject.toml`, so keep changes minimal and readable. Name new experiment files with the established pattern `expNN_description.py`.
 
