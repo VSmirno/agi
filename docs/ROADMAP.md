@@ -54,6 +54,15 @@ WEIGHTS_REPLAY 4/4 против FRESH2/4 и WEIGHTS0/4. Штатный проф�
 визуальное сходство, а не достижимость; следующий bounded hypothesis — learned
 goal-conditioned temporal distance на будущих состояниях реальных эпизодов.
 
+Этот bounded hypothesis дал ограниченный положительный результат. Directed
+temporal probe на frozen real outcomes обошёл latent MSE и shuffled control;
+larger fresh world model с этим score получила closed-loop Push-1 4/6 против
+0/6 raw-MSE и 0/6 shuffled-score. Residual correction, RGB salience и
+action-contrastive objective причинные gates не прошли. Результат пока зависит
+от цвета и одной фиксированной topology, поэтому следующий обязательный шаг —
+новые комбинации layout/start/goal с разными первыми действиями. До этого нет
+ни neighbor-domain transfer, ни AGI/concept PASS.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

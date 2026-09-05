@@ -72,6 +72,19 @@ terminated/sensor-change без reward. В production WEIGHTS_REPLAY сохра�
 Terminal-only replay отвергнут из-за забывания начала. Следующая гипотеза —
 goal-conditioned temporal reachability; до неё campaign не масштабируется.
 
+Exp143 уточнил термин: из episode order без counterfactual oracle учится
+policy-dependent directed temporal proximity, не shortest-path reachability.
+На frozen реальных исходах ordered probe дал MRR1.0, но малый world model не
+переносил сигнал на imagined root. Mixed anchors, RGB salience, residual
+correction и action-contrastive objective не прошли заранее выбранные causal
+controls; снижение MSE не засчитано как улучшение решения. Fresh 256/128 model
+с ordered temporal cost дала closed-loop 4/6 против raw0/6 и shuffled0/6, но
+только на fixed Push-1: blue/purple прошли, yellow провалился. Seeds здесь не
+новые задачи; topology/start/goal неизменны. Следующая проверка обязана делить
+данные по целым layout/start/goal комбинациям и требовать другие первые actions.
+Goal template сейчас зависит от push rule через pose и остаётся потенциальной
+утечкой до перекрёстной physics×goal-pose интервенции.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

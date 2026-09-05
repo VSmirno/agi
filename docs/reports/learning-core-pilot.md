@@ -315,9 +315,36 @@ source replay и event windows, но не положительное обуче�
 JEPA latent prediction стала action-sensitive, но евклидова близость общего
 embedding к goal image не обязана кодировать достижимость или прогресс.
 
+`exp143_temporal_proximity.py` проверил этот барьер без reward, success labels,
+координат и правил Push. Directed probe обучался по порядку кадров целых real
+эпизодов и честно оценивает только `P(target встретится <= H | dataset policy)`,
+а не оптимальную достижимость. На малой frozen-модели он идеально ранжировал
+реальные fork outcomes (MRR 1.000 против 0.553 у latent MSE и 0.400 у
+shuffled-endpoint control), но на imagined root правильный первый push оставался
+последним. Mixed real/imagined anchors это не исправили.
+
+Три ограниченные альтернативы отвергнуты. RGB-change salience ухудшила F1/F2.
+Zero-init residual correction улучшила held-out H1 MSE с 0.120 до 0.072 и H3 с
+0.171 до 0.157, но не прошла ranking gate: root MRR 0.221→0.333 совпала с
+shuffled-actions control. Action-contrastive loss также не прошёл причинный
+контроль: shuffled-label arm ранжировал root лучше real-label arm. Увеличение
+`z/h` с 64/32 до 256/128 не устранило one-step temporal root failure, поэтому
+простая нехватка размерности не считается причиной.
+
+При этом larger fresh model дала первый положительный closed-loop сигнал именно
+от learned goal score: ordered temporal cost решил Push-1 в **4/6**, raw latent
+MSE — **0/6**, shuffled endpoint — **0/6**; beam width 4 и 5 дали одинаковые
+4/6. Успешные реальные traces были `[interact, interact, forward, interact]`
+или `[noop, interact, forward, interact]`. Оба yellow seeds провалились
+повторением `forward`, blue/purple прошли. Это development evidence цепочки
+experience order → imagined scoring → changed action → real success, но не
+transfer: topology/start фиксированы, seed в основном меняет один из трёх
+цветов, а goal pose может выдавать ruleset. Следующий gate — episode-disjoint
+train/test по новым layout/start/goal комбинациям с разными первыми действиями.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
-`transfer-push1-salient-u1000-001`.
+`transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`.
 
 ## Stage Review
 
@@ -332,7 +359,9 @@ bounded planner и frozen evaluation с контрольными условия�
 
 **Evidence of improvement:** residual source dynamics стала action-sensitive;
 planner исправлен двумя причинными регрессиями; source replay + salient windows
-дали B2/4 с A4/4. Стабильного transfer improvement всё ещё нет.
+дали B2/4 с A4/4; learned temporal goal score дал paired closed-loop 4/6 против
+0/6 raw и 0/6 shuffled на одном Push fixture. Стабильного transfer improvement
+всё ещё нет.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил
@@ -341,8 +370,8 @@ planner исправлен двумя причинными регрессиям�
 **Knowledge flow outcome:** веса и реальные эпизоды сохраняются; причинная
 полезность этого знания и выигрыш следующего поколения пока не установлены.
 
-**Remaining assumptions / walls:** см. выше. Главный wall — learned goal metric:
-raw latent distance не представляет temporal reachability. Не масштабировать
-AGI-кампанию до проверки goal-conditioned distance на natural experience.
+**Remaining assumptions / walls:** см. выше. Learned temporal metric полезна на
+одном знакомом графе, но проваливает часть цветов и ещё не проверена на новых
+layout/start/goal. Не масштабировать AGI-кампанию до этой проверки.
 
 **Decision:** `PARTIAL`; локальные механизмы подтверждены, перенос не подтверждён.
