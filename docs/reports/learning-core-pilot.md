@@ -152,6 +152,101 @@ gradient update из одношагового эпизода; стоимость
   существенные ошибки. Работа в текущей ветке с разделённым владением файлами,
   интеграция и удалённые снимки сериализуются координатором.
 
+## Follow-up diagnosis: влияние сенсорного входа
+
+Исходный checkpoint `pilot-001`, восемь первых реальных наблюдений из replay,
+все 17 действий при одном и том же наблюдении. Это диагностическое вмешательство
+во вход модели, **не** новая среда, training data или оценка способности:
+
+| Вход | Средний диапазон sensor prediction по действиям | Среднее abs(hidden) | Доля abs(hidden)>0.99 |
+|---|---:|---:|---:|
+| Без вмешательства | 0.06677 | 0.94400 | 0.15786 |
+| Только z=0 | 0.07492 | 0.93669 | 0.16728 |
+| Только sensors=0 (mask сохранена) | 0.62898 | 0.31411 | 0 |
+
+На первом наблюдении latent RMS=0.05937, sensors `[9,9,9,9,0]`, прогноз после
+action 5 `[3.782,3.741,3.430,3.772,0.575]`. Раздувания latent здесь нет.
+Обнуление сенсоров меняет физический смысл входа и не является исправлением;
+оно локализует подавление различий действий сенсорным вкладом в GRU.
+Причина плохого обучения **в целом** этим ещё не установлена.
+
+Независимый аудит существующих traces: 248 source transitions, action 5 встречается
+17 раз, wood меняется 10 раз (9 при action 5, 1 при action 8). Первый переход
+эпизода, исключённый burn-in, содержит 1 из этих 10 событий. Значит, обучающий
+сигнал редкий, но не полностью отсутствует. В source validation action 5 не
+выбран ни разу: 116 действий 13 и 8 действий 15. Разброс root-cost на первом
+шаге падает с ~0.0375 до ~0.00312 после fixed-E updates; это не точные ties.
+
+Следующая узкая гипотеза в рамках утверждённого profile selection: нормировать
+**только проекцию сенсоров** перед сложением с action embedding. Baseline остаётся
+без нормализации, новый профиль получает отдельное имя. Encoder, SIGReg, цели,
+loss, seeds, сбор данных и число updates остаются прежними. Это проверка одного
+механизма, не подбор evaluator под положительный результат. Критерий полезности:
+real-actions должен отделиться от shuffled и persistence, затем улучшить решения.
+
+`exp139_core_diagnosis.py` подтвердил для source checkpoint: вклад condition в
+GRU preactivation RMS=3.658 против z=0.137; abs(candidate)=0.9971, gradient L2
+action embedding=0.00702 против sensor heads=13.578. Для fresh action gradient
+0.1977. Результаты: `output_to_user/core/diagnosis-001/results.json`.
+
+### Condition normalization: отрицательный результат
+
+Отдельный `core_condition_norm.yaml` включает неаффинную LayerNorm только после
+sensor projection; baseline default=False, encoder/SIGReg не менялись.
+`pilot-condition-norm-001` завершился: source и все controls **0/4**; H1 sensor
+MSE real=3.53605, shuffled=3.53657, persistence=0.02419. H10 real=3.30391,
+shuffled=3.30386. Полезного разделения действий и улучшения решений нет.
+
+Диагностика нового checkpoint показывает снижение abs(hidden) с 0.9418 до
+0.8211, доля abs(hidden)>0.99 стала 0, action gradient вырос до 0.01986.
+Но абсолютные сенсоры всё ещё предсказываются примерно как 3.1–3.4 вместо 9.
+Улучшение промежуточной активационной метрики не равнозначно полезному обучению.
+
+Оговорка повторного сбора: actions, sensors и остальные replay arrays совпали,
+но у одного эпизода различались 2295 before-RGB и 2358 after-RGB элементов.
+Поэтому малую разницу MSE между профилями нельзя приписывать только нормализации.
+Внутри каждого fixed-E сравнения corpus общий. Следующий probe использует один
+**сохранённый** replay для всех вариантов, без повторного сбора training pixels.
+
+Следующая гипотеза: параметризовать sensor prediction как текущие сенсоры плюс
+обучаемое изменение. Только отдельный `predict_sensor_delta` профиль; baseline
+и normalization default=False сохраняются. Сравнение absolute-real / delta-real /
+delta-shuffled начинает веса с нуля одинаково и получает одинаковые replay batches.
+Это не изменение целей, sensor labels или environment-specific policy.
+
+### Парный residual probe: первый ограниченный положительный сигнал
+
+`exp140_core_sensor_delta.py` обучил все варианты с одинаковых начальных весов
+на буквально одинаковых 100 replay batches из `pilot-001`; training corpus hash
+`4ec7a9df...e1d90b54`. Общий held-out corpus собран один раз и не попал в replay.
+
+| Вариант | Updates | Success | H1 sensor MSE | H10 sensor MSE | First wood | Max wood |
+|---|---:|---:|---:|---:|---:|---:|
+| absolute-real | 100 | 0/4 | 19.38487 | 18.83367 | — | 0 |
+| delta-untrained | 0 | 0/4 | 0.11989 | 11.33727 | — | 0 |
+| delta-real-zero-action | 100 inherited | 0/4 | 0.02579 | 0.46302 | — | 0 |
+| delta-shuffled | 100 | 4/4 | 0.02788 | 0.68709 | step 5 | 1 |
+| delta-real | 100 | 4/4 | 0.02457 | 0.33583 | **step 2** | **2** |
+
+Persistence MSE: H1=0.02419, H3=0.07069, H5=0.11667, H10=0.23864 —
+то есть delta-real пока хуже persistence на каждом горизонте. На 15 изменившихся
+sensor entries холодный H1 MSE: real=0.96989, shuffled=0.97764; разница мала.
+
+Тем не менее action-зависимость ограниченно подтверждена. На трёх held-out
+переходах с ростом wood delta-real ранжирует action 5 первым; shuffled — пятым,
+untrained — седьмым, absolute — десятым. Обнуление обученного action embedding
+роняет success 4/4 → 0/4. Real выполняет action 5 дважды на эпизод и получает
+wood=2; shuffled выполняет его пять раз, позже, и получает wood=1.
+
+Честный вывод: residual-параметризация устранила грубую ошибку абсолютного
+baseline и позволила обучению создать причинно релевантное различие действий в
+одном controlled fixture. Но shuffled также проходит слишком слабый бинарный
+gate, общий prediction всё ещё хуже persistence, события всего три, один seed и
+карта/fixture фиксированы. Это **development evidence**, не stage PASS, transfer,
+generalization, JEPA validation или AGI.
+
+Артефакты: `output_to_user/core/paired-sensor-delta-002/`.
+
 ## Stage Review
 
 **Ideological debt addressed:** отсутствие обучаемой динамики и переносимого

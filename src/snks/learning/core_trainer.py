@@ -112,6 +112,8 @@ class CoreTrainer:
             hidden = prediction.next_state.hidden
             member_sensors = torch.stack([head(hidden)
                                           for head in self.model.sensor_heads[batch.schema]])
+            if self.model.predict_sensor_delta:
+                member_sensors = member_sensors + state.sensors.unsqueeze(0)
             target_mask = batch.sensor_mask[:, index + 1] & valid[:, None]
             n_sensor = int(target_mask.sum()) * member_count
             sensor_sum = sensor_sum + masked_mse(

@@ -33,6 +33,14 @@ persistence, real/shuffled actions практически равны. Это н�
 proof obligation ниже; следующий шаг — локализация отсутствия полезного
 action-conditioned прогноза. [Результаты и ограничения](reports/learning-core-pilot.md).
 
+Follow-up локализовал ошибку абсолютного sensor prediction и проверил residual
+profile на одном сохранённом replay. В controlled fixture delta-real получает
+wood раньше/больше, action ablation роняет результат до нуля, а наблюдавшееся
+эффективное действие получает rank1. Но shuffled control тоже проходит бинарный
+gate и prediction хуже persistence. Это первый development-сигнал правильного
+механизма, но proof obligations 1–5 остаются открыты; следующий барьер —
+разделение real/shuffled на более информативном соседнем случае и transfer.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import torch
 from torch import Tensor, nn
+from torch.nn import functional as F
 
 from snks.encoder.core_encoder import CoreEncoder
 from snks.env.core_types import Observation
@@ -28,11 +29,14 @@ class Prediction:
 
 class CoreWorldModel(nn.Module):
     def __init__(self, encoder: CoreEncoder, schemas: dict[str, tuple[int, int]],
-                 h_dim: int, heads: int):
+                 h_dim: int, heads: int, *, normalize_sensor_condition: bool = False,
+                 predict_sensor_delta: bool = False):
         super().__init__()
         if h_dim <= 0 or heads <= 0:
             raise ValueError("hidden dimension and ensemble size must be positive")
         self.encoder, self.h_dim, self.heads = encoder, h_dim, heads
+        self.normalize_sensor_condition = normalize_sensor_condition
+        self.predict_sensor_delta = predict_sensor_delta
         self.schemas: dict[str, tuple[int, int]] = {}
         self.recurrent = nn.GRUCell(encoder.z_dim + h_dim, h_dim)
         self.latent_heads = nn.ModuleList(nn.Linear(h_dim, encoder.z_dim)
@@ -99,11 +103,15 @@ class CoreWorldModel(nn.Module):
             raise ValueError("action ID outside schema")
         values = torch.where(state.sensor_mask, state.sensors, 0.0)
         body = torch.cat((values, state.sensor_mask.to(values.dtype)), dim=-1)
-        condition = (self.action_embeddings[state.schema](actions)
-                     + self.sensor_projections[state.schema](body))
+        projected_body = self.sensor_projections[state.schema](body)
+        if self.normalize_sensor_condition:
+            projected_body = F.layer_norm(projected_body, (self.h_dim,))
+        condition = self.action_embeddings[state.schema](actions) + projected_body
         hidden = self.recurrent(torch.cat((state.z, condition), dim=-1), state.hidden)
         member_z = torch.stack([head(hidden) for head in self.latent_heads])
         member_sensors = torch.stack([head(hidden) for head in self.sensor_heads[state.schema]])
+        if self.predict_sensor_delta:
+            member_sensors = member_sensors + values.unsqueeze(0)
         terminated = torch.stack([head(hidden).squeeze(-1).sigmoid()
                                   for head in self.termination_heads[state.schema]]).mean(0)
         sensors = torch.where(state.sensor_mask, member_sensors.mean(0), 0.0)

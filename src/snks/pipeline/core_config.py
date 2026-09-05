@@ -27,6 +27,8 @@ class CoreConfig:
     sensor_weight: float = 1.0
     termination_weight: float = 1.0
     exploration_fraction: float = 0.2
+    normalize_sensor_condition: bool = False
+    predict_sensor_delta: bool = False
 
     def __post_init__(self) -> None:
         positive = (self.z_dim, self.h_dim, self.ensemble_size, self.batch_size,

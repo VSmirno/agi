@@ -38,6 +38,23 @@ roadmap и доказательство переноса остаются отк
 push 2/2 до и после. Push уже решается без обучения; A skill исходно отсутствует.
 Текущий короткий фиксированный probe не измеряет полезный transfer/retention.
 
+Follow-up диагностика: source GRU candidate abs≈0.997, action gradients малы;
+обнуление сенсорного вклада усиливает различия действий, обнуление z — почти нет.
+Отдельная нормализация sensor projection уменьшила насыщение, но не дала полезного
+обучения (снова 0/4, real/shuffled MSE≈3.536). Не делать её default по одной
+активационной метрике. Повторный Crafter collection не побитно детерминирован:
+при одинаковых actions/sensors один эпизод имел отличия RGB. Последующие парные
+сравнения обучаются на одном сохранённом replay. `predict_sensor_delta` — новый
+opt-in профиль, не замена baseline: sensor heads прогнозируют изменение, loss
+сравнивает абсолютный прогноз с реальным target; на следующих rollout шагах
+прибавляется собственное предсказанное состояние, не будущие истинные сенсоры.
+
+Парный exp140 на одном replay дал первый ограниченный положительный механизм:
+delta-real 4/4 против untrained0/4 и zero-action0/4; action5 rank1 на трёх
+wood-events против rank5 shuffled. Real получает wood2 на step2, shuffled wood1
+на step5. Но shuffled тоже 4/4, prediction всё ещё хуже persistence, только
+3held-out wood events/1seed/fixed fixture. Это не перенос и не stage/concept PASS.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

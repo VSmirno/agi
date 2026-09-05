@@ -272,7 +272,9 @@ def _new_source(
     finally:
         adapter.close()
     model = CoreWorldModel(
-        CoreEncoder(config.z_dim), schemas, config.h_dim, config.ensemble_size
+        CoreEncoder(config.z_dim), schemas, config.h_dim, config.ensemble_size,
+        normalize_sensor_condition=config.normalize_sensor_condition,
+        predict_sensor_delta=config.predict_sensor_delta,
     ).to(config.device)
     trainer = CoreTrainer(model, config)
     replay = SequenceReplay(config.replay_capacity, config.seed)
@@ -681,6 +683,8 @@ def _load_source(
         schemas,
         source_config.h_dim,
         source_config.ensemble_size,
+        normalize_sensor_condition=source_config.normalize_sensor_condition,
+        predict_sensor_delta=source_config.predict_sensor_delta,
     )
     trainer = CoreTrainer(model, source_config)
     replay = SequenceReplay(source_config.replay_capacity, source_config.seed)

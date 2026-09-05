@@ -37,7 +37,9 @@ def prepare_transfer(source, replay, condition: TransferCondition, target_schema
     with torch.random.fork_rng():
         torch.manual_seed(seed)
         model = CoreWorldModel(CoreEncoder(source.encoder.z_dim), schemas,
-                               source.h_dim, source.heads)
+                               source.h_dim, source.heads,
+                               normalize_sensor_condition=config.normalize_sensor_condition,
+                               predict_sensor_delta=config.predict_sensor_delta)
         if target_schema not in schemas:
             model.register_schema(target_schema, target_shape, seed)
         if condition is not TransferCondition.FRESH:
