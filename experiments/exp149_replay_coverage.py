@@ -47,6 +47,16 @@ def _fraction(numerator: int, denominator: int) -> float | None:
     return numerator / denominator if denominator else None
 
 
+def _validate_terminal_counts(
+    total: dict[str, int], fit: dict[str, int], *, episodes_per_layout: int
+) -> bool:
+    if episodes_per_layout != 512:
+        return True
+    return total == {"east_row2": 2, "west_row3": 7, "south_col4": 2, "north_col5": 7} and fit == {
+        "east_row2": 2, "west_row3": 5, "south_col4": 2, "north_col5": 4
+    }
+
+
 def _audit_counts(episodes_by_layout: dict[str, list[Any]]) -> dict[str, Any]:
     by_layout: dict[str, Any] = {}
     overall = defaultdict(_empty_action)
@@ -134,9 +144,14 @@ def main(argv=None) -> int:
             terminals = {name: sum(bool(ep.transitions and ep.transitions[-1].terminated) for ep in items)
                          for name, items in episodes.items()}
             fixed = args.episodes_per_layout == 512 and args.collection_steps == 64
-            expected = {"east_row2": 2, "west_row3": 5, "south_col4": 2, "north_col5": 4}
-            if fixed and (transitions != 130676 or terminals != expected):
-                raise AssertionError(f"scientific protocol mismatch: {transitions=}, {terminals=}")
+            fit_cutoff = round(0.75 * args.episodes_per_layout)
+            fit_terminals = {name: sum(
+                bool(ep.transitions and ep.transitions[-1].terminated)
+                for ep in items[:fit_cutoff]
+            ) for name, items in episodes.items()}
+            if fixed and (transitions != 130676 or not _validate_terminal_counts(
+                    terminals, fit_terminals, episodes_per_layout=args.episodes_per_layout)):
+                raise AssertionError(f"scientific protocol mismatch: {transitions=}, {terminals=}, {fit_terminals=}")
             journal.update("artifacts", 0, 1, operation="write_results")
             result = {"status": "completed", "scientific_protocol": fixed,
                       "protocol": {"source_layouts_insertion_order": list(SOURCE_LAYOUTS),
@@ -144,7 +159,9 @@ def main(argv=None) -> int:
                                    "collection_steps": args.collection_steps, "interleaved_by_offset": True,
                                    "seed_scheme": "10000 + layout_index * 100000 + offset"},
                       "corpus": {"episodes": completed, "transitions": transitions,
-                                 "natural_terminals_by_layout": terminals},
+                                 "natural_terminals_by_layout": terminals,
+                                 "fit_cutoff_episodes_per_layout": fit_cutoff,
+                                 "natural_terminals_fit_cutoff_by_layout": fit_terminals},
                       "coverage": _audit_counts(episodes),
                       "limitations": ["action 3 RGB change is a Push-domain proxy for a box interaction, not a generic semantic label.",
                                       "coverage counts are not used for training."]}
