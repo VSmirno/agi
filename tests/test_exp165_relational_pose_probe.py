@@ -67,10 +67,12 @@ def test_pose_sidecar_reads_direction_before_each_transition():
     sidecar = exp.aligned_episode_pose(episode, FakeAdapter(), seed=123)
 
     torch.testing.assert_close(
-        sidecar[("episode-pose", 0)][4:], torch.tensor([1, 0, 0, 0])
+        sidecar[("episode-pose", 0)][4:],
+        torch.tensor([1, 0, 0, 0], dtype=torch.float32),
     )
     torch.testing.assert_close(
-        sidecar[("episode-pose", 1)][4:], torch.tensor([0, 1, 0, 0])
+        sidecar[("episode-pose", 1)][4:],
+        torch.tensor([0, 1, 0, 0], dtype=torch.float32),
     )
     assert ("episode-pose", 2) not in sidecar
 
