@@ -134,9 +134,17 @@ prediction MSE **0.43084** при нулевой persistence error и rank **5/5
 ошибка растёт `0.14325→0.15883→0.23801`, но основной failure уже one-step.
 
 Следующий bounded split по сохранённому checkpoint — те же one-step contact/no-op
-метрики на source против unseen layouts. Source failure направляет к
-coverage/objective; unseen-only failure — к generalization. До этой локализации
-не менять planner и не запускать Push-2.
+метрики на source против unseen layouts. Exp148 получил contact и blocked-noop
+failure на **4/4 source** и **4/4 unseen** layouts. Median interact ratio к
+persistence — **49.14x/72.96x**, blocked-forward MSE — **0.3321/0.3501**;
+свободный forward, напротив, лучше persistence (`0.2256x/0.2673x`). Значит,
+layout generalization не является основной причиной: one-step dynamics уже
+неверна на source geometries.
+
+Следующий bounded diagnostic — измерить coverage исходного fixed replay по
+state-changing `interact` и blocked no-op transitions. Если события редки,
+сравнивать generic event-balanced replay; если покрытие достаточно, проверять
+residual/persistence parameterization. Planner не менять, Push-2 не запускать.
 
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**

@@ -474,6 +474,21 @@ unseen layouts из того же checkpoint. Если source contact transition
 плохи, проверять coverage/objective; если source хороши, а unseen плохи —
 локализовать representation/dynamics generalization.
 
+`exp148_source_target_one_step.py` выполнил этот split на четырёх source и
+четырёх unseen layouts, с одинаковым seed/color и 120 real action forks.
+Contact failure и blocked-noop failure воспроизвелись на **4/4 source** и
+**4/4 unseen** layouts. Median `interact` prediction/persistence ratio равен
+**49.14x** на source и **72.96x** на unseen; median blocked-forward prediction
+MSE — **0.3321/0.3501**. При этом свободный canonical `forward` остаётся лучше
+persistence с median ratio **0.2256/0.2673**.
+
+Outcome `shared_one_step_failure_evidence` снимает layout generalization как
+основное объяснение: absolute recurrent dynamics не моделирует contact/no-op
+переходы даже на source geometries, хотя умеет крупный свободный movement.
+Следующий вопрос — покрытие replay: сколько в исходных 130676 transitions
+state-changing `interact` и blocked no-op примеров. Только после этого выбирать
+между generic event-balanced training и residual/persistence parameterization.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -483,6 +498,7 @@ Predictive ablation: `exp144-predictive-encoder-001..003`.
 Physics transfer: `exp145-physics-transfer-003`. Temporal MPC и late fork:
 `exp146-temporal-mpc-source-001`, `exp146-temporal-mpc-fork-001`. Rollout
 localization: `exp147-rollout-localization-002`.
+Source/unseen split: `exp148-source-target-one-step-002`.
 
 ## Stage Review
 

@@ -164,8 +164,16 @@ persistence error. Свободный `forward` лучше persistence. Autoregr
 Проверен один deterministic unseen-layout fork. Пока неизвестно, является ли
 contact error следствием sparse source coverage/objective или проявляется только
 при layout generalization. Следующий checkpoint-only source-vs-unseen split
-должен ответить на это до изменения model/loss. Result не является
-physics-transfer failure; Push-2 не запускался.
+ответил: contact и blocked-noop failures присутствуют на **4/4 source** и
+**4/4 unseen** layouts. Median interact prediction/persistence ratio равен
+**49.14x/72.96x**, blocked-forward MSE **0.3321/0.3501**, тогда как свободный
+forward лучше persistence (`0.2256x/0.2673x`). Это shared one-step failure, а
+не преимущественно layout-generalization failure.
+
+Пока не измерено, сколько state-changing interact и blocked no-op transitions
+есть в исходном fixed replay. До этого нельзя различить data coverage и
+objective/parameterization. Result не является physics-transfer failure;
+Push-2 не запускался.
 
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
