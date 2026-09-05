@@ -182,8 +182,8 @@ class _AuditModel:
         )
         return LatentState(
             z=z,
-            sensors=torch.as_tensor(observation.sensors)[None],
-            sensor_mask=torch.as_tensor(observation.sensor_mask)[None],
+            sensors=torch.tensor(observation.sensors)[None],
+            sensor_mask=torch.tensor(observation.sensor_mask)[None],
             hidden=torch.zeros((1, 1)),
             schema=observation.schema,
         )
