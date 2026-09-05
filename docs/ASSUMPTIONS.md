@@ -307,6 +307,44 @@ self-supervised RGB change/no-change auxiliary для gate с class balancing
 Observability: **735** progress records, maximum gap **30.021 s**; полны
 `run.log`, manifest, results, checkpoint, one-step, gate, fork и eval artifacts.
 
+Exp154 проверил ровно следующий objective-only arm на protocol commit
+`9f896a336f9186ea2129306afdda06313b261908`: architecture exp153, uniform
+replay и planner сохранены, а gate получил self-supervised RGB
+change/no-change auxiliary с class balancing внутри action. Full HyperPC
+artifact `output_to_user/core/exp154-auxiliary-change-gate-001` завершился с
+`exact_protocol=true`, exit 0 и elapsed **1300.724 s**. Predictive loss
+снизился **1.311422→0.473953**, auxiliary loss — **0.620841→0.500368**;
+ordered probe balanced accuracy равна **0.712866** против **0.503387**
+shuffled.
+
+Frozen exp153 baseline на source воспроизвёл contact/blocked failures **0/4 и
+4/4**, medians interact **0.979424**, blocked MSE **0.262021**, free-forward
+ratio **0.202104**. Auxiliary source получил **4/4 и 4/4** с medians
+**20.896683**, **0.093231** и **0.750244**; auxiliary unseen — **4/4 и 4/4**,
+**21.797050**, **0.239616** и **1.789780**. То есть blocked MSE на source
+уменьшилась, но threshold failure не снят, contact prediction разрушена, а
+free-forward prediction существенно ухудшилась.
+
+Preregistered gate diagnostic не прошёл: source forward margins равны
+**0.00653/0.01425**, interact margin **−0.055997**; unseen —
+**0.01069/0.00772** и **−0.032788**, при пороге **0.15**. Canonical late fork
+дал successful-sequence predicted ordered/raw ranks **91/125 и 88/125**,
+endpoint MSE **0.553557**; predicted winner неуспешен. Все четыре MPC arms
+получили по **0/24**. One-step, source-compositional и composition gates —
+`false`, physics — `null`; Push-2 не запускался.
+
+Ограниченный вывод: raw RGB-change auxiliary не является переносимой event
+семантикой, портит interaction/contact dynamics и не решает условный
+blocked-forward transition. Это один seed и одно Push-1 family, не
+доказательство AGI/JEPA. Следующее минимальное направление — learned
+state-transition/event representation либо factorized object-centric delta
+target; tuning текущего auxiliary gate objective новыми коэффициентами не
+поддержан результатом.
+
+Observability: **737** progress records, maximum gap **30.0214 s**; полный
+`run.log`, manifest, results, checkpoint, one-step, gate, fork и eval artifacts
+сохранены вместе с exact command, Git commit и exit status.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

@@ -212,6 +212,27 @@ canonical steps. Late fork дал ordered/raw rank **24/22** и endpoint MSE
 objective: self-supervised RGB change/no-change auxiliary для gate с
 class balancing внутри action, без task-success labels, planner changes и Push-2.
 
+Exp154 проверил этот objective-only arm на коде `9f896a3`, сохранив
+architecture exp153, uniform replay и planner (`exact_protocol=true`).
+Predictive loss снизился **1.31142→0.47395**, auxiliary loss —
+**0.62084→0.50037**; ordered probe сохранил signal (**0.7129** balanced
+accuracy против **0.5034** shuffled). Но auxiliary вернул contact failure:
+source/unseen получили **4/4 и 4/4**, а blocked-noop также остался
+**4/4 и 4/4**. Source medians составили interact **20.90x**, blocked MSE
+**0.0932**, free-forward ratio **0.7502**; unseen — **21.80x**, **0.2396** и
+**1.7898**. Ни один preregistered gate не прошёл.
+
+Canonical gate margins остались малы или получили неверный знак: source
+forward **0.0065/0.0143**, interact **−0.0560**; unseen forward
+**0.0107/0.0077**, interact **−0.0328**, при пороге **0.15**. Late fork
+ухудшился до ordered/raw ranks **91/88** и endpoint MSE **0.5536**;
+predicted winner неуспешен. Все четыре MPC arms снова дали **0/24**,
+physics gate — `null`, Push-2 не запускался. Значит, raw visual-change
+auxiliary не выучил условную blocked/contact transition и повредил interaction
+dynamics. Следующий минимальный вопрос — learned state-transition/event
+representation либо factorized object-centric delta target; дальнейшая
+настройка этого gate objective данными не обоснована.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

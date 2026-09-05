@@ -662,6 +662,44 @@ seed/task family, некалиброванный gate, отсутствие AGI/
 Run оставил **735** progress records с maximum gap **30.021 s**. Полны
 `run.log`, manifest, results, checkpoint, one-step, gate, fork и eval artifacts.
 
+Exp154 выполнил preregistered objective-only follow-up на protocol commit
+`9f896a336f9186ea2129306afdda06313b261908`. Full HyperPC run
+`exp154-auxiliary-change-gate-001` сохранил architecture exp153, uniform replay
+и planner; единственное causal изменение — self-supervised RGB
+change/no-change auxiliary для gate с class balancing внутри action. Run
+завершился с `exact_protocol=true`, exit 0 и elapsed **1300.724 s**.
+
+Predictive loss снизился **1.311422→0.473953**, auxiliary loss —
+**0.620841→0.500368**. Ordered temporal probe сохранил signal: balanced
+accuracy **0.712866** против **0.503387** shuffled. Frozen exp153 baseline на
+source воспроизвёл contact/blocked failures **0/4 и 4/4**, medians interact
+**0.979424**, blocked MSE **0.262021**, free-forward ratio **0.202104**.
+Auxiliary source получил **4/4 и 4/4**, medians **20.896683**, **0.093231** и
+**0.750244**; auxiliary unseen — **4/4 и 4/4**, **21.797050**, **0.239616** и
+**1.789780**.
+
+Gate diagnostic не прошёл. Source forward margins равны
+**0.00653/0.01425**, interact margin **−0.055997**; unseen forward margins —
+**0.01069/0.00772**, interact — **−0.032788**, тогда как preregistered threshold
+равен **0.15**. Canonical successful continuation получила predicted
+ordered/raw ranks **91/125 и 88/125**, endpoint MSE **0.553557**; predicted
+winner снова неуспешен. `ordered_h1`, `ordered_h3`, `raw_h3` и `shuffled_h3`
+получили по **0/24**. One-step, source-compositional и composition gates —
+`false`, physics gate — `null`; Push-2 не запускался.
+
+Вывод: raw visual-change auxiliary не извлёк требуемую within-action event
+семантику, вернул contact hallucination и не решил blocked conditional
+transition. Частичное снижение source blocked MSE не компенсирует degradation
+contact, free motion и rollout ranking. Дальнейшее tuning этого auxiliary
+objective не обосновано; следующий минимальный causal direction — learned
+state-transition/event representation либо factorized object-centric delta
+target. Это результат одного seed и одного Push-1 family, не AGI/JEPA/transfer
+proof.
+
+Observability сохранена: **737** progress records, maximum gap **30.0214 s**;
+полны `run.log`, manifest, results, checkpoint, one-step, gate, fork и eval
+artifacts, а также exact command, Git commit и exit status.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -677,6 +715,7 @@ Residual dynamics: `exp150-residual-dynamics-001`.
 Event-balanced residual dynamics: `exp151-event-balanced-dynamics-001`.
 Representation separability: `exp152-representation-separability-001`.
 Change-gated residual dynamics: `exp153-change-gated-dynamics-001`.
+Auxiliary change-gated dynamics: `exp154-auxiliary-change-gate-001`.
 
 ## Stage Review
 
@@ -695,7 +734,9 @@ planner исправлен двумя причинными регрессиям�
 0/6 raw и 0/6 shuffled на одном Push fixture. Exp152 показал линейно
 доступный event/blocked signal в frozen representation; exp153 подавил
 interact hallucination на source/unseen, но blocked-forward и composition
-остались нерешёнными. Стабильного transfer improvement всё ещё нет.
+остались нерешёнными. Exp154 показал, что raw RGB-change auxiliary не снимает
+этот wall и ухудшает contact/free-motion dynamics. Стабильного transfer
+improvement всё ещё нет.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил
