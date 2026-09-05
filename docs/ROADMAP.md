@@ -158,8 +158,24 @@ rank с **54/125** до **18/125**, но contact и blocked-noop failures ост
 Все четыре MPC arms получили **0/24**, one-step/source-compositional/composition
 gates не прошли, physics gate остался `null`; Push-2 не запускался.
 
-Следующий bounded experiment — event-balanced sampling как отдельный causal
-control. Не менять одновременно planner, parameterization или objective.
+Exp151 завершил event-balanced causal control на том же fixed replay
+(**2048 episodes / 130676 transitions**, `exact_protocol=true`). Sampling pool
+содержал **1894** event и **124686** ordinary transitions; оба anchor budgets
+заполнены **8000/8000**, поэтому среди всех supervised targets было
+**8545/48000 = 17.80%** event. Dynamics loss снизился
+**1.31199→0.42986**, probe сохранил ordered signal (**0.7130** balanced
+accuracy против **0.4873** shuffled), а source contact/blocked failures остались
+**4/4 и 4/4**. Относительно frozen exp150 baseline event-balanced arm снизил
+source median interact ratio **34.06x→26.22x** и blocked MSE
+**0.3650→0.1516**, но ухудшил free-forward ratio **0.1032→0.2873**;
+на unseen failures также остались **4/4 и 4/4**. Canonical late-fork ordered
+rank ухудшился до **95/125** (raw **104/125**), все четыре MPC arms дали
+**0/24**, а one-step/source-compositional/composition gates не прошли.
+
+Значит, sparse frequency — частичный фактор contact/blocked error, но ни она,
+ни residual parameterization не объясняют и не снимают корневой rollout
+failure. Следующий bounded diagnostic — separability frozen-encoder
+representation по event и free-vs-blocked labels до изменения архитектуры.
 
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**

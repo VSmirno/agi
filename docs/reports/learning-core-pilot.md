@@ -546,6 +546,42 @@ Observability сохранена: **613** progress records, maximum gap **30.021
 Следующий bounded experiment — event-balanced sampling как отдельный causal
 control без одновременного изменения planner, parameterization или objective.
 
+Этот control завершён в `exp151_event_balanced_dynamics.py`. Full run
+`exp151-event-balanced-dynamics-001` сохранил residual parameterization,
+planner, objective, replay и protocol exp150; менялся только sampler. Run имеет
+`exact_protocol=true`, exit 0 и точный corpus **2048 episodes / 130676
+transitions**. Из них sampling pool классифицировал **1894 event** и
+**124686 ordinary** transitions. Оба anchor budgets заполнены **8000/8000**;
+с учётом multi-step targets training получил **8545 event** и **39455
+ordinary** supervised targets, то есть **17.80% event**. Критерий RGB-change
+при action 3 — только Push-local proxy события, не семантика действия и не
+переносимый факт среды.
+
+Dynamics loss снизился **1.31198895→0.42985901**. Ordered temporal probe на
+validation сохранил сигнал: balanced accuracy **0.71299148** против
+**0.48725784** shuffled. Frozen exp150 residual baseline на source снова дал
+contact/blocked failures **4/4 и 4/4**, medians interact **34.05918**, blocked
+MSE **0.365026**, free-forward ratio **0.103175**. Event-balanced source также
+дал **4/4 и 4/4**, но medians стали **26.21614**, **0.151566** и **0.287251**.
+То есть contact и blocked metrics частично улучшились, тогда как free-motion
+prediction ухудшилась. Event-balanced unseen сохранил failures **4/4 и 4/4** с
+medians **40.01761**, **0.241659** и **0.248932**.
+
+Canonical late-fork audit дал successful sequence predicted ordered rank
+**95/125**, raw rank **104/125** и endpoint MSE **1.19277**; predicted winners
+остались неуспешны. `ordered_h3`, `ordered_h1`, `shuffled_h3` и `raw_h3` снова
+получили по **0/24**. One-step, source-compositional и composition gates —
+`false`, physics gate — `null`; Push-2 не запускался. Значит, повышение частоты
+редких event transitions частично снижает отдельные one-step ошибки, но не
+снимает failures и сильно ухудшает rollout ranking. Вместе exp150 и exp151
+исключают sparse frequency alone и residual parameterization alone как
+достаточное объяснение root failure.
+
+Run оставил **577** progress records с maximum gap **2.793 s** и elapsed
+**134.097 s**. `run.log`, manifest, results, checkpoint, rows и traces полны.
+Следующий bounded diagnostic перед архитектурным изменением — separability
+frozen-encoder representation по event и free-vs-blocked labels.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -558,6 +594,7 @@ localization: `exp147-rollout-localization-002`.
 Source/unseen split: `exp148-source-target-one-step-002`.
 Replay coverage: `exp149-replay-coverage-003`.
 Residual dynamics: `exp150-residual-dynamics-001`.
+Event-balanced residual dynamics: `exp151-event-balanced-dynamics-001`.
 
 ## Stage Review
 

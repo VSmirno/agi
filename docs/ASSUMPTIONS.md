@@ -210,6 +210,37 @@ source-compositional и composition gates — `false`, physics — `null`.
 Следующий causal control — event-balanced sampling без одновременного изменения
 planner, parameterization или objective.
 
+Exp151 выполнил этот matched control на HyperPC. Артефакт
+`output_to_user/core/exp151-event-balanced-dynamics-001` завершился с
+`exact_protocol=true`, exit 0 и точным corpus **2048 episodes / 130676
+transitions**. Pool содержал **1894 event** и **124686 ordinary** transitions;
+sampler использовал **8000/8000** event/ordinary anchors, а с multi-step
+targets итоговая supervision составила **8545 event / 39455 ordinary**
+(**17.80% event**). State RGB-change при action 3 служит Push-local proxy
+события, а не семантической меткой `interact` или универсальным task fact.
+
+Dynamics loss снизился **1.31198895→0.42985901**; ordered probe validation
+balanced accuracy равна **0.71299148** против **0.48725784** shuffled. Frozen
+exp150 residual source baseline воспроизвёл contact/blocked failures **4/4 и
+4/4** с medians interact **34.05918**, blocked **0.365026**, free **0.103175**.
+Event-balanced source также остался на **4/4 и 4/4**, хотя medians interact и
+blocked улучшились до **26.21614** и **0.151566**; free ухудшился до
+**0.287251**. Unseen arm дал **4/4 и 4/4**, medians **40.01761**, **0.241659**
+и **0.248932**.
+
+На canonical late fork успешная последовательность получила predicted ordered
+rank **95/125**, raw **104/125** и endpoint MSE **1.19277**; predicted winners
+неуспешны. Все четыре eval arms дали по **0/24**. One-step, source-compositional
+и composition gates — `false`, physics — `null`; Push-2 не запускался.
+Event balancing частично уменьшает contact/blocked metrics, но не закрывает
+failures и ухудшает rollout ranking. Поэтому ни sparse frequency сама по себе,
+ни residual parameterization не являются root fix. Следующий bounded diagnostic
+до архитектурного изменения — frozen-encoder representation separability по
+event и free-vs-blocked labels.
+
+Observability: **577** progress records, maximum gap **2.793 s**; полны
+`run.log`, manifest, results, checkpoint, rows и traces; elapsed **134.097 s**.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
