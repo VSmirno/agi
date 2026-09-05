@@ -52,7 +52,11 @@ def _layout_specs():
 
 
 def _finite_median(values):
-    finite = [float(value) for value in values if value is not None and math.isfinite(value)]
+    finite = [
+        float(value)
+        for value in values
+        if value is not None and math.isfinite(value)
+    ]
     return float(statistics.median(finite)) if finite else None
 
 
@@ -234,7 +238,11 @@ def _layout_summary(rows, layout_name, split):
 @torch.inference_mode()
 def _diagnose(model, journal: ProgressJournal, rows_path: Path):
     layout_specs = _layout_specs()
-    total = sum(len(layouts) for layouts in layout_specs.values()) * HORIZON * ACTION_COUNT
+    total = (
+        sum(len(layouts) for layouts in layout_specs.values())
+        * HORIZON
+        * ACTION_COUNT
+    )
     completed = 0
     layout_summaries = {split: [] for split in SPLITS}
     writer = core.TraceWriter(rows_path)
@@ -356,7 +364,9 @@ def main(argv=None) -> int:
     with ProgressJournal(args.out / "progress.jsonl", args.progress_interval) as journal:
         try:
             journal.update("initialize", 0, 1, operation="safe_checkpoint_load")
-            model, ordered, checkpoint_head, metadata = _load_checkpoint(args.checkpoint)
+            model, ordered, checkpoint_head, metadata = _load_checkpoint(
+                args.checkpoint
+            )
             del ordered
             manifest["checkpoint_git_head"] = checkpoint_head
             manifest["checkpoint_metadata"] = metadata
@@ -373,7 +383,12 @@ def main(argv=None) -> int:
             journal.update("artifacts", 1, 2, operation="write_manifest")
             core._write_json(
                 args.out / "manifest.json",
-                {**manifest, "exit_code": 0, "exit_status": 0, "status": "completed"},
+                {
+                    **manifest,
+                    "exit_code": 0,
+                    "exit_status": 0,
+                    "status": "completed",
+                },
             )
             journal.update("artifacts", 2, 2, operation="complete")
             journal.close(status="completed")
