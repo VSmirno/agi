@@ -473,6 +473,36 @@ Observability: **730** progress records, maximum gap **30.020592 s**; полны
 `run.log`, manifest, results, checkpoint, rows и traces с exact command, Git
 commit и exit status.
 
+Exp159 реализован RED commit `1fb3d58` и implementation
+`2449e374fc456ea48abff0579d7c849efa28bf6f`. HyperPC verification:
+**5 passed** за **1.04 s**, artifact check — PASS. Full checkpoint-only run
+`output_to_user/core/exp159-independent-amplitude-oracle-001` завершился с
+`exact_protocol=true`, exit 0 и runtime **1.7319 s**.
+
+Native exp153 source дал contact/blocked failures **0/4 и 4/4**, medians free
+**0.202104**, interact **0.979424**, blocked MSE **0.262021**; unseen —
+**0/4 и 4/4**, **0.177488**, **0.985134**, **0.239985**. Independent-member
+oracle получил source **0/4 и 0/4**, **0.172222**, **0.899737**, **0**;
+unseen — **0/4 и 0/4**, **0.153195**, **0.931245**, **0**. Joint control
+численно дал те же агрегаты. Independent gate — `true`, outcome —
+`target licensed`.
+
+Распределение **360** analytic amplitudes: min **0**, median **0.046656**, max
+**1**; **144** равны нулю, **72** единице, **144** лежат внутри `(0,1)`.
+Следовательно, полезный target не сводится к binary change/no-change и
+существует независимо для каждого ensemble member. Это лицензирует только
+следующий bounded training arm, но не доказывает learnability, rollout,
+transfer, JEPA или AGI.
+
+Exp160 должен сохранить frozen exp153 backbone, action-specific architecture,
+fixed action/change weights, raw delta heads и planner, меняя только objective:
+прямую регрессию self-supervised independent analytic amplitude targets. Новая
+architecture и task labels не добавляются.
+
+Observability: **127** progress records, maximum gap **0.31937 s**; полны
+`run.log`, manifest, results и diagnostic rows с exact command, Git commit и
+exit status.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

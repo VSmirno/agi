@@ -305,6 +305,20 @@ ordered/raw ranks **24/26**, endpoint MSE **0.1932**, winner `[1,4,4]`
 Следующий дешёвый шаг — checkpoint audit independent-member analytic amplitude
 target до любого нового долгого training run.
 
+Exp159 выполнил этот audit. Native exp153 на source/unseen имел contact/blocked
+failures **0/4 и 4/4**; independent-member oracle получил **0/4 и 0/4** на
+обоих splits. Source medians free/interact/blocked стали
+**0.1722/0.8997/0**, unseen — **0.1532/0.9312/0**; joint control дал те же
+агрегаты. Independent gate прошёл. При этом **360** analytic amplitudes не
+сводятся к бинарной маске: min/median/max **0/0.046656/1**, counts
+**144 zero / 72 one / 144 interior**.
+
+Outcome `target licensed` означает только, что self-supervised independent
+amplitude target совместим с требуемой one-step геометрией frozen raw deltas.
+Следующий exp160 сохраняет frozen exp153/action-specific architecture и fixed
+action/change weights, но прямо регрессирует эти analytic targets; raw deltas и
+planner не меняются. Это не AGI/transfer evidence.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

@@ -835,6 +835,37 @@ Observability: **730** progress records, maximum gap **30.020592 s**; полны
 `run.log`, manifest, results, checkpoint, rows и traces, exact command, Git
 commit и exit status.
 
+Exp159 выполнил дешёвый checkpoint-only audit перед следующим regression run:
+может ли independent analytic amplitude на каждом ensemble member реализовать
+нужные one-step transitions frozen exp153. Контракт задан RED commit `1fb3d58`,
+implementation — `2449e374fc456ea48abff0579d7c849efa28bf6f`.
+HyperPC verification дала **5 passed** за **1.04 s**, artifact check — PASS.
+Full run `exp159-independent-amplitude-oracle-001` завершился с
+`exact_protocol=true`, exit 0 и runtime **1.7319 s**.
+
+Native source имел contact/blocked failures **0/4 и 4/4**, medians free-forward
+**0.202104**, interact **0.979424**, blocked MSE **0.262021**; unseen —
+**0/4 и 4/4**, **0.177488**, **0.985134**, **0.239985**. Independent oracle
+получил source **0/4 и 0/4**, medians **0.172222**, **0.899737**, **0**;
+unseen — **0/4 и 0/4**, **0.153195**, **0.931245**, **0**. Joint scalar
+control численно совпал по агрегатам. Independent gate прошёл; outcome —
+`target licensed`.
+
+Всего измерено **360** amplitudes: min/median/max **0/0.046656/1**; counts
+**144 zero / 72 one / 144 interior**. Поэтому target является continuous и
+member-specific, а не просто binary RGB-change label. Результат показывает его
+совместимость с frozen raw directions на audited one-step rows, но ещё не
+learnability, rollout или transfer.
+
+Следующий exp160 сохраняет frozen exp153 backbone, action-specific gate
+architecture, fixed action/change weights, raw deltas и planner. Единственное
+изменение — прямая regression self-supervised independent analytic amplitude
+targets. Task labels и новая architecture не добавляются; AGI/JEPA claim нет.
+
+Observability: **127** progress records, maximum gap **0.31937 s**; `run.log`,
+manifest, results и diagnostic rows полны, exact command, Git commit и exit
+status зафиксированы.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -855,6 +886,7 @@ Frozen residual scalar oracle: `exp155-oracle-residual-gate-001`.
 Pre-gate delta oracle audit: `exp156-gated-delta-oracle-001`.
 Frozen action-specific gate training: `exp157-action-specific-frozen-gate-001`.
 Balanced latent gate training: `exp158-balanced-latent-gate-001`.
+Independent amplitude oracle: `exp159-independent-amplitude-oracle-001`.
 
 ## Stage Review
 
@@ -883,6 +915,8 @@ unseen: текущий wall теперь локализован в обучен�
 показал, что action-specific parameterization с uniform latent MSE эту
 learnability проблему не снимает. Exp158 показал, что fixed balancing по
 action/change classes также недостаточен и не оправдывает coefficient sweep.
+Exp159 подтвердил, что independent analytic target совместим с audited raw
+deltas; его learnability остаётся отдельной гипотезой exp160.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил
