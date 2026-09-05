@@ -287,6 +287,24 @@ exp156 доказал expressivity frozen raw directions. Следующий min
 наблюдённого transition, без BCE, новой architecture, task labels или planner
 changes.
 
+Exp158 проверил этот единственный weighting change при тех же **1,403,398**
+frozen и **3,855** trainable gate parameters. Exact class weights по actions
+0–4: `[[0,1],[0,1],[1.395704,.779110],[.539773,6.785714],[1,0]]`; RGB
+использовался только для веса observed transition, target оставался latent.
+Sampled loss изменился **0.22120→0.26392**, но эта шумная пара не считается
+improvement. Candidate снова дал source/unseen contact/blocked failures
+**4/4 и 4/4**: source medians free/interact/blocked **0.2600/1.9063/0.1614**,
+unseen **0.2147/2.8078/0.1493**.
+
+Граница gate осталась неверной: action 2 source — **0.5326** blocked,
+**0.6164** changed, **0.8678** blocked; action 3 — **0.1028/0.1928** changed
+против **0.1051** no-change. Все MPC arms получили **0/24**, late-fork
+ordered/raw ranks **24/26**, endpoint MSE **0.1932**, winner `[1,4,4]`
+неуспешен; gates — `false`, physics — `null`. Fixed action/change class weights
+не решают amplitude learning под latent MSE; coefficient sweep не оправдан.
+Следующий дешёвый шаг — checkpoint audit independent-member analytic amplitude
+target до любого нового долгого training run.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

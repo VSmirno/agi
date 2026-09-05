@@ -801,6 +801,40 @@ Observability: **730** progress records, maximum gap **30.021144 s**; полны
 `run.log`, manifest, results, checkpoint, rows и traces, exact command, Git
 commit и exit status.
 
+Exp158 выполнил matched follow-up exp157, изменив только weighting latent
+predictive error внутри `(action, RGB-change/no-change)`. Контракт задан RED
+commit `c40d983`, implementation —
+`15251710df58dec697900de3cd65d350c44d9b38`. Full HyperPC run
+`exp158-balanced-latent-gate-001` завершился с `exact_protocol=true`, exit 0 и
+runtime **1238.310 s**. Все **1,403,398** backbone parameters остались frozen
+и неизменными; trainable были те же **3,855** gate parameters.
+
+Exact class weights `[no-change, change]` для actions 0–4 равны
+`[[0,1],[0,1],[1.395704,.779110],[.539773,6.785714],[1,0]]`. RGB-change
+использовался только для веса observed transition; latent target оставался next
+`z`, BCE/task labels не добавлялись. Первый/последний sampled loss —
+**0.221201/0.263924**; из-за stochastic balanced sampling это не evidence
+ухудшения или улучшения objective.
+
+Exp153 baseline source имел contact/blocked failures **0/4 и 4/4**, unseen —
+**0/4 и 4/4**. Candidate source получил **4/4 и 4/4**, medians free-forward
+**0.260011**, interact **1.906250**, blocked MSE **0.161449**; unseen —
+**4/4 и 4/4**, **0.214704**, **2.807827**, **0.149274**. Action 2 source gate
+дал **0.5326** blocked, **0.6164** changed, **0.8678** blocked; action 3 —
+**0.1028/0.1928** changed против **0.1051** no-change.
+
+Все MPC arms получили **0/24**. Canonical late-fork ordered/raw ranks —
+**24/26**, endpoint MSE **0.193162**, predicted winner `[1,4,4]` неуспешен.
+One-step/source-compositional/composition gates — `false`, physics — `null`.
+Fixed action/change class weights не исправляют amplitude learning под latent
+MSE, поэтому coefficient sweep не запускается. Следующий дешёвый diagnostic —
+checkpoint-only independent-member analytic amplitude target audit до любого
+нового долгого regression run. Это не AGI/JEPA/transfer claim.
+
+Observability: **730** progress records, maximum gap **30.020592 s**; полны
+`run.log`, manifest, results, checkpoint, rows и traces, exact command, Git
+commit и exit status.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -820,6 +854,7 @@ Auxiliary change-gated dynamics: `exp154-auxiliary-change-gate-001`.
 Frozen residual scalar oracle: `exp155-oracle-residual-gate-001`.
 Pre-gate delta oracle audit: `exp156-gated-delta-oracle-001`.
 Frozen action-specific gate training: `exp157-action-specific-frozen-gate-001`.
+Balanced latent gate training: `exp158-balanced-latent-gate-001`.
 
 ## Stage Review
 
@@ -846,7 +881,8 @@ persistence на contact вместо моделирования effect. Exp156 
 pre-gate deltas exp153/154 всё же выразительны на source, а exp153 — также на
 unseen: текущий wall теперь локализован в обучении/выразительности gate. Exp157
 показал, что action-specific parameterization с uniform latent MSE эту
-learnability проблему не снимает.
+learnability проблему не снимает. Exp158 показал, что fixed balancing по
+action/change classes также недостаточен и не оправдывает coefficient sweep.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил

@@ -439,6 +439,40 @@ Observability: **730** progress records, maximum gap **30.021144 s**; полны
 `run.log`, manifest, results, checkpoint, rows и traces с exact command, Git
 commit и exit status.
 
+Exp158 реализован RED commit `c40d983` и implementation
+`15251710df58dec697900de3cd65d350c44d9b38`. Full HyperPC artifact
+`output_to_user/core/exp158-balanced-latent-gate-001` завершился с
+`exact_protocol=true`, exit 0 и runtime **1238.310 s**. Все **1,403,398**
+backbone parameters остались frozen/неизменными, обучались те же **3,855** gate
+parameters. Exact weights `[no-change, change]` для actions 0–4:
+`[[0,1],[0,1],[1.395704,.779110],[.539773,6.785714],[1,0]]`. RGB-change
+использовался только для weighting observed transition; objective и target
+оставались latent predictive MSE / next `z`.
+
+Первый/последний sampled loss равны **0.221201/0.263924**. Из-за stochastic
+balanced sampling эта пара шумная и не является improvement claim. Exp153
+baseline source сохранил contact/blocked failures **0/4 и 4/4**, unseen —
+**0/4 и 4/4**. Candidate source получил **4/4 и 4/4**, medians free
+**0.260011**, interact **1.906250**, blocked MSE **0.161449**; unseen —
+**4/4 и 4/4**, **0.214704**, **2.807827**, **0.149274**.
+
+Action 2 source gate дал **0.5326** blocked, **0.6164** changed и **0.8678**
+blocked; action 3 — **0.1028/0.1928** changed против **0.1051** no-change.
+Fixed balancing не создал устойчивую within-action boundary. Все MPC arms
+остались **0/24**. Canonical late fork: ordered/raw ranks **24/26**, endpoint
+MSE **0.193162**, winner `[1,4,4]` неуспешен. One-step,
+source-compositional/composition gates — `false`, physics — `null`.
+
+Узкий вывод: fixed action/change class weights не решают amplitude learning
+под latent MSE; coefficient sweep не обоснован. До следующего долгого training
+arm нужен дешёвый checkpoint-only audit independent-member analytic amplitude
+target, чтобы проверить, совместим ли scalar target с одним gate value на
+member/context. Результат не доказывает AGI/JEPA/transfer.
+
+Observability: **730** progress records, maximum gap **30.020592 s**; полны
+`run.log`, manifest, results, checkpoint, rows и traces с exact command, Git
+commit и exit status.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
