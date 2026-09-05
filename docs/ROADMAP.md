@@ -70,6 +70,15 @@ matched shuffled control. Следующий bounded comparison — hindsight
 goal-conditioned control на том же replay против текущего MPC; не принимать
 temporal probe в production до устойчивого causal преимущества.
 
+Hindsight на всех future pairs провалил closed-loop (0/24), несмотря на верный
+первый поворот: policy затем зацикливалась на `forward`. Отбор последних
+terminal-success pairs дал direct controller 64/72 на трёх training runs против
+0/72 shuffled-action и покрыл все четыре unseen layouts в каждом run. Но строгий
+superiority gate против raw/temporal MPC прошёл только 1/3. Это подтверждает
+полезность successful experience selection, но не замену MPC и не
+self-supervised learning: отбор использует `termination == success`. До
+интеграции нужен random-encoder control вклада world-model representation.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

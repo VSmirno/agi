@@ -315,10 +315,13 @@ source replay и event windows, но не положительное обуче�
 JEPA latent prediction стала action-sensitive, но евклидова близость общего
 embedding к goal image не обязана кодировать достижимость или прогресс.
 
-`exp143_temporal_proximity.py` проверил этот барьер без reward, success labels,
-координат и правил Push. Directed probe обучался по порядку кадров целых real
-эпизодов и честно оценивает только `P(target встретится <= H | dataset policy)`,
-а не оптимальную достижимость. На малой frozen-модели он идеально ранжировал
+`exp143_temporal_proximity.py` проверил этот барьер temporal-head без reward,
+координат и правил Push. При этом frozen backbone уже обучался с termination
+supervision (`Grid termination == success`) и terminal-priority sampling, поэтому
+опыт не является label-free. Directed probe обучался по порядку кадров целых
+real эпизодов и честно оценивает только
+`P(target встретится <= H | dataset policy)`, а не оптимальную достижимость. На
+малой frozen-модели он идеально ранжировал
 реальные fork outcomes (MRR 1.000 против 0.553 у latent MSE и 0.400 у
 shuffled-endpoint control), но на imagined root правильный первый push оставался
 последним. Mixed real/imagined anchors это не исправили.
@@ -355,15 +358,29 @@ shuffled=8, другой ordered=12 и shuffled=16. Разбивка ordered п�
 Следовательно, temporal order содержит полезный goal signal и переносится между
 частью пространственных конфигураций, но MPC неустойчив к некалиброванной
 геометрии score. Это `PARTIAL`: raw image distance как default опровергнута,
-но temporal probe ещё не принят в production. Следующий matched architectural
-control — self-supervised hindsight goal-conditioned controller на тех же real
-episodes; он проверит, нужен ли текущий imagined-rollout путь для этого класса
-целей вообще.
+но temporal probe ещё не принят в production.
+
+Direct hindsight controller на всех future pairs снизил training loss
+1.61→1.12 и правильно выбрал первый поворот во всех 24 unseen-layout cases,
+после чего зациклился на `forward` и получил **0/24**. Terminal-only arm отобрал
+118 последних `<=8`-step pairs из 17 успешных fit episodes. На трёх training
+runs он дал **64/72** против action-shuffled **0/72**, goal-blind **44/72**,
+ordered MPC **56/72** и raw MPC **28/72**; каждый run решил все четыре unseen
+layouts. Однако заранее заданный superiority gate против всех controls прошёл
+только **1/3**, поэтому замена MPC не принята.
+
+Это положительный сигнал, что редкий успешный опыт может обучить прямое
+visual/state-conditioned действие с layout generalization. Но arm явно
+success-supervised через `Grid termination == success`, current RGB уже показывает
+goal tile, а fit corpus содержит всего 17 успешных эпизодов. Следующий bounded
+control — тот же terminal-only learner на замороженном случайном encoder: он
+проверит, внёс ли обученный world-model backbone вклад сверх случайных признаков.
 
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
-`exp144-layout-generalization-001..006`.
+`exp144-layout-generalization-001..006`, `exp144-hindsight-001`,
+`exp144-terminal-hindsight-001..003`.
 
 ## Stage Review
 

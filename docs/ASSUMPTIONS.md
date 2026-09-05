@@ -97,6 +97,16 @@ Debiased difference score провалился. Temporal score остаётся 
 self-supervised hindsight goal-conditioned policy, но его успех будет claim о
 goal control, а не доказательство world-model understanding или transfer A→B.
 
+All-future hindsight policy на том же replay получила 0/24: правильный первый
+поворот сменялся циклом `forward`. Terminal-only successful-episode selection
+дала 64/72 на трёх runs, shuffled-action 0/72, goal-blind 44/72, ordered/raw MPC
+56/72 и 28/72. Все runs покрыли четыре unseen layouts, но predeclared superiority
+gate прошёл 1/3. Результат нельзя называть self-supervised: policy отбирает опыт
+по `termination == success`, а backbone также видел termination supervision.
+Goal-blind не является чистым causal control, потому что goal tile виден в
+current RGB. До production integration проверяется frozen random encoder на тех
+же 118 terminal pairs.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
