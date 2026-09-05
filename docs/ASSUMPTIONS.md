@@ -626,6 +626,34 @@ Observability: persistent `run.log`, `results.json`, `manifest.json`, checkpoint
 rows и `progress.jsonl` с **1092** records и maximum gap **1.303 s** сохраняют
 exact command, Git commit и финальный status.
 
+Exp164 реализован RED commit `ccdb55b` и implementation `7a6a6ca`. Fresh
+HyperPC verification: **7 passed** за **1.06 s**, smoke — **3.570 s**. Full run
+завершился с `exact_protocol=true`, status `completed`, exit 0 и runtime
+**321.076 s**; artifact verifier — PASS. Frozen backbone не изменён.
+
+Relational sidecar содержит **130676** выровненных transitions с сохранённым
+alignment digest; canonical **120** row signatures совпали. Per-action
+`z+hidden+relations` MLP снизил probe loss **0.223857→0.00112491**. Held-out
+MSE равна **0.00401893** против exp162 **0.00435795**, улучшение около **7.8%**.
+
+Exact source exp164 получил contact/blocked failures **1/4 и 4/4**, medians
+free **0.247198**, interact **0.907779**, blocked MSE **0.050738**; exp162
+reference — **1/4 и 4/4**, **0.262579**, **0.911038**, **0.057772**. Unseen
+exp164 — **0/4 и 4/4**, **0.286226**, **0.957583**, **0.009072**; exp162 —
+**0/4 и 4/4**, **0.304037**, **0.959895**, **0.011988**. Continuous metrics
+слегка улучшились, но categorical outcome не изменился; gate — `false`.
+
+Критическое ограничение experiment: четыре relational features кодируют
+позиционные отношения, но не agent orientation/pose. PushGrid transition
+зависит от `agent_dir`, поэтому exp164 falsifies только position-only relational
+slots, не complete object-centric Markov state. Следующий минимальный шаг —
+evaluator-only pose/orientation diagnostic до вывода о недостаточности
+object-centric state. Это не AGI, JEPA, composition или transfer claim.
+
+Observability: persistent `run.log`, `results.json`, `manifest.json`, checkpoint,
+rows и `progress.jsonl` с **4706** records и maximum gap **1.713 s** сохраняют
+exact command, Git commit и финальный status.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

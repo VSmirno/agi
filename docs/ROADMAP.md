@@ -379,6 +379,20 @@ ranking-state failure, а не недостаточная длина calibration
 минимальный шаг — evaluator-only relational object-state diagnostic; новое
 обучение до него не обосновано. AGI/composition claim отсутствует.
 
+Exp164 добавил evaluator-only четыре position-based relational slots к
+`z+hidden` MLP. Sidecar выровнен со всеми **130676** transitions по digest,
+canonical **120** signatures совпадают. Held-out MSE улучшилась с exp162
+**0.004358** до **0.004019** (около **7.8%**), а source/unseen medians слегка
+снизились: free **0.2472/0.2862**, interact **0.9078/0.9576**, blocked MSE
+**0.0507/0.0091**. Но categorical failures не изменились: source contact/
+blocked **1/4 и 4/4**, unseen **0/4 и 4/4**; gate — `false`.
+
+Критическое ограничение: эти четыре relations не содержат agent orientation/
+pose, хотя PushGrid transition зависит от `agent_dir`. Поэтому exp164 отвергает
+только position-only relational slots, а не полный object-centric Markov state.
+Следующий минимальный evaluator-only diagnostic добавляет pose/orientation до
+любого такого claim. AGI/composition/transfer не доказаны.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

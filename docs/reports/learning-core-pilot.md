@@ -990,6 +990,36 @@ Persistent `run.log`, `results.json`, `manifest.json`, checkpoint, rows и
 `progress.jsonl` содержат **1092** progress records с maximum gap **1.303 s**,
 exact command, Git commit и финальный status.
 
+Exp164 выполнил evaluator-only relational object-state diagnostic поверх frozen
+exp153. Контракт задан RED commit `ccdb55b`, implementation — `7a6a6ca`. Fresh
+HyperPC verification дала **7 passed** за **1.06 s**, smoke завершился за
+**3.570 s**. Full run завершён с `exact_protocol=true`, status `completed`,
+exit 0 и runtime **321.076 s**; artifact verifier — PASS.
+
+Sidecar выровнен со всеми **130676** corpus transitions по сохранённому digest;
+canonical **120** signatures совпадают. Frozen backbone не менялся. Per-action
+MLP получает `z+hidden` и четыре privileged position-based relational slots.
+Probe loss снизился **0.223857→0.00112491**; held-out MSE — **0.00401893**
+против exp162 **0.00435795**, около **7.8%** improvement.
+
+Exact source exp164 имеет contact/blocked failures **1/4 и 4/4**, medians
+free-forward **0.247198**, interact **0.907779**, blocked MSE **0.050738**;
+exp162 reference — **1/4 и 4/4**, **0.262579**, **0.911038**, **0.057772**.
+Unseen exp164 — **0/4 и 4/4**, **0.286226**, **0.957583**, **0.009072**;
+exp162 — **0/4 и 4/4**, **0.304037**, **0.959895**, **0.011988**. Continuous
+metrics улучшились, categorical failures остались прежними; gate — `false`.
+
+Ограничение принципиально для интерпретации: четыре relations не включают agent
+orientation/pose, тогда как PushGrid transition зависит от `agent_dir`.
+Следовательно, exp164 отвергает только position-only relational slots, а не
+complete object-centric Markov state. Следующий минимальный diagnostic остаётся
+evaluator-only и добавляет pose/orientation. Longer training пока не обоснован;
+AGI/JEPA/composition/transfer claim отсутствует.
+
+Persistent `run.log`, `results.json`, `manifest.json`, checkpoint, rows и
+`progress.jsonl` содержат **4706** progress records с maximum gap **1.713 s**,
+alignment evidence, exact command, Git commit и финальный status.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -1015,6 +1045,7 @@ Analytic amplitude supervised gate: `exp160-amplitude-supervised-gate-001`.
 Amplitude input probe: exp161 HyperPC run at `419fe00`.
 Nonlinear amplitude probe: exp162 HyperPC run at `8edec06`.
 Frozen amplitude calibration: exp163 HyperPC run at `6546387`.
+Relational slot probe: exp164 HyperPC run at `7a6a6ca`.
 
 ## Stage Review
 
@@ -1049,7 +1080,9 @@ deltas; exp160 показал, что текущие gate features не выуч
 hidden state для aggregate regression, но обе linear input модели провалили
 critical one-step gate. Exp162 подтвердил nonlinear decodability contact effect,
 но blocked-noop physics осталась нерешённой. Exp163 показал, что per-action
-threshold tradeoff не разделяет contact и no-op contexts.
+threshold tradeoff не разделяет contact и no-op contexts. Exp164 дал небольшое
+continuous improvement от position-only relations, но categorical no-op wall
+остался и pose ещё не включён.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил
