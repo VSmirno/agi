@@ -95,6 +95,15 @@ backbone; success supervision пока остаётся только в отбо
 Следующий proof obligation — перенести этот же механизм через physics/ruleset
 split, а не интегрировать результат одного Push-1 семейства как AGI-компонент.
 
+Exp145 не прошёл prerequisite этого gate. На 512×4 long-distance source corpus
+(130676 transitions, 13 terminal fit episodes, 104 policy pairs) unseen Push-1
+layouts дали 0/24; Push-2 arms тоже 0/24 и потому не интерпретируются как physics
+failure. Traces показывают turn→`noop` или turn→`forward` loops. Основной wall —
+coverage успешного experience, особенно действий ориентации, а не доказанный
+дефект predictive representation. Следующий bounded research step должен менять
+experience acquisition/coverage; дальнейший brute-force random corpus не является
+roadmap-решением.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

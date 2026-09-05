@@ -122,6 +122,16 @@ Matched predictive-only backbone (`termination_weight=0`, `salient_fraction=0`)
 policy dataset состоит из 118 пар, выбранных по успешному terminal outcome.
 Перенос через новую physics/ruleset не проверен.
 
+Exp145 проверил long-distance physics split, но остановился раньше physics gate:
+source Push-1 qualification на unseen layouts дала 0/24. Corpus содержал 130676
+transitions и 13 terminal fit episodes (104 pairs), однако source layouts начинали
+уже facing-box, а target требовал turns; policy после первых действий сходилась в
+`noop` loop. Native/canonical Push-2 и оба controls также 0/24, поэтому это не
+свидетельство невозможности physics transfer. Попытка 2048 episodes/layout
+исчерпала 1800 секунд на dynamics update 663; завершённый 512/layout run занял
+около 34 минут. Random exploration является текущим experience-acquisition wall,
+а не масштабируемым способом обеспечить action/state coverage.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

@@ -393,12 +393,32 @@ controller gates прошли **3/3**; full encoder не превосходил 
 predictive training без success-equivalent supervision backbone. Сама policy
 остаётся success-supervised: 118 примеров выбраны из terminal episodes.
 
+`exp145_physics_transfer.py` поднял следующий gate: четыре long-distance Push-1
+source layouts и четыре unseen layouts, проверяемые сначала под Push-1, затем
+zero-shot под Push-2. Canonical target goal использовал Push-1 pose для обеих
+физик; initial RGB совпадал, native goal RGB различался. Fixed corpus 512×4 дал
+130676 transitions, 18 terminal episodes, из них 13 в fit и 104 terminal pairs.
+Но source-geometry qualification получила **0/24**; native и canonical Push-2,
+shuffled-action и random-encoder arms также дали **0/24**. Policy выбирала
+частично правильный первый turn, затем зацикливалась на `noop`; native goal в
+части layouts менял цикл на `forward`.
+
+Physics transfer поэтому не опровергнут: target нельзя оценивать, пока source
+mechanism не переносится на новые long-distance layouts. Причина текущего wall —
+неподдержанный action/state coverage: source starts были сразу ориентированы на
+box, target требовал turns, а terminal corpus содержал лишь 104 pairs. Brute-force
+random expansion отвергается как следующий default: попытка 2048×4 исчерпала
+30 минут ещё на dynamics update 663; 512×4 потребовал около 34 минут целиком.
+Следующий шаг должен улучшить acquisition разнообразного успешного опыта, а не
+масштабировать случайное блуждание.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
 `exp144-layout-generalization-001..006`, `exp144-hindsight-001`,
 `exp144-terminal-hindsight-001..003`, `exp144-random-encoder-001..003`.
 Predictive ablation: `exp144-predictive-encoder-001..003`.
+Physics transfer: `exp145-physics-transfer-003`.
 
 ## Stage Review
 

@@ -215,7 +215,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--episodes-per-layout", type=int, default=2048)
+    parser.add_argument("--episodes-per-layout", type=int, default=512)
     parser.add_argument("--collection-steps", type=int, default=64)
     parser.add_argument("--eval-steps", type=int, default=32)
     parser.add_argument("--dynamics-updates", type=int, default=2000)
@@ -225,7 +225,7 @@ def main(argv=None):
     parser.add_argument("--eval-seeds", type=int, default=6)
     parser.add_argument("--z-dim", type=int, default=256)
     parser.add_argument("--h-dim", type=int, default=128)
-    parser.add_argument("--max-seconds", type=int, default=1800)
+    parser.add_argument("--max-seconds", type=int, default=3600)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args(argv)
     for name in (
