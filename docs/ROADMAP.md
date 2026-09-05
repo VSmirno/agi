@@ -96,8 +96,8 @@ backbone; success supervision пока остаётся только в отбо
 split, а не интегрировать результат одного Push-1 семейства как AGI-компонент.
 
 Exp145 mixed source-only run не прошёл prerequisite этого gate. Fixed corpus был
-идентичен: **2048 episodes / 130676 transitions**; fit terminal episodes по
-layout — **2/5/2/4 = 13**, **104 terminal examples**, all-future local examples
+идентичен: **2048 episodes / 130676 transitions**; fit terminal episodes
+east/west/south/north — **2/4/2/5 = 13**, **104 terminal examples**, all-future local examples
 — **741288**, batches balanced 50:50. Real loss был **1.64197→1.04862**,
 shuffled **1.67165→1.57132**, runtime — около **30 минут**. Source-geometry,
 shuffled и frozen-random arms
@@ -142,9 +142,16 @@ layout generalization не является основной причиной: o
 неверна на source geometries.
 
 Следующий bounded diagnostic — измерить coverage исходного fixed replay по
-state-changing `interact` и blocked no-op transitions. Если события редки,
-сравнивать generic event-balanced replay; если покрытие достаточно, проверять
-residual/persistence parameterization. Planner не менять, Push-2 не запускать.
+state-changing `interact` и blocked no-op transitions. Exp149 воспроизвёл
+**130676** transitions: `interact` меняет RGB в **1925/26125 = 7.37%** случаев
+и встречается хотя бы раз в **1281/2048** episodes; одновременно есть **24200**
+no-change interact, **9358** no-change forward и **26082** noop. Опыт contact
+разрежен по transitions, но не отсутствует, а identity transitions обильны.
+
+Следующий matched comparison — residual/persistence latent dynamics против
+текущей absolute parameterization на том же replay; event-balanced sampling
+использовать только как отдельный контроль sparse contact-change. Planner не
+менять, Push-2 не запускать.
 
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**

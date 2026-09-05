@@ -398,7 +398,8 @@ source layouts и четыре unseen layouts, проверяемые снача
 zero-shot под Push-2. Canonical target goal использовал Push-1 pose для обеих
 физик; initial RGB совпадал, native goal RGB различался. Fixed corpus, включая
 идентичный mixed source-only run, — **2048 episodes / 130676 transitions**;
-fit terminal episodes по layout — **2/5/2/4 = 13**, то есть **104 terminal
+fit terminal episodes: east **2**, west **4**, south **2**, north **5**
+(всего **13**), то есть **104 terminal
 examples**. Mixed replay добавил **741288 all-future local examples** и
 использовал balanced 50:50 batches. Loss real снизился **1.64197→1.04862**,
 shuffled — **1.67165→1.57132**. Runtime составил около **30 минут**.
@@ -489,6 +490,23 @@ Outcome `shared_one_step_failure_evidence` снимает layout generalization 
 state-changing `interact` и blocked no-op примеров. Только после этого выбирать
 между generic event-balanced training и residual/persistence parameterization.
 
+`exp149_replay_coverage.py` повторил точный fixed collection и получил те же
+**2048 episodes / 130676 transitions**. В полном corpus natural terminal counts
+равны east/west/south/north **2/7/2/7**; в первых 384 episodes каждого layout,
+использованных probe fit, — **2/4/2/5**. Из **26125** `interact` переходов
+**1925** меняют RGB (`7.37%` action, `1.47%` всего corpus), причём хотя бы один
+такой переход есть в **1281/2048** episodes. Одновременно corpus содержит
+**24200** no-change `interact`, **9358** no-change `forward` и **26082** noop
+transitions.
+
+Следовательно, contact-change разрежен на уровне transitions и uniform loss
+может недовзвешивать его, но опыт не отсутствует. Более важно, identity/no-change
+переходы представлены десятками тысяч примеров, а learned dynamics всё равно
+галлюцинирует изменение на blocked `forward`. Следующий matched arm должен
+проверить residual/persistence latent parameterization на том же replay; один
+event-balanced arm допустим только как контроль редкого contact-change, а не как
+основное объяснение no-op failure.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -499,6 +517,7 @@ Physics transfer: `exp145-physics-transfer-003`. Temporal MPC и late fork:
 `exp146-temporal-mpc-source-001`, `exp146-temporal-mpc-fork-001`. Rollout
 localization: `exp147-rollout-localization-002`.
 Source/unseen split: `exp148-source-target-one-step-002`.
+Replay coverage: `exp149-replay-coverage-003`.
 
 ## Stage Review
 

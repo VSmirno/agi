@@ -124,7 +124,7 @@ policy dataset состоит из 118 пар, выбранных по успе�
 
 Exp145 mixed source-only run проверил long-distance split, но остановился раньше
 physics gate. Идентичный fixed corpus содержал **2048 episodes / 130676
-transitions**, fit terminal episodes по layout **2/5/2/4 = 13** и **104 terminal
+transitions**, fit terminal episodes east/west/south/north **2/4/2/5 = 13** и **104 terminal
 examples**; all-future local examples — **741288**, batches balanced 50:50.
 Runtime составил около **30 минут**. Real loss снизился **1.64197→1.04862**,
 shuffled — **1.67165→1.57132**.
@@ -174,6 +174,15 @@ forward лучше persistence (`0.2256x/0.2673x`). Это shared one-step failu
 есть в исходном fixed replay. До этого нельзя различить data coverage и
 objective/parameterization. Result не является physics-transfer failure;
 Push-2 не запускался.
+
+Exp149 воспроизвёл fixed corpus: full terminal counts east/west/south/north
+**2/7/2/7**, fit-cutoff **2/4/2/5**. RGB-changing interact составляет
+**1925/26125 = 7.37%** interact и **1.47%** всех transitions, но встречается в
+**1281/2048** episodes. No-change coverage велико: interact **24200**, forward
+**9358**, noop **26082**. Поэтому contact-change действительно недовзвешен
+uniform objective, но отсутствие данных не объясняет failure, особенно для
+identity/no-op. Следующий matched residual/persistence arm должен сохранить тот
+же replay; event-balanced sampling — только отдельный causal control.
 
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
