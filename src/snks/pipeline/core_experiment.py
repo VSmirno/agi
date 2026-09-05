@@ -47,6 +47,7 @@ TRANSFER_TARGETS = (
     ("door_key", "key_consumed"),
     ("push_box", "push_2"),
 )
+MODEL_CALL_SCOPE = "planner_candidate_transitions"
 
 
 class TraceWriter:
@@ -298,6 +299,7 @@ def _result_record(result: EpisodeResult) -> dict[str, Any]:
         "agent_failed": result.agent_failed,
         "infrastructure_failed": result.infrastructure_failed,
         "model_calls": result.model_calls,
+        "model_calls_scope": MODEL_CALL_SCOPE,
     }
 
 
@@ -364,6 +366,7 @@ def _summarize_episodes(results: Sequence[EpisodeResult]) -> dict[str, Any]:
         "total_steps": sum(result.steps for result in results),
         "model_calls": [result.model_calls for result in results],
         "total_model_calls": sum(result.model_calls for result in results),
+        "model_calls_scope": MODEL_CALL_SCOPE,
         "records": [_result_record(result) for result in results],
     }
 
@@ -694,6 +697,25 @@ def _append_complete(episodes: Sequence[Episode], replay: SequenceReplay) -> Non
         replay.append(episode, Mode.ADAPT)
 
 
+def _transfer_training_config(source_config: CoreConfig) -> CoreConfig:
+    """Keep source hyperparameters but supervise the first target transition."""
+    return replace(source_config, burn_in=0)
+
+
+def _lifetime_training_cost(
+    condition: TransferCondition,
+    source_cost: Any,
+    b_steps: int,
+    updates: int,
+) -> dict[str, Any]:
+    """Charge source training only when a condition inherits source state."""
+    return {
+        "source": 0 if condition is TransferCondition.FRESH else source_cost,
+        "B_steps_including_reset": b_steps,
+        "B_gradient_updates": updates,
+    }
+
+
 def _evaluate(
     model: CoreWorldModel,
     config: CoreConfig,
@@ -737,9 +759,10 @@ def _transfer_stage(
 ) -> dict[str, Any]:
     if updates < 2:
         raise ValueError("transfer requires at least two updates for mixed A/B replay")
-    source, source_replay, config, metadata = _load_source(
+    source, source_replay, source_config, metadata = _load_source(
         checkpoint.resolve(), requested_config
     )
+    config = _transfer_training_config(source_config)
     source_family = str(metadata["source_family"])
     source_ruleset = str(metadata["source_ruleset"])
     source_validation_seeds = seeds["source_validation"]
@@ -750,6 +773,7 @@ def _transfer_stage(
             "sha256": _file_hash(checkpoint.resolve()),
             "metadata": metadata,
         },
+        "effective_config": asdict(config),
         "conditions": {},
         "limitations": [
             "single development seed; no confidence interval",
@@ -899,11 +923,12 @@ def _transfer_stage(
                     "sampled_schema_updates": schema_counts,
                     "metrics": update_metrics,
                 },
-                lifetime_training_cost={
-                    "source": metadata.get("source_cost", "unknown"),
-                    "B_steps_including_reset": b_steps,
-                    "B_gradient_updates": updates,
-                },
+                lifetime_training_cost=_lifetime_training_cost(
+                    TransferCondition(name),
+                    metadata.get("source_cost", "unknown"),
+                    b_steps,
+                    updates,
+                ),
             )
         result["conditions"][key] = family_result
     return result

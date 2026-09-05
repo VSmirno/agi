@@ -35,6 +35,28 @@ def test_crafter_projection_exposes_only_allowlisted_inventory_sensors() -> None
     assert not hasattr(obs, "info")
 
 
+@pytest.mark.parametrize(
+    "info",
+    [
+        {"inventory": None},
+        {"inventory": []},
+        {"inventory": {"health": np.nan}},
+        {"inventory": {"health": np.inf}},
+        {"inventory": {"health": "8"}},
+    ],
+)
+def test_crafter_projection_rejects_present_corrupt_inventory_data(
+    info: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError, match="inventory"):
+        project_crafter_observation(
+            np.zeros((64, 64, 3), dtype=np.uint8),
+            info,
+            names=("health",),
+            step=0,
+        )
+
+
 def _face_cell_from_left(world: CoreGridWorld, position: tuple[int, int]) -> None:
     world.agent_pos = np.array([position[0] - 1, position[1]])
     world.agent_dir = 0

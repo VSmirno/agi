@@ -44,14 +44,27 @@ def project_crafter_observation(
 
     inventory = info.get("inventory", {})
     if not isinstance(inventory, Mapping):
-        inventory = {}
+        raise ValueError("inventory must be a mapping when present")
     sensors = np.zeros(len(names), dtype=np.float32)
     mask = np.zeros(len(names), dtype=bool)
     for index, name in enumerate(names):
-        value = inventory.get(name)
-        if isinstance(value, (int, float, np.number)) and np.isfinite(value):
-            sensors[index] = float(value)
-            mask[index] = True
+        if name not in inventory:
+            continue
+        value = inventory[name]
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(
+                f"inventory sensor {name!r} must be finite numeric"
+            ) from exc
+        if (
+            not isinstance(value, (int, float, np.number))
+            or not np.isfinite(numeric_value)
+            or abs(numeric_value) > np.finfo(np.float32).max
+        ):
+            raise ValueError(f"inventory sensor {name!r} must be finite numeric")
+        sensors[index] = numeric_value
+        mask[index] = True
 
     return Observation(
         rgb=image.transpose(2, 0, 1),
