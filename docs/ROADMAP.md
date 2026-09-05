@@ -148,10 +148,18 @@ state-changing `interact` и blocked no-op transitions. Exp149 воспроиз�
 no-change interact, **9358** no-change forward и **26082** noop. Опыт contact
 разрежен по transitions, но не отсутствует, а identity transitions обильны.
 
-Следующий matched comparison — residual/persistence latent dynamics против
-текущей absolute parameterization на том же replay; event-balanced sampling
-использовать только как отдельный контроль sparse contact-change. Planner не
-менять, Push-2 не запускать.
+Exp150 выполнил matched residual/persistence comparison на том же replay
+(**2048 episodes / 130676 transitions**, `exact_protocol=true`). Residual
+dynamics снизила loss **1.31142→0.49581** и сохранила ordered probe signal
+(balanced accuracy **0.7138** против **0.4671** shuffled). Она улучшила median
+free-forward ratio на source с **0.2256** до **0.1032** и late-fork predicted
+rank с **54/125** до **18/125**, но contact и blocked-noop failures остались
+**4/4**; residual source medians — interact **34.06x**, blocked MSE **0.3650**.
+Все четыре MPC arms получили **0/24**, one-step/source-compositional/composition
+gates не прошли, physics gate остался `null`; Push-2 не запускался.
+
+Следующий bounded experiment — event-balanced sampling как отдельный causal
+control. Не менять одновременно planner, parameterization или objective.
 
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**

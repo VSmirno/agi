@@ -520,7 +520,31 @@ failure counts относительно baseline. Composition gate дополн�
 исходный exp146 source gate: ordered H3 **≥18/24**, **≥3/6** на каждом layout,
 выигрыш **≥4** над каждым control и terminal fit coverage всех source layouts.
 Physics gate остаётся `null`. Пороги не подбираются; результаты полного
-обучения в этой записи пока отсутствуют.
+обучения зафиксированы в `exp150-residual-dynamics-001`.
+
+Run завершился с `exact_protocol=true`, exit 0 и точным corpus
+**2048 episodes / 130676 transitions**. Dynamics loss снизился
+**1.311422→0.495811**; ordered probe validation balanced accuracy составила
+**0.713767** против **0.467147** shuffled. Baseline source воспроизвёл contact
+и blocked failures **4/4 и 4/4**, median interact ratio **49.1422x**, blocked
+MSE **0.332071** и free-forward ratio **0.225626**. Residual source тоже дал
+**4/4 и 4/4**, но с medians **34.0592x**, **0.365026** и **0.103175**;
+residual unseen — **4/4 и 4/4**, **54.6281x**, **0.416880** и **0.094417**.
+
+На canonical late fork residual улучшил predicted ordered rank успешной
+последовательности с baseline **54/125** до **18/125**; raw rank — **8/125**
+против baseline **42/125**, endpoint MSE — **0.153106**. Но predicted winners
+`[1,3,3]` остались неуспешны. Evaluation `ordered_h3`, `ordered_h1`,
+`shuffled_h3` и `raw_h3` дала по **0/24**. Поэтому one-step gate,
+source-compositional gate и composition gate — `false`, physics gate — `null`;
+Push-2 не запускался. Residual parameterization дала частичное улучшение
+ranking и free-motion prediction, но не прошла prerequisites и не является
+доказательством AGI/JEPA.
+
+Observability сохранена: **613** progress records, maximum gap **30.021 s**;
+`run.log`, results, manifest, checkpoint, rows и traces полны.
+Следующий bounded experiment — event-balanced sampling как отдельный causal
+control без одновременного изменения planner, parameterization или objective.
 
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
@@ -533,6 +557,7 @@ Physics transfer: `exp145-physics-transfer-003`. Temporal MPC и late fork:
 localization: `exp147-rollout-localization-002`.
 Source/unseen split: `exp148-source-target-one-step-002`.
 Replay coverage: `exp149-replay-coverage-003`.
+Residual dynamics: `exp150-residual-dynamics-001`.
 
 ## Stage Review
 

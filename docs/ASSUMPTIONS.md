@@ -196,6 +196,20 @@ absolute-only loader exp147 не интерпретировал delta heads ка
 Это одна параметризация, один seed и одно семейство задач, без Push-2 и без
 доказательства AGI/JEPA/physics transfer.
 
+Полный `exp150-residual-dynamics-001` завершился с `exact_protocol=true` и
+exit 0 на **2048 episodes / 130676 transitions**. Dynamics loss снизился
+**1.31142→0.49581**; ordered probe validation balanced accuracy составила
+**0.7138** против **0.4671** shuffled. Однако residual не снял prerequisites:
+на source contact/blocked failures остались **4/4 и 4/4** (median interact
+ratio **34.06x**, blocked MSE **0.3650**, free-forward ratio **0.1032**), а на
+unseen — также **4/4 и 4/4** (**54.63x**, **0.4169**, **0.0944**). Late-fork
+predicted rank улучшился с baseline **54/125** до **18/125** (raw **8/125**
+против **42/125**), но predicted winners `[1,3,3]` остались неуспешны.
+Ordered H3/H1, shuffled H3 и raw H3 дали по **0/24**. One-step,
+source-compositional и composition gates — `false`, physics — `null`.
+Следующий causal control — event-balanced sampling без одновременного изменения
+planner, parameterization или objective.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
