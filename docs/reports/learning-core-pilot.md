@@ -901,6 +901,35 @@ Observability: **730** progress records, maximum gap **30.022755 s**; полны
 `run.log`, manifest, results, checkpoint, rows и traces, exact command, Git
 commit и exit status.
 
+Exp161 выполнил дешёвый episode-disjoint teacher-forced probe перед новым
+architecture training. Implementation commit —
+`419fe0018fc7d6584fc2c42d1ffdf74dab3e5494`; HyperPC run завершился с
+`exact_protocol=true`, status `completed` и runtime **235.3017 s**. Split:
+**1536** train / **512** held-out episodes, overlap **0**.
+
+На held-out `z`-linear amplitude MSE составила **0.0325955**, weighted —
+**0.0294388**. `z+hidden`-linear существенно лучше: **0.00883724** и
+**0.00882724**. Но one-step evaluation не подтвердила sufficiency ни одного
+input. Native source имел contact/blocked failures **0/4 и 4/4**, medians
+free-forward **0.202104**, interact **0.979424**, blocked MSE **0.262021**;
+unseen — **0/4 и 4/4**, **0.177488**, **0.985134**, **0.239985**.
+
+`z`-linear source получил contact/blocked **4/4 и 4/4**, free/interact
+**0.218087/3.185324**; unseen — **4/4 и 4/4**, **0.183780/5.726008**.
+`z+hidden`-linear source также дал **4/4 и 4/4**, medians free/interact/blocked
+**0.265161/1.519591/0.088492**; unseen — **4/4 и 4/4**,
+**0.1928968/1.000498/0.117072**. Оба arm gates — `false`, outcome —
+`both_linear_inputs_fail`.
+
+Таким образом, hidden state materially улучшает aggregate amplitude regression,
+но обе linear teacher-forced модели проваливают критическое one-step behavior.
+Следующий минимальный diagnostic проверяет nonlinear decodability либо
+object-centric transition target, а не более долгое retraining текущего gate.
+Это не AGI/JEPA/transfer claim.
+
+Persistent `run.log`, `progress.jsonl`, `results.json` и `manifest.json`
+содержат прогресс, exact command, Git commit и финальный статус.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -923,6 +952,7 @@ Frozen action-specific gate training: `exp157-action-specific-frozen-gate-001`.
 Balanced latent gate training: `exp158-balanced-latent-gate-001`.
 Independent amplitude oracle: `exp159-independent-amplitude-oracle-001`.
 Analytic amplitude supervised gate: `exp160-amplitude-supervised-gate-001`.
+Amplitude input probe: exp161 HyperPC run at `419fe00`.
 
 ## Stage Review
 
@@ -953,7 +983,9 @@ learnability проблему не снимает. Exp158 показал, что
 action/change classes также недостаточен и не оправдывает coefficient sweep.
 Exp159 подтвердил, что independent analytic target совместим с audited raw
 deltas; exp160 показал, что текущие gate features не выучивают этот target до
-поведенческого порога даже при прямой supervision.
+поведенческого порога даже при прямой supervision. Exp161 подтвердил ценность
+hidden state для aggregate regression, но обе linear input модели провалили
+critical one-step gate.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил

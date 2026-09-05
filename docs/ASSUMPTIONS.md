@@ -539,6 +539,35 @@ Observability: **730** progress records, maximum gap **30.022755 s**; полны
 `run.log`, manifest, results, checkpoint, rows и traces с exact command, Git
 commit и exit status.
 
+Exp161 реализован commit `419fe0018fc7d6584fc2c42d1ffdf74dab3e5494` и
+завершён на HyperPC с `exact_protocol=true`, status `completed`, runtime
+**235.3017 s**. Episode-disjoint split содержит **1536** train и **512**
+held-out episodes с overlap **0**.
+
+Held-out amplitude MSE для `z`-linear равна **0.0325955**, weighted MSE —
+**0.0294388**. Добавление teacher-forced recurrent hidden state снизило их до
+**0.00883724/0.00882724**. Native exp153 source сохранил contact/blocked
+failures **0/4 и 4/4**, medians free **0.202104**, interact **0.979424**,
+blocked MSE **0.262021**; unseen — **0/4 и 4/4**, **0.177488**, **0.985134**,
+**0.239985**.
+
+Несмотря на regression gain, `z`-linear candidate получил source
+contact/blocked **4/4 и 4/4**, free/interact **0.218087/3.185324**; unseen —
+**4/4 и 4/4**, **0.183780/5.726008**. `z+hidden`-linear также дал source
+**4/4 и 4/4**, medians free **0.265161**, interact **1.519591**, blocked MSE
+**0.088492**; unseen — **4/4 и 4/4**, **0.1928968**, **1.000498**,
+**0.117072**. Оба arm gates — `false`; outcome —
+`both_linear_inputs_fail`.
+
+Узкий вывод: hidden materially улучшает episode-disjoint amplitude regression,
+но linear teacher-forced inputs недостаточны для критических contact/blocked
+transitions. Следующий минимальный probe — нелинейная decodability либо
+object-centric transition target, а не увеличение длительности retraining.
+Ни AGI, ни JEPA, ни transfer этим не доказаны.
+
+Persistent `run.log`, `progress.jsonl`, `results.json` и `manifest.json`
+сохранены с exact command, Git commit и финальным статусом.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

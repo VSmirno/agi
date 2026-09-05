@@ -336,6 +336,21 @@ teacher-forced probe analytic amplitude: `z`-linear против `z+hidden`-line
 `z`-MLP только при необходимости минимального tie-break. До этого новый
 architecture training не обоснован; AGI claim отсутствует.
 
+Exp161 выполнил episode-disjoint teacher-forced comparison на **1536/512**
+episodes с overlap **0**. Held-out amplitude MSE снизился от `z`-linear
+**0.03260** (weighted **0.02944**) до `z+hidden`-linear **0.00884** (weighted
+**0.00883**), но behavioral gate не прошёл ни у одного arm. `z` получил
+source/unseen contact/blocked failures **4/4 и 4/4**, free/interact ratios
+**0.2181/3.1853** и **0.1838/5.7260**. `z+hidden` также дал **4/4 и 4/4**:
+source free/interact/blocked **0.2652/1.5196/0.0885**, unseen
+**0.1929/1.0005/0.1171**.
+
+Outcome — `both_linear_inputs_fail`: recurrent hidden state существенно
+улучшает amplitude regression, но linear probes всё ещё проваливают критическое
+one-step behavior. Следующий минимальный probe проверяет нелинейность либо
+object-centric transition target; более долгое переобучение текущего gate не
+обосновано. Это не AGI/transfer evidence.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 
