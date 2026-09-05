@@ -95,14 +95,22 @@ backbone; success supervision пока остаётся только в отбо
 Следующий proof obligation — перенести этот же механизм через physics/ruleset
 split, а не интегрировать результат одного Push-1 семейства как AGI-компонент.
 
-Exp145 не прошёл prerequisite этого gate. На 512×4 long-distance source corpus
-(130676 transitions, 13 terminal fit episodes, 104 policy pairs) unseen Push-1
-layouts дали 0/24; Push-2 arms тоже 0/24 и потому не интерпретируются как physics
-failure. Traces показывают turn→`noop` или turn→`forward` loops. Основной wall —
-coverage успешного experience, особенно действий ориентации, а не доказанный
-дефект predictive representation. Следующий bounded research step должен менять
-experience acquisition/coverage; дальнейший brute-force random corpus не является
-roadmap-решением.
+Exp145 mixed source-only run не прошёл prerequisite этого gate. Fixed corpus был
+идентичен: **2048 episodes / 130676 transitions**; fit terminal episodes по
+layout — **2/5/2/4 = 13**, **104 terminal examples**, all-future local examples
+— **741288**, batches balanced 50:50. Real loss был **1.64197→1.04862**,
+shuffled **1.67165→1.57132**, runtime — около **30 минут**. Source-geometry,
+shuffled и frozen-random arms
+дали **0/24**; physics transfer gate — `null` (не запускался). Real traces
+выбирали правильный первый turn во всех 24 случаях, затем повторяли forward до
+box (`turn=6`, `forward=186` на layout). Значит, mixed local+terminal hindsight
+не решил source prerequisite и локализует reactive-composition failure /
+label-objective mismatch; это не отсутствие turn recognition и не physics
+transfer failure. Controller остаётся reactive и сбрасывает representation после
+каждого observation.
+
+Следующий bounded direction — existing action-conditioned dynamics + beam planner,
+source-only H3 против H1/shuffled/raw, до любого Push-2 запуска.
 
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**

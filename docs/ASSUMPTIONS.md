@@ -122,15 +122,23 @@ Matched predictive-only backbone (`termination_weight=0`, `salient_fraction=0`)
 policy dataset состоит из 118 пар, выбранных по успешному terminal outcome.
 Перенос через новую physics/ruleset не проверен.
 
-Exp145 проверил long-distance physics split, но остановился раньше physics gate:
-source Push-1 qualification на unseen layouts дала 0/24. Corpus содержал 130676
-transitions и 13 terminal fit episodes (104 pairs), однако source layouts начинали
-уже facing-box, а target требовал turns; policy после первых действий сходилась в
-`noop` loop. Native/canonical Push-2 и оба controls также 0/24, поэтому это не
-свидетельство невозможности physics transfer. Попытка 2048 episodes/layout
-исчерпала 1800 секунд на dynamics update 663; завершённый 512/layout run занял
-около 34 минут. Random exploration является текущим experience-acquisition wall,
-а не масштабируемым способом обеспечить action/state coverage.
+Exp145 mixed source-only run проверил long-distance split, но остановился раньше
+physics gate. Идентичный fixed corpus содержал **2048 episodes / 130676
+transitions**, fit terminal episodes по layout **2/5/2/4 = 13** и **104 terminal
+examples**; all-future local examples — **741288**, batches balanced 50:50.
+Runtime составил около **30 минут**. Real loss снизился **1.64197→1.04862**,
+shuffled — **1.67165→1.57132**.
+Source-geometry и controls дали **0/24** (shuffled **0/24**, frozen-random
+**0/24**); physics transfer gate — `null`, не запускался. Во всех 24 real traces
+первый turn был выбран правильно, затем controller повторял forward до box
+(`turn=6`, `forward=186` на layout). Mixed local+terminal hindsight не решил
+source prerequisite; это указывает на reactive-composition failure /
+label-objective mismatch, а не на отсутствие turn recognition или physics
+transfer failure. Controller остаётся reactive и сбрасывает representation после
+каждого observation.
+
+Следующее ограниченное направление: existing action-conditioned dynamics + beam
+planner, source-only H3 против H1/shuffled/raw, до любого Push-2 запуска.
 
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до

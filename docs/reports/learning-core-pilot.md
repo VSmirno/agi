@@ -396,21 +396,28 @@ predictive training без success-equivalent supervision backbone. Сама pol
 `exp145_physics_transfer.py` поднял следующий gate: четыре long-distance Push-1
 source layouts и четыре unseen layouts, проверяемые сначала под Push-1, затем
 zero-shot под Push-2. Canonical target goal использовал Push-1 pose для обеих
-физик; initial RGB совпадал, native goal RGB различался. Fixed corpus 512×4 дал
-130676 transitions, 18 terminal episodes, из них 13 в fit и 104 terminal pairs.
-Но source-geometry qualification получила **0/24**; native и canonical Push-2,
-shuffled-action и random-encoder arms также дали **0/24**. Policy выбирала
-частично правильный первый turn, затем зацикливалась на `noop`; native goal в
-части layouts менял цикл на `forward`.
+физик; initial RGB совпадал, native goal RGB различался. Fixed corpus, включая
+идентичный mixed source-only run, — **2048 episodes / 130676 transitions**;
+fit terminal episodes по layout — **2/5/2/4 = 13**, то есть **104 terminal
+examples**. Mixed replay добавил **741288 all-future local examples** и
+использовал balanced 50:50 batches. Loss real снизился **1.64197→1.04862**,
+shuffled — **1.67165→1.57132**. Runtime составил около **30 минут**.
+
+Несмотря на это, source-geometry qualification получила **0/24**; shuffled
+получил **0/24**, frozen-random — **0/24**, а physics transfer gate остался
+`null` (не запускался). Во всех 24 real traces controller выбирал правильный
+первый turn, затем повторял `forward` до box (на layout: `turn=6`,
+`forward=186`). Текущий controller остаётся reactive и сбрасывает
+representation после каждого observation.
+
+Mixed local+terminal hindsight therefore did not solve the source prerequisite:
+it isolates a reactive-composition failure / label-objective mismatch, not a lack
+of turn recognition and not a physics-transfer failure.
 
 Physics transfer поэтому не опровергнут: target нельзя оценивать, пока source
-mechanism не переносится на новые long-distance layouts. Причина текущего wall —
-неподдержанный action/state coverage: source starts были сразу ориентированы на
-box, target требовал turns, а terminal corpus содержал лишь 104 pairs. Brute-force
-random expansion отвергается как следующий default: попытка 2048×4 исчерпала
-30 минут ещё на dynamics update 663; 512×4 потребовал около 34 минут целиком.
-Следующий шаг должен улучшить acquisition разнообразного успешного опыта, а не
-масштабировать случайное блуждание.
+mechanism не переносится на новые long-distance layouts. Следующий bounded
+comparison — existing action-conditioned dynamics + beam planner, source-only
+H3 против H1/shuffled/raw, до любого Push-2 запуска.
 
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
