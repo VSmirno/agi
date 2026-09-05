@@ -728,6 +728,38 @@ Run сохранил **120** diagnostic rows и **127** progress records с maxi
 **0.315408 s**; `run.log`, manifest и results полны, exact command, Git commit
 и exit status зафиксированы.
 
+Exp156 проверил следующий вопрос без retraining backbone: содержат ли raw
+pre-gate deltas exp153/154 правильные направления, даже если native learned
+gates выбирают неверные amplitudes. Контракт задан RED commit `b810432`,
+implementation — `ffe240ec9f6ca24038187718f886a6e8f34879dc`; exact checkpoint
+heads — exp153 `49877e4`, exp154 `9f896a3`. HyperPC verification дала
+**22 passed, 2 skipped** за **1.93 s**. Full run
+`exp156-gated-delta-oracle-001` завершился с `exact_protocol=true`, exit 0 и
+runtime **2.793098 s**.
+
+Exp153 native source имеет contact/blocked failures **0/4 и 4/4**, medians
+free-forward **0.202104**, interact **0.979424**, blocked MSE **0.262021**;
+unseen — **0/4 и 4/4**, **0.177488**, **0.985134**, **0.239985**. Raw
+per-member oracle дал source **0/4 и 0/4**, medians **0.172222**, **0.899737**,
+**0**; unseen — **0/4 и 0/4**, **0.153195**, **0.931245**, **0**. Gate прошёл.
+
+Exp154 native source имеет **4/4 и 4/4**, medians **0.750244**,
+**20.896683**, **0.093231**; unseen — **4/4 и 4/4**, **1.789780**,
+**21.797050**, **0.239616**. Raw oracle дал source **0/4 и 0/4**, medians
+**0.666550**, **0.928792**, **0**; unseen — **1/4 и 0/4**, **0.828144**,
+**0.799142**, **0**. Source gate прошёл, но exp154 unseen transfer не доказан.
+
+Обе модели имеют выразительные raw delta directions на source, поэтому
+bottleneck сужен до learnability/objective либо expressivity текущего learned
+gate. Exp153 directions также проходят unseen и являются более сильной базой.
+Следующий минимальный causal arm замораживает exp153 encoder, recurrent state и
+raw deltas, обучая только action-specific gates по latent predictive objective;
+RGB/task labels и planner changes не добавляются.
+
+Run сохранил два файла по **120** diagnostic rows и **250** progress records с
+maximum gap **0.290957 s**; `run.log`, manifest и results полны, exact command,
+Git commit и exit status зафиксированы.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -745,6 +777,7 @@ Representation separability: `exp152-representation-separability-001`.
 Change-gated residual dynamics: `exp153-change-gated-dynamics-001`.
 Auxiliary change-gated dynamics: `exp154-auxiliary-change-gate-001`.
 Frozen residual scalar oracle: `exp155-oracle-residual-gate-001`.
+Pre-gate delta oracle audit: `exp156-gated-delta-oracle-001`.
 
 ## Stage Review
 
@@ -767,7 +800,9 @@ interact hallucination на source/unseen, но blocked-forward и composition
 этот wall и ухудшает contact/free-motion dynamics. Стабильного transfer
 improvement всё ещё нет. Exp155 дополнительно исключил scalar amplitude frozen
 exp150 delta как достаточное локальное исправление: oracle возвращается к
-persistence на contact вместо моделирования effect.
+persistence на contact вместо моделирования effect. Exp156 показал, что
+pre-gate deltas exp153/154 всё же выразительны на source, а exp153 — также на
+unseen: текущий wall теперь локализован в обучении/выразительности gate.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил

@@ -362,14 +362,46 @@ free **0.103175**, interact **1**, blocked MSE **0**; unseen — **3/4 и 0/4**,
 **0.094417**, **1**, **0**. Preregistered gate — `false`.
 
 Узкий вывод: optimal scalar amplitude получает persistence-level contact
-prediction, но не может исправить frozen
-exp150 residual delta directions. Это не falsification других либо jointly
+prediction, но не может исправить frozen exp150 residual delta directions.
+Это не falsification других либо jointly
 learned delta directions и не основание обучать action-specific scalar gates.
 Перед новым training arm нужен checkpoint-only raw-delta oracle audit exp153 и
 exp154: он отделит ошибочное направление delta от неудачной амплитуды.
 
 Observability: **127** progress records, maximum gap **0.315408 s**; `run.log`,
 manifest, results и rows сохранены с exact command, Git commit и exit status.
+
+Exp156 выполнил checkpoint-only raw-delta oracle audit по RED commit `b810432`
+и implementation `ffe240ec9f6ca24038187718f886a6e8f34879dc`. Проверены точные
+checkpoint heads exp153 `49877e4` и exp154 `9f896a3`. HyperPC verification:
+**22 passed, 2 skipped** за **1.93 s**. Full artifact
+`output_to_user/core/exp156-gated-delta-oracle-001` завершился с
+`exact_protocol=true`, exit 0 и runtime **2.793098 s**.
+
+Exp153 native source дал contact/blocked failures **0/4 и 4/4**, medians free
+**0.202104**, interact **0.979424**, blocked MSE **0.262021**; unseen —
+**0/4 и 4/4**, **0.177488**, **0.985134**, **0.239985**. Его raw per-member
+oracle получил source **0/4 и 0/4**, **0.172222**, **0.899737**, **0**;
+unseen — **0/4 и 0/4**, **0.153195**, **0.931245**, **0**. Gate — `true`.
+
+Exp154 native source дал **4/4 и 4/4**, medians free **0.750244**, interact
+**20.896683**, blocked MSE **0.093231**; unseen — **4/4 и 4/4**,
+**1.789780**, **21.797050**, **0.239616**. Его raw oracle получил source
+**0/4 и 0/4**, **0.666550**, **0.928792**, **0**; unseen — **1/4 и 0/4**,
+**0.828144**, **0.799142**, **0**. Source gate — `true`; unseen result не
+является transfer proof.
+
+Узкий вывод: raw delta directions обеих моделей выразительны на source;
+текущий bottleneck — learnability/objective либо expressivity learned gate, а
+не отсутствие подходящего направления в raw heads. Exp153 raw directions также
+проходят unseen и потому дают лучшую основу. Следующий минимальный experiment
+замораживает exp153 encoder/recurrent/raw deltas и обучает только
+action-specific gates latent predictive objective, без RGB/task labels и без
+planner changes.
+
+Observability: **250** progress records, maximum gap **0.290957 s**; сохранены
+`run.log`, manifest, results и два файла по **120** rows вместе с exact command,
+Git commit и exit status.
 
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до

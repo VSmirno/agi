@@ -250,6 +250,23 @@ delta directions и не разрешает action-specific scalar training. С�
 минимальный шаг —
 checkpoint-only raw-delta oracle audit exp153/154 до нового обучения.
 
+Exp156 выполнил этот audit по точным checkpoint heads exp153 `49877e4` и
+exp154 `9f896a3`. У exp153 native gate source/unseen contact failures были
+**0/4 и 0/4**, blocked **4/4 и 4/4**; raw per-member oracle получил на source
+**0/4 и 0/4** с medians free **0.1722**, interact **0.8997**, blocked MSE
+**0**, а на unseen — **0/4 и 0/4**, **0.1532**, **0.9312**, **0**. Gate
+прошёл. У exp154 native failures были **4/4 и 4/4** на обоих splits; raw
+oracle исправил source до **0/4 и 0/4** с medians **0.6666**, **0.9288**,
+**0**, но unseen остался contact **1/4**, blocked **0/4** с **0.8281**,
+**0.7991**, **0**. Source gate прошёл, unseen proof — нет.
+
+Значит, raw delta directions обеих моделей выразительны на source, а wall
+находится в learnability/objective либо expressivity текущего gate. Exp153
+directions дополнительно проходят unseen и являются лучшей основой. Следующий
+минимальный training arm: frozen exp153 encoder/recurrent/raw deltas и
+action-specific gates, обучаемые только latent predictive objective — без RGB/
+task labels и без изменения planner.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 
