@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import replace
+from dataclasses import asdict, replace
+from itertools import product
 import json
+import math
 from pathlib import Path
 import sys
 import threading
@@ -30,7 +32,9 @@ from experiments.exp145_physics_transfer import (
     _goal_observation,
 )
 from snks.agent.core_agent import CoreAgent
-from snks.agent.core_world_model import Prediction
+from snks.agent.core_cost import GoalCost
+from snks.agent.core_planner import beam_plan
+from snks.agent.core_world_model import LatentState, Prediction
 from snks.encoder.core_encoder import CoreEncoder
 from snks.env.core_types import Episode, GoalSpec, Mode
 from snks.learning.core_replay import SequenceReplay
@@ -39,6 +43,20 @@ from snks.pipeline import core_experiment as core
 from snks.pipeline.core_config import load_core_config
 from snks.pipeline.core_runner import EpisodeResult
 from snks.pipeline.core_tasks import TaskCase, score_episode
+
+
+LATE_FORK_LAYOUT = "east_row4_left"
+LATE_FORK_SEED = 20000
+LATE_FORK_PREFIX = (0, 3, 2, 3, 2)
+LATE_FORK_CANONICAL = (3, 2, 3)
+LATE_FORK_BLOCKED = (2, 2, 2)
+LATE_FORK_HORIZON = 3
+FORK_SCORE_COLUMNS = (
+    "actual_ordered_cost",
+    "predicted_ordered_cost",
+    "actual_raw_cost",
+    "predicted_raw_cost",
+)
 
 
 class TerminationNeutralModel:
@@ -354,6 +372,283 @@ def _probe_split(episodes_by_layout, args):
     return fit_by_layout, validation_by_layout, cutoff
 
 
+@torch.no_grad()
+def _reconstruct_model_root(model, adapter, seed: int, prefix: tuple[int, ...]):
+    """Replay real observations while preserving the model's learned history."""
+
+    state = model.initial(adapter.reset(seed))
+    for action in prefix:
+        transition = adapter.step(action)
+        prediction = model.step(
+            state, torch.tensor([action], device=state.z.device)
+        )
+        if transition.terminated or transition.truncated:
+            raise RuntimeError("late-fork prefix unexpectedly ended the episode")
+        actual = model.initial(transition.after)
+        state = LatentState(
+            actual.z,
+            actual.sensors,
+            actual.sensor_mask,
+            prediction.next_state.hidden.detach(),
+            actual.schema,
+        )
+    return state, adapter.diagnostic_snapshot()
+
+
+def _rank_fork_rows(rows, columns=FORK_SCORE_COLUMNS) -> None:
+    """Attach deterministic one-based ranks for lower-is-better costs."""
+
+    for column in columns:
+        if any(not math.isfinite(float(row[column])) for row in rows):
+            raise FloatingPointError(f"non-finite late-fork score: {column}")
+        ordered = sorted(
+            rows,
+            key=lambda row: (float(row[column]), tuple(row["actions"])),
+        )
+        rank_column = f"{column.removesuffix('_cost')}_rank"
+        for rank, row in enumerate(ordered, start=1):
+            row[rank_column] = rank
+
+
+def _endpoint_costs(z, goal_z, ordered: TemporalProbe) -> tuple[float, float]:
+    normalized_horizon = torch.ones(len(z), device=z.device)
+    ordered_cost = -ordered(
+        z, goal_z.expand(len(z), -1), normalized_horizon
+    )
+    raw_cost = (z - goal_z.expand(len(z), -1)).square().mean(-1)
+    return float(ordered_cost[0]), float(raw_cost[0])
+
+
+def _beam_retention(trace, canonical: tuple[int, ...], beam_width: int):
+    retention = []
+    for depth in range(1, len(canonical) + 1):
+        candidates = [
+            row
+            for row in trace
+            if row.get("depth") == depth and not row.get("absorbing", False)
+        ]
+        retained = sorted(
+            candidates,
+            key=lambda row: (float(row["cost"]), tuple(row["actions"])),
+        )[:beam_width]
+        prefix = canonical[:depth]
+        retention.append(
+            {
+                "depth": depth,
+                "canonical_prefix": list(prefix),
+                "retained": any(
+                    tuple(row["actions"]) == prefix for row in retained
+                ),
+            }
+        )
+    return retention
+
+
+def _score_evidence(rows, score: str) -> dict[str, Any]:
+    actual_best = min(
+        rows,
+        key=lambda row: (
+            row[f"actual_{score}_cost"],
+            tuple(row["actions"]),
+        ),
+    )
+    predicted_best = min(
+        rows,
+        key=lambda row: (
+            row[f"predicted_{score}_cost"],
+            tuple(row["actions"]),
+        ),
+    )
+    actual_aligns = bool(actual_best["actual_success"])
+    predicted_aligns = bool(predicted_best["actual_success"])
+    if not any(row["actual_success"] for row in rows):
+        conclusion = "no_real_success_reference"
+    elif not actual_aligns:
+        conclusion = "endpoint_score_or_representation_misalignment_evidence"
+    elif not predicted_aligns:
+        conclusion = "rollout_error_evidence"
+    else:
+        conclusion = "neither_rollout_nor_score_misalignment_isolated"
+    return {
+        "actual_best_is_real_success": actual_aligns,
+        "predicted_best_is_real_success": predicted_aligns,
+        "conclusion": conclusion,
+        "scope": (
+            "single deterministic fork; diagnostic evidence only, not a claim "
+            "of representation capacity"
+        ),
+    }
+
+
+def _tuple_summary(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: row[key]
+        for key in (
+            "actions",
+            "actual_success",
+            "actual_terminated",
+            *FORK_SCORE_COLUMNS,
+            "actual_ordered_rank",
+            "predicted_ordered_rank",
+            "actual_raw_rank",
+            "predicted_raw_rank",
+            "predicted_vs_actual_endpoint_latent_mse",
+        )
+    }
+
+
+@torch.no_grad()
+def _late_fork_audit(
+    model,
+    ordered: TemporalProbe,
+    config,
+    deadline: float,
+    journal: ProgressJournal,
+    output_path: Path,
+):
+    layout, _push1, _push2 = TARGET_LAYOUTS[LATE_FORK_LAYOUT]
+    adapter = _adapter(layout, 1, LATE_FORK_SEED, 32)
+    try:
+        root, prefix_diagnostic = _reconstruct_model_root(
+            model, adapter, LATE_FORK_SEED, LATE_FORK_PREFIX
+        )
+    finally:
+        adapter.close()
+    goal_z = model.initial(
+        _goal_observation(layout, 1, LATE_FORK_SEED, 32)
+    ).z
+    neutral_model = TerminationNeutralModel(model)
+    sequences = tuple(product(range(5), repeat=LATE_FORK_HORIZON))
+    rows = []
+    journal.update(
+        "late_fork_audit",
+        0,
+        len(sequences),
+        layout=LATE_FORK_LAYOUT,
+        seed=LATE_FORK_SEED,
+    )
+    trace = core.TraceWriter(output_path)
+    try:
+        for completed, actions in enumerate(sequences, start=1):
+            core._check_deadline(deadline, f"late_fork_audit/{actions}")
+            actual_adapter = _adapter(layout, 1, LATE_FORK_SEED, 32)
+            try:
+                observation = actual_adapter.reset(LATE_FORK_SEED)
+                actual_terminated = False
+                actual_truncated = False
+                for action in (*LATE_FORK_PREFIX, *actions):
+                    transition = actual_adapter.step(action)
+                    observation = transition.after
+                    actual_terminated = transition.terminated
+                    actual_truncated = transition.truncated
+                    if transition.terminated or transition.truncated:
+                        break
+                actual_diagnostic = actual_adapter.diagnostic_snapshot()
+            finally:
+                actual_adapter.close()
+            actual_z = model.initial(observation).z
+
+            predicted_state = root
+            for action in actions:
+                prediction = neutral_model.step(
+                    predicted_state,
+                    torch.tensor([action], device=predicted_state.z.device),
+                )
+                predicted_state = prediction.next_state
+            predicted_z = predicted_state.z
+            actual_ordered, actual_raw = _endpoint_costs(
+                actual_z, goal_z, ordered
+            )
+            predicted_ordered, predicted_raw = _endpoint_costs(
+                predicted_z, goal_z, ordered
+            )
+            row = {
+                "actions": list(actions),
+                "actual_success": bool(actual_diagnostic.get("success")),
+                "actual_terminated": bool(actual_terminated),
+                "actual_truncated": bool(actual_truncated),
+                "actual_final_diagnostic": actual_diagnostic,
+                "actual_ordered_cost": actual_ordered,
+                "predicted_ordered_cost": predicted_ordered,
+                "actual_raw_cost": actual_raw,
+                "predicted_raw_cost": predicted_raw,
+                "predicted_vs_actual_endpoint_latent_mse": float(
+                    (predicted_z - actual_z).square().mean()
+                ),
+            }
+            rows.append(row)
+            journal.update(
+                "late_fork_audit",
+                completed,
+                len(sequences),
+                layout=LATE_FORK_LAYOUT,
+                seed=LATE_FORK_SEED,
+                actions=list(actions),
+            )
+        _rank_fork_rows(rows)
+        for row in rows:
+            trace.write(row)
+    finally:
+        trace.close()
+
+    beam_costs = {
+        "ordered": TemporalCost(ordered, goal_z),
+        "raw": GoalCost(goal_z, {}),
+    }
+    beam = {}
+    for name, cost in beam_costs.items():
+        plan = beam_plan(
+            neutral_model,
+            root,
+            cost,
+            n_actions=5,
+            horizon=LATE_FORK_HORIZON,
+            beam_width=5,
+            max_calls=config.max_model_calls,
+        )
+        beam[name] = {
+            "winner": list(plan.actions),
+            "winning_cost": plan.cost,
+            "model_calls": plan.model_calls,
+            "canonical_retained_by_depth": _beam_retention(
+                plan.trace, LATE_FORK_CANONICAL, 5
+            ),
+        }
+
+    by_actions = {tuple(row["actions"]): row for row in rows}
+    best = {}
+    for column in FORK_SCORE_COLUMNS:
+        row = min(
+            rows,
+            key=lambda item: (item[column], tuple(item["actions"])),
+        )
+        best[column.removesuffix("_cost")] = _tuple_summary(row)
+    return {
+        "protocol": {
+            "layout": LATE_FORK_LAYOUT,
+            "seed": LATE_FORK_SEED,
+            "push_distance": 1,
+            "prefix": list(LATE_FORK_PREFIX),
+            "horizon": LATE_FORK_HORIZON,
+            "action_count": 5,
+            "fork_count": len(rows),
+            "probe_normalized_horizon": 1.0,
+            "termination_neutral_model_rollout": True,
+            "continuation_teacher_forcing": False,
+        },
+        "prefix_diagnostic": prefix_diagnostic,
+        "canonical": _tuple_summary(by_actions[LATE_FORK_CANONICAL]),
+        "blocked": _tuple_summary(by_actions[LATE_FORK_BLOCKED]),
+        "best_by_score": best,
+        "real_success_tuples": sum(row["actual_success"] for row in rows),
+        "actual_vs_predicted_score_evidence": {
+            name: _score_evidence(rows, name) for name in ("ordered", "raw")
+        },
+        "beam": beam,
+        "artifacts": {"rows": output_path.name},
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
@@ -375,6 +670,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-seconds", type=_positive, default=3600)
     parser.add_argument("--progress-interval", type=_progress_interval, default=30)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--late-fork-audit", action="store_true")
     return parser
 
 
@@ -554,6 +850,53 @@ def main(argv=None) -> int:
                 "losses": probe_losses,
             }
 
+            late_fork_audit = None
+            if args.late_fork_audit:
+                checkpoint_path = args.out / "late_fork_checkpoint.pt"
+                journal.update(
+                    "late_fork_checkpoint", 0, 1, operation="torch_save"
+                )
+                torch.save(
+                    {
+                        "format_version": 1,
+                        "git_head": manifest_base["git_head"],
+                        "budgets": manifest_base["budgets"],
+                        "config": core._jsonable(asdict(config)),
+                        "modules": {
+                            "model": {
+                                "schemas": core._jsonable(model.schemas),
+                                "z_dim": config.z_dim,
+                                "h_dim": config.h_dim,
+                                "ensemble_size": config.ensemble_size,
+                                "normalize_sensor_condition": (
+                                    config.normalize_sensor_condition
+                                ),
+                                "predict_sensor_delta": config.predict_sensor_delta,
+                            },
+                            "probe": {
+                                "z_dim": config.z_dim,
+                                "width": ordered.network[0].out_features,
+                            },
+                        },
+                        "model_state_dict": model.state_dict(),
+                        "ordered_probe_state_dict": ordered.state_dict(),
+                        "shuffled_probe_state_dict": shuffled.state_dict(),
+                    },
+                    checkpoint_path,
+                )
+                journal.update(
+                    "late_fork_checkpoint", 1, 1, operation="torch_save"
+                )
+                late_fork_audit = _late_fork_audit(
+                    model,
+                    ordered,
+                    config,
+                    deadline,
+                    journal,
+                    args.out / "late_fork_rows.jsonl",
+                )
+                late_fork_audit["artifacts"]["checkpoint"] = checkpoint_path.name
+
             total_evaluation = len(TARGET_LAYOUTS) * args.eval_seeds * 4
             journal.update("evaluate", 0, total_evaluation)
             trace = core.TraceWriter(args.out / "evaluation_traces.jsonl")
@@ -670,6 +1013,8 @@ def main(argv=None) -> int:
                     "the bounded result is not physics transfer or AGI evidence",
                 ],
             }
+            if late_fork_audit is not None:
+                result["late_fork_audit"] = late_fork_audit
             _write_json(args.out / "results.json", result)
             _write_json(
                 args.out / "manifest.json",
