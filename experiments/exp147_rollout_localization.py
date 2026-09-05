@@ -535,7 +535,11 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=False)
     manifest = {
-        "argv": list(sys.argv) if argv is None else [str(Path(__file__)), *argv],
+        "argv": (
+            list(sys.orig_argv)
+            if argv is None
+            else [sys.executable, str(Path(__file__)), *argv]
+        ),
         "cwd": str(Path.cwd()),
         "analysis_git_head": core._git_commit(),
         "checkpoint_git_head": None,
