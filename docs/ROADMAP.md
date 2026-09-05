@@ -351,6 +351,20 @@ one-step behavior. Следующий минимальный probe провер�
 object-centric transition target; более долгое переобучение текущего gate не
 обосновано. Это не AGI/transfer evidence.
 
+Exp162 проверил минимальную нелинейность: per-action `z+hidden` MLP с одним
+128-wide ReLU layer и **400** updates на том же episode-disjoint split.
+Held-out MSE стала **0.00436**, weighted **0.00466**, против exp161 linear
+**0.00884/0.00883** (примерно **2.03x** лучше по plain MSE). One-step contact
+также улучшился: source contact failures **1/4** с interact ratio **0.9110**,
+unseen **0/4** с **0.9599**, против linear **4/4** на обоих splits. Но
+blocked-noop остался **4/4** source/unseen, несмотря на MSE **0.0578/0.0120**;
+free ratios — **0.2626/0.3040**. Gate — `false`.
+
+Нелинейные interactions materially помогают movement/contact prediction, но не
+дают требуемую no-op physics. Следующий минимальный diagnostic проверяет
+object-centric state/target; более долгое обучение этого MLP не обосновано.
+Composition, transfer и AGI не доказаны.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

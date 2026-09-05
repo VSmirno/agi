@@ -930,6 +930,37 @@ object-centric transition target, а не более долгое retraining т�
 Persistent `run.log`, `progress.jsonl`, `results.json` и `manifest.json`
 содержат прогресс, exact command, Git commit и финальный статус.
 
+Exp162 проверил минимальную нелинейность после провала linear probes exp161.
+Контракт задан RED commit `0e9e721`, implementation —
+`8edec06cca48b34a8285dec7d943f5ff4332082e`. Fresh HyperPC verification дала
+**7 passed** за **1.06 s**, smoke завершился за **3.222 s**. Full run завершён с
+`exact_protocol=true`, exit 0 и runtime **230.7115 s**.
+
+Тот же corpus содержит **2048 episodes**. Episode-disjoint train split:
+**1536 episodes / 98037 transitions**; held-out: **512 / 32639**; overlap
+**0**. Frozen exp153 parameters не изменились. Exp161 linear arm не
+переобучался и использован только как reference. Новый per-action probe получает
+`z+hidden`, имеет один **128 ReLU** hidden layer и обучается **400** updates.
+
+Training loss снизился **0.224341→0.001197**. Held-out MSE равна
+**0.00435795**, weighted **0.00465816**, против exp161 linear reference
+**0.00883724/0.00882724** — примерно **2.03x** лучше по plain MSE. Exact
+one-step source получил contact/blocked failures **1/4 и 4/4**, medians
+free-forward **0.262579**, interact **0.911038**, blocked MSE **0.057772**;
+unseen — **0/4 и 4/4**, **0.304037**, **0.959895**, **0.011988**. Linear
+reference имел source **4/4 и 4/4**, interact **1.519591**; unseen **4/4 и
+4/4**, interact **1.000498**.
+
+Gate остаётся `false`: нелинейные interactions materially улучшают aggregate
+regression, movement/contact/interact и blocked MSE, но source contact не
+идеален, а blocked-noop physics не проходит ни на source, ни на unseen.
+Следующий минимальный diagnostic — object-centric state/target, а не longer
+training этого MLP. Composition и transfer не проверялись; AGI/JEPA claim нет.
+
+Persistent `run.log`, `results.json`, `manifest.json` и `progress.jsonl`
+содержат **2654** progress records с maximum gap **1.2763 s**, exact command,
+Git commit и финальный status.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -953,6 +984,7 @@ Balanced latent gate training: `exp158-balanced-latent-gate-001`.
 Independent amplitude oracle: `exp159-independent-amplitude-oracle-001`.
 Analytic amplitude supervised gate: `exp160-amplitude-supervised-gate-001`.
 Amplitude input probe: exp161 HyperPC run at `419fe00`.
+Nonlinear amplitude probe: exp162 HyperPC run at `8edec06`.
 
 ## Stage Review
 
@@ -985,7 +1017,8 @@ Exp159 подтвердил, что independent analytic target совмести
 deltas; exp160 показал, что текущие gate features не выучивают этот target до
 поведенческого порога даже при прямой supervision. Exp161 подтвердил ценность
 hidden state для aggregate regression, но обе linear input модели провалили
-critical one-step gate.
+critical one-step gate. Exp162 подтвердил nonlinear decodability contact effect,
+но blocked-noop physics осталась нерешённой.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил

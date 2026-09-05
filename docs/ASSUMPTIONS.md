@@ -568,6 +568,36 @@ object-centric transition target, а не увеличение длительн�
 Persistent `run.log`, `progress.jsonl`, `results.json` и `manifest.json`
 сохранены с exact command, Git commit и финальным статусом.
 
+Exp162 реализован RED commit `0e9e721` и implementation
+`8edec06cca48b34a8285dec7d943f5ff4332082e`. Fresh HyperPC verification:
+**7 passed** за **1.06 s**, smoke — **3.222 s**. Full run завершился с
+`exact_protocol=true`, status `completed`, exit 0 и runtime **230.7115 s**.
+
+Corpus совпал с прежним: **2048 episodes**. Episode-disjoint train split —
+**1536 episodes / 98037 transitions**, held-out — **512 / 32639**, overlap
+**0**. Frozen exp153 backbone остался неизменным; exp161 linear metrics
+использованы только как сохранённый reference и не переобучались. Candidate —
+per-action `z+hidden` MLP с одним hidden layer **128 ReLU**, обученный **400**
+updates. Loss снизился **0.224341→0.001197**. Held-out MSE составила
+**0.00435795**, weighted **0.00465816**, против exp161 linear
+**0.00883724/0.00882724** — около **2.03x** лучше по plain MSE.
+
+Exact one-step source получил contact/blocked failures **1/4 и 4/4**, medians
+free **0.262579**, interact **0.911038**, blocked MSE **0.057772**; unseen —
+**0/4 и 4/4**, **0.304037**, **0.959895**, **0.011988**. Exp161 linear
+reference имел source contact/blocked **4/4 и 4/4**, interact **1.519591**;
+unseen **4/4 и 4/4**, interact **1.000498**. Exp162 gate — `false` из-за
+source contact и blocked failures.
+
+Узкий вывод: nonlinear `z+hidden` interactions materially улучшают amplitude
+regression, contact/interact и blocked MSE, но не удовлетворяют точной no-op
+physics. Следующий минимальный diagnostic — object-centric state/target, а не
+longer MLP training. Это не composition, transfer, JEPA или AGI claim.
+
+Observability: persistent `run.log`, `results.json`, `manifest.json` и
+`progress.jsonl` с **2654** records, maximum gap **1.2763 s**, сохраняют exact
+command, Git commit и финальный статус.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
