@@ -87,6 +87,7 @@ def test_checkpoint_diagnostic_writes_teacher_forced_and_rollout_evidence(tmp_pa
 
     assert manifest["status"] == "completed"
     assert manifest["exit_code"] == 0
+    assert manifest["argv"][0] == sys.executable
     assert manifest["checkpoint_git_head"] == "checkpoint-training-head"
     assert manifest["analysis_git_head"]
     assert len([row for row in rows if row["row_type"] == "teacher_forced"]) == 15
