@@ -372,15 +372,23 @@ layouts. Однако заранее заданный superiority gate прот�
 Это положительный сигнал, что редкий успешный опыт может обучить прямое
 visual/state-conditioned действие с layout generalization. Но arm явно
 success-supervised через `Grid termination == success`, current RGB уже показывает
-goal tile, а fit corpus содержит всего 17 успешных эпизодов. Следующий bounded
-control — тот же terminal-only learner на замороженном случайном encoder: он
-проверит, внёс ли обученный world-model backbone вклад сверх случайных признаков.
+goal tile, а fit corpus содержит всего 17 успешных эпизодов.
+
+Frozen random-encoder control на тех же 118 pairs дал **0/72**, тогда как
+world-model encoder arm дал **60/72**; action-shuffled также получил **0/72**,
+goal-blind **48/72**, ordered MPC **42/72**, raw MPC **24/72**. Representation
+gate прошёл **3/3**, общий superiority gate — **2/3**. Это сильный development
+signal, что обучение backbone создаёт полезное для прямого control представление,
+но пока не отделяет predictive dynamics от success-equivalent termination loss и
+terminal-priority sampling. Следующий causal control — обучить тот же backbone
+на том же replay без termination objective и terminal salience, затем повторить
+terminal-only policy learning.
 
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
 `exp144-layout-generalization-001..006`, `exp144-hindsight-001`,
-`exp144-terminal-hindsight-001..003`.
+`exp144-terminal-hindsight-001..003`, `exp144-random-encoder-001..003`.
 
 ## Stage Review
 

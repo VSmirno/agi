@@ -319,6 +319,7 @@ def main(argv=None):
     parser.add_argument("--hindsight-max-distance", type=int, default=8)
     parser.add_argument("--hindsight-terminal-only", action="store_true")
     parser.add_argument("--hindsight-random-encoder-control", action="store_true")
+    parser.add_argument("--hindsight-predictive-encoder-control", action="store_true")
     args = parser.parse_args(argv)
     if args.hindsight_updates < 0:
         parser.error("--hindsight-updates must be non-negative")
@@ -346,10 +347,25 @@ def main(argv=None):
             normalize_sensor_condition=config.normalize_sensor_condition,
             predict_sensor_delta=config.predict_sensor_delta,
         ).to(config.device)
+    initial_model = None
+    if (args.hindsight_random_encoder_control
+            or args.hindsight_predictive_encoder_control):
+        initial_model = copy.deepcopy(model)
     random_encoder_model = None
     if args.hindsight_random_encoder_control:
-        random_encoder_model = copy.deepcopy(model).eval()
+        random_encoder_model = copy.deepcopy(initial_model).eval()
         random_encoder_model.requires_grad_(False)
+    predictive_model = None
+    predictive_config = None
+    predictive_replay = None
+    if args.hindsight_predictive_encoder_control:
+        predictive_model = copy.deepcopy(initial_model)
+        predictive_config = replace(
+            config, termination_weight=0.0, salient_fraction=0.0
+        )
+        predictive_replay = SequenceReplay(
+            predictive_config.replay_capacity, predictive_config.seed + 144
+        )
     trainer = CoreTrainer(model, config)
     replay = SequenceReplay(config.replay_capacity, config.seed + 144)
 
@@ -362,6 +378,8 @@ def main(argv=None):
             episode = _collect(name, layout, seed, args.steps)
             episodes.append(episode)
             replay.append(episode, Mode.ADAPT)
+            if predictive_replay is not None:
+                predictive_replay.append(episode, Mode.ADAPT)
             row = by_layout_corpus[name]
             row["episodes"] += 1
             row["successes"] += int(episode.transitions[-1].terminated)
@@ -379,6 +397,21 @@ def main(argv=None):
     )
     model.eval()
     model.requires_grad_(False)
+    predictive_losses = None
+    if predictive_model is not None:
+        predictive_trainer = CoreTrainer(predictive_model, predictive_config)
+        predictive_losses, _ = core._train_updates(
+            predictive_model,
+            predictive_trainer,
+            predictive_replay,
+            predictive_config,
+            args.dynamics_updates,
+            Mode.ADAPT,
+            deadline,
+            schema="grid-v1",
+        )
+        predictive_model.eval()
+        predictive_model.requires_grad_(False)
 
     fit_episodes, validation_episodes = [], []
     cutoff = round(0.75 * args.episodes_per_layout)
@@ -408,6 +441,8 @@ def main(argv=None):
     hindsight_training = None
     random_encoder_heads = None
     random_encoder_training = None
+    predictive_encoder_heads = None
+    predictive_encoder_training = None
     if args.hindsight_updates:
         hindsight_heads, hindsight_training = _fit_hindsight_policies(
             _hindsight_examples(
@@ -429,6 +464,24 @@ def main(argv=None):
                 _fit_hindsight_policies(
                     _hindsight_examples(
                         random_fit_encoded,
+                        fit_episodes,
+                        args.hindsight_max_distance,
+                        terminal_only=args.hindsight_terminal_only,
+                    ),
+                    config.z_dim,
+                    args.hindsight_updates,
+                    args.hindsight_batch_size,
+                    config.seed + 5144,
+                )
+            )
+        if predictive_model is not None:
+            predictive_fit_encoded = _encode_episodes(
+                predictive_model, fit_episodes, device
+            )
+            predictive_encoder_heads, predictive_encoder_training = (
+                _fit_hindsight_policies(
+                    _hindsight_examples(
+                        predictive_fit_encoded,
                         fit_episodes,
                         args.hindsight_max_distance,
                         terminal_only=args.hindsight_terminal_only,
@@ -498,6 +551,20 @@ def main(argv=None):
                     "hindsight_random_encoder",
                     policy=random_encoder_heads["real"],
                 )
+            if predictive_encoder_heads is not None:
+                evaluation["hindsight_predictive_encoder"] = _evaluate_arm(
+                    predictive_model,
+                    None,
+                    config,
+                    replay,
+                    TEST_LAYOUTS,
+                    seeds,
+                    args.steps,
+                    deadline,
+                    trace,
+                    "hindsight_predictive_encoder",
+                    policy=predictive_encoder_heads["real"],
+                )
     finally:
         trace.close()
     ordered_success = evaluation["ordered"]["overall"]["successes"]
@@ -540,6 +607,7 @@ def main(argv=None):
         "hindsight": {
             "training": hindsight_training,
             "random_encoder_training": random_encoder_training,
+            "predictive_encoder_training": predictive_encoder_training,
             "terminal_only": args.hindsight_terminal_only,
             "supervision_disclosure": (
                 "policy selects successful episodes via Grid termination==success; "
@@ -573,6 +641,17 @@ def main(argv=None):
             "first_loss": losses[0],
             "last_loss": losses[-1],
             "schema_counts": schema_counts,
+            "predictive_ablation": (
+                None
+                if predictive_losses is None
+                else {
+                    "termination_weight": predictive_config.termination_weight,
+                    "salient_fraction": predictive_config.salient_fraction,
+                    "first_loss": predictive_losses[0],
+                    "last_loss": predictive_losses[-1],
+                    "same_initialization_replay_and_updates": True,
+                }
+            ),
         },
         "layouts": {
             "train": {name: {"layout": repr(layout), "canonical": list(actions)}
@@ -651,6 +730,23 @@ def main(argv=None):
                 None
                 if random_encoder_heads is None
                 else real_success >= evaluation["hindsight_random_encoder"][
+                    "overall"
+                ]["successes"] + 4
+            ),
+            "predictive_representation_diagnostic": (
+                None
+                if predictive_encoder_heads is None
+                or random_encoder_heads is None
+                else evaluation["hindsight_predictive_encoder"]["overall"][
+                    "successes"
+                ] >= evaluation["hindsight_random_encoder"]["overall"][
+                    "successes"
+                ] + 4
+            ),
+            "termination_supervision_diagnostic": (
+                None
+                if predictive_encoder_heads is None
+                else real_success >= evaluation["hindsight_predictive_encoder"][
                     "overall"
                 ]["successes"] + 4
             ),

@@ -107,6 +107,14 @@ Goal-blind не является чистым causal control, потому чт�
 current RGB. До production integration проверяется frozen random encoder на тех
 же 118 terminal pairs.
 
+Frozen random encoder получил 0/72 против 60/72 у learned encoder на трёх runs;
+action-shuffled также 0/72. Значит, случайных CNN features недостаточно, а
+backbone training даёт полезное представление. Но backbone одновременно обучался
+на predictive losses, `termination == success` и terminal-priority replay,
+поэтому вклад JEPA/dynamics отдельно ещё не доказан. Следующий matched ablation
+обнуляет termination loss и salience fraction только для backbone training;
+terminal-only policy всё ещё остаётся success-supervised.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

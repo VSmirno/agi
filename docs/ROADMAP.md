@@ -79,6 +79,14 @@ superiority gate против raw/temporal MPC прошёл только 1/3. Э
 self-supervised learning: отбор использует `termination == success`. До
 интеграции нужен random-encoder control вклада world-model representation.
 
+Random-encoder control закрыл этот узкий вопрос: learned/random/shuffled-action
+получили 60/0/0 successes из 72, representation gate прошёл 3/3. Goal-blind
+получил 48/72, а общий superiority gate против MPC — 2/3. Поэтому learned
+representation полезно, но GoalSpec-зависимость и источник representation ещё
+не изолированы. Следующий gate отключает termination loss и terminal-priority
+sampling при обучении backbone, сохраняя тот же replay и terminal-only policy
+dataset.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 
