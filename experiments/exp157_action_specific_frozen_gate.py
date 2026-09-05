@@ -87,7 +87,7 @@ class ActionSpecificGateWorldModel(gated.ChangeGatedResidualWorldModel):
         by_member = []
         for member in self.action_gate_heads:
             all_logits = torch.cat([head(state.z) for head in member], dim=1)
-            selected = all_logits.gather(1, actions[:, None]).unsqueeze(-1)
+            selected = all_logits.gather(1, actions[:, None])
             by_member.append(selected.sigmoid())
         return torch.stack(by_member)
 
