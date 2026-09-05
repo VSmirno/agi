@@ -7,7 +7,10 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
 
 from snks.env.core_types import Observation
-from experiments.exp149_replay_coverage import _observation_changes
+from experiments.exp149_replay_coverage import (
+    _observation_changes,
+    _validate_terminal_counts,
+)
 
 
 def _observation(value: int, sensor: float, mask: bool) -> Observation:
@@ -30,3 +33,11 @@ def test_observation_changes_reports_rgb_sensor_and_mask_independently():
         "sensor_mask": True,
         "exact": True,
     }
+
+
+def test_scientific_terminal_counts_validate_total_and_fit_cutoff():
+    assert _validate_terminal_counts(
+        {"east_row2": 2, "west_row3": 7, "south_col4": 2, "north_col5": 7},
+        {"east_row2": 2, "west_row3": 5, "south_col4": 2, "north_col5": 4},
+        episodes_per_layout=512,
+    )
