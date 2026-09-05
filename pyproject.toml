@@ -23,6 +23,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+learning-core = [
+    "crafter",
+]
 dev = [
     "imageio>=2.37",
     "imageio-ffmpeg>=0.6",
