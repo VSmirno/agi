@@ -159,6 +159,21 @@ def _positive(value: str) -> int:
     return parsed
 
 
+def _progress_interval(value: str) -> int:
+    parsed = _positive(value)
+    if parsed > 30:
+        raise argparse.ArgumentTypeError("progress interval must not exceed 30 seconds")
+    return parsed
+
+
+def _exit_code(error: BaseException) -> int:
+    if isinstance(error, KeyboardInterrupt):
+        return 130
+    if isinstance(error, SystemExit) and isinstance(error.code, int):
+        return error.code
+    return 1
+
+
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     core._write_json(path, payload)
 
@@ -345,6 +360,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--episodes-per-layout", type=_positive, default=512)
     parser.add_argument("--collection-steps", type=_positive, default=64)
+    parser.add_argument("--collection-log-every", type=_positive, default=32)
     parser.add_argument("--eval-steps", type=_positive, default=8)
     parser.add_argument("--dynamics-updates", type=_positive, default=2000)
     parser.add_argument("--dynamics-log-every", type=_positive, default=100)
@@ -357,7 +373,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--z-dim", type=_positive, default=256)
     parser.add_argument("--h-dim", type=_positive, default=128)
     parser.add_argument("--max-seconds", type=_positive, default=3600)
-    parser.add_argument("--progress-interval", type=_positive, default=30)
+    parser.add_argument("--progress-interval", type=_progress_interval, default=30)
     parser.add_argument("--seed", type=int, default=0)
     return parser
 
@@ -372,15 +388,18 @@ def main(argv=None) -> int:
     ):
         parser.error("probe validation subset exceeds held-out source episodes")
     args.out.mkdir(parents=True, exist_ok=False)
-    invocation = list(argv) if argv is not None else sys.argv[1:]
     deadline = time.monotonic() + args.max_seconds
+    fixed_protocol = {"eval_steps": 8, "eval_seeds": 6}
     manifest_base = {
-        "argv": invocation,
+        "argv": list(sys.orig_argv),
+        "cwd": str(Path.cwd()),
         "git_head": core._git_commit(),
         "budgets": core._jsonable(vars(args)),
+        "fixed_protocol": fixed_protocol,
     }
     with ProgressJournal(args.out / "progress.jsonl", args.progress_interval) as journal:
         try:
+            journal.update("initialize", 0, 1)
             core._seed_everything(args.seed)
             config = replace(
                 load_core_config(args.config),
@@ -408,6 +427,7 @@ def main(argv=None) -> int:
                 ).to(config.device)
             trainer = CoreTrainer(model, config)
             replay = SequenceReplay(config.replay_capacity, config.seed + 145)
+            journal.update("initialize", 1, 1)
 
             total_collection = len(SOURCE_LAYOUTS) * args.episodes_per_layout
             journal.update("collect", 0, total_collection)
@@ -433,13 +453,17 @@ def main(argv=None) -> int:
                     )
                     row["transitions"] += len(episode.transitions)
                     collection_completed += 1
-                    journal.update(
-                        "collect",
-                        collection_completed,
-                        total_collection,
-                        layout=name,
-                        offset=offset,
-                    )
+                    if (
+                        collection_completed % args.collection_log_every == 0
+                        or collection_completed == total_collection
+                    ):
+                        journal.update(
+                            "collect",
+                            collection_completed,
+                            total_collection,
+                            layout=name,
+                            offset=offset,
+                        )
 
             journal.update("dynamics", 0, args.dynamics_updates)
             dynamics_losses = []
@@ -570,7 +594,9 @@ def main(argv=None) -> int:
                 for summary in evaluation["ordered_h3"]["by_layout"].values()
             )
             source_compositional_gate = bool(
-                all(count > 0 for count in terminal_fit.values())
+                args.eval_steps == fixed_protocol["eval_steps"]
+                and args.eval_seeds == fixed_protocol["eval_seeds"]
+                and all(count > 0 for count in terminal_fit.values())
                 and ordered_success >= 18
                 and per_layout_floor >= 3
                 and all(
@@ -629,6 +655,7 @@ def main(argv=None) -> int:
                     "push_distance": 1,
                     "goal_push_distance": 1,
                     "termination_neutral_planning": True,
+                    "fixed_protocol": fixed_protocol,
                     "ordered_h3": {"planner_horizon": 3, "beam_width": 5},
                     "ordered_h1": {"planner_horizon": 1, "beam_width": 5},
                     "shuffled_h3": {"planner_horizon": 3, "beam_width": 5},
@@ -650,12 +677,12 @@ def main(argv=None) -> int:
             )
             journal.close(status="completed")
             return 0
-        except Exception as error:
+        except BaseException as error:
             _write_json(
                 args.out / "manifest.json",
                 {
                     **manifest_base,
-                    "exit_code": 1,
+                    "exit_code": _exit_code(error),
                     "status": "failed",
                     "error": f"{type(error).__name__}: {error}",
                 },
