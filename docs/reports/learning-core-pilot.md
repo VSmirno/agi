@@ -342,9 +342,28 @@ transfer: topology/start фиксированы, seed в основном мен
 цветов, а goal pose может выдавать ruleset. Следующий gate — episode-disjoint
 train/test по новым layout/start/goal комбинациям с разными первыми действиями.
 
+`exp144_layout_generalization.py` добавил evaluator-owned `PushLayout` и разделил
+четыре train/four test layouts до построения пар. Во всех train layouts random
+corpus содержал terminal experience. На пяти training runs по одинаковым 120
+layout-disjoint evaluation cases ordered temporal cost дала **56/120**, raw MSE
+**12/120**, shuffled endpoint **30/120**. Ordered была лучше raw во всех пяти
+runs, но строгий per-run F3 gate прошёл лишь **2/5**; один run дал ordered=8 и
+shuffled=8, другой ordered=12 и shuffled=16. Разбивка ordered по unseen layouts:
+10/30, 10/30, 18/30, 18/30. Score subtraction
+`ordered_logit - shuffled_logit` на худшем run дала только 2/24 и отвергнута.
+
+Следовательно, temporal order содержит полезный goal signal и переносится между
+частью пространственных конфигураций, но MPC неустойчив к некалиброванной
+геометрии score. Это `PARTIAL`: raw image distance как default опровергнута,
+но temporal probe ещё не принят в production. Следующий matched architectural
+control — self-supervised hindsight goal-conditioned controller на тех же real
+episodes; он проверит, нужен ли текущий imagined-rollout путь для этого класса
+целей вообще.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
-`transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`.
+`transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
+`exp144-layout-generalization-001..006`.
 
 ## Stage Review
 

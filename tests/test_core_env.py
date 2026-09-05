@@ -5,7 +5,7 @@ import pytest
 from minigrid.core.world_object import Key
 
 from snks.env.core_adapter import CrafterCoreAdapter, project_crafter_observation
-from snks.env.core_grid import CoreGridWorld, GridCoreAdapter, GridRules
+from snks.env.core_grid import CoreGridWorld, GridCoreAdapter, GridRules, PushLayout
 from snks.env.core_types import Observation
 from snks.pipeline.core_tasks import build_case, resolve_goal
 
@@ -124,6 +124,32 @@ def test_grid_goal_image_is_a_separate_local_desired_observation() -> None:
     assert desired.sensors.tolist() == [0.0]
     assert not np.shares_memory(desired.rgb, live.rgb)
     assert not np.array_equal(desired.rgb, live.rgb)
+
+
+def test_push_layout_changes_geometry_and_keeps_goal_reachable() -> None:
+    layout = PushLayout(
+        agent_pos=(3, 5), agent_dir=3, box_pos=(3, 4), goal_pos=(3, 2)
+    )
+    world = CoreGridWorld(
+        family="push_box",
+        rules=GridRules(push_distance=1),
+        seed=13,
+        layout=layout,
+    )
+    adapter = GridCoreAdapter(world)
+    try:
+        initial = adapter.reset(seed=13)
+        desired = adapter.goal_observation()
+        for action in (3, 2, 3):
+            transition = adapter.step(action)
+
+        assert world.diagnostic_snapshot()["goal_pos"] == layout.goal_pos
+        assert transition.terminated
+        assert np.array_equal(transition.after.rgb, desired.rgb)
+        assert initial.schema == desired.schema == "grid-v1"
+        assert len(initial.sensors) == 1
+    finally:
+        adapter.close()
 
 
 @pytest.mark.parametrize(

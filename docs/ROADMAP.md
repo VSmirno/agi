@@ -63,6 +63,13 @@ action-contrastive objective причинные gates не прошли. Рез�
 новые комбинации layout/start/goal с разными первыми действиями. До этого нет
 ни neighbor-domain transfer, ни AGI/concept PASS.
 
+Layout-disjoint exp144 дал ordered/raw/shuffled totals 56/12/30 на пяти runs,
+но строгий F3 прошёл только 2/5. Это подтверждает полезность temporal order
+относительно raw goal distance, но не стабильность learned score относительно
+matched shuffled control. Следующий bounded comparison — hindsight
+goal-conditioned control на том же replay против текущего MPC; не принимать
+temporal probe в production до устойчивого causal преимущества.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

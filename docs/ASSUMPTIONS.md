@@ -85,6 +85,18 @@ controls; снижение MSE не засчитано как улучшение
 Goal template сейчас зависит от push rule через pose и остаётся потенциальной
 утечкой до перекрёстной physics×goal-pose интервенции.
 
+Evaluator fixture теперь поддерживает `PushLayout`; layout является metadata
+среды и не входит в Observation/model. Exp144 split четыре train/four test
+layouts заранее и получил на пяти training runs ordered/raw/shuffled
+56/12/30 successes из 120. Ordered обошёл raw во всех runs, но matched shuffled
+control — неустойчиво; строгий gate 2/5. CUDA run с тем же seed не оказался
+побитно воспроизводимым, поэтому seed означает declared initialization/sampling,
+не уникальный deterministic checkpoint. Within-run arms остаются paired.
+Debiased difference score провалился. Temporal score остаётся research probe,
+не production default. Следующий контроль может заменить imagined MPC на
+self-supervised hindsight goal-conditioned policy, но его успех будет claim о
+goal control, а не доказательство world-model understanding или transfer A→B.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

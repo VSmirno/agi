@@ -49,6 +49,30 @@ class GridRules:
             raise ValueError("appearance_mode must be 'independent' or 'fixed'")
 
 
+@dataclass(frozen=True, slots=True)
+class PushLayout:
+    """Evaluator-owned geometry for testing spatial generalization."""
+
+    agent_pos: tuple[int, int] = (2, 3)
+    agent_dir: int = 0
+    box_pos: tuple[int, int] = (3, 3)
+    goal_pos: tuple[int, int] = (5, 3)
+
+    def __post_init__(self) -> None:
+        positions = (self.agent_pos, self.box_pos, self.goal_pos)
+        if self.agent_dir not in range(4):
+            raise ValueError("agent_dir must be a MiniGrid direction in [0, 3]")
+        if any(len(position) != 2 or any(value not in range(1, 7) for value in position)
+               for position in positions):
+            raise ValueError("push layout positions must be inside the 8x8 border")
+        if len(set(positions)) != len(positions):
+            raise ValueError("agent, box and goal positions must be distinct")
+        dx = self.goal_pos[0] - self.box_pos[0]
+        dy = self.goal_pos[1] - self.box_pos[1]
+        if (dx == 0) == (dy == 0):
+            raise ValueError("box and goal must be aligned on exactly one axis")
+
+
 class CoreGridWorld(MiniGridEnv):
     """Two compact, partially observed MiniGrid task families."""
 
@@ -58,6 +82,7 @@ class CoreGridWorld(MiniGridEnv):
         rules: GridRules,
         seed: int = 0,
         max_steps: int = 64,
+        layout: PushLayout | None = None,
     ) -> None:
         if family not in {"door_key", "push_box"}:
             raise ValueError(f"unknown core grid family: {family}")
@@ -66,11 +91,24 @@ class CoreGridWorld(MiniGridEnv):
         self.family = family
         self.rules = rules
         self.seed = int(seed)
+        if family != "push_box" and layout is not None:
+            raise ValueError("custom layouts are currently limited to push_box")
+        self.layout = (layout or PushLayout()) if family == "push_box" else None
         self._success = False
         self.door_pos = (4, 3)
         self.key_pos = (2, 5)
-        self.box_pos = (3, 3)
-        self.goal_pos = (6, 3) if family == "door_key" else (5, 3)
+        if self.layout is None:
+            self.box_pos = (3, 3)
+            self.goal_pos = (6, 3)
+        else:
+            distance = abs(self.layout.goal_pos[0] - self.layout.box_pos[0]) + abs(
+                self.layout.goal_pos[1] - self.layout.box_pos[1]
+            )
+            if distance % rules.push_distance:
+                raise ValueError("box-goal distance must be divisible by push distance")
+            self._box_start = self.layout.box_pos
+            self.box_pos = self._box_start
+            self.goal_pos = self.layout.goal_pos
 
         mission_space = MissionSpace(
             mission_func=lambda: "interact with objects to reach the local goal"
@@ -101,11 +139,13 @@ class CoreGridWorld(MiniGridEnv):
         box_color = "blue"
         if self.rules.appearance_mode == "independent":
             box_color = str(self.np_random.choice(("blue", "purple", "yellow")))
-        self.box_pos = (3, 3)
+        if self.layout is None:
+            raise RuntimeError("push_box world is missing its layout")
+        self.box_pos = self._box_start
         self.grid.set(*self.box_pos, Box(box_color))
         self.grid.set(*self.goal_pos, Goal())
-        self.agent_pos = np.array([2, 3])
-        self.agent_dir = 0
+        self.agent_pos = np.array(self.layout.agent_pos)
+        self.agent_dir = self.layout.agent_dir
 
     def reset(self, **kwargs: Any):
         """Reset physics and evaluator state."""
@@ -183,6 +223,7 @@ class CoreGridWorld(MiniGridEnv):
             rules=self.rules,
             seed=self.seed,
             max_steps=self.max_steps,
+            layout=self.layout,
         )
         desired.reset(seed=self.seed)
         if self.family == "door_key":
@@ -200,16 +241,22 @@ class CoreGridWorld(MiniGridEnv):
             box = desired.grid.get(*desired.box_pos)
             if not isinstance(box, Box):
                 raise RuntimeError("box fixture is missing")
+            dx = desired.goal_pos[0] - desired.box_pos[0]
+            dy = desired.goal_pos[1] - desired.box_pos[1]
+            direction = (
+                0 if dx > 0 else 2 if dx < 0 else 1 if dy > 0 else 3
+            )
+            vector = ((1, 0), (0, 1), (-1, 0), (0, -1))[direction]
             desired.grid.set(*desired.box_pos, None)
             desired.grid.set(*desired.goal_pos, box)
             desired.box_pos = desired.goal_pos
             desired.agent_pos = np.array(
                 [
-                    desired.goal_pos[0] - desired.rules.push_distance - 1,
-                    desired.goal_pos[1],
+                    desired.goal_pos[0] - vector[0] * (desired.rules.push_distance + 1),
+                    desired.goal_pos[1] - vector[1] * (desired.rules.push_distance + 1),
                 ]
             )
-            desired.agent_dir = 0
+            desired.agent_dir = direction
         return _project_grid_observation(desired, step=0)
 
     def _door_is_locked(self) -> bool:
