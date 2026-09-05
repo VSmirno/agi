@@ -38,6 +38,6 @@ def test_observation_changes_reports_rgb_sensor_and_mask_independently():
 def test_scientific_terminal_counts_validate_total_and_fit_cutoff():
     assert _validate_terminal_counts(
         {"east_row2": 2, "west_row3": 7, "south_col4": 2, "north_col5": 7},
-        {"east_row2": 2, "west_row3": 5, "south_col4": 2, "north_col5": 4},
+        {"east_row2": 2, "west_row3": 4, "south_col4": 2, "north_col5": 5},
         episodes_per_layout=512,
     )
