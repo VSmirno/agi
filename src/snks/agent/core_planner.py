@@ -21,6 +21,7 @@ class _Node:
     state: LatentState
     actions: tuple[int, ...] = ()
     cost: float = 0.0
+    absorbing_cost: float | None = None
 
 
 def _stack(states: list[LatentState]) -> LatentState:
@@ -39,36 +40,64 @@ def _slice(state: LatentState, index: int) -> LatentState:
 def beam_plan(model: CoreWorldModel, root: LatentState, cost: GoalCost,
               n_actions: int, horizon: int, beam_width: int,
               max_calls: int) -> PlanResult:
-    """Search cumulative goal cost; each candidate transition consumes one call.
+    """Search depth-local goal cost; each candidate transition consumes one call.
 
-    The short-horizon pilot uses fixed-depth costs (no survival discount that
-    would reward predicted death). Termination is an optional explicit cost.
+    Latent distance is a state score, not a calibrated path cost: summing it
+    would reject valid detours. Predicted terminal states stay absorbing, so an
+    untrained post-terminal rollout cannot change their fixed-depth ranking.
     """
     if min(n_actions, horizon, beam_width, max_calls) < 1 or len(root.z) != 1:
         raise ValueError("positive search budgets and one root are required")
     beam = [_Node(root)]
     calls, trace = 0, []
     for depth in range(horizon):
-        pairs = [(node, action) for node in beam for action in range(n_actions)]
-        pairs = pairs[:max_calls - calls]
-        if not pairs:
-            break
-        actions = torch.tensor([action for _, action in pairs], device=root.z.device)
-        prediction = model.step(_stack([node.state for node, _ in pairs]), actions)
-        scores = cost(prediction)
-        if not torch.isfinite(scores).all():
-            raise FloatingPointError("non-finite planning cost")
-        calls += len(pairs)
-        scores_cpu = scores.cpu().tolist()
-        uncertainty = prediction.uncertainty.cpu().tolist()
         expanded = []
-        for i, (node, action) in enumerate(pairs):
-            candidate = _Node(_slice(prediction.next_state, i),
-                              node.actions + (action,), node.cost + scores_cpu[i])
-            expanded.append(candidate)
-            trace.append({"actions": list(candidate.actions), "cost": candidate.cost,
-                          "step_cost": scores_cpu[i], "uncertainty": uncertainty[i],
-                          "depth": depth + 1})
+        for node in beam:
+            if node.absorbing_cost is None:
+                continue
+            expanded.append(
+                _Node(
+                    node.state,
+                    node.actions,
+                    node.cost,
+                    node.absorbing_cost,
+                )
+            )
+            trace.append({
+                "actions": list(node.actions),
+                "cost": node.cost,
+                "step_cost": node.absorbing_cost,
+                "uncertainty": 0.0,
+                "depth": depth + 1,
+                "absorbing": True,
+            })
+        pairs = [(node, action) for node in beam if node.absorbing_cost is None
+                 for action in range(n_actions)]
+        pairs = pairs[:max_calls - calls]
+        if pairs:
+            actions = torch.tensor([action for _, action in pairs], device=root.z.device)
+            prediction = model.step(_stack([node.state for node, _ in pairs]), actions)
+            scores = cost(prediction)
+            if not torch.isfinite(scores).all():
+                raise FloatingPointError("non-finite planning cost")
+            calls += len(pairs)
+            scores_cpu = scores.cpu().tolist()
+            uncertainty = prediction.uncertainty.cpu().tolist()
+            terminated = prediction.terminated_prob.cpu().tolist()
+            for i, (node, action) in enumerate(pairs):
+                absorbing_cost = scores_cpu[i] if terminated[i] >= 0.5 else None
+                candidate = _Node(
+                    _slice(prediction.next_state, i),
+                    node.actions + (action,),
+                    scores_cpu[i],
+                    absorbing_cost,
+                )
+                expanded.append(candidate)
+                trace.append({"actions": list(candidate.actions), "cost": candidate.cost,
+                              "step_cost": scores_cpu[i], "uncertainty": uncertainty[i],
+                              "depth": depth + 1})
+        if not expanded:
+            break
         beam = sorted(expanded, key=lambda node: (node.cost, node.actions))[:beam_width]
     winner = beam[0]
     if not winner.actions:

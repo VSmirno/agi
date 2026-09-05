@@ -48,12 +48,15 @@ class SequenceReplay:
         burn_in: int,
         recent_fraction: float,
         schema: str | None = None,
+        salient_fraction: float = 0.0,
     ) -> list[Episode]:
         """Sample ordered, within-episode windows from one observation schema."""
         if batch_size < 1 or length < 1 or burn_in < 0:
             raise ValueError("batch_size/length must be positive and burn_in non-negative")
         if not 0.0 <= recent_fraction <= 1.0:
             raise ValueError("recent_fraction must be in [0, 1]")
+        if not 0.0 <= salient_fraction <= 1.0:
+            raise ValueError("salient_fraction must be in [0, 1]")
         available = [item for item in self._episodes() if schema is None or self._schema(item) == schema]
         if not available:
             return []
@@ -68,7 +71,15 @@ class SequenceReplay:
                 selected.extend(choices[int(self._rng.integers(len(choices)))] for _ in range(count))
         if not selected:
             return []
-        return [self._window(item, length + burn_in) for item in selected]
+        width = length + burn_in
+        windows = [self._window(item, width) for item in selected]
+        salient = self._salient_transitions(available, selected_schema, burn_in)
+        for index in range(min(round(batch_size * salient_fraction), len(windows))):
+            if not salient:
+                break
+            episode, transition_index = salient[int(self._rng.integers(len(salient)))]
+            windows[index] = self._window_ending_at(episode, width, transition_index)
+        return windows
 
     def manifest(self) -> dict[str, object]:
         """Expose enough state to audit replay without exposing experience arrays."""
@@ -146,6 +157,31 @@ class SequenceReplay:
         start = 0 if count <= width else int(self._rng.integers(count - width + 1))
         transitions = episode.transitions[start:start + width]
         return Episode(episode.uid, episode.split, episode.family, episode.ruleset, transitions)
+
+    @staticmethod
+    def _window_ending_at(episode: Episode, width: int, index: int) -> Episode:
+        start = max(0, index - width + 1)
+        transitions = episode.transitions[start:index + 1]
+        return Episode(episode.uid, episode.split, episode.family, episode.ruleset, transitions)
+
+    @staticmethod
+    def _salient_transitions(
+        episodes: list[Episode], schema: str, burn_in: int
+    ) -> list[tuple[Episode, int]]:
+        salient: list[tuple[Episode, int]] = []
+        for episode in episodes:
+            if SequenceReplay._schema(episode) != schema:
+                continue
+            for index, transition in enumerate(episode.transitions):
+                if index < burn_in:
+                    continue
+                mask = transition.before.sensor_mask & transition.after.sensor_mask
+                sensor_changed = bool(
+                    np.any(transition.before.sensors[mask] != transition.after.sensors[mask])
+                )
+                if transition.terminated or sensor_changed:
+                    salient.append((episode, index))
+        return salient
 
     def _episodes(self) -> list[Episode]:
         return [*self._recent, *self._reservoir]

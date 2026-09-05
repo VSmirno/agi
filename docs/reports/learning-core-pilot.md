@@ -273,6 +273,52 @@ Transfer этого checkpoint (`transfer-sensor-delta-001`, 20 updates/arm) в�
 измерился: door у всех 0/2 до/после, push у всех 2/2 до/после. Следовательно,
 текущий B catalog даёт floor/ceiling и непригоден для вывода о переносе.
 
+### Push-1: локализация цели, planning и replay
+
+`exp141_push1_transfer.py` убрал ceiling, но показал новый ложный baseline:
+случайно инициализированный FRESH дважды выбрал точную последовательность
+`[interact, forward, interact]`, после 20 updates все ветки стали 0/2. В 64
+переходах shared B replay были 12 `interact`, три первых толчка и ни одного
+перехода в goal. Это regression после adaptation, а не отрицательный transfer.
+
+`exp142_grid_action_confusion.py` отделил три причины на реальных forked outcomes.
+Encoder geometry не схлопывалась, но action matching в необходимых состояниях
+не выдерживал обучения на sparse random corpus. Oracle-capacity control с теми
+же 4×16 steps и 20 updates, но с полными evaluator-known траекториями, дал rank1
+на всех трёх решениях у FRESH/WEIGHTS/WEIGHTS_REPLAY. Это доказывает локальную
+ёмкость модели, но oracle data не является результатом агента.
+
+Natural random64 corpus содержал 972 steps, 38 движений box и 6 успехов. После
+1000 uniform updates action matching стал существенно лучше mismatched, но raw
+latent goal geometry считала реальный `turn_right` ближе к goal, чем первый push.
+Два generic planner дефекта были подтверждены отдельными RED тестами:
+
+- rollout продолжался после predicted termination по необученной post-terminal
+  динамике;
+- промежуточные latent distances суммировались как path cost, хотя они не
+  калиброваны как мера прогресса и штрафуют полезный detour.
+
+Planner теперь держит predicted terminal как absorbing state и ранжирует
+depth-local reached state. Natural uniform end-to-end улучшился с 0/4 до 2/4
+только у FRESH; transfer arms остались 0/4. Terminal-only sampling переобучился
+на конец и забыл начало. Balanced 50/50 uniform+terminal-window diagnostic при
+1000 updates дал FRESH 2/4, WEIGHTS 0/4 и WEIGHTS_REPLAY 4/4.
+
+Production `salient_fraction=0.5` выбирает половину окон вокруг доступного без
+reward сигнала: `terminated` или наблюдаемого sensor change. Штатный transfer
+на том же natural corpus дал WEIGHTS_REPLAY B=2/4 и A retention=4/4; FRESH и
+WEIGHTS B=0/4 и потеряли случайный A baseline. Это первый совместный сигнал от
+source replay и event windows, но не положительное обучение: B checkpoint0 у
+всех был случайно 4/4, один seed и два цвета из четырёх не перенеслись.
+
+Честный следующий барьер — goal-conditioned reachability/temporal distance.
+JEPA latent prediction стала action-sensitive, но евклидова близость общего
+embedding к goal image не обязана кодировать достижимость или прогресс.
+
+Артефакты: `output_to_user/core/action-confusion-*`,
+`transfer-push1-random64-u1000-finalplanner-001`,
+`transfer-push1-salient-u1000-001`.
+
 ## Stage Review
 
 **Ideological debt addressed:** отсутствие обучаемой динамики и переносимого
@@ -284,8 +330,9 @@ Fixture и task facts остаются в среде/описании задач
 **What changed:** encoder, recurrent ensemble, multi-step training, real replay,
 bounded planner и frozen evaluation с контрольными условиями.
 
-**Evidence of improvement:** исполняемость подтверждена; полезного улучшения
-поведения и action-conditioned прогноза в пилоте нет.
+**Evidence of improvement:** residual source dynamics стала action-sensitive;
+planner исправлен двумя причинными регрессиями; source replay + salient windows
+дали B2/4 с A4/4. Стабильного transfer improvement всё ещё нет.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил
@@ -294,8 +341,8 @@ bounded planner и frozen evaluation с контрольными условия�
 **Knowledge flow outcome:** веса и реальные эпизоды сохраняются; причинная
 полезность этого знания и выигрыш следующего поколения пока не установлены.
 
-**Remaining assumptions / walls:** см. выше. Ближайший вопрос — почему predictor
-не использует действия достаточно для полезного прогноза, а не увеличение
-масштаба AGI-кампании или настройка evaluator для получения PASS.
+**Remaining assumptions / walls:** см. выше. Главный wall — learned goal metric:
+raw latent distance не представляет temporal reachability. Не масштабировать
+AGI-кампанию до проверки goal-conditioned distance на natural experience.
 
-**Decision:** `PARTIAL` для реализации; гипотеза полезного обучения не подтверждена.
+**Decision:** `PARTIAL`; локальные механизмы подтверждены, перенос не подтверждён.

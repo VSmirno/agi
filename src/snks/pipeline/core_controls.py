@@ -46,7 +46,8 @@ def train_dynamics_controls(variants: dict[str, CoreWorldModel], replay: Sequenc
         if time.monotonic() > deadline:
             raise TimeoutError("control training exceeded declared wall-clock budget")
         episodes = replay.sample(config.batch_size, config.train_horizon,
-                                 config.burn_in, config.recent_fraction)
+                                 config.burn_in, config.recent_fraction,
+                                 salient_fraction=config.salient_fraction)
         batch = tensorize(episodes, config.burn_in, torch.device(config.device))
         for name, trainer in trainers.items():
             paired = batch if name == "real_actions" else shuffle_action_labels(batch, config.seed + index)

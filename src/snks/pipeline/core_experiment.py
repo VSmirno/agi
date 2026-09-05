@@ -402,6 +402,7 @@ def _train_updates(
                 config.burn_in,
                 config.recent_fraction,
                 schema=schema,
+                salient_fraction=config.salient_fraction,
             )
             if not samples:
                 raise RuntimeError("no completed replay episode is available for training")
@@ -667,8 +668,10 @@ def _load_source(
     config_values = dict(metadata["config"])
     source_config = replace(
         CoreConfig(**config_values),
+        profile=requested_config.profile,
         device=requested_config.device,
         seed=requested_config.seed,
+        salient_fraction=requested_config.salient_fraction,
     )
     schemas = {
         str(name): tuple(int(value) for value in shape)

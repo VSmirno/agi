@@ -100,7 +100,8 @@ def run_episode(adapter, agent: CoreAgent, case: TaskCase, mode: Mode,
             for _ in range(updates):
                 samples = replay.sample(agent.config.batch_size, agent.config.train_horizon,
                                         agent.config.burn_in, agent.config.recent_fraction,
-                                        schema=obs.schema)
+                                        schema=obs.schema,
+                                        salient_fraction=agent.config.salient_fraction)
                 batch = tensorize(samples, agent.config.burn_in, agent.state.z.device)
                 trainer.update(batch, mode)
     return EpisodeResult(episode, steps, failed, False, audit, success, calls)

@@ -17,12 +17,13 @@ def _episode(
     *,
     steps: int = 3,
     complete: bool = True,
+    sensor_changes: bool = True,
 ) -> Episode:
     """Build a hand-sized, ordered real episode for replay contracts."""
     observations = [
         Observation(
             rgb=np.full((3, 64, 64), step, dtype=np.uint8),
-            sensors=np.array([step], dtype=np.float32),
+            sensors=np.array([step if sensor_changes else 0], dtype=np.float32),
             sensor_mask=np.array([True]),
             schema=schema,
             step=step,
@@ -74,6 +75,25 @@ def test_replay_deduplicates_and_samples_one_schema_in_ordered_windows() -> None
         assert [item.before.step for item in window.transitions] == sorted(
             item.before.step for item in window.transitions
         )
+
+
+def test_replay_can_mix_uniform_windows_with_observable_salient_events() -> None:
+    replay = SequenceReplay(capacity=4, seed=7)
+    replay.append(_episode("terminal", steps=6, sensor_changes=False), Mode.TRAIN)
+
+    windows = replay.sample(
+        batch_size=2,
+        length=2,
+        burn_in=0,
+        recent_fraction=1.0,
+        schema="rgb-v1",
+        salient_fraction=0.5,
+    )
+
+    assert len(windows) == 2
+    assert windows[0].transitions[-1].terminated
+    with pytest.raises(ValueError, match="salient_fraction"):
+        replay.sample(1, 2, 0, 1.0, "rgb-v1", salient_fraction=1.1)
 
 
 def test_replay_snapshot_round_trip_preserves_manifest_and_seeded_sampling(tmp_path) -> None:

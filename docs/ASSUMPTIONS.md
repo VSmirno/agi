@@ -61,6 +61,17 @@ B updates сохраняет A2/2 в WEIGHTS и WEIGHTS_REPLAY. Это retention
 доказанный transfer: door остаётся0/2, push уже2/2 у FRESH. Следующий B probe
 должен избежать floor/ceiling; сначала используем существующий push_1 ruleset.
 
+Push-1 показал, что initial success может быть случайным: FRESH выбрал готовую
+3-action последовательность до обучения, а sparse random adaptation её разрушила.
+После natural random64/1000 updates action matching обучается, но raw latent goal
+distance не является мерой прогресса. Planner теперь использует absorbing
+predicted terminals и depth-local state cost; это generic исправления, не знание
+правил Grid. `salient_fraction=0.5` смешивает uniform windows с окнами вокруг
+terminated/sensor-change без reward. В production WEIGHTS_REPLAY сохранил A4/4
+и получил B2/4, но initial B был4/4 и один fixed layout не доказывает transfer.
+Terminal-only replay отвергнут из-за забывания начала. Следующая гипотеза —
+goal-conditioned temporal reachability; до неё campaign не масштабируется.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

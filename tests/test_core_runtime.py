@@ -44,6 +44,99 @@ def test_planner_uses_dynamics_and_respects_candidate_budget():
     assert root.sensors.item() == 0
 
 
+def test_planner_keeps_predicted_terminal_goal_absorbing():
+    import torch
+    from snks.agent.core_cost import GoalCost
+    from snks.agent.core_planner import beam_plan
+    from snks.agent.core_world_model import LatentState, Prediction
+
+    class TerminalThenDriftDynamics:
+        def step(self, state, actions):
+            root = state.sensors[:, 0] == 1.0
+            terminal = root & (actions == 0)
+            values = torch.where(
+                terminal,
+                torch.zeros_like(state.sensors[:, 0]),
+                torch.where(root, torch.full_like(state.sensors[:, 0], 0.4),
+                            torch.full_like(state.sensors[:, 0], 10.0)),
+            )
+            next_state = LatentState(
+                state.z, values[:, None], state.sensor_mask, state.hidden, state.schema
+            )
+            zeros = torch.zeros(len(actions))
+            return Prediction(next_state, terminal.float(), zeros, state.z[None])
+
+    root = LatentState(torch.zeros(1, 2), torch.ones(1, 1),
+                       torch.ones(1, 1, dtype=torch.bool), torch.zeros(1, 2), "toy")
+    result = beam_plan(
+        TerminalThenDriftDynamics(), root, GoalCost(None, {0: (0.0, 0.0)}),
+        n_actions=2, horizon=3, beam_width=2, max_calls=16,
+    )
+    assert result.actions == (0,)
+
+
+def test_planner_does_not_reward_terminal_state_far_from_goal():
+    import torch
+    from snks.agent.core_cost import GoalCost
+    from snks.agent.core_planner import beam_plan
+    from snks.agent.core_world_model import LatentState, Prediction
+
+    class TerminalFailureDynamics:
+        def step(self, state, actions):
+            root = state.sensors[:, 0] == 2.0
+            terminal = root & (actions == 0)
+            values = torch.where(
+                terminal,
+                torch.full_like(state.sensors[:, 0], 10.0),
+                torch.ones_like(state.sensors[:, 0]),
+            )
+            next_state = LatentState(
+                state.z, values[:, None], state.sensor_mask, state.hidden, state.schema
+            )
+            zeros = torch.zeros(len(actions))
+            return Prediction(next_state, terminal.float(), zeros, state.z[None])
+
+    root = LatentState(torch.zeros(1, 2), torch.full((1, 1), 2.0),
+                       torch.ones(1, 1, dtype=torch.bool), torch.zeros(1, 2), "toy")
+    result = beam_plan(
+        TerminalFailureDynamics(), root, GoalCost(None, {0: (0.0, 0.0)}),
+        n_actions=2, horizon=3, beam_width=2, max_calls=16,
+    )
+    assert result.actions[0] == 1
+
+
+def test_planner_ranks_the_reached_state_not_intermediate_latent_distance():
+    import torch
+    from snks.agent.core_cost import GoalCost
+    from snks.agent.core_planner import beam_plan
+    from snks.agent.core_world_model import LatentState, Prediction
+
+    class DetourDynamics:
+        def step(self, state, actions):
+            sensor = state.sensors[:, 0]
+            at_root = sensor == 2.0
+            finish = (sensor == 3.0) & (actions == 0)
+            values = torch.where(
+                finish,
+                torch.zeros_like(sensor),
+                torch.where(at_root & (actions == 0), torch.full_like(sensor, 3.0),
+                            torch.ones_like(sensor)),
+            )
+            next_state = LatentState(
+                state.z, values[:, None], state.sensor_mask, state.hidden, state.schema
+            )
+            zeros = torch.zeros(len(actions))
+            return Prediction(next_state, finish.float(), zeros, state.z[None])
+
+    root = LatentState(torch.zeros(1, 2), torch.full((1, 1), 2.0),
+                       torch.ones(1, 1, dtype=torch.bool), torch.zeros(1, 2), "toy")
+    result = beam_plan(
+        DetourDynamics(), root, GoalCost(None, {0: (0.0, 0.0)}),
+        n_actions=2, horizon=2, beam_width=2, max_calls=8,
+    )
+    assert result.actions == (0, 0)
+
+
 def test_evaluation_leaves_model_and_replay_unchanged():
     import torch
     from types import SimpleNamespace

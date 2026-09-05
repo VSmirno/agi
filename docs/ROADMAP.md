@@ -47,6 +47,13 @@ H1/H3/H5/H10, real<persistence до H5 и source success4/4. A skill сохра�
 Таким образом obligations 1 и 5 получили development evidence только в одном
 controlled source case; obligations 3–4 и confirmatory повторяемость не закрыты.
 
+Push-1 follow-up локализовал следующий wall. Terminal-aware depth-local MPC
+устранил две ошибки планирования; balanced salient replay дал в diagnostic
+WEIGHTS_REPLAY 4/4 против FRESH2/4 и WEIGHTS0/4. Штатный профиль воспроизвёл
+только B2/4 с A4/4, поэтому transfer PASS нет. Raw JEPA latent distance ранжирует
+визуальное сходство, а не достижимость; следующий bounded hypothesis — learned
+goal-conditioned temporal distance на будущих состояниях реальных эпизодов.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

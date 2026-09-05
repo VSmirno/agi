@@ -22,6 +22,7 @@ class CoreConfig:
     max_model_calls: int = 128
     replay_capacity: int = 64
     recent_fraction: float = 0.5
+    salient_fraction: float = 0.0
     learning_rate: float = 0.001
     sigreg_weight: float = 0.1
     sensor_weight: float = 1.0
@@ -36,7 +37,9 @@ class CoreConfig:
                     self.max_model_calls, self.replay_capacity, self.learning_rate)
         if any(value <= 0 for value in positive) or self.burn_in < 0:
             raise ValueError("model sizes and budgets must be positive; burn_in >= 0")
-        if not 0 <= self.recent_fraction <= 1 or not 0 <= self.exploration_fraction <= 1:
+        if (not 0 <= self.recent_fraction <= 1
+                or not 0 <= self.salient_fraction <= 1
+                or not 0 <= self.exploration_fraction <= 1):
             raise ValueError("sampling/exploration fractions must be in [0, 1]")
 
 
