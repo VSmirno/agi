@@ -115,6 +115,13 @@ backbone training даёт полезное представление. Но bac
 обнуляет termination loss и salience fraction только для backbone training;
 terminal-only policy всё ещё остаётся success-supervised.
 
+Matched predictive-only backbone (`termination_weight=0`, `salient_fraction=0`)
+дал 72/72 против full64/72 и random0/72; predictive controller gate прошёл 3/3.
+Таким образом, termination supervision и terminal-priority sampling не нужны для
+полезного encoder в текущем Push-1 layout split. Это всё ещё не label-free agent:
+policy dataset состоит из 118 пар, выбранных по успешному terminal outcome.
+Перенос через новую physics/ruleset не проверен.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

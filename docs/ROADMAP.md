@@ -87,6 +87,14 @@ representation полезно, но GoalSpec-зависимость и исто�
 sampling при обучении backbone, сохраняя тот же replay и terminal-only policy
 dataset.
 
+Predictive-only ablation прошёл: encoder без termination loss и salient replay
+дал terminal policy 72/72 против full64, random0, shuffled-action0, ordered44 и
+raw8 на трёх runs. Predictive representation/controller gates прошли 3/3.
+Значит, learned predictive representation полезно независимо от success labels
+backbone; success supervision пока остаётся только в отборе 118 policy examples.
+Следующий proof obligation — перенести этот же механизм через physics/ruleset
+split, а не интегрировать результат одного Push-1 семейства как AGI-компонент.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

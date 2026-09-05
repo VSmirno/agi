@@ -384,11 +384,21 @@ terminal-priority sampling. Следующий causal control — обучить
 на том же replay без termination objective и terminal salience, затем повторить
 terminal-only policy learning.
 
+Этот matched ablation дал decisive development result: predictive-only encoder
+(`termination_weight=0`, `salient_fraction=0`) решил **72/72**, full encoder
+**64/72**, frozen random encoder **0/72**, shuffled-action **0/72**, goal-blind
+**44/72**, ordered MPC **44/72**, raw MPC **8/72**. Predictive representation и
+controller gates прошли **3/3**; full encoder не превосходил predictive arm ни в
+одном run. Следовательно, для этой задачи полезное представление возникает из
+predictive training без success-equivalent supervision backbone. Сама policy
+остаётся success-supervised: 118 примеров выбраны из terminal episodes.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
 `exp144-layout-generalization-001..006`, `exp144-hindsight-001`,
 `exp144-terminal-hindsight-001..003`, `exp144-random-encoder-001..003`.
+Predictive ablation: `exp144-predictive-encoder-001..003`.
 
 ## Stage Review
 

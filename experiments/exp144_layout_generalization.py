@@ -743,6 +743,30 @@ def main(argv=None):
                     "successes"
                 ] + 4
             ),
+            "predictive_development_gate": (
+                None
+                if predictive_encoder_heads is None
+                else bool(
+                    terminal_fit_coverage
+                    and evaluation["hindsight_predictive_encoder"]["overall"][
+                        "successes"
+                    ] >= evaluation["hindsight_shuffled_action"]["overall"][
+                        "successes"
+                    ] + 4
+                    and evaluation["hindsight_predictive_encoder"]["overall"][
+                        "successes"
+                    ] >= raw_success + 4
+                    and evaluation["hindsight_predictive_encoder"]["overall"][
+                        "successes"
+                    ] >= ordered_success + 4
+                    and sum(
+                        summary["successes"] > 0
+                        for summary in evaluation[
+                            "hindsight_predictive_encoder"
+                        ]["by_layout"].values()
+                    ) >= 3
+                )
+            ),
             "termination_supervision_diagnostic": (
                 None
                 if predictive_encoder_heads is None
