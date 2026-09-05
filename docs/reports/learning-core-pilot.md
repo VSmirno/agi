@@ -618,6 +618,50 @@ signal без смены других causal factors.
 Observability: **324** progress records, maximum gap **1.313 s**, elapsed
 **81.453 s**; manifest, results и `run.log` полны.
 
+Exp153 выполнил следующий matched experiment на коде `49877e4`. Full run
+`exp153-change-gated-dynamics-001` сохранил exp150 architecture, predictive
+objective, uniform replay, planner, seed и protocol; единственное изменение —
+per-member sigmoid gate из current `z + action embedding`, который
+мультипликативно масштабирует residual delta. Run завершился с
+`exact_protocol=true`, exit 0 и elapsed **1302.454 s**.
+
+Dynamics loss снизился **1.311422→0.462709**. Ordered temporal probe сохранил
+signal: balanced accuracy **0.713612** против **0.471875** shuffled. Frozen
+exp150 baseline на source воспроизвёл contact/blocked failures **4/4 и 4/4**,
+medians interact **34.05918**, blocked MSE **0.365026**, free-forward ratio
+**0.103175**. Gated source получил contact/blocked **0/4 и 4/4**, medians
+**0.979424**, **0.262021** и **0.202104**; gated unseen — **0/4 и 4/4**,
+**0.985134**, **0.239985** и **0.177488**.
+
+Нулевой contact failure — технический threshold pass: near-persistence
+prediction лишь немного лучше persistence на changed transition. Он не
+показывает, что модель выучила содержательный interaction effect. Более того,
+gate statistics в основном соответствуют action prior, а не устойчивому
+within-action state discrimination. Actions 0/1 имеют gate примерно
+**0.998–0.999**; action 3 — около **0.0013/0.0019/0.009** на трёх canonical
+steps, action 4 также остаётся очень малым. Для forward contexts значения
+примерно **0.690** blocked, **0.758** changed и **0.935** blocked, без
+надёжного разделения blocked/moving. Gate — multiplicative amplitude, не
+калиброванная вероятность изменения.
+
+Canonical late-fork audit дал successful sequence predicted ordered rank
+**24/125**, raw rank **22/125** и endpoint MSE **0.150794**; predicted winners
+остались неуспешны. `ordered_h3`, `ordered_h1`, `shuffled_h3` и `raw_h3`
+получили по **0/24**. One-step gate — `false` из-за blocked-noop failures;
+source-compositional и composition gates — `false`, physics gate — `null`,
+Push-2 не запускался.
+
+Вывод: multiplicative identity bias подавляет interact hallucination на source
+и unseen layouts, но не решает blocked-forward или reactive composition.
+Следующий минимальный causal arm должен сохранить эту architecture и uniform
+replay, меняя только objective: добавить self-supervised RGB change/no-change
+gate auxiliary с class balancing внутри action. Task-success labels, planner
+changes и Push-2 в этот arm не добавляются. Ограничения остаются прежними: один
+seed/task family, некалиброванный gate, отсутствие AGI/JEPA/transfer proof.
+
+Run оставил **735** progress records с maximum gap **30.021 s**. Полны
+`run.log`, manifest, results, checkpoint, one-step, gate, fork и eval artifacts.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -632,6 +676,7 @@ Replay coverage: `exp149-replay-coverage-003`.
 Residual dynamics: `exp150-residual-dynamics-001`.
 Event-balanced residual dynamics: `exp151-event-balanced-dynamics-001`.
 Representation separability: `exp152-representation-separability-001`.
+Change-gated residual dynamics: `exp153-change-gated-dynamics-001`.
 
 ## Stage Review
 
@@ -648,8 +693,9 @@ bounded planner и frozen evaluation с контрольными условия�
 planner исправлен двумя причинными регрессиями; source replay + salient windows
 дали B2/4 с A4/4; learned temporal goal score дал paired closed-loop 4/6 против
 0/6 raw и 0/6 shuffled на одном Push fixture. Exp152 показал линейно
-доступный event/blocked signal в frozen representation, но стабильного
-transfer improvement всё ещё нет.
+доступный event/blocked signal в frozen representation; exp153 подавил
+interact hallucination на source/unseen, но blocked-forward и composition
+остались нерешёнными. Стабильного transfer improvement всё ещё нет.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил

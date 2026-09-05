@@ -190,6 +190,28 @@ accuracy, per-class recall и ordered-minus-shuffled margin прошли пор�
 gate — transition-state conditioning/gating на current `z + action` при uniform
 replay, без event labels и без изменения objective или planner.
 
+Exp153 проверил этот matched arm на коде `49877e4` и uniform replay
+(`exact_protocol=true`). Multiplicative identity gate снизил dynamics loss
+**1.31142→0.46271** и подавил contact hallucination: source/unseen contact
+failures стали **0/4 и 0/4**, median interact ratios — **0.9794/0.9851**.
+Однако blocked-noop failures остались **4/4 и 4/4** с MSE **0.2620/0.2400**,
+а free-forward ratio ухудшился относительно exp150 baseline с **0.1032** до
+**0.2021/0.1775**. Contact criterion прошёл только потому, что near-persistence
+слегка лучше persistence на changed transitions; это не evidence надёжного
+effect modeling.
+
+Gate в основном выучил action prior, а не устойчивое within-action state
+discrimination: actions 0/1 получили примерно **0.998–0.999**, actions 3/4 —
+малые значения, а forward contexts — примерно **0.690/0.758/0.935** по трём
+canonical steps. Late fork дал ordered/raw rank **24/22** и endpoint MSE
+**0.1508**, predicted winners остались неуспешны; все eval arms снова получили
+**0/24**. One-step/source-compositional/composition gates — `false`, physics —
+`null`; Push-2 не запускался. Значит, multiplicative identity bias переносимо
+подавляет interact hallucination, но не решает blocked-forward или composition.
+Следующий минимальный arm сохраняет архитектуру и uniform replay и меняет только
+objective: self-supervised RGB change/no-change auxiliary для gate с
+class balancing внутри action, без task-success labels, planner changes и Push-2.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

@@ -271,6 +271,42 @@ event labels, новый objective или planner changes.
 Observability: **324** progress records, maximum gap **1.313 s**, elapsed
 **81.453 s**; manifest, results и `run.log` полны.
 
+Exp153 проверил current-state multiplicative change gate на коде `49877e4`,
+сохранив exp150 architecture/objective, uniform replay, planner и protocol.
+Full artifact `output_to_user/core/exp153-change-gated-dynamics-001` завершился
+с `exact_protocol=true`, exit 0 и elapsed **1302.454 s**. Dynamics loss снизился
+**1.311422→0.462709**; ordered probe balanced accuracy составила **0.713612**
+против **0.471875** shuffled.
+
+Frozen exp150 baseline на source воспроизвёл contact/blocked failures **4/4 и
+4/4** с medians interact **34.05918**, blocked MSE **0.365026** и free-forward
+ratio **0.103175**. Gated source дал **0/4 и 4/4**, medians **0.979424**,
+**0.262021** и **0.202104**; gated unseen — **0/4 и 4/4**, **0.985134**,
+**0.239985** и **0.177488**. Contact metric технически прошла, потому что
+near-persistence prediction слегка лучше persistence на changed transitions;
+это не содержательное доказательство моделирования effect.
+
+Gate statistics показывают главным образом action prior: actions 0/1 имеют
+примерно **0.998–0.999**, action 3 — около **0.0013/0.0019/0.009** по canonical
+steps, action 4 также остаётся малым; forward contexts дают примерно **0.690**
+blocked, **0.758** changed и **0.935** blocked. Gate не является калиброванной
+вероятностью и не демонстрирует надёжную within-action state discrimination.
+Canonical late fork дал successful-sequence predicted ordered/raw ranks
+**24/125 и 22/125**, endpoint MSE **0.150794**; predicted winners неуспешны.
+Все четыре eval arms получили по **0/24**. One-step gate — `false` из-за
+blocked failures; source-compositional/composition — `false`, physics — `null`,
+Push-2 не запускался.
+
+Вывод ограничен одним seed и одним Push-1 task family: multiplicative identity
+bias подавляет interact hallucination на source и unseen layouts, но не решает
+blocked-forward или composition и не доказывает AGI/JEPA. Следующий минимальный
+experiment сохраняет architecture и uniform replay, меняя только objective:
+self-supervised RGB change/no-change auxiliary для gate с class balancing
+внутри action, без task-success labels, planner changes и Push-2.
+
+Observability: **735** progress records, maximum gap **30.021 s**; полны
+`run.log`, manifest, results, checkpoint, one-step, gate, fork и eval artifacts.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
