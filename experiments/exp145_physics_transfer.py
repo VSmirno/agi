@@ -17,6 +17,7 @@ import torch
 
 from exp144_layout_generalization import (
     HindsightAgent,
+    HindsightGoalPolicy,
     _encode_episodes,
     _fit_hindsight_policies,
     _hindsight_examples,
@@ -141,6 +142,107 @@ def _goal_intervention_check(layout, seed):
         push2.close()
 
 
+def _fit_mixed_hindsight_policies(
+    terminal_examples, local_examples, z_dim, updates, batch_size, seed
+):
+    (
+        terminal_anchor,
+        terminal_goal,
+        terminal_action,
+        terminal_weight,
+        terminal_pairs,
+    ) = terminal_examples
+    local_anchor, local_goal, local_action, local_weight, local_pairs = (
+        local_examples
+    )
+    device = terminal_anchor.device
+    if local_anchor.device != device:
+        raise ValueError(
+            "terminal and local hindsight examples must share a device"
+        )
+    with torch.random.fork_rng(
+        devices=[device.index or 0] if device.type == "cuda" else []
+    ):
+        torch.manual_seed(seed)
+        real = HindsightGoalPolicy(z_dim).to(device)
+        shuffled_action = HindsightGoalPolicy(z_dim).to(device)
+        shuffled_action.load_state_dict(real.state_dict())
+    heads = {"real": real, "shuffled_action": shuffled_action}
+    optimizers = {
+        name: torch.optim.Adam(head.parameters(), lr=3e-4)
+        for name, head in heads.items()
+    }
+    generator = torch.Generator().manual_seed(seed)
+    losses = {name: [] for name in heads}
+    batch_sources = []
+    for update in range(updates):
+        terminal_count = batch_size // 2 + int(
+            batch_size % 2 and update % 2 == 1
+        )
+        local_count = batch_size - terminal_count
+        terminal_indices = torch.randint(
+            len(terminal_action),
+            (terminal_count,),
+            generator=generator,
+            device="cpu",
+        )
+        local_indices = torch.randint(
+            len(local_action),
+            (local_count,),
+            generator=generator,
+            device="cpu",
+        )
+        terminal_indices = terminal_indices.to(device)
+        local_indices = local_indices.to(device)
+        anchors = torch.cat(
+            (terminal_anchor[terminal_indices], local_anchor[local_indices])
+        )
+        goals = torch.cat(
+            (terminal_goal[terminal_indices], local_goal[local_indices])
+        )
+        weights = torch.cat(
+            (terminal_weight[terminal_indices], local_weight[local_indices])
+        )
+        actions = torch.cat(
+            (terminal_action[terminal_indices], local_action[local_indices])
+        )
+        shuffled_labels = actions[
+            torch.randperm(batch_size, generator=generator).to(device)
+        ]
+        batch_sources.append({"terminal": terminal_count, "local": local_count})
+        for name, head in heads.items():
+            optimizers[name].zero_grad(set_to_none=True)
+            labels = shuffled_labels if name == "shuffled_action" else actions
+            per_example = torch.nn.functional.cross_entropy(
+                head(anchors, goals), labels, reduction="none"
+            )
+            loss = (per_example * weights).sum() / weights.sum()
+            loss.backward()
+            optimizers[name].step()
+            losses[name].append(float(loss.detach()))
+    for head in heads.values():
+        head.eval()
+    return heads, {
+        "examples": len(terminal_action) + len(local_action),
+        "terminal_examples": len(terminal_action),
+        "local_examples": len(local_action),
+        "terminal_goal_pairs": terminal_pairs,
+        "local_terminal_goal_pairs": local_pairs,
+        "counts": {
+            "terminal_examples": len(terminal_action),
+            "local_examples": len(local_action),
+            "terminal_goal_pairs": terminal_pairs,
+            "local_terminal_goal_pairs": local_pairs,
+        },
+        "batch_sources": batch_sources,
+        "losses": {
+            name: {"first": values[0], "last": values[-1]}
+            for name, values in losses.items()
+        },
+        "same_initialization_and_batches": True,
+    }
+
+
 def _evaluate(
     model,
     policy,
@@ -222,6 +324,12 @@ def main(argv=None):
     parser.add_argument("--policy-updates", type=int, default=600)
     parser.add_argument("--policy-batch-size", type=int, default=128)
     parser.add_argument("--policy-horizon", type=int, default=8)
+    parser.add_argument(
+        "--policy-dataset",
+        choices=("terminal", "mixed"),
+        default="terminal",
+    )
+    parser.add_argument("--source-only", action="store_true")
     parser.add_argument("--eval-seeds", type=int, default=6)
     parser.add_argument("--z-dim", type=int, default=256)
     parser.add_argument("--h-dim", type=int, default=128)
@@ -315,72 +423,113 @@ def main(argv=None):
     device = torch.device(config.device)
     fit_encoded = _encode_episodes(model, fit_episodes, device)
     random_fit_encoded = _encode_episodes(random_model, fit_episodes, device)
-    examples = _hindsight_examples(
+    terminal_examples = _hindsight_examples(
         fit_encoded,
         fit_episodes,
         args.policy_horizon,
         terminal_only=True,
     )
-    random_examples = _hindsight_examples(
+    random_terminal_examples = _hindsight_examples(
         random_fit_encoded,
         fit_episodes,
         args.policy_horizon,
         terminal_only=True,
     )
-    heads, policy_training = _fit_hindsight_policies(
-        examples,
-        config.z_dim,
-        args.policy_updates,
-        args.policy_batch_size,
-        config.seed + 5145,
-    )
-    random_heads, random_policy_training = _fit_hindsight_policies(
-        random_examples,
-        config.z_dim,
-        args.policy_updates,
-        args.policy_batch_size,
-        config.seed + 5145,
-    )
+    if args.policy_dataset == "mixed":
+        local_examples = _hindsight_examples(
+            fit_encoded,
+            fit_episodes,
+            args.policy_horizon,
+            terminal_only=False,
+        )
+        random_local_examples = _hindsight_examples(
+            random_fit_encoded,
+            fit_episodes,
+            args.policy_horizon,
+            terminal_only=False,
+        )
+        heads, policy_training = _fit_mixed_hindsight_policies(
+            terminal_examples,
+            local_examples,
+            config.z_dim,
+            args.policy_updates,
+            args.policy_batch_size,
+            config.seed + 5145,
+        )
+        random_heads, random_policy_training = _fit_mixed_hindsight_policies(
+            random_terminal_examples,
+            random_local_examples,
+            config.z_dim,
+            args.policy_updates,
+            args.policy_batch_size,
+            config.seed + 5145,
+        )
+    else:
+        heads, policy_training = _fit_hindsight_policies(
+            terminal_examples,
+            config.z_dim,
+            args.policy_updates,
+            args.policy_batch_size,
+            config.seed + 5145,
+        )
+        random_heads, random_policy_training = _fit_hindsight_policies(
+            random_terminal_examples,
+            config.z_dim,
+            args.policy_updates,
+            args.policy_batch_size,
+            config.seed + 5145,
+        )
+        local_examples = None
+        random_local_examples = None
 
     seeds = range(20000, 20000 + args.eval_seeds)
     trace = core.TraceWriter(args.out / "evaluation_traces.jsonl")
     try:
-        evaluation = {
-            "source_geometry": _evaluate(
-                model, heads["real"], config, replay, 1, 1, seeds,
-                args.eval_steps, deadline, trace, "source_geometry",
-            ),
-            "target_native_goal": _evaluate(
-                model, heads["real"], config, replay, 2, 2, seeds,
-                args.eval_steps, deadline, trace, "target_native_goal",
-            ),
-            "target_canonical_goal": _evaluate(
-                model, heads["real"], config, replay, 2, 1, seeds,
-                args.eval_steps, deadline, trace, "target_canonical_goal",
-            ),
-            "target_shuffled_action": _evaluate(
-                model, heads["shuffled_action"], config, replay, 2, 1, seeds,
-                args.eval_steps, deadline, trace, "target_shuffled_action",
-            ),
-            "target_random_encoder": _evaluate(
-                random_model, random_heads["real"], config, replay, 2, 1,
-                seeds, args.eval_steps, deadline, trace,
-                "target_random_encoder",
-            ),
-        }
+        if args.source_only:
+            evaluation = {
+                "source_geometry": _evaluate(
+                    model, heads["real"], config, replay, 1, 1, seeds,
+                    args.eval_steps, deadline, trace, "source_geometry",
+                ),
+                "source_shuffled_action": _evaluate(
+                    model, heads["shuffled_action"], config, replay, 1, 1,
+                    seeds, args.eval_steps, deadline, trace,
+                    "source_shuffled_action",
+                ),
+                "source_random_encoder": _evaluate(
+                    random_model, random_heads["real"], config, replay, 1, 1,
+                    seeds, args.eval_steps, deadline, trace,
+                    "source_random_encoder",
+                ),
+            }
+        else:
+            evaluation = {
+                "source_geometry": _evaluate(
+                    model, heads["real"], config, replay, 1, 1, seeds,
+                    args.eval_steps, deadline, trace, "source_geometry",
+                ),
+                "target_native_goal": _evaluate(
+                    model, heads["real"], config, replay, 2, 2, seeds,
+                    args.eval_steps, deadline, trace, "target_native_goal",
+                ),
+                "target_canonical_goal": _evaluate(
+                    model, heads["real"], config, replay, 2, 1, seeds,
+                    args.eval_steps, deadline, trace, "target_canonical_goal",
+                ),
+                "target_shuffled_action": _evaluate(
+                    model, heads["shuffled_action"], config, replay, 2, 1, seeds,
+                    args.eval_steps, deadline, trace, "target_shuffled_action",
+                ),
+                "target_random_encoder": _evaluate(
+                    random_model, random_heads["real"], config, replay, 2, 1,
+                    seeds, args.eval_steps, deadline, trace,
+                    "target_random_encoder",
+                ),
+            }
     finally:
         trace.close()
 
     source_success = evaluation["source_geometry"]["overall"]["successes"]
-    target_success = evaluation["target_canonical_goal"]["overall"][
-        "successes"
-    ]
-    shuffled_success = evaluation["target_shuffled_action"]["overall"][
-        "successes"
-    ]
-    random_success = evaluation["target_random_encoder"]["overall"][
-        "successes"
-    ]
     terminal_fit = {
         name: sum(
             episode.transitions[-1].terminated
@@ -389,26 +538,76 @@ def main(argv=None):
         )
         for name in SOURCE_LAYOUTS
     }
-    target_layout_floor = min(
-        summary["successes"]
-        for summary in evaluation["target_canonical_goal"]["by_layout"].values()
-    )
-    gate = bool(
-        all(value > 0 for value in terminal_fit.values())
-        and source_success >= 18
-        and target_success >= 18
-        and target_layout_floor >= 3
-        and target_success >= shuffled_success + 4
-        and target_success >= random_success + 4
-        and target_success / max(source_success, 1) >= 0.75
-    )
+    if args.source_only:
+        shuffled_success = evaluation["source_shuffled_action"]["overall"][
+            "successes"
+        ]
+        random_success = evaluation["source_random_encoder"]["overall"][
+            "successes"
+        ]
+        source_layout_floor = min(
+            summary["successes"]
+            for summary in evaluation["source_geometry"]["by_layout"].values()
+        )
+        source_coverage_gate = bool(
+            all(value > 0 for value in terminal_fit.values())
+            and source_success >= 18
+            and source_layout_floor >= 3
+            and source_success >= shuffled_success + 4
+            and source_success >= random_success + 4
+        )
+        physics_transfer_gate = None
+    else:
+        target_success = evaluation["target_canonical_goal"]["overall"][
+            "successes"
+        ]
+        shuffled_success = evaluation["target_shuffled_action"]["overall"][
+            "successes"
+        ]
+        random_success = evaluation["target_random_encoder"]["overall"][
+            "successes"
+        ]
+        target_layout_floor = min(
+            summary["successes"]
+            for summary in evaluation["target_canonical_goal"]["by_layout"].values()
+        )
+        source_coverage_gate = None
+        physics_transfer_gate = bool(
+            all(value > 0 for value in terminal_fit.values())
+            and source_success >= 18
+            and target_success >= 18
+            and target_layout_floor >= 3
+            and target_success >= shuffled_success + 4
+            and target_success >= random_success + 4
+            and target_success / max(source_success, 1) >= 0.75
+        )
+    target_layouts = {}
+    for name, (layout, push1, push2) in TARGET_LAYOUTS.items():
+        target = {
+            "layout": repr(layout),
+            "push1": list(push1),
+            "push1_reachable": _canonical_check(layout, 1, push1, 30000),
+        }
+        if not args.source_only:
+            target.update(
+                {
+                    "push2": list(push2),
+                    "push2_reachable": _canonical_check(
+                        layout, 2, push2, 30000
+                    ),
+                    "goal_intervention": _goal_intervention_check(layout, 30000),
+                }
+            )
+        target_layouts[name] = target
     result = {
         "status": "completed",
         "claim": (
             "development test of reactive visual-policy transfer across a hidden "
             "physics change; not physics identification or AGI evidence"
         ),
-        "physics_transfer_gate": gate,
+        "physics_transfer_gate": physics_transfer_gate,
+        "source_coverage_gate": source_coverage_gate,
+        "source_only": args.source_only,
         "evaluation": evaluation,
         "corpus": {
             "by_layout": corpus,
@@ -427,32 +626,32 @@ def main(argv=None):
             },
             "policy": policy_training,
             "random_encoder_policy": random_policy_training,
+            "policy_dataset": {
+                "mode": args.policy_dataset,
+                "terminal_examples": len(terminal_examples[2]),
+                "local_examples": (
+                    0 if local_examples is None else len(local_examples[2])
+                ),
+                "random_encoder_terminal_examples": len(
+                    random_terminal_examples[2]
+                ),
+                "random_encoder_local_examples": (
+                    0
+                    if random_local_examples is None
+                    else len(random_local_examples[2])
+                ),
+            },
         },
         "layouts": {
             "source": {
                 name: {"layout": repr(layout), "push1": list(actions)}
                 for name, (layout, actions) in SOURCE_LAYOUTS.items()
             },
-            "target": {
-                name: {
-                    "layout": repr(layout),
-                    "push1": list(push1),
-                    "push2": list(push2),
-                    "push1_reachable": _canonical_check(
-                        layout, 1, push1, 30000
-                    ),
-                    "push2_reachable": _canonical_check(
-                        layout, 2, push2, 30000
-                    ),
-                    "goal_intervention": _goal_intervention_check(
-                        layout, 30000
-                    ),
-                }
-                for name, (layout, push1, push2) in TARGET_LAYOUTS.items()
-            },
+            "target": target_layouts,
         },
         "controls": {
             "source_only_training": True,
+            "source_only_evaluation": args.source_only,
             "same_policy_examples_initialization_and_batches": True,
             "canonical_goal_uses_push1_pose_for_both_physics": True,
             "native_push2_goal_is_leak_diagnostic_only": True,
@@ -471,6 +670,14 @@ def main(argv=None):
         {
             "argv": sys.argv[1:],
             "budgets": {key: str(value) for key, value in vars(args).items()},
+            "policy_dataset": {
+                "mode": args.policy_dataset,
+                "terminal_examples": len(terminal_examples[2]),
+                "local_examples": (
+                    0 if local_examples is None else len(local_examples[2])
+                ),
+            },
+            "source_only": args.source_only,
             "status": "completed",
         },
     )
