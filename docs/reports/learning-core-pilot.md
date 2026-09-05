@@ -507,6 +507,21 @@ transitions.
 event-balanced arm допустим только как контроль редкого contact-change, а не как
 основное объяснение no-op failure.
 
+Следующий matched arm реализован в `exp150_residual_dynamics.py`: fresh
+residual model обучается по exp146 protocol, затем сохраняется checkpoint и
+выполняются exp148 one-step diagnostic для frozen baseline/residual, residual
+late-fork audit (125 rows) и четыре исходных MPC arms. По умолчанию corpus
+проверяется на 130676 transitions и terminal total/fit maps exp149.
+
+Заранее заданный residual one-step gate требует exact matched protocol,
+source contact failures **0/4**, blocked-noop failures **0/4**, median
+free-forward prediction/persistence ratio **<1**, а также уменьшения обоих
+failure counts относительно baseline. Composition gate дополнительно требует
+исходный exp146 source gate: ordered H3 **≥18/24**, **≥3/6** на каждом layout,
+выигрыш **≥4** над каждым control и terminal fit coverage всех source layouts.
+Physics gate остаётся `null`. Пороги не подбираются; результаты полного
+обучения в этой записи пока отсутствуют.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,

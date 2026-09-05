@@ -184,6 +184,18 @@ uniform objective, но отсутствие данных не объясняе�
 identity/no-op. Следующий matched residual/persistence arm должен сохранить тот
 же replay; event-balanced sampling — только отдельный causal control.
 
+Exp150 добавляет экспериментальную residual latent parameterization:
+`member_z = current_z + learned_delta`, с нулевой инициализацией только latent
+heads. Encoder/GRU, predictive objective, fixed replay, seed и chunked update
+protocol сохранены как в exp146. Production modules не меняются. Сохранённый
+absolute checkpoint служит frozen baseline для того же exp148 one-step split.
+Gates применимы только при совпадении полных default budgets и training config
+с baseline; tiny smoke проверяет артефакты, но не scientific outcome.
+Residual checkpoint имеет format version 2 и явный `residual_zero_init`, чтобы
+absolute-only loader exp147 не интерпретировал delta heads как absolute state.
+Это одна параметризация, один seed и одно семейство задач, без Push-2 и без
+доказательства AGI/JEPA/physics transfer.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
