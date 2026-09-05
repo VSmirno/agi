@@ -178,7 +178,7 @@ class _AuditModel:
 
     def initial(self, observation):
         z = torch.tensor(
-            [[float(torch.as_tensor(observation.rgb).float().mean())]]
+            [[float(torch.tensor(observation.rgb).float().mean())]]
         )
         return LatentState(
             z=z,

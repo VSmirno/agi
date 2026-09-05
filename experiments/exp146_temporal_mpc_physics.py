@@ -17,6 +17,7 @@ import torch
 
 from experiments.exp143_temporal_proximity import (
     TemporalAgent,
+    TemporalCost,
     TemporalProbe,
     _encode_episodes,
     _fit_pair,
