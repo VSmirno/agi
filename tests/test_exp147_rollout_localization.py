@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 
 import pytest
 import torch
+
+sys.path.append(str(Path(__file__).resolve().parents[1] / "experiments"))
 
 from experiments.exp143_temporal_proximity import TemporalProbe
 from experiments.exp147_rollout_localization import build_parser, main
