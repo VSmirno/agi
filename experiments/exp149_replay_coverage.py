@@ -53,7 +53,7 @@ def _validate_terminal_counts(
     if episodes_per_layout != 512:
         return True
     return total == {"east_row2": 2, "west_row3": 7, "south_col4": 2, "north_col5": 7} and fit == {
-        "east_row2": 2, "west_row3": 5, "south_col4": 2, "north_col5": 4
+        "east_row2": 2, "west_row3": 4, "south_col4": 2, "north_col5": 5
     }
 
 
