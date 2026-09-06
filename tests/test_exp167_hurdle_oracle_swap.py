@@ -39,6 +39,28 @@ def test_interpretation_truth_table_localizes_the_failed_component():
     assert exp.interpret_swap(True, True, False)[0] == "invalid_oracle_audit"
 
 
+def test_metric_signature_match_tolerates_only_numerical_noise():
+    exp = _experiment()
+    reference = {
+        "source": {
+            "contact_failure_layouts": 2,
+            "blocked_noop_failure_layouts": 0,
+            "medians": {"free": 0.35723816701272965, "interact": 0.9},
+        }
+    }
+    recomputed = {
+        "source": {
+            "contact_failure_layouts": 2,
+            "blocked_noop_failure_layouts": 0,
+            "medians": {"free": 0.3572381788692918, "interact": 0.9},
+        }
+    }
+
+    assert exp.metric_signatures_match(recomputed, reference)
+    recomputed["source"]["contact_failure_layouts"] = 1
+    assert not exp.metric_signatures_match(recomputed, reference)
+
+
 def test_defaults_lock_checkpoints_references_and_observability():
     exp = _experiment()
     args = exp.build_parser().parse_args(["--out", "run"])
