@@ -1050,6 +1050,39 @@ Persistent `run.log`, `results.json`, `manifest.json`, checkpoint, rows и
 `progress.jsonl` содержат **4707** progress records с maximum gap **1.691 s**,
 alignment evidence, exact command, Git commit и финальный status.
 
+Exp166 проверил richer hurdle target: отдельный zero atom classifier и
+conditional-positive amplitude regression. Контракт задан RED commit `c5a7b4d`,
+implementation — `e1e1bc4`. Fresh HyperPC verification дала **7 passed** за
+**1.06 s**, smoke завершился за **4.394 s**. Full run завершён с
+`exact_protocol=true`, exit 0 и runtime **327.601 s**; artifact verifier — PASS
+для **8** artifacts, frozen backbone сохранён.
+
+Training loss снизился **0.905769→0.038797**. На held-out atom balanced
+accuracy равна **0.975702**, recall zero **0.960944**, recall positive
+**0.990460**. Conditional-positive MSE — **0.001694**, но exact-zero rate —
+только **0.448645**.
+
+Exact source exp166 имеет contact/blocked failures **2/4 и 0/4**, medians
+free-forward **0.357238**, interact **0.929919**; unseen — **4/4 и 1/4**,
+**0.614373**, **1.0**. По сравнению с exp165 blocked failures уменьшились
+**4→0 source** и **4→1 unseen**, но contact выросли **1→2** и **0→4**. Gate —
+`false`; outcome — `conditional_amplitude_delta_failure`.
+
+Canonical source atom-zero rate / gate amplitude: blocked **1/0**, free
+**0.4167/0.5324**, contact **0/0.0154** и **0/0.0413**. Unseen blocked —
+**0.75/0.2319**, free — **0.5833/0.3627**, contact zero rate **0.25** с
+amplitudes **0.00816/0.03185**. Поэтому высокий aggregate atom score не
+обеспечивает корректное ранжирование critical states.
+
+Следующий минимальный diagnostic — exact **2×2** oracle swap:
+`predicted/oracle atom × predicted/oracle conditional amplitude`. Он отделит
+atom error от conditional-delta error до любого нового training/tuning. Это не
+AGI/JEPA/composition/transfer claim.
+
+Persistent `run.log`, `results.json`, `manifest.json`, checkpoint, rows и
+`progress.jsonl` содержат **4828** progress records с maximum gap **1.324 s**,
+exact command, Git commit и финальный status.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -1077,6 +1110,7 @@ Nonlinear amplitude probe: exp162 HyperPC run at `8edec06`.
 Frozen amplitude calibration: exp163 HyperPC run at `6546387`.
 Relational slot probe: exp164 HyperPC run at `7a6a6ca`.
 Relational pose probe: exp165 HyperPC run at `e349778`.
+Hurdle amplitude probe: exp166 HyperPC run at `e1e1bc4`.
 
 ## Stage Review
 
@@ -1114,7 +1148,9 @@ critical one-step gate. Exp162 подтвердил nonlinear decodability conta
 threshold tradeoff не разделяет contact и no-op contexts. Exp164 дал небольшое
 continuous improvement от position-only relations, но categorical no-op wall
 остался. Exp165 добавил pose/orientation и не изменил categorical failures;
-следующий вопрос перенесён с input completeness на transition target.
+следующий вопрос перенесён с input completeness на transition target. Exp166
+снял большинство blocked failures hurdle target-ом, но потерял contact и не
+прошёл общий gate.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил

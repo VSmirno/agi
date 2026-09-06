@@ -408,6 +408,20 @@ amplitude MSE target. Это лицензирует проверку более 
 coefficient tuning. Более широкая object-centric гипотеза и AGI не опровергнуты
 и не доказаны.
 
+Exp166 разделил target на zero atom и conditional-positive amplitude. Held-out
+atom balanced accuracy достигла **0.9757** с recalls **0.9609/0.9905**;
+conditional-positive MSE — **0.001694**. Но exact-zero rate осталась
+**0.4486**, а behavioral trade-off не прошёл gate. Относительно exp165 blocked
+failures улучшились source **4→0**, unseen **4→1**, тогда как contact
+ухудшились **1→2** и **0→4**. Source medians free/interact —
+**0.3572/0.9299**, unseen — **0.6144/1.0**. Outcome —
+`conditional_amplitude_delta_failure`.
+
+Высокое aggregate качество atom classifier недостаточно для canonical states.
+Следующий минимальный diagnostic — exact **2×2** oracle swap: predicted/oracle
+atom против predicted/oracle conditional amplitude. Он локализует виновную
+часть hurdle target до нового training. AGI/composition/transfer не доказаны.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

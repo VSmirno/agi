@@ -681,6 +681,39 @@ Observability: persistent `run.log`, `results.json`, `manifest.json`, checkpoint
 rows и `progress.jsonl` с **4707** records и maximum gap **1.691 s** сохраняют
 exact command, Git commit и финальный status.
 
+Exp166 реализован RED commit `c5a7b4d` и implementation `e1e1bc4`. Fresh
+HyperPC verification: **7 passed** за **1.06 s**, smoke — **4.394 s**. Full run
+завершился с `exact_protocol=true`, exit 0 и runtime **327.601 s**; artifact
+verifier — PASS для **8** artifacts. Frozen backbone не менялся.
+
+Hurdle objective разделяет zero atom и conditional-positive amplitude. Training
+loss снизился **0.905769→0.038797**. Held-out atom balanced accuracy —
+**0.975702**, recall zero **0.960944**, recall positive **0.990460**;
+conditional-positive MSE — **0.001694**. Однако exact-zero rate равна только
+**0.448645**.
+
+Exact source exp166 получил contact/blocked failures **2/4 и 0/4**, medians
+free **0.357238**, interact **0.929919**; unseen — **4/4 и 1/4**,
+**0.614373**, **1.0**. Относительно exp165 blocked failures улучшились на
+**4/4 source** и **3/4 unseen**, но contact ухудшились на **1/4** и **4/4**.
+Gate — `false`; outcome — `conditional_amplitude_delta_failure`.
+
+Canonical source atom-zero rate / predicted gate amplitude: blocked
+**1/0**, free **0.4167/0.5324**, два contact **0/0.0154** и **0/0.0413**.
+Unseen: blocked **0.75/0.2319**, free **0.5833/0.3627**, contact zero rate
+**0.25** при amplitudes **0.00816/0.03185**. Aggregate classifier metrics
+скрывают ошибки именно на critical state slices.
+
+Узкий вывод: раздельный atom/conditional target меняет trade-off, но не снимает
+его. Следующий дешёвый exact diagnostic — **2×2** oracle swap
+`predicted/oracle atom × predicted/oracle conditional amplitude`; он должен
+локализовать failure до нового training или tuning. Это не AGI, JEPA,
+composition или transfer claim.
+
+Observability: persistent `run.log`, `results.json`, `manifest.json`, checkpoint,
+rows и `progress.jsonl` с **4828** records и maximum gap **1.324 s** сохраняют
+exact command, Git commit и финальный status.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
