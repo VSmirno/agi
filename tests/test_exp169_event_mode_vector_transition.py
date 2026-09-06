@@ -47,6 +47,7 @@ def test_event_mode_is_literal_persistence_or_exact_frozen_vector_delta():
     )
 
     torch.testing.assert_close(installed.member_z[:, 0], current[0].expand(2, -1))
+    assert torch.equal(installed.next_state.z[0], current[0])
     torch.testing.assert_close(
         installed.member_z[:, 1], current[1].unsqueeze(0) + frozen_delta[:, 1]
     )
@@ -68,7 +69,7 @@ def test_balanced_event_bce_handles_actions_with_only_one_observed_class():
     changed = torch.tensor([True, True, True, False, False])
     loss = exp.balanced_event_bce(logits, actions, changed, weights)
 
-    torch.testing.assert_close(loss, torch.tensor(torch.log(torch.tensor(2.0))))
+    torch.testing.assert_close(loss, torch.log(torch.tensor(2.0)))
     loss.backward()
     assert torch.isfinite(logits.grad).all()
 
