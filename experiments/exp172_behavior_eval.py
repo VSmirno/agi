@@ -33,6 +33,7 @@ class _SearchNode:
     state: Any
     actions: tuple[int, ...] = ()
     cost: float = 0.0
+    prefix_costs: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,7 @@ def _depth_local_search(
     horizon: int,
     width: int,
     max_calls: int,
+    early_progress_tie_break: bool = False,
 ):
     """Run one shared fixed-width search with a state-local endpoint score."""
 
@@ -84,28 +86,37 @@ def _depth_local_search(
             costs,
         ):
             actions = node.actions + (action,)
-            expanded.append(_SearchNode(state, actions, cost))
-            trace.append(
-                {
-                    "actions": list(actions),
-                    "cost": cost,
-                    "depth": depth,
-                    "uncertainty": 0.0,
-                }
-            )
+            prefix_costs = node.prefix_costs + (cost,)
+            expanded.append(_SearchNode(state, actions, cost, prefix_costs))
+            row = {
+                "actions": list(actions),
+                "cost": cost,
+                "depth": depth,
+                "uncertainty": 0.0,
+            }
+            if early_progress_tie_break:
+                row["prefix_costs"] = list(prefix_costs)
+            trace.append(row)
         calls += len(pairs)
         depths.append({"depth": depth, "candidate_count": len(pairs)})
-        beam = sorted(expanded, key=lambda node: (node.cost, node.actions))[:width]
+        if early_progress_tie_break:
+            key = lambda node: (node.cost, node.prefix_costs, node.actions)
+        else:
+            key = lambda node: (node.cost, node.actions)
+        beam = sorted(expanded, key=key)[:width]
     if not beam or not beam[0].actions:
         raise RuntimeError("no candidate within planning budget")
     winner = beam[0]
-    return {
+    result = {
         "actions": list(winner.actions),
         "cost": winner.cost,
         "candidate_calls": calls,
         "depths": depths,
         "trace": trace,
     }
+    if early_progress_tie_break:
+        result["prefix_costs"] = list(winner.prefix_costs)
+    return result
 
 
 def _stack(states: list[LatentState]) -> LatentState:
@@ -218,10 +229,20 @@ def _actual_expand(baseline, layout, real_history, counters):
     return expand
 
 
-def _episode(model, baseline, ordered, split, layout_name, layout, arm):
+def _episode(
+    model,
+    baseline,
+    ordered,
+    split,
+    layout_name,
+    layout,
+    arm,
+    early_progress_tie_break=False,
+):
     adapter = _adapter(layout, 1, EVAL_SEED, MAX_REAL_STEPS)
     actions = []
     selected_costs = []
+    selected_prefix_costs = []
     selected_plans = []
     decision_traces = []
     planner_calls = 0
@@ -256,6 +277,7 @@ def _episode(model, baseline, ordered, split, layout_name, layout, arm):
                 horizon=SEARCH_HORIZON,
                 width=SEARCH_WIDTH,
                 max_calls=SEARCH_MAX_CALLS,
+                early_progress_tie_break=early_progress_tie_break,
             )
             if plan["candidate_calls"] != SEARCH_MAX_CALLS:
                 raise AssertionError("fixed H3 search did not consume 55 candidates")
@@ -264,6 +286,8 @@ def _episode(model, baseline, ordered, split, layout_name, layout, arm):
             observation = transition.after
             actions.append(action)
             selected_costs.append(plan["cost"])
+            if early_progress_tie_break:
+                selected_prefix_costs.append(plan["prefix_costs"])
             selected_plans.append(plan["actions"])
             decision_traces.append(plan["trace"])
             planner_calls += plan["candidate_calls"]
@@ -280,7 +304,7 @@ def _episode(model, baseline, ordered, split, layout_name, layout, arm):
         final_diagnostic = adapter.diagnostic_snapshot()
     finally:
         adapter.close()
-    return {
+    result = {
         "arm": arm,
         "split": split,
         "layout": layout_name,
@@ -299,6 +323,9 @@ def _episode(model, baseline, ordered, split, layout_name, layout, arm):
         "final_diagnostic": final_diagnostic,
         "decision_traces": decision_traces,
     }
+    if early_progress_tie_break:
+        result["selected_prefix_costs"] = selected_prefix_costs
+    return result
 
 
 def _canonical_diagnostic(model, role, split, layout_name, layout, actions):
@@ -387,7 +414,16 @@ def _summarize(rows):
 
 
 @torch.inference_mode()
-def evaluate_behavior(model, baseline, ordered, config, journal, out):
+def evaluate_behavior(
+    model,
+    baseline,
+    ordered,
+    config,
+    journal,
+    out,
+    *,
+    early_progress_tie_break=False,
+):
     """Evaluate learned, original, and actual-transition development arms."""
 
     del config  # Search and episode budgets are fixed by the exp172 protocol.
@@ -409,7 +445,14 @@ def evaluate_behavior(model, baseline, ordered, config, journal, out):
         for arm in ("original", "learned", "actual"):
             for split, layout_name, layout, _actions in layouts:
                 row = _episode(
-                    model, baseline, ordered, split, layout_name, layout, arm
+                    model,
+                    baseline,
+                    ordered,
+                    split,
+                    layout_name,
+                    layout,
+                    arm,
+                    early_progress_tie_break,
                 )
                 episodes.append(row)
                 behavior_writer.write(row)
@@ -461,7 +504,7 @@ def evaluate_behavior(model, baseline, ordered, config, journal, out):
         }
         for arm in ("original", "learned", "actual")
     }
-    return {
+    result = {
         "status": "completed",
         "protocol": {
             "development_layouts": 8,
@@ -501,4 +544,8 @@ def evaluate_behavior(model, baseline, ordered, config, journal, out):
             "canonical_rollout_rows": diagnostic_path.name,
         },
     }
-
+    if early_progress_tie_break:
+        result["protocol"]["search"]["tie_break"] = (
+            "exact endpoint ties only: lexicographic prefix costs, then actions"
+        )
+    return result
