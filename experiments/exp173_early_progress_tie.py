@@ -106,6 +106,21 @@ def _candidate(trace, actions):
     return next(row for row in trace if tuple(row["actions"]) == tuple(actions))
 
 
+def _optional_candidate(trace, actions):
+    row = next(
+        (row for row in trace if tuple(row["actions"]) == tuple(actions)),
+        None,
+    )
+    if row is None:
+        return {"status": "pruned_or_not_retained", "actions": list(actions)}
+    return {
+        "status": "present",
+        "actions": row["actions"],
+        "endpoint_cost": row["cost"],
+        "prefix_costs": row["prefix_costs"],
+    }
+
+
 def _tie_evidence(old_evaluation, new_evaluation):
     old = _layout(old_evaluation["behavior"], "actual", "west_row3")
     if len(old["decision_traces"]) <= WEST_TIE_DECISION:
@@ -118,12 +133,19 @@ def _tie_evidence(old_evaluation, new_evaluation):
         raise ValueError("exp172 artifact does not contain the reproduced exact tie")
 
     new = _layout(new_evaluation["behavior"], "actual", "west_row3")
-    if len(new["decision_traces"]) <= WEST_TIE_DECISION:
-        raise ValueError("exp173 west_row3 ended before reproduced decision 6")
-    new_trace = new["decision_traces"][WEST_TIE_DECISION]
-    new_delayed = _candidate(new_trace, DELAYED)
-    new_immediate = _candidate(new_trace, IMMEDIATE)
-    selected = new["selected_plans"][WEST_TIE_DECISION]
+    reached = len(new["decision_traces"]) > WEST_TIE_DECISION
+    history_aligned = bool(
+        reached
+        and old["actions"][:WEST_TIE_DECISION]
+        == new["actions"][:WEST_TIE_DECISION]
+    )
+    selected = new["selected_plans"][WEST_TIE_DECISION] if reached else None
+    new_trace = new["decision_traces"][WEST_TIE_DECISION] if reached else []
+    new_delayed = _optional_candidate(new_trace, DELAYED)
+    new_immediate = _optional_candidate(new_trace, IMMEDIATE)
+    same_state_immediate = (
+        selected == list(IMMEDIATE) if history_aligned else None
+    )
     return {
         "layout": "west_row3",
         "zero_based_decision": WEST_TIE_DECISION,
@@ -136,18 +158,21 @@ def _tie_evidence(old_evaluation, new_evaluation):
             "steps": old["steps"],
         },
         "exp173": {
+            "reached_historical_decision": reached,
+            "history_prefix_aligned": history_aligned,
             "selected": selected,
-            "delayed_endpoint_cost": new_delayed["cost"],
-            "delayed_prefix_costs": new_delayed["prefix_costs"],
-            "immediate_endpoint_cost": new_immediate["cost"],
-            "immediate_prefix_costs": new_immediate["prefix_costs"],
+            "delayed_candidate": new_delayed,
+            "immediate_candidate": new_immediate,
             "success": new["success"],
             "steps": new["steps"],
+            "actions": new["actions"],
         },
-        "tie_corrected": bool(
-            new_delayed["cost"] == new_immediate["cost"]
-            and selected == list(IMMEDIATE)
-            and new_immediate["prefix_costs"] < new_delayed["prefix_costs"]
+        "same_state_immediate_selected": same_state_immediate,
+        "evidence_scope": (
+            "The exp172 artifact proves the historical exact tie. Exp173 is a "
+            "same-state correction observation only when the real action prefix "
+            "still aligns; otherwise it reports trajectory divergence or earlier "
+            "termination without attributing the old candidate costs to a new root."
         ),
     }
 
@@ -333,7 +358,9 @@ def main(argv=None) -> int:
                 runtime_seconds=time.monotonic() - started,
                 baseline_checkpoint_git_head=baseline_head,
                 input_hashes_unchanged=inputs_unchanged,
-                tie_corrected=tie_evidence["tie_corrected"],
+                same_state_immediate_selected=tie_evidence[
+                    "same_state_immediate_selected"
+                ],
             )
             core._write_json(args.out / "manifest.json", manifest)
             journal.update("artifacts", 2, 2, operation="complete")
