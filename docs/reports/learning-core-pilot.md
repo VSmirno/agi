@@ -1120,6 +1120,37 @@ Official artifact содержит **5** files и **120** rows; persistent `run.
 `progress.jsonl` (**130** records, maximum gap **0.306 s**), `results.json` и
 `manifest.json` сохраняют exact command, Git commit и final status.
 
+Exp168 проверил alternative transition target после exp167: вместо learned
+scalar/hurdle composition напрямую предсказывать vector delta. Контракт задан
+RED commit `fae0985`, implementation — `a534932`. Fresh HyperPC verification
+дала **6 passed** за **1.13 s**, smoke завершился за **3.432 s**. Canonical run
+завершён с `exact_protocol=true`, exit 0 и runtime **298.791 s**; artifact
+verifier — PASS для **7** artifacts. Frozen backbone и split **1536/512**
+сохранены.
+
+Training loss снизился **0.617935→0.004446** за **400** recorded updates.
+Held-out vector MSE равна **0.007777**, persistence MSE — **0.646083**, ratio —
+**0.012038**. Exact source имеет contact/blocked failures **0/4 и 4/4**,
+medians free-forward **0.124916**, interact **0.297726**, blocked MSE
+**0.192491**; unseen — **0/4 и 4/4**, **0.183308**, **0.336965**,
+**0.110097**.
+
+Это materially лучше exp165/166 на movement/contact change transitions:
+contact failures сняты на source и unseen, free/interact ratios резко ниже.
+Однако no-change blocked остается **4/4** на обоих splits. Gate — `false`,
+outcome — `vector_improvement_only`.
+
+Decision: direct vector prediction лицензирован как полезный component, а
+scalar/hurdle factorization была вредной для change transitions. Следующий
+минимальный causal arm замораживает exp168 vector и обучает generic
+transition-level changed/persistence atom для exact zero, не amplitude gate.
+Heavier object-transition JEPA не запускается до этой проверки. Это не
+AGI/JEPA/composition/transfer claim.
+
+Persistent `run.log`, `results.json`, `manifest.json`, checkpoint, **400** loss
+records, **120** rows и `progress.jsonl` с **4707** records и maximum gap
+**1.319 s** сохраняют exact command, Git commit и final status.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -1149,6 +1180,7 @@ Relational slot probe: exp164 HyperPC run at `7a6a6ca`.
 Relational pose probe: exp165 HyperPC run at `e349778`.
 Hurdle amplitude probe: exp166 HyperPC run at `e1e1bc4`.
 Hurdle oracle swap: `exp167-hurdle-oracle-swap-002` at `35809ac`.
+Direct vector transition: exp168 HyperPC run at `a534932`.
 
 ## Stage Review
 
@@ -1190,6 +1222,8 @@ continuous improvement от position-only relations, но categorical no-op wall
 снял большинство blocked failures hurdle target-ом, но потерял contact и не
 прошёл общий gate. Exp167 локализовал causal error в обоих learned hurdle
 components; only-oracle composition проходит source и unseen one-step gate.
+Exp168 снял contact failure direct vector target-ом, но exact blocked no-op
+остаётся открытым.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил

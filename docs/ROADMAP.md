@@ -435,6 +435,20 @@ OO одновременно подтверждает expressivity raw deltas. Д
 scalar/hurdle gate не обосновано: следующий шаг — явное mechanism/design
 решение, а не очередной coefficient/training sweep. AGI claim отсутствует.
 
+Exp168 заменил вредную scalar/hurdle factorization прямым vector transition
+target на frozen split **1536/512**. Held-out vector MSE — **0.007777** против
+persistence **0.646083** (ratio **0.0120**). Source/unseen contact failures
+стали **0/4 и 0/4**, interact ratios **0.2977/0.3370**, free ratios
+**0.1249/0.1833**: change transitions резко лучше exp165/166. Но blocked-noop
+остался **4/4** с MSE **0.1925/0.1101**. Gate — `false`, outcome —
+`vector_improvement_only`.
+
+Direct vector prediction лицензирован как полезный component; scalar/hurdle
+factorization была вредна для change transitions. Следующая минимальная causal
+composition замораживает exp168 vector и обучает generic transition-level
+changed/persistence atom для exact zero — не amplitude gate. Более тяжёлый
+object-transition JEPA до этой проверки не обоснован; AGI claim отсутствует.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

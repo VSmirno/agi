@@ -750,6 +750,34 @@ expressivity.
 Persistent `run.log`, `progress.jsonl`, `results.json`, `manifest.json` и rows
 сохраняют exact command, Git commit и финальный status.
 
+Exp168 реализован RED commit `fae0985` и implementation `a534932`. Fresh
+HyperPC verification: **6 passed** за **1.13 s**, smoke — **3.432 s**. Full
+canonical run завершился с `exact_protocol=true`, exit 0 и runtime
+**298.791 s**; artifact verifier — PASS для **7** artifacts. Frozen backbone и
+episode-disjoint split **1536/512** сохранены.
+
+Direct vector training loss снизился **0.617935→0.004446** за **400** recorded
+updates. Held-out vector MSE — **0.007777** против persistence **0.646083**,
+ratio **0.012038**. Exact source получил contact/blocked failures **0/4 и 4/4**,
+medians free **0.124916**, interact **0.297726**, blocked MSE **0.192491**;
+unseen — **0/4 и 4/4**, **0.183308**, **0.336965**, **0.110097**.
+
+По сравнению с exp165/166 direct vector резко улучшает free-motion и contact
+change transitions, устраняя contact failures на обоих splits. Однако
+no-change blocked transition остаётся **4/4**; gate — `false`, outcome —
+`vector_improvement_only`.
+
+Узкий decision: scalar/hurdle factorization была вредной для change
+transitions, а direct vector prediction лицензирован как component, не как
+полная dynamics. Следующий минимальный causal composition замораживает exp168
+vector и обучает generic transition-level changed/persistence atom для exact
+zero, а не amplitude gate. Heavier object-transition JEPA откладывается до
+этого результата. Это не AGI, JEPA, composition или transfer claim.
+
+Observability: persistent `run.log`, `results.json`, `manifest.json`, checkpoint,
+rows и `progress.jsonl` с **4707** records и maximum gap **1.319 s** сохраняют
+exact command, Git commit и финальный status.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
