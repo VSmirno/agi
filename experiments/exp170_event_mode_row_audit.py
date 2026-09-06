@@ -321,6 +321,7 @@ def main(argv=None) -> int:
             oracle_summary = _summarize_rows(oracle_rows)
             journal.update("summarize", 3, 4)
             errors = _classification_errors(candidate_rows)
+            candidate_critical = _critical_counts(exp169_summary)
             critical = _critical_counts(oracle_summary)
             journal.update("summarize", 4, 4)
 
@@ -382,6 +383,7 @@ def main(argv=None) -> int:
                     "candidate_vs_base_max_abs_mse_diff": candidate_base_max_mse_diff,
                 },
                 "exp169_registered_gate": registered,
+                "exp169_candidate_all_critical_rows": candidate_critical,
                 "oracle_event_registered_median_gate": oracle_registered,
                 "oracle_event_all_critical_rows": critical,
                 "predicted_event_errors": errors,
