@@ -449,6 +449,19 @@ composition замораживает exp168 vector и обучает generic tra
 changed/persistence atom для exact zero — не amplitude gate. Более тяжёлый
 object-transition JEPA до этой проверки не обоснован; AGI claim отсутствует.
 
+Exp169 скомпоновал frozen exp168 vector с generic learned changed/persistence
+event mode. Source впервые прошёл полный локальный transition gate:
+contact/blocked **0/4 и 0/4**, medians free/interact **0.1330/0.2977**. Но
+unseen остался contact/blocked **1/4 и 1/4**, free ratio **1.0**, interact
+**0.3370**; outcome — `source-only`. Frozen vector совпал с reference точно
+(`PP diff=0`), поэтому transfer failure не объясняется vector drift.
+
+Held-out event balanced accuracy — **0.9669**, recalls changed/no-change
+**0.9926/0.9412**, но unseen critical states всё ещё ошибочны. Это первый
+complete local transition gate, не transfer proof. Threshold tuning не
+лицензирован; следующий mechanism-level test — learned object-transition
+representation и pose-from-observation до planner/AGI claims.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

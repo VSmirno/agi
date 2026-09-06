@@ -1151,6 +1151,37 @@ Persistent `run.log`, `results.json`, `manifest.json`, checkpoint, **400** loss
 records, **120** rows и `progress.jsonl` с **4707** records и maximum gap
 **1.319 s** сохраняют exact command, Git commit и final status.
 
+Exp169 проверил минимальную composition, лицензированную exp168: frozen direct
+vector плюс generic transition-level changed/persistence event atom для exact
+zero. Контракт задан RED commit `07f0caf`, implementation — `d063aca`. Fresh
+HyperPC verification дала **6 passed** за **1.07 s**. Первый smoke сохранил
+failure overlap validator; второй valid smoke завершился за **7.836 s**.
+Canonical run завершён с `exact_protocol=true`, exit 0 и runtime **301.131 s**;
+artifact verifier — PASS для **9** artifacts.
+
+Frozen backbone и vector checkpoint не изменились; `PP` reference diff — точно
+**0**. Event training loss снизился **0.696804→0.047894**. Held-out loss равен
+**0.060342**, balanced accuracy **0.966908**, recalls changed/no-change
+**0.992584/0.941231**. Per-action BA: action 2 **0.960841**, action 3
+**0.910417**.
+
+Exact source получил contact/blocked failures **0/4 и 0/4**, medians
+free-forward **0.132960**, interact **0.297726**: это первый complete local
+transition gate в кампании. Unseen получил **1/4 и 1/4**, free ratio **1.0**,
+interact **0.336965**, поэтому transfer gate не пройден. Outcome —
+`source-only`; failure локализован в state/event classification transfer, не в
+drift frozen vector.
+
+Threshold tuning на unseen не запускается. Следующий mechanism-level test —
+learned object-transition representation и pose-from-observation до planner
+integration или AGI claims. Local source PASS не означает transfer,
+composition-stage, JEPA или AGI PASS.
+
+Persistent `run.log` (**634060 bytes**), `results.json`, `manifest.json`,
+checkpoint, два файла по **120** rows и `progress.jsonl` с **4830** records и
+maximum gap **1.325 s** сохраняют exact command, Git commit и final status.
+Failed-overlap и valid smoke artifacts сохранены.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -1181,6 +1212,7 @@ Relational pose probe: exp165 HyperPC run at `e349778`.
 Hurdle amplitude probe: exp166 HyperPC run at `e1e1bc4`.
 Hurdle oracle swap: `exp167-hurdle-oracle-swap-002` at `35809ac`.
 Direct vector transition: exp168 HyperPC run at `a534932`.
+Event-mode vector composition: exp169 HyperPC run at `d063aca`.
 
 ## Stage Review
 
@@ -1223,7 +1255,8 @@ continuous improvement от position-only relations, но categorical no-op wall
 прошёл общий gate. Exp167 локализовал causal error в обоих learned hurdle
 components; only-oracle composition проходит source и unseen one-step gate.
 Exp168 снял contact failure direct vector target-ом, но exact blocked no-op
-остаётся открытым.
+остаётся открытым. Exp169 впервые прошёл local source transition gate, но
+unseen transfer остался неполным при unchanged vector.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил
