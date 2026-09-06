@@ -46,3 +46,47 @@
 Миниплан выполнен: code + focused test + no-training HyperPC audit + проверка
 поведенческого seam + решение. Новых обученных моделей и поведенческого выигрыша
 в рамках этого плана нет. Артефакты: `/opt/cuda/agi-core-git-eccfb0e/output_to_user/core/exp171-event-context-audit-001/`.
+
+## Продолжение: exp172 observation-only → behavior
+
+Авторизовано пользователем «продолжай» после exp171. Один development run,
+без перебора параметров. Это локальный experiment seam, не новый subsystem.
+
+- [ ] `experiments/exp172_observation_only_transition.py`: per-action vector
+  и event MLP получают только z+hidden (без восьми pose features), hidden width
+  128. Frozen exp153 backbone, прежний replay/split и train-only class weights;
+  vector MSE и event BCE, по 400 updates, batch 256, прежние lr/seed. Не warm-start
+  из privileged heads. Literal persistence при event p<0.5; recurrent/sensors
+  берутся из frozen native model. Model.step работает с произвольным batch и
+  не требует evaluator context. Сохранить checkpoint обеих голов и losses.
+- [ ] `experiments/exp172_behavior_eval.py`: один общий depth-local beam search
+  для original/learned/actual arms. Horizon 3, width 5, max calls 55; fixed ordered
+  temporal scorer из baseline checkpoint, uncertainty penalty 0 и neutral model
+  termination у всех arms. Actual arm использует реальные fork outcomes только
+  внутри evaluator; learned/original не получают snapshots, histories как features
+  или будущие observations. Каждое решение исполняет первое действие и replans.
+- [ ] Development: прежние восемь layouts Push-1, по одному детерминированному
+  эпизоду с начала layout, max 16 реальных действий. Это 24 эпизода трёх arms,
+  не независимые training seeds. Сохранить success/steps/action trace, model calls,
+  selected costs. Actual/model arms имеют одинаковый candidate budget; реальное
+  воспроизведение истории для oracle учитывать отдельно как evaluator cost.
+- [ ] Дополнительно H1/H3: из прежних canonical late-prefix состояний прогнать
+  canonical continuation autoregressively (real root, без teacher forcing после
+  него), сравнить original/learned predicted latent с actual endpoints и
+  persistence. Это development diagnostic, не достаточная observed-physics метрика.
+- [ ] По одной focused проверке model batch/rollout без pose и общего search
+  budget/выбора с fake outcomes на HyperPC; полный run только после них. Логи
+  обязательны с первого этапа, исходники только Git. Root единожды проверяет
+  интеграционный diff и artifacts, без дублирующих review/test циклов.
+- [ ] Итог: если actual control не решает, не приписывать отсутствие behavioral
+  gain только dynamics; если actual решает, а learned нет — гипотеза текущего
+  observation-only рецепта не подтверждена. Если learned улучшает original,
+  дальнейшая независимая проверка остаётся отдельным этапом. Никакого автоматического
+  tuning до PASS; результаты/known limits сохранить в report/ASSUMPTIONS/ROADMAP.
+
+Интерфейс между двумя файлами: evaluator предоставляет
+`evaluate_behavior(model, baseline, ordered, config, journal, out)` → JSON-able
+dict. `model` и `baseline` имеют initial/step; `ordered` — frozen TemporalProbe.
+Evaluator не импортирует training runner. Training runner вызывает evaluator
+после сохранения голов и frozen-weight проверки. Parallel owners: отдельные
+script/test пары; root владеет документацией.
