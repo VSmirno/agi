@@ -371,6 +371,34 @@ def _metric_signature(variant):
     }
 
 
+def metric_signatures_match(candidate, reference, tolerance: float = 1e-7) -> bool:
+    """Compare discrete metrics exactly and finite aggregates within roundoff."""
+
+    if candidate.keys() != reference.keys():
+        return False
+    for split in candidate:
+        current, expected = candidate[split], reference[split]
+        for key in ("contact_failure_layouts", "blocked_noop_failure_layouts"):
+            if current.get(key) != expected.get(key):
+                return False
+        current_medians = current.get("medians", {})
+        expected_medians = expected.get("medians", {})
+        if current_medians.keys() != expected_medians.keys():
+            return False
+        for key, value in current_medians.items():
+            expected_value = expected_medians[key]
+            if value is None or expected_value is None:
+                if value is not expected_value:
+                    return False
+            elif not (
+                math.isfinite(value)
+                and math.isfinite(expected_value)
+                and abs(value - expected_value) <= tolerance
+            ):
+                return False
+    return True
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-checkpoint", type=Path, default=DEFAULT_BASELINE)
@@ -463,13 +491,15 @@ def main(argv=None) -> int:
                 alignment["oo_max_abs_mse_difference"] <= 1e-7
                 and alignment["oo_max_abs_gate_difference"] <= 1e-7
             )
-            matching["pp_metric_signature"] = (
-                _metric_signature(variants["PP"])
-                == _metric_signature({"splits": exp166_reference["one_step"]["splits"]})
+            matching["pp_metric_signature"] = metric_signatures_match(
+                _metric_signature(variants["PP"]),
+                _metric_signature({"splits": exp166_reference["one_step"]["splits"]}),
             )
-            matching["oo_metric_signature"] = (
-                _metric_signature(variants["OO"])
-                == _metric_signature(exp159_reference["variants"]["independent_amplitude_oracle"])
+            matching["oo_metric_signature"] = metric_signatures_match(
+                _metric_signature(variants["OO"]),
+                _metric_signature(
+                    exp159_reference["variants"]["independent_amplitude_oracle"]
+                ),
             )
             exact = all(matching.values())
             gates = {

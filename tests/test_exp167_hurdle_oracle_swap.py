@@ -57,6 +57,9 @@ def test_metric_signature_match_tolerates_only_numerical_noise():
     }
 
     assert exp.metric_signatures_match(recomputed, reference)
+    recomputed["source"]["medians"]["free"] += 1e-5
+    assert not exp.metric_signatures_match(recomputed, reference)
+    recomputed["source"]["medians"]["free"] -= 1e-5
     recomputed["source"]["contact_failure_layouts"] = 1
     assert not exp.metric_signatures_match(recomputed, reference)
 
