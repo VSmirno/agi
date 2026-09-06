@@ -450,7 +450,7 @@ changed/persistence atom для exact zero — не amplitude gate. Более �
 object-transition JEPA до этой проверки не обоснован; AGI claim отсутствует.
 
 Exp169 скомпоновал frozen exp168 vector с generic learned changed/persistence
-event mode. Source впервые прошёл полный локальный transition gate:
+event mode. Source впервые прошёл зарегистрированный локальный transition gate:
 contact/blocked **0/4 и 0/4**, medians free/interact **0.1330/0.2977**. Но
 unseen остался contact/blocked **1/4 и 1/4**, free ratio **1.0**, interact
 **0.3370**; outcome — `source-only`. Frozen vector совпал с reference точно
@@ -458,9 +458,20 @@ unseen остался contact/blocked **1/4 и 1/4**, free ratio **1.0**, intera
 
 Held-out event balanced accuracy — **0.9669**, recalls changed/no-change
 **0.9926/0.9412**, но unseen critical states всё ещё ошибочны. Это первый
-complete local transition gate, не transfer proof. Threshold tuning не
-лицензирован; следующий mechanism-level test — learned object-transition
-representation и pose-from-observation до planner/AGI claims.
+PASS зарегистрированного gate, не доказательство правильности всех переходов:
+source `east_row2` имеет free ratio **1.0**, скрытый медианой; на unseen
+free failures — **3/4**. Gate напрямую ограничивает только 16 из 60 rows
+каждого split. Threshold tuning по этим layouts не лицензирован. Следующий
+шаг — exp170: поштучный аудит сохранённых rows и oracle event-mode при frozen
+vector, без обучения. Необходимость object-transition JEPA пока не установлена.
+
+Exp170 завершил этот аудит на **120** сохранённых rows с точным совпадением
+ключей и targets. Oracle event-mode устранил все критические failures: source
+free/contact/blocked **0/0/0**, unseen **0/0/0** против learned **1/0/0** и
+**3/1/1**. На всех rows у learned event-head **5 FN и 7 FP**. Это достаточность
+правильного selector для данного critical slice, не доказательство его
+learnability или полного transfer. Следующая проверка — зависимость event-head
+от `z/h` при одинаковых pose/action и переносе расположения, без нового обучения.
 
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**

@@ -1166,21 +1166,42 @@ Frozen backbone и vector checkpoint не изменились; `PP` reference d
 **0.910417**.
 
 Exact source получил contact/blocked failures **0/4 и 0/4**, medians
-free-forward **0.132960**, interact **0.297726**: это первый complete local
-transition gate в кампании. Unseen получил **1/4 и 1/4**, free ratio **1.0**,
+free-forward **0.132960**, interact **0.297726**: это первый PASS
+зарегистрированного local transition gate в кампании. Unseen получил **1/4 и 1/4**, free ratio **1.0**,
 interact **0.336965**, поэтому transfer gate не пройден. Outcome —
 `source-only`; failure локализован в state/event classification transfer, не в
 drift frozen vector.
 
-Threshold tuning на unseen не запускается. Следующий mechanism-level test —
-learned object-transition representation и pose-from-observation до planner
-integration или AGI claims. Local source PASS не означает transfer,
+Threshold tuning на unseen не запускается. Поштучный аудит выявил source free
+failure `east_row2` (ratio **1.0**) и unseen free failures **3/4**, скрытые
+агрегацией. Следующий diagnostic — exp170: oracle event-mode на сохранённых
+rows при frozen vector, без обучения. Необходимость learned object-transition
+representation этим результатом не установлена. Local source PASS не означает transfer,
 composition-stage, JEPA или AGI PASS.
 
 Persistent `run.log` (**634060 bytes**), `results.json`, `manifest.json`,
 checkpoint, два файла по **120** rows и `progress.jsonl` с **4830** records и
 maximum gap **1.325 s** сохраняют exact command, Git commit и final status.
 Failed-overlap и valid smoke artifacts сохранены.
+
+Exp170 — artifact-only проверка exp169 на HyperPC (`69d019e`,
+`exp170-event-mode-row-audit-002`): **120** rows совпали по ключам, persistence
+targets и frozen vector MSE точно. Learned candidate имеет source
+free/contact-row/blocked failures **1/0/0**, unseen **3/1/1**. Oracle event-mode
+даёт **0/0/0** на обоих splits; medians free/interact — **0.124916/0.297726**
+и **0.183308/0.336965**. Зарегистрированные exp169 gates не пересматривались.
+Отдельный all-critical check провален candidate и пройден oracle.
+
+Всего learned event-head имеет **5 FN и 7 FP** по 120 rows. Контроль показывает,
+что исправление event selection достаточно для проверенных critical rows при
+неизменном vector predictor. Он не доказывает, что такой selector обучаем из
+имеющегося входа, и не обосновывает новую архитектуру сам по себе. Следующий
+diagnostic — pose/action-matched проверка зависимости classifier от `z/h` при
+переносе расположения, без обучения и threshold tuning по unseen.
+
+Focused HyperPC test: **1 passed**; run exit **0**, `exact_protocol=true`,
+runtime **0.108 s**. Persistent `run.log`, `progress.jsonl`, `manifest.json`,
+`results.json` и **120** oracle rows сохранены; первая итерация аудита сохранена.
 
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
@@ -1250,13 +1271,20 @@ critical one-step gate. Exp162 подтвердил nonlinear decodability conta
 threshold tradeoff не разделяет contact и no-op contexts. Exp164 дал небольшое
 continuous improvement от position-only relations, но categorical no-op wall
 остался. Exp165 добавил pose/orientation и не изменил categorical failures;
-следующий вопрос перенесён с input completeness на transition target. Exp166
+это не установило полноту входа: pose содержит относительные позиции и
+ориентацию, но не стены или абсолютные координаты, а вклад `z+h` требует
+отдельной проверки. Exp166
 снял большинство blocked failures hurdle target-ом, но потерял contact и не
 прошёл общий gate. Exp167 локализовал causal error в обоих learned hurdle
 components; only-oracle composition проходит source и unseen one-step gate.
 Exp168 снял contact failure direct vector target-ом, но exact blocked no-op
 остаётся открытым. Exp169 впервые прошёл local source transition gate, но
-unseen transfer остался неполным при unchanged vector.
+unseen transfer остался неполным при unchanged vector. Уточнение по rows:
+зарегистрированный source PASS скрывает один из четырёх free failures
+(`east_row2`, ratio **1.0**); unseen free failures — **3/4**. Gate напрямую
+ограничивает 16 из 60 rows каждого split и не означает правильность всей
+локальной dynamics. Exp170 проверяет oracle event-mode на сохранённых rows
+без обучения; выбор новой representation до этой проверки преждевременен.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил

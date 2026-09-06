@@ -790,21 +790,42 @@ loss — **0.060342**, balanced accuracy **0.966908**, changed recall
 **0.992584**, no-change recall **0.941231**; action-specific BA для actions 2/3
 — **0.960841/0.910417**.
 
-Exact source composition впервые прошла полный local transition gate:
+Exact source composition впервые прошла зарегистрированный local transition gate:
 contact/blocked failures **0/4 и 0/4**, medians free **0.132960**, interact
 **0.297726**. Unseen не прошёл: **1/4 и 1/4**, free **1.0**, interact
 **0.336965**. Outcome — `source-only`. Это state/event classification transfer
 gap при frozen vector, а не vector drift.
 
 Узкий decision: не настраивать threshold по этим четырём unseen layouts.
-Следующий mechanism-level diagnostic — learned object-transition representation
-и pose-from-observation test до изменения planner или любых AGI claims. Source
+Следующий diagnostic — exp170, artifact-only oracle event-mode и поштучный
+аудит frozen vector. Source PASS скрывает free failure `east_row2` (ratio
+**1.0**); unseen имеет **3/4** free failures. Зарегистрированный median gate
+сохраняется как исторический результат, но не доказывает правильность всех
+переходов. Его прямые ограничения охватывают 16 из 60 rows каждого split.
+Необходимость object-transition JEPA этим опытом не установлена. Восемь pose
+features содержат относительные позиции и ориентацию, но не абсолютные позиции
+или стены; полнота Markov state не доказана. Полный вход также содержит `z+h`,
+поэтому это само по себе не доказывает недостаточность входа модели. Source
 PASS не является transfer, composition-stage, JEPA или AGI PASS.
 
 Observability: persistent `run.log` (**634060 bytes**), `results.json`,
 `manifest.json`, checkpoint, два файла по **120** rows и `progress.jsonl` с
 **4830** records и maximum gap **1.325 s** сохраняют exact command, Git commit
 и финальный status. Failed и valid smoke artifacts сохранены.
+
+Exp170 (`69d019e`, `exp170-event-mode-row-audit-002`) проверил **120**
+сохранённых rows без обучения: ключи, persistence targets, frozen vector MSE и
+candidate/base MSE совпали точно. Oracle event-mode снял все critical failures
+на обоих splits; learned candidate имеет source free/contact/blocked **1/0/0**,
+unseen **3/1/1**. Во всём slice — **5 FN и 7 FP**. Исторический exp169 median
+gate оставлен неизменным; all-critical check — отдельная описательная проверка.
+Oracle использует истинное наблюдаемое изменение и не является deployable
+моделью. Доказана достаточность правильного выбора режима на этих critical
+rows, но не его обучаемость, общая достаточность vector dynamics или transfer.
+Следующий diagnostic — pose/action-matched проверка зависимости от `z/h`.
+HyperPC: focused test **1 passed**, run exit **0**, `exact_protocol=true`,
+runtime **0.108 s**. Сохранены `run.log`, `progress.jsonl`, `manifest.json`,
+`results.json` и oracle rows; первая итерация аудита также сохранена.
 
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
