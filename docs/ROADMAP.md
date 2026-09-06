@@ -482,6 +482,21 @@ observation-only vector/event кандидат для H1/H3 и fixed-planner tas
 очередной privileged-head median PASS не является целью. Детали и условия
 остановки — в отчёте и миниплане.
 
+Exp172 реализовал observation-only vector/event без pose: success **2/8**
+против original **0/8**, actual-transition control **4/8**. Но canonical H3
+mean MSE ухудшился **0.11389→0.32092** при улучшении H1. Это development signal,
+не устойчивый rollout/transfer PASS. В actual traces найдено откладывание
+действия: endpoint-cost tie-break по action ID выбирает wait-then-act снова
+при каждом replanning. Следующий exp173 проверяет только early-progress tie-break
+на frozen checkpoints, без обучения; серия новых голов пока не продолжается.
+
+Exp173 подтвердил tie-break fix в экспериментальном search: те же четыре
+oracle успеха за **7–8** действий вместо **16**. Success counts не изменились:
+original/learned/actual **0/8, 2/8, 4/8**, learned traces идентичны exp172.
+Значит, известный дефект откладывания снят, но остаются и learned rollout
+error, и failures при истинной dynamics. Следующая развилка — goal-score
+против search pruning/horizon на actual failures; новые головы не обучаются.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

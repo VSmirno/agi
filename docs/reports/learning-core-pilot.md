@@ -1293,6 +1293,84 @@ Exp169 пока не является исполнимым кандидатом 
 отдельно обоснованное обновление состояния; будущий истинный pose в learned arm
 запрещён. Новая архитектура не добавляется только ради снятия этого ограничения.
 
+## Exp172: observation-only модель и реальное поведение
+
+HyperPC `exp172-observation-only-transition-001`, code `728092f`, runtime
+**259.715 s**, exit **0**, `exact_protocol=true`. Vector/event heads обучены
+с нуля по **400** updates на прежнем replay; frozen exp153 не изменился.
+Pose, snapshots и sidecar в обучаемом входе отсутствуют. По одной focused
+проверке модели и shared search: обе **1 passed**, по **1.04 s**.
+
+При общем H3/width5/55-candidate search, fixed ordered scorer и 16 реальных
+действиях на layout:
+
+| Условие | Success | Mean steps | Candidate calls |
+|---|---:|---:|---:|
+| Original exp153 | 0/8 | 16.00 | 7040 |
+| Learned observation-only | 2/8 | 15.25 | 6710 |
+| Actual-transition evaluator | 4/8 | 16.00 | 7040 |
+
+Learned решает `west_row3` и `east_row4_left`, оба за **13** действий. Это
+положительный development-сигнал без privileged pose, не устойчивый transfer
+или подтверждение AGI. Oracle дополнительно выполнил **7040** resets и **66970**
+replayed actions; они не входят в опыт или budget learned arm.
+
+Heldout vector MSE **0.0077386**, persistence **0.646083**, ratio **0.0119777**;
+event balanced accuracy **0.965199**, changed/nochange recall **0.991905/0.938493**.
+На восьми canonical roots H1 mean MSE original→learned
+**0.0030643→0.0007483**, но H3 **0.1138897→0.3209219** (хуже).
+Median ratios к persistence H1 **0.98838→0.23508**, H3 **0.20208→0.94333**.
+Таким образом, one-step улучшение не превратилось в устойчивый autoregressive
+прогноз; два success не закрывают причинную цепочку «лучший rollout → лучшее
+планирование» на всём наборе.
+
+Actual control тоже не решает все случаи. В actual/west_row3 decision **6**
+равны endpoint costs для `[2,3,0]` и `[3,0,0]`: **-1.8422484397888184**.
+Action-ID tie-break выбирает blocked forward перед interact и вновь откладывает
+его при replanning. На четырёх успешных oracle layouts задача завершается лишь
+на шаге **16**, когда truncation меняет доступные imagined endpoints. Это
+конкретный дефект tie-break и ограничение интерпретации oracle success как
+верхней оценки; моделью динамики его не объяснить.
+
+Следующая проверка — exp173, frozen-checkpoint сравнение раннего прогресса
+только при точном равенстве endpoint costs, без нового обучения. Старый scorer,
+основной endpoint key и бюджеты остаются; sum-of-costs и environment-specific
+rules не добавляются. Исторический exp172 run неизменен.
+
+Артефакты: run.log, progress.jsonl, manifest/results, observation_only_heads.pt,
+400 vector + 400 event loss rows, 24 behavior rows и 16 canonical rollout rows.
+
+## Exp173: раннее улучшение при равном endpoint cost
+
+Canonical HyperPC run `exp173-early-progress-tie-001` на `fbcef4c`:
+**33.346 s**, exit **0**. Загрузил неизменные exp172 heads и frozen baseline;
+SHA входных checkpoints/results сохранены и не изменились. Обучения нет.
+Focused test **1 passed, 1.00 s** проверил legacy tie, раннее улучшение при
+точном равенстве и безусловный приоритет лучшего endpoint. Production
+`core_planner` не менялся; optional flag добавлен только в experiment evaluator,
+старый default сохраняет exp172.
+
+Actual/west_row3 имеет тот же real prefix до decision 6, но теперь выбирает
+`[3,0,0]` и заканчивает за **7** действий вместо **16**. Старый delayed candidate
+отсечён новым beam — это явно отражено в отчёте, а не считается отсутствием
+данных. Четыре прежних oracle успеха теперь занимают **7/7/7/8** действий.
+Mean steps actual **16→11.625**, candidate calls **7040→5115**; evaluator
+replayed actions **66970→42855**. Исчезла наблюдавшаяся зависимость этих четырёх
+успехов от достижения time limit.
+
+Количество успехов осталось original/learned/actual **0/8, 2/8, 4/8**.
+Original и learned action traces совпали с exp172 полностью. Исправление
+tie-break не устранило learned rollout error или остальные oracle failures.
+Вывод ограничен конкретным дефектом перепланирования; proof of transfer нет.
+
+Первая попытка сохранена отдельно как `exp173-early-progress-tie-aborted-001`
+(`failed`, `BrokenPipeError`); официальный результат — завершённый run выше.
+Отчёт больше не требует, чтобы старый кандидат оставался в изменённом beam.
+Сохранены run.log, progress.jsonl, manifest/results и 24 behavior/16 canonical
+rows. Дальнейший head tuning остановлен. Следующая диагностическая развилка —
+разделить goal-score и отсечение/горизонт поиска на оставшихся actual failures;
+никакая новая representation этим результатом ещё не обоснована.
+
 ## Stage Review
 
 **Ideological debt addressed:** отсутствие обучаемой динамики и переносимого

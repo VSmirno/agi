@@ -829,6 +829,38 @@ runtime **0.108 s**. Сохранены `run.log`, `progress.jsonl`, `manifest.j
 
 ### 2026-09-06 — Границы доказательств после ревизии exp164–170
 
+Exp172 development protocol (до результатов): observation-only heads учатся
+с нуля на том же replay поверх frozen exp153; это проверка полезности конкретного
+дополнительного обучения, не compute-matched превосходство над всеми baseline.
+Один training seed и восемь старых layouts не дают confirmatory transfer claim.
+Сравнение original/learned/actual использует общий search, scorer и candidate
+budget; oracle native replay steps учитываются отдельно и не выдаются за опыт
+learned arm. Model termination и uncertainty не участвуют в ранжировании.
+H1/H3 latent MSE дополняется реальным closed-loop success; меньший MSE сам по
+себе не закрывает поведенческий gate.
+
+Exp172 завершён на `728092f`: **259.715 s**, exit **0**, exact protocol и frozen
+backbone подтверждены. Original/learned/actual success **0/8, 2/8, 4/8**;
+learned H1 mean MSE улучшился **0.0030643→0.0007483**, H3 ухудшился
+**0.1138897→0.3209219**. Predictor автономен от pose, но compounding error
+остаётся; причинная полезность rollout не закрыта всем набором.
+Oracle success дополнительно зависит от текущей обработки truncation:
+равноценный wait-then-act предпочитается immediate act по action ID, и 4 oracle
+успеха наступили ровно на шаге 16. Exp173 отдельно проверяет exact-tie early
+progress; exp172 не переписывается, новые головы не дообучаются.
+
+Exp173 (`fbcef4c`, canonical `exp173-early-progress-tie-001`) завершён за
+**33.346 s**, exit **0**, frozen input SHA неизменны. Тот же actual/west prefix
+теперь приводит к immediate interact и успеху за **7** действий. Четыре
+oracle успеха **7/7/7/8** вместо **16/16/16/16**; success counts прежние
+**0/8, 2/8, 4/8**, original/learned traces не изменились. Поэтому early-tie
+исправление не считается решением остальных planner или dynamics failures.
+Production planner остаётся прежним; новый флаг только в evaluator, без epsilon,
+суммы path costs или action-specific rules. Первый прерванный run сохранён
+отдельно с failed status; canonical полный run и focused test **1 passed**
+имеют persistent logs. Следующий diagnostic должен отделить goal-score от
+search horizon/pruning, не подгонять event heads по этим development layouts.
+
 Exp171 (`bb05139`, `exp171-event-context-audit-001`) подтвердил native
 reproduction **120/120**, diff **0**, unchanged weights/checkpoint. Coverage
 **116/120**, все шесть critical failures имеют лишь **2–16** same-label train

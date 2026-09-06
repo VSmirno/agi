@@ -52,33 +52,33 @@
 Авторизовано пользователем «продолжай» после exp171. Один development run,
 без перебора параметров. Это локальный experiment seam, не новый subsystem.
 
-- [ ] `experiments/exp172_observation_only_transition.py`: per-action vector
+- [x] `experiments/exp172_observation_only_transition.py`: per-action vector
   и event MLP получают только z+hidden (без восьми pose features), hidden width
   128. Frozen exp153 backbone, прежний replay/split и train-only class weights;
   vector MSE и event BCE, по 400 updates, batch 256, прежние lr/seed. Не warm-start
   из privileged heads. Literal persistence при event p<0.5; recurrent/sensors
   берутся из frozen native model. Model.step работает с произвольным batch и
   не требует evaluator context. Сохранить checkpoint обеих голов и losses.
-- [ ] `experiments/exp172_behavior_eval.py`: один общий depth-local beam search
+- [x] `experiments/exp172_behavior_eval.py`: один общий depth-local beam search
   для original/learned/actual arms. Horizon 3, width 5, max calls 55; fixed ordered
   temporal scorer из baseline checkpoint, uncertainty penalty 0 и neutral model
   termination у всех arms. Actual arm использует реальные fork outcomes только
   внутри evaluator; learned/original не получают snapshots, histories как features
   или будущие observations. Каждое решение исполняет первое действие и replans.
-- [ ] Development: прежние восемь layouts Push-1, по одному детерминированному
+- [x] Development: прежние восемь layouts Push-1, по одному детерминированному
   эпизоду с начала layout, max 16 реальных действий. Это 24 эпизода трёх arms,
   не независимые training seeds. Сохранить success/steps/action trace, model calls,
   selected costs. Actual/model arms имеют одинаковый candidate budget; реальное
   воспроизведение истории для oracle учитывать отдельно как evaluator cost.
-- [ ] Дополнительно H1/H3: из прежних canonical late-prefix состояний прогнать
+- [x] Дополнительно H1/H3: из прежних canonical late-prefix состояний прогнать
   canonical continuation autoregressively (real root, без teacher forcing после
   него), сравнить original/learned predicted latent с actual endpoints и
   persistence. Это development diagnostic, не достаточная observed-physics метрика.
-- [ ] По одной focused проверке model batch/rollout без pose и общего search
+- [x] По одной focused проверке model batch/rollout без pose и общего search
   budget/выбора с fake outcomes на HyperPC; полный run только после них. Логи
   обязательны с первого этапа, исходники только Git. Root единожды проверяет
   интеграционный diff и artifacts, без дублирующих review/test циклов.
-- [ ] Итог: если actual control не решает, не приписывать отсутствие behavioral
+- [x] Итог: если actual control не решает, не приписывать отсутствие behavioral
   gain только dynamics; если actual решает, а learned нет — гипотеза текущего
   observation-only рецепта не подтверждена. Если learned улучшает original,
   дальнейшая независимая проверка остаётся отдельным этапом. Никакого автоматического
@@ -90,3 +90,37 @@ dict. `model` и `baseline` имеют initial/step; `ordered` — frozen Tempor
 Evaluator не импортирует training runner. Training runner вызывает evaluator
 после сохранения голов и frozen-weight проверки. Parallel owners: отдельные
 script/test пары; root владеет документацией.
+
+Exp172 выполнен на `728092f` за **259.715 s**, exit **0**. Original/learned/actual
+success **0/8, 2/8, 4/8**. H1 mean MSE улучшился, H3 ухудшился; дальнейшее
+обучение голов приостановлено. Две focused проверки прошли, integration review
+и чтение реальных artifacts выполнены. Полные результаты в learning-core report.
+
+### Уточнение после exp172: подтверждённое откладывание действия
+
+В сохранённой actual/west_row3 трассе decision 6 план `[2,3,0]` и немедленный
+`[3,0,0]` имеют ровно один cost `-1.8422484397888184`. Action-ID tie-break
+предпочитает безэффектный forward, а replanning повторяет выбор до лимита.
+Это воспроизведённый planner defect, а не основание для tuning моделей.
+
+- [x] Exp173: оставить endpoint cost главным ключом; только при точном равенстве
+  сравнивать prefix costs лексикографически (лучший более ранний прогноз первым),
+  затем actions. Не суммировать costs, не вводить epsilon/коэффициент/action rule.
+- [x] Добавить optional tie-break в evaluator с прежним default; exp172 остается
+  воспроизводимым без флага. Один focused test: при равных endpoint выбрать
+  раннее улучшение, но лучший endpoint всегда важнее prefix costs.
+- [x] Загрузить сохранённые exp172 heads/backbone, выполнить прежние 24 episodes
+  с новым tie-break без обучения. Сравнить с неизменными exp172 artifacts,
+  сохранить отдельный exp173 run с logs/progress/manifest/checkpoint hash.
+  Core production planner пока не менять: сначала проверить локальный seam.
+- [x] Записать все результаты, включая оставшиеся failures; не запускать sweep.
+
+Exp173 завершён на `fbcef4c`, **33.346 s**, exit **0**, один focused test
+**1 passed**. Oracle успешные эпизоды ускорены с 16 до 7–8 действий;
+success **0/8, 2/8, 4/8** не изменился, learned/original traces прежние.
+Одна прерванная попытка сохранена отдельно. Root просмотрел локальный diff,
+обнаружил и передал исправление reporting assumptions о сохранении старых
+beam candidates; canonical artifact подтвердил aligned real prefix и
+immediate action. Следующий узел — goal-score против pruning/horizon на
+оставшихся actual failures. Новое обучение или full confirmatory campaign
+не запускались; production planner не менялся.
