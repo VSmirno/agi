@@ -473,6 +473,15 @@ free/contact/blocked **0/0/0**, unseen **0/0/0** против learned **1/0/0** 
 learnability или полного transfer. Следующая проверка — зависимость event-head
 от `z/h` при одинаковых pose/action и переносе расположения, без нового обучения.
 
+Exp171 выполнил эту проверку: native probabilities **120/120**, diff **0**;
+coverage **116/120** на **98037** train transitions, все шесть critical failures
+покрыты **2–16** примерами. Hidden/z/both swaps меняют **9/5/10** решений из
+**60**, включая как исправления, так и новые ошибки. Недостаточность покрытия
+и вредный shortcut этим не разделены. Следующий bounded опыт должен дать
+observation-only vector/event кандидат для H1/H3 и fixed-planner task success;
+очередной privileged-head median PASS не является целью. Детали и условия
+остановки — в отчёте и миниплане.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

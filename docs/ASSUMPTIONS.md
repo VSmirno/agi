@@ -829,6 +829,18 @@ runtime **0.108 s**. Сохранены `run.log`, `progress.jsonl`, `manifest.j
 
 ### 2026-09-06 — Границы доказательств после ревизии exp164–170
 
+Exp171 (`bb05139`, `exp171-event-context-audit-001`) подтвердил native
+reproduction **120/120**, diff **0**, unchanged weights/checkpoint. Coverage
+**116/120**, все шесть critical failures имеют лишь **2–16** same-label train
+примеров, но не нулевое покрытие. Hidden/z/both swaps меняют **9/5/10** из
+**60** решений; каждый вариант как исправляет, так и создаёт ошибки. Coarse
+pose/action counts не устанавливают достаточность опыта; гибридные swaps не
+доказывают вредный shortcut. Поведенческая полезность остаётся непроверенной.
+Следующий observation-only кандидат должен убрать evaluator pose из входа,
+а не получать истинный pose на будущих imagined шагах. Exp171 не обучал такой
+кандидат. Runtime **137.682 s**, exit **0**, focused **1 passed**; persistent
+logs/progress/manifest/results и row artifacts сохранены на HyperPC.
+
 В exp164/165 веса классов обучающей ошибки считались по всему replay после
 75/25 split, включая heldout labels (`_audit_counts({"all": replay._episodes()})`).
 Это утечка агрегированной validation-статистики; величина влияния не измерена.

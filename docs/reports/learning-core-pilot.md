@@ -1235,6 +1235,64 @@ Hurdle oracle swap: `exp167-hurdle-oracle-swap-002` at `35809ac`.
 Direct vector transition: exp168 HyperPC run at `a534932`.
 Event-mode vector composition: exp169 HyperPC run at `d063aca`.
 
+## Ревизия направления и переход к поведению (2026-09-06)
+
+Exp171 (`bb05139`, HyperPC `exp171-event-context-audit-001`) завершён без
+обучения за **137.682 s**, exit **0**, `exact_protocol=true`. Целевой тест:
+**1 passed** за **0.97 s**. Все **120** native event probabilities совпали с
+exp169 точно (max abs diff **0.0**); backbone, event-head и checkpoint SHA
+не изменились. Сохранены run.log, progress.jsonl, manifest/results, **120**
+coverage rows и **60** matched-context rows.
+
+На **98037** train transitions точное целочисленное pose/action coverage
+есть для **116/120** canonical rows; **4** не покрыты, противоположных labels
+для canonical ключей в train нет. Все **6** critical failures exp169 покрыты,
+но лишь **2–16** примерами: source east free **4**, unseen west/north/south
+free **8/7/11**, unseen east blocked **16**, east contact **2**. Это покрытие
+относительных позиций и ориентации, не совпадение полного наблюдения или истории.
+Непокрыты east source/unseen step2 actions forward/noop; среди них unseen
+forward ошибочен, хотя он не входит в прежний critical blocked gate.
+
+Все **60** source→unseen пар совпали по pose/action/step и event label.
+Подмена hidden меняет **9/60** решений, z — **5/60**, z+hidden — **10/60**.
+Hidden-only исправляет **6** unseen event ошибок и создаёт **3**; z-only —
+**4** исправляет и **1** создаёт; z+hidden — **6** исправляет и **4** создаёт.
+Следовательно, простое удаление истории не обосновано; swaps измеряют
+чувствительность, а не доказывают вредный shortcut или полноту pose. Гибридные
+входы могут быть вне обучающего распределения.
+
+Decision: версия «все critical failures вызваны отсутствием pose/action
+примеров» отвергнута; достаточность покрытия и причина контекстной зависимости
+не установлены. Следующий bounded опыт выбирается для возвращения к поведению:
+observation-only вариант direct vector/event predictor в существующем model
+seam, без pose sidecar, с train-only учётом редких переходов; фиксированный
+рецепт и контроль исходного predictor, затем H1/H3 и task success с неизменным
+planner/score. Это следующий опыт, не выполненный результат. Не обучать ещё одну
+privileged head только ради старого median gate. Если H3/поведение не улучшаются,
+остановить эту серию голов и отдельно рассмотреть representation/learning
+design; новые sealed layouts/rulesets до выбора кандидата не открывать.
+
+Рабочий миниплан: [event-to-behavior](../superpowers/plans/2026-09-06-event-to-behavior-miniplan.md).
+Exp164/165 использовали heldout class statistics в training weights; величина
+эффекта не измерена. Exp168/169 считают веса только по train. Старые результаты
+сохраняются, но exp164/165 не считаются pristine heldout evidence.
+
+Текущие source/unseen — development layouts после многократного использования
+для выбора следующего опыта. Последние one-step gates не измеряют освоение
+изменённых правил Push-2, физическую точность всех исходов или task success.
+
+Поведенческий контроль уже имеет локальную точку расширения:
+`exp146._late_fork_audit` оценивает одинаковые 125 трёхшаговых последовательностей
+на actual/predicted endpoints. Для receding-horizon comparison нужно повторять
+выбор и реальное исполнение с одинаковыми scorer и search budget; существующий
+late-fork результат не считается таким сравнением.
+
+Exp169 пока не является исполнимым кандидатом для этого learned arm: pose
+подставляется evaluator, хранится вне `LatentState`, не обновляется в rollout и
+не поддерживается batching планировщика. Нужен observation-only кандидат либо
+отдельно обоснованное обновление состояния; будущий истинный pose в learned arm
+запрещён. Новая архитектура не добавляется только ради снятия этого ограничения.
+
 ## Stage Review
 
 **Ideological debt addressed:** отсутствие обучаемой динамики и переносимого
