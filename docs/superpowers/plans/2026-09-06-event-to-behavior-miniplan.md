@@ -30,8 +30,8 @@
 
 ### Task 2: возможность поведенческого сравнения (параллельно, read-only)
 
-- [ ] Проверить существующие actual-transition planner controls и frozen model rollout. Назвать минимальный executable путь для original/learned/oracle comparison, не подставляющий будущий pose в learned arm.
-- [ ] Если exp169 не может автономно обновлять pose, явно отметить blocking dependency; не запускать заведомо невалидное сравнение и не добавлять pose subsystem молча.
+- [x] Проверить существующие actual-transition planner controls и frozen model rollout. `exp146._late_fork_audit` уже перебирает 125 одинаковых последовательностей с actual/predicted endpoint costs. Его можно расширить до receding-horizon development comparison, сохраняя общий action budget и scorer; текущий audit сам по себе не full closed-loop control.
+- [x] Exp169 не может автономно обновлять pose: `_current_pose` вне `LatentState`, `step` его не меняет, `core_planner._stack/_slice` не переносит. Прямое подключение также сталкивается с batch mismatch. Для learned arm нужен observation-only кандидат либо отдельно обоснованный предиктор состояния. Истинный future pose не подставляется; новый subsystem в этом плане не строится.
 
 ### Task 3: решение по данным
 

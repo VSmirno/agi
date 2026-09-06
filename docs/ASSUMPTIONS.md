@@ -827,6 +827,26 @@ HyperPC: focused test **1 passed**, run exit **0**, `exact_protocol=true`,
 runtime **0.108 s**. Сохранены `run.log`, `progress.jsonl`, `manifest.json`,
 `results.json` и oracle rows; первая итерация аудита также сохранена.
 
+### 2026-09-06 — Границы доказательств после ревизии exp164–170
+
+В exp164/165 веса классов обучающей ошибки считались по всему replay после
+75/25 split, включая heldout labels (`_audit_counts({"all": replay._episodes()})`).
+Это утечка агрегированной validation-статистики; величина влияния не измерена.
+Исторические runs сохранены, pristine heldout claim для них не допускается.
+Exp168/169 используют train-only counts; ради исправления исторического отчёта
+старые диагностические головы не переобучаются.
+
+Четыре многократно использованных unseen layouts теперь development, а не
+независимая confirmatory выборка. Поздняя серия остаётся Push-1 one-step
+диагностикой; освоение Push-2 ею не проверено.
+
+Exp168/169 используют `_current_pose`, устанавливаемый evaluator перед каждым
+реальным fork. Pose не входит в `LatentState`, не обновляется при imagined step
+и не переносится `core_planner._stack/_slice`. При прямом подключении в MPC
+батч кандидатов также не совпадёт с размером установленного pose. Это известная
+граница diagnostic wrapper, не воспроизведённый дефект canonical one-step runs.
+Нельзя устранять её подстановкой истинного будущего pose в learned arm.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned
