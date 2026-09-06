@@ -422,6 +422,19 @@ failures улучшились source **4→0**, unseen **4→1**, тогда к�
 atom против predicted/oracle conditional amplitude. Он локализует виновную
 часть hurdle target до нового training. AGI/composition/transfer не доказаны.
 
+Exp167 выполнил exact **2×2** oracle swap (`P/O atom × P/O conditional`).
+Только `OO` прошёл gate: source/unseen contact/blocked **0/4 и 0/4**, medians
+free/interact **0.1722/0.8997** и **0.1532/0.9312**. `PO` исправил source до
+**0/4 и 0/4**, но unseen оставил contact **1/4**; `OP` сохранил source/unseen
+contact **2/4 и 4/4**. `PP` воспроизвёл exp166. Gates `PP/PO/OP=false`,
+`OO=true`; outcome — `both_components_fail`.
+
+Atom совпал с oracle в **318/360** cases (`FP=24`, `FN=18`), с failures в
+actions 2/3. Значит, learned errors есть и в atom, и в conditional amplitude;
+OO одновременно подтверждает expressivity raw deltas. Дальнейшее tuning
+scalar/hurdle gate не обосновано: следующий шаг — явное mechanism/design
+решение, а не очередной coefficient/training sweep. AGI claim отсутствует.
+
 **Stage 88 — CLOSED (2026-04-16, 1/2 gates)**  
 **Stage 89 — PARTIAL (2026-04-19)**
 

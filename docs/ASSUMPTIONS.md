@@ -714,6 +714,42 @@ Observability: persistent `run.log`, `results.json`, `manifest.json`, checkpoint
 rows и `progress.jsonl` с **4828** records и maximum gap **1.324 s** сохраняют
 exact command, Git commit и финальный status.
 
+Exp167 реализован RED commit `58de3b2` и implementation `3c735f5`; validator
+контракт уточнён RED `4107acc` и fix `35809ac`. Fresh HyperPC verification:
+**7 passed** за **1.05 s**. Официальный artifact
+`exp167-hurdle-oracle-swap-002` завершился с `exact_protocol=true`, exit 0 и
+runtime **1.83593 s**; verifier — PASS. Он содержит **5** files, **120** rows и
+`progress.jsonl` с **130** records, maximum gap **0.306 s**. Run `-001`
+сохранён, но superseded только из-за слишком строгого exact-float validator.
+
+Reference alignment подтверждён: `PP` отличается от exp166 максимум на
+**1.49e-8** при tolerance **1e-7**, `OO` — ровно **0**. Результаты
+contact/blocked/free/interact:
+
+- `PP`: source **2/4, 0/4, 0.357238, 0.929919**; unseen
+  **4/4, 1/4, 0.614373, 1.0**.
+- `PO`: source **0/4, 0/4, 0.339605, 0.899737**; unseen
+  **1/4, 0/4, 0.647844, 0.972617**.
+- `OP`: source **2/4, 0/4, 0.177678, 0.929919**; unseen
+  **4/4, 0/4, 0.160719, 0.992514**.
+- `OO`: source **0/4, 0/4, 0.172222, 0.899737**; unseen
+  **0/4, 0/4, 0.153195, 0.931245**.
+
+Gates `PP/PO/OP` — `false`, `OO` — `true`; outcome —
+`both_components_fail`. Predicted atom совпал с oracle для **318/360** rows:
+**24 FP**, **18 FN**, failures сосредоточены в actions 2/3. `PO` показывает
+остаточную conditional ошибку на unseen, а `OP` — самостоятельную atom ошибку;
+только совместный oracle проходит оба splits. `OO` также подтверждает raw delta
+expressivity.
+
+Узкий вывод: learned scalar/hurdle factorization ошибается в обоих components.
+Дальнейшее gate tuning, longer training и coefficient sweeps не лицензированы.
+Следующий шаг требует mechanism/design decision; это не AGI, JEPA, composition
+или transfer claim.
+
+Persistent `run.log`, `progress.jsonl`, `results.json`, `manifest.json` и rows
+сохраняют exact command, Git commit и финальный status.
+
 ## 2026-05-21 — Stage9X local survival affordances and remaining hostile wall
 **Что сделано:** Ветка `feature/stage9x-capability-goal-handoff` доведена до
 commit `b89e462`. Закрыты несколько локальных Stage9X gaps: goal-conditioned

@@ -1083,6 +1083,43 @@ Persistent `run.log`, `results.json`, `manifest.json`, checkpoint, rows и
 `progress.jsonl` содержат **4828** progress records с maximum gap **1.324 s**,
 exact command, Git commit и финальный status.
 
+Exp167 выполнил preregistered **2×2** oracle swap для двух hurdle components:
+predicted/oracle atom × predicted/oracle conditional amplitude. Контракт задан
+RED commit `58de3b2`, implementation — `3c735f5`; validator tolerance уточнён
+RED `4107acc` и fix `35809ac`. Fresh HyperPC verification дала **7 passed** за
+**1.05 s**.
+
+Официальный run `exp167-hurdle-oracle-swap-002` завершился с
+`exact_protocol=true`, exit 0 и runtime **1.83593 s**; verifier — PASS. `-001`
+сохранён как superseded: scientific result не менялся, повтор потребовался из-за
+exact-float validator. `PP` reference отличается от exp166 максимум на
+**1.49e-8** при tolerance **1e-7**; `OO` reference diff — **0**.
+
+Exact contact/blocked/free/interact metrics:
+
+- `PP`: source **2/4, 0/4, 0.357238, 0.929919**; unseen
+  **4/4, 1/4, 0.614373, 1.0**.
+- `PO`: source **0/4, 0/4, 0.339605, 0.899737**; unseen
+  **1/4, 0/4, 0.647844, 0.972617**.
+- `OP`: source **2/4, 0/4, 0.177678, 0.929919**; unseen
+  **4/4, 0/4, 0.160719, 0.992514**.
+- `OO`: source **0/4, 0/4, 0.172222, 0.899737**; unseen
+  **0/4, 0/4, 0.153195, 0.931245**.
+
+Gates `PP/PO/OP` — `false`, `OO` — `true`; outcome —
+`both_components_fail`. Atom match — **318/360**, с **24 FP** и **18 FN**;
+ошибки есть в actions 2/3. `OP` изолирует atom failure, `PO` оставляет
+conditional unseen failure, а `OO` подтверждает expressivity frozen raw delta.
+
+Итог: learned atom и conditional amplitude оба вносят causal failure.
+Продолжать scalar/hurdle gate tuning, longer training или coefficient sweeps не
+обосновано; следующий шаг — mechanism/design decision. Это не
+AGI/JEPA/composition/transfer claim.
+
+Official artifact содержит **5** files и **120** rows; persistent `run.log`,
+`progress.jsonl` (**130** records, maximum gap **0.306 s**), `results.json` и
+`manifest.json` сохраняют exact command, Git commit и final status.
+
 Артефакты: `output_to_user/core/action-confusion-*`,
 `transfer-push1-random64-u1000-finalplanner-001`,
 `transfer-push1-salient-u1000-001`, `exp143-temporal-proximity-002..010`,
@@ -1111,6 +1148,7 @@ Frozen amplitude calibration: exp163 HyperPC run at `6546387`.
 Relational slot probe: exp164 HyperPC run at `7a6a6ca`.
 Relational pose probe: exp165 HyperPC run at `e349778`.
 Hurdle amplitude probe: exp166 HyperPC run at `e1e1bc4`.
+Hurdle oracle swap: `exp167-hurdle-oracle-swap-002` at `35809ac`.
 
 ## Stage Review
 
@@ -1150,7 +1188,8 @@ continuous improvement от position-only relations, но categorical no-op wall
 остался. Exp165 добавил pose/orientation и не изменил categorical failures;
 следующий вопрос перенесён с input completeness на transition target. Exp166
 снял большинство blocked failures hurdle target-ом, но потерял contact и не
-прошёл общий gate.
+прошёл общий gate. Exp167 локализовал causal error в обоих learned hurdle
+components; only-oracle composition проходит source и unseen one-step gate.
 
 **Why this is architectural, not tactical:** механизм описывается без названия
 среды, но его общность ещё не доказана экспериментально. Специальных правил
